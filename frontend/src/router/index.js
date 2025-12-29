@@ -3,7 +3,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   {
     path: '/',
-    redirect: '/user/cards'
+    redirect: '/user/login'
+  },
+  {
+    path: '/user/login',
+    name: 'UserLogin',
+    component: () => import('../views/user/Login.vue')
   },
   {
     path: '/user/cards',
@@ -16,9 +21,24 @@ const routes = [
     component: () => import('../views/user/CardDetail.vue')
   },
   {
+    path: '/user/settings',
+    name: 'UserSettings',
+    component: () => import('../views/user/Settings.vue')
+  },
+  {
+    path: '/merchant/login',
+    name: 'MerchantLogin',
+    component: () => import('../views/merchant/Login.vue')
+  },
+  {
     path: '/merchant',
     name: 'MerchantDashboard',
     component: () => import('../views/merchant/Dashboard.vue')
+  },
+  {
+    path: '/merchant/settings',
+    name: 'MerchantSettings',
+    component: () => import('../views/merchant/Settings.vue')
   }
 ]
 
