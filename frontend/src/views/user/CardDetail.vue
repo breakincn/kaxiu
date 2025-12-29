@@ -109,11 +109,16 @@
     <!-- 使用记录 -->
     <div class="px-4 mt-4">
       <div class="bg-green-50 rounded-2xl p-5 shadow-md border border-green-100">
-        <div class="flex items-center gap-2 mb-4">
-          <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-          </svg>
-          <span class="font-medium text-gray-800">使用记录</span>
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+            <span class="font-medium text-gray-800">使用记录</span>
+          </div>
+          <span class="text-gray-600 text-sm">
+            总数{{ card.total_times }}次/剩余{{ card.remain_times }}次
+          </span>
         </div>
         <div v-if="usages.length > 0" class="space-y-2">
           <div v-for="usage in usages" :key="usage.id" class="flex justify-between items-center p-3 bg-white rounded-lg shadow-sm">
