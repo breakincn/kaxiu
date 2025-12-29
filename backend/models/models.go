@@ -19,10 +19,12 @@ func (User) TableComment() string {
 type Merchant struct {
 	ID                 uint   `json:"id" gorm:"primaryKey;comment:商户ID"`
 	Name               string `json:"name" gorm:"size:100;comment:商户名称"`
+	Phone              string `json:"phone" gorm:"size:20;uniqueIndex;comment:手机号"`
+	Password           string `json:"-" gorm:"size:255;comment:登录密码（bcrypt加密）"`
 	Type               string `json:"type" gorm:"size:50;comment:商户类型（如：理发、美容等）"`
 	SupportAppointment bool   `json:"support_appointment" gorm:"default:false;comment:是否支持预约（0-不支持，1-支持）"`
 	AvgServiceMinutes  int    `json:"avg_service_minutes" gorm:"default:30;comment:平均服务时长（分钟）"`
-	CreatedAt          string `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	CreatedAt          string `json:"created_at" gorm:"comment:创建时间"`
 }
 
 func (Merchant) TableName() string {

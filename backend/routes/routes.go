@@ -13,6 +13,8 @@ func SetupRoutes(r *gin.Engine) {
 	// 公开接口（不需要登录）
 	api.POST("/login", handlers.UserLogin)
 	api.POST("/users", handlers.CreateUser)
+	api.POST("/merchant/register", handlers.MerchantRegister)
+	api.POST("/merchant/login", handlers.MerchantLogin)
 
 	// 需要认证的接口
 	auth := api.Group("")

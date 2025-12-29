@@ -8,7 +8,12 @@ const api = axios.create({
 // 请求拦截器 - 添加 token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('userToken')
+    // 根据当前路径判断是用户还是商户
+    const isMerchant = window.location.pathname.startsWith('/merchant')
+    const token = isMerchant 
+      ? localStorage.getItem('merchantToken')
+      : localStorage.getItem('userToken')
+    
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -24,11 +29,23 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      // 未登录或 token 过期，跳转到登录页
-      localStorage.removeItem('userToken')
-      localStorage.removeItem('userId')
-      localStorage.removeItem('userName')
-      window.location.href = '/user/login'
+      // 根据当前路径判断跳转到哪个登录页
+      const isMerchant = window.location.pathname.startsWith('/merchant')
+      
+      if (isMerchant) {
+        // 商户端，清空商户登录信息
+        localStorage.removeItem('merchantToken')
+        localStorage.removeItem('merchantId')
+        localStorage.removeItem('merchantName')
+        localStorage.removeItem('merchantPhone')
+        window.location.href = '/merchant/login'
+      } else {
+        // 用户端，清空用户登录信息
+        localStorage.removeItem('userToken')
+        localStorage.removeItem('userId')
+        localStorage.removeItem('userName')
+        window.location.href = '/user/login'
+      }
     }
     return Promise.reject(error)
   }
@@ -47,6 +64,8 @@ export const userApi = {
 }
 
 export const merchantApi = {
+  register: (data) => api.post('/merchant/register', data),
+  login: (phone, password) => api.post('/merchant/login', { phone, password }),
   getMerchants: () => api.get('/merchants'),
   getMerchant: (id) => api.get(`/merchants/${id}`),
   createMerchant: (data) => api.post('/merchants', data),
