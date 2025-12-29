@@ -74,6 +74,7 @@
             <div class="text-white/80 text-xs">剩余次数</div>
           </div>
         </div>
+        <div class="text-white/60 text-xs mb-2">卡号: {{ card.card_no }}</div>
         <div class="flex justify-between items-center mt-4">
           <div class="flex items-center gap-1">
             <span class="w-2 h-2 rounded-full" :class="getStatusColor(card)"></span>

@@ -10,31 +10,6 @@
       <span class="font-medium text-gray-800">卡片详情</span>
     </header>
 
-    <!-- 卡片展示区 -->
-    <div class="px-4 pt-4">
-      <div class="card-gradient-orange rounded-2xl p-5 text-white">
-        <div class="flex justify-between items-start">
-          <div>
-            <h2 class="text-xl font-bold">{{ card.merchant?.name }}</h2>
-            <p class="text-white/80 text-sm mt-1">{{ card.card_type }}</p>
-          </div>
-          <div class="bg-white/20 px-3 py-1 rounded-full text-sm">
-            NO. {{ card.card_no }}
-          </div>
-        </div>
-        <div class="flex justify-between items-end mt-6">
-          <div>
-            <div class="text-white/60 text-xs mb-1">REMAINING TIMES</div>
-            <div class="text-5xl font-bold">{{ card.remain_times }}</div>
-          </div>
-          <div class="text-right">
-            <div class="text-white/60 text-xs mb-1">VALID UNTIL</div>
-            <div class="text-lg font-medium">{{ card.end_date }}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- 核销码区域 -->
     <div class="px-4 mt-4">
       <div class="bg-white rounded-xl p-4 shadow-sm">
