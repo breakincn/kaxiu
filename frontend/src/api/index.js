@@ -82,6 +82,7 @@ export const appointmentApi = {
   getMerchantAppointments: (merchantId, status) => api.get(`/merchants/${merchantId}/appointments`, { params: { status } }),
   getUserAppointments: (userId) => api.get(`/users/${userId}/appointments`),
   getCardAppointment: (cardId) => api.get(`/cards/${cardId}/appointment`),
+  getAvailableTimeSlots: (merchantId, date) => api.get(`/merchants/${merchantId}/available-slots`, { params: { date } }),
   createAppointment: (data) => api.post('/appointments', data),
   confirmAppointment: (id) => api.put(`/appointments/${id}/confirm`),
   finishAppointment: (id) => api.put(`/appointments/${id}/finish`),

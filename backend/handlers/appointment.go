@@ -94,6 +94,16 @@ func CreateAppointment(c *gin.Context) {
 		return
 	}
 
+	// 检查用户在该商户是否已有活跃的预约
+	var existingAppointment models.Appointment
+	err := config.DB.Where("user_id = ? AND merchant_id = ? AND status IN ('pending', 'confirmed')",
+		input.UserID, input.MerchantID).First(&existingAppointment).Error
+
+	if err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "您已有进行中的预约，请先取消后再预约"})
+		return
+	}
+
 	appointment := models.Appointment{
 		MerchantID:      input.MerchantID,
 		UserID:          input.UserID,
@@ -149,6 +159,12 @@ func CancelAppointment(c *gin.Context) {
 		return
 	}
 
+	// 只允许取消待确认或已确认的预约
+	if appointment.Status != "pending" && appointment.Status != "confirmed" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只能取消待确认或已确认的预约"})
+		return
+	}
+
 	config.DB.Model(&appointment).Update("status", "canceled")
 	config.DB.Preload("User").Preload("Merchant").First(&appointment, id)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
@@ -181,6 +197,104 @@ func GetQueueStatus(c *gin.Context) {
 			"pending_appointments": pendingCount,
 			"today_verify_count":   todayVerifyCount,
 			"avg_service_minutes":  merchant.AvgServiceMinutes,
+		},
+	})
+}
+
+// GetAvailableTimeSlots 获取商户的可用预约时间段
+func GetAvailableTimeSlots(c *gin.Context) {
+	merchantID := c.Param("id")
+	date := c.Query("date") // 格式: 2024-01-01
+
+	if date == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+
+	// 获取当天的所有预约（pending和confirmed状态）
+	var appointments []models.Appointment
+	config.DB.Preload("User").Where("merchant_id = ? AND DATE(appointment_time) = ? AND status IN ('pending', 'confirmed')",
+		merchantID, date).Order("appointment_time ASC").Find(&appointments)
+
+	// 生成可用时间段（营业时间 9:00-21:00，每个时间段为服务时长）
+	serviceMinutes := merchant.AvgServiceMinutes
+	if serviceMinutes == 0 {
+		serviceMinutes = 30 // 默认30分钟
+	}
+
+	// 解析日期
+	targetDate, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误"})
+		return
+	}
+
+	// 营业时间: 9:00 - 21:00
+	startHour := 9
+	endHour := 21
+
+	// 生成所有可能的时间段
+	var allSlots []string
+	for hour := startHour; hour < endHour; hour++ {
+		for minute := 0; minute < 60; minute += serviceMinutes {
+			slotTime := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(),
+				hour, minute, 0, 0, time.Local)
+			
+			// 如果是今天，只显示未来的时间段
+			if date == time.Now().Format("2006-01-02") && slotTime.Before(time.Now()) {
+				continue
+			}
+			
+			allSlots = append(allSlots, slotTime.Format("2006-01-02 15:04:05"))
+		}
+	}
+
+	// 标记已被占用的时间段
+	type TimeSlot struct {
+		Time      string `json:"time"`
+		Available bool   `json:"available"`
+		UserName  string `json:"user_name,omitempty"`
+	}
+
+	var timeSlots []TimeSlot
+	for _, slot := range allSlots {
+		slotTime, _ := time.Parse("2006-01-02 15:04:05", slot)
+		available := true
+		userName := ""
+
+		// 检查这个时间段是否与现有预约冲突
+		for _, apt := range appointments {
+			aptTime, _ := time.Parse("2006-01-02 15:04:05", apt.AppointmentTime)
+			
+			// 如果预约时间在当前时间段内，或者当前时间段在预约的服务时长内
+			if slotTime.Equal(aptTime) || 
+				(slotTime.After(aptTime) && slotTime.Before(aptTime.Add(time.Duration(serviceMinutes)*time.Minute))) {
+				available = false
+				if apt.User.Nickname != "" {
+					userName = apt.User.Nickname
+				}
+				break
+			}
+		}
+
+		timeSlots = append(timeSlots, TimeSlot{
+			Time:      slot,
+			Available: available,
+			UserName:  userName,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"date":               date,
+			"service_minutes":    serviceMinutes,
+			"time_slots":         timeSlots,
+			"existing_appointments": appointments,
 		},
 	})
 }

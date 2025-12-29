@@ -81,10 +81,25 @@
             </div>
           </div>
           <p class="text-xs text-gray-400">* 排队进度由商户服务确认后即时更新</p>
+          
+          <!-- 取消预约按钮 -->
+          <button
+            @click="cancelAppointment"
+            :disabled="canceling || appointment.status === 'finished' || appointment.status === 'canceled'"
+            class="w-full py-2.5 border-2 border-red-400 text-red-500 font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-3"
+          >
+            {{ canceling ? '取消中...' : '取消预约' }}
+          </button>
         </div>
         
-        <div v-else class="text-center text-gray-400 py-4">
-          暂无预约
+        <div v-else class="text-center">
+          <button
+            @click="showAppointmentModal"
+            :disabled="appointing"
+            class="w-full py-3 border-2 border-primary text-primary font-medium rounded-lg hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            我要预约
+          </button>
         </div>
       </div>
     </div>
@@ -164,6 +179,79 @@
         </div>
       </div>
     </div>
+
+    <!-- 预约时间选择弹窗 -->
+    <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-lg max-h-[80vh] overflow-hidden">
+        <!-- 弹窗头部 -->
+        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
+          <h3 class="font-medium text-lg">选择预约时间</h3>
+          <button @click="closeModal" class="text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- 日期选择 -->
+        <div class="px-5 py-3 border-b">
+          <div class="flex gap-2">
+            <button
+              @click="selectDate('today')"
+              :class="selectedDate === getTodayDate() ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'"
+              class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors"
+            >
+              今天
+            </button>
+            <button
+              @click="selectDate('tomorrow')"
+              :class="selectedDate === getTomorrowDate() ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'"
+              class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors"
+            >
+              明天
+            </button>
+          </div>
+        </div>
+
+        <!-- 时间段列表 -->
+        <div class="px-5 py-4 overflow-y-auto" style="max-height: 400px;">
+          <div v-if="loadingSlots" class="text-center py-8 text-gray-400">
+            加载中...
+          </div>
+          <div v-else-if="timeSlots.length === 0" class="text-center py-8 text-gray-400">
+            今日无可用时间段
+          </div>
+          <div v-else class="grid grid-cols-2 gap-3">
+            <button
+              v-for="slot in timeSlots"
+              :key="slot.time"
+              @click="selectTimeSlot(slot)"
+              :disabled="!slot.available"
+              :class="{
+                'bg-primary text-white': selectedTimeSlot === slot.time && slot.available,
+                'bg-gray-100 text-gray-400 cursor-not-allowed': !slot.available,
+                'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary': slot.available && selectedTimeSlot !== slot.time
+              }"
+              class="py-3 px-4 rounded-lg font-medium transition-all"
+            >
+              <div>{{ formatTime(slot.time) }}</div>
+              <div v-if="!slot.available" class="text-xs mt-1">已被预约</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- 弹窗底部 -->
+        <div class="px-5 py-4 border-t">
+          <button
+            @click="confirmAppointment"
+            :disabled="!selectedTimeSlot || appointing"
+            class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {{ appointing ? '预纤中...' : '确认预约' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -185,6 +273,15 @@ const estimatedMinutes = ref(0)
 const verifyCode = ref('')
 const codeExpireTime = ref('')
 const generating = ref(false)
+const appointing = ref(false)
+const canceling = ref(false)
+
+// 预约弹窗相关
+const showModal = ref(false)
+const selectedDate = ref('')
+const selectedTimeSlot = ref('')
+const timeSlots = ref([])
+const loadingSlots = ref(false)
 
 const goBack = () => {
   router.back()
@@ -250,6 +347,122 @@ const generateCode = async () => {
     alert(err.response?.data?.error || '生成核销码失败')
   } finally {
     generating.value = false
+  }
+}
+
+// 显示预约弹窗
+const showAppointmentModal = async () => {
+  showModal.value = true
+  selectedDate.value = getTodayDate()
+  selectedTimeSlot.value = ''
+  await loadTimeSlots(selectedDate.value)
+}
+
+// 关闭弹窗
+const closeModal = () => {
+  showModal.value = false
+  selectedDate.value = ''
+  selectedTimeSlot.value = ''
+  timeSlots.value = []
+}
+
+// 获取今天日期
+const getTodayDate = () => {
+  return new Date().toISOString().slice(0, 10)
+}
+
+// 获取明天日期
+const getTomorrowDate = () => {
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return tomorrow.toISOString().slice(0, 10)
+}
+
+// 选择日期
+const selectDate = async (type) => {
+  selectedDate.value = type === 'today' ? getTodayDate() : getTomorrowDate()
+  selectedTimeSlot.value = ''
+  await loadTimeSlots(selectedDate.value)
+}
+
+// 加载可用时间段
+const loadTimeSlots = async (date) => {
+  if (!card.value.merchant_id) return
+  
+  loadingSlots.value = true
+  try {
+    const res = await appointmentApi.getAvailableTimeSlots(card.value.merchant_id, date)
+    timeSlots.value = res.data.data.time_slots || []
+  } catch (err) {
+    console.error('获取可用时间段失败:', err)
+    alert('获取可用时间段失败')
+  } finally {
+    loadingSlots.value = false
+  }
+}
+
+// 选择时间段
+const selectTimeSlot = (slot) => {
+  if (!slot.available) return
+  selectedTimeSlot.value = slot.time
+}
+
+// 格式化时间显示
+const formatTime = (timeStr) => {
+  if (!timeStr) return ''
+  const date = new Date(timeStr)
+  const hours = date.getHours().toString().padStart(2, '0')
+  const minutes = date.getMinutes().toString().padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
+// 确认预约
+const confirmAppointment = async () => {
+  if (!selectedTimeSlot.value || appointing.value) return
+  
+  appointing.value = true
+  try {
+    const userId = localStorage.getItem('userId')
+    if (!userId) {
+      alert('请先登录')
+      router.push('/user/login')
+      return
+    }
+    
+    await appointmentApi.createAppointment({
+      merchant_id: card.value.merchant_id,
+      user_id: parseInt(userId),
+      appointment_time: selectedTimeSlot.value
+    })
+    
+    closeModal()
+    await fetchAppointment()
+    alert('预约成功！')
+  } catch (err) {
+    alert(err.response?.data?.error || '预约失败')
+  } finally {
+    appointing.value = false
+  }
+}
+
+const cancelAppointment = async () => {
+  if (canceling.value) return
+  
+  if (!confirm('确定要取消预约吗？')) return
+  
+  canceling.value = true
+  try {
+    await appointmentApi.cancelAppointment(appointment.value.id)
+    
+    appointment.value = null
+    queueBefore.value = 0
+    estimatedMinutes.value = 0
+    
+    alert('已取消预约')
+  } catch (err) {
+    alert(err.response?.data?.error || '取消预约失败')
+  } finally {
+    canceling.value = false
   }
 }
 

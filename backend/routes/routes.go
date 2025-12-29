@@ -61,4 +61,5 @@ func SetupRoutes(r *gin.Engine) {
 	auth.PUT("/appointments/:id/finish", handlers.FinishAppointment)
 	auth.PUT("/appointments/:id/cancel", handlers.CancelAppointment)
 	auth.GET("/merchants/:id/queue", handlers.GetQueueStatus)
+	auth.GET("/merchants/:id/available-slots", handlers.GetAvailableTimeSlots)
 }
