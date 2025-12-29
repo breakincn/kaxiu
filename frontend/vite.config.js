@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 3000,
+    allowedHosts: ['kabao.me', '.kabao.me'],
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
