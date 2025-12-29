@@ -14,11 +14,11 @@
         
         <form @submit.prevent="handleLogin">
           <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">用户名</label>
+            <label class="block text-gray-700 text-sm font-medium mb-2">手机号</label>
             <input
               v-model="username"
               type="text"
-              placeholder="请输入用户名"
+              placeholder="请输入手机号"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
               required
             />
@@ -57,6 +57,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { authApi } from '../../api'
 
 const router = useRouter()
 const username = ref('')
@@ -67,17 +68,18 @@ const handleLogin = async () => {
   loading.value = true
   
   try {
-    // 模拟登录，实际项目中应该调用 API
-    await new Promise(resolve => setTimeout(resolve, 500))
+    const res = await authApi.login(username.value, password.value)
+    const { token, user_id, nickname } = res.data.data
     
     // 保存登录状态
-    localStorage.setItem('userToken', 'user-token-' + Date.now())
-    localStorage.setItem('userName', username.value)
+    localStorage.setItem('userToken', token)
+    localStorage.setItem('userId', user_id)
+    localStorage.setItem('userName', nickname || username.value)
     
     // 跳转到用户卡片列表
     router.push('/user/cards')
   } catch (err) {
-    alert('登录失败，请重试')
+    alert(err.response?.data?.error || '登录失败，请重试')
   } finally {
     loading.value = false
   }

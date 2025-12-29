@@ -123,14 +123,31 @@ import { useRouter } from 'vue-router'
 import { cardApi, noticeApi } from '../../api'
 
 const router = useRouter()
-const userName = ref('张三')
+const userName = ref('')
 const currentStatus = ref('active')
 const cards = ref([])
-const userId = 1
+const userId = ref(null)
+
+// 从 localStorage 获取当前用户信息
+const initUser = () => {
+  const storedUserId = localStorage.getItem('userId')
+  const storedUserName = localStorage.getItem('userName')
+  
+  if (!storedUserId) {
+    // 如果没有登录，跳转到登录页
+    router.push('/user/login')
+    return
+  }
+  
+  userId.value = parseInt(storedUserId)
+  userName.value = storedUserName || '用户'
+}
 
 const fetchCards = async () => {
+  if (!userId.value) return
+  
   try {
-    const res = await cardApi.getUserCards(userId, currentStatus.value)
+    const res = await cardApi.getUserCards(userId.value, currentStatus.value)
     const cardsData = res.data.data || []
     
     // 为每个卡片获取对应商户的置顶通知
@@ -151,6 +168,10 @@ const fetchCards = async () => {
     cards.value = cardsData
   } catch (err) {
     console.error('获取卡片失败:', err)
+    if (err.response?.status === 401) {
+      // token 过期或无效，跳转到登录页
+      router.push('/user/login')
+    }
   }
 }
 
@@ -174,5 +195,8 @@ const getStatusColor = (card) => {
 
 watch(currentStatus, fetchCards)
 
-onMounted(fetchCards)
+onMounted(() => {
+  initUser()
+  fetchCards()
+})
 </script>

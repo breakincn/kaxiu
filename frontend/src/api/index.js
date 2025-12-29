@@ -5,10 +5,45 @@ const api = axios.create({
   timeout: 10000
 })
 
+// 请求拦截器 - 添加 token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('userToken')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
+
+// 响应拦截器 - 处理未登录错误
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      // 未登录或 token 过期，跳转到登录页
+      localStorage.removeItem('userToken')
+      localStorage.removeItem('userId')
+      localStorage.removeItem('userName')
+      window.location.href = '/user/login'
+    }
+    return Promise.reject(error)
+  }
+)
+
+export const authApi = {
+  login: (phone, password) => api.post('/login', { phone, password }),
+  getCurrentUser: () => api.get('/me')
+}
+
 export const userApi = {
   getUsers: () => api.get('/users'),
   getUser: (id) => api.get(`/users/${id}`),
-  createUser: (data) => api.post('/users', data)
+  createUser: (data) => api.post('/users', data),
+  getCurrentUser: () => api.get('/me')
 }
 
 export const merchantApi = {

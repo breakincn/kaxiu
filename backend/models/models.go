@@ -3,6 +3,7 @@ package models
 type User struct {
 	ID        uint   `json:"id" gorm:"primaryKey"`
 	Phone     string `json:"phone" gorm:"size:20;uniqueIndex"`
+	Password  string `json:"-" gorm:"size:255"`
 	Nickname  string `json:"nickname" gorm:"size:50"`
 	CreatedAt string `json:"created_at" gorm:"autoCreateTime"`
 }

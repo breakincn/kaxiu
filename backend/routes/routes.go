@@ -2,6 +2,7 @@ package routes
 
 import (
 	"kabao/handlers"
+	"kabao/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -9,47 +10,55 @@ import (
 func SetupRoutes(r *gin.Engine) {
 	api := r.Group("/api")
 
-	// 用户相关
-	api.GET("/users", handlers.GetUsers)
-	api.GET("/users/:id", handlers.GetUser)
+	// 公开接口（不需要登录）
+	api.POST("/login", handlers.UserLogin)
 	api.POST("/users", handlers.CreateUser)
 
+	// 需要认证的接口
+	auth := api.Group("")
+	auth.Use(middleware.AuthMiddleware())
+
+	// 用户相关
+	auth.GET("/users", handlers.GetUsers)
+	auth.GET("/users/:id", handlers.GetUser)
+	auth.GET("/me", handlers.GetCurrentUser)
+
 	// 商户相关
-	api.GET("/merchants", handlers.GetMerchants)
-	api.GET("/merchants/:id", handlers.GetMerchant)
-	api.POST("/merchants", handlers.CreateMerchant)
-	api.PUT("/merchants/:id", handlers.UpdateMerchant)
+	auth.GET("/merchants", handlers.GetMerchants)
+	auth.GET("/merchants/:id", handlers.GetMerchant)
+	auth.POST("/merchants", handlers.CreateMerchant)
+	auth.PUT("/merchants/:id", handlers.UpdateMerchant)
 
 	// 卡片相关
-	api.GET("/cards", handlers.GetCards)
-	api.GET("/cards/:id", handlers.GetCard)
-	api.GET("/users/:id/cards", handlers.GetUserCards)
-	api.GET("/merchants/:id/cards", handlers.GetMerchantCards)
-	api.POST("/cards", handlers.CreateCard)
-	api.PUT("/cards/:id", handlers.UpdateCard)
+	auth.GET("/cards", handlers.GetCards)
+	auth.GET("/cards/:id", handlers.GetCard)
+	auth.GET("/users/:id/cards", handlers.GetUserCards)
+	auth.GET("/merchants/:id/cards", handlers.GetMerchantCards)
+	auth.POST("/cards", handlers.CreateCard)
+	auth.PUT("/cards/:id", handlers.UpdateCard)
 
 	// 核销相关
-	api.POST("/cards/:id/verify-code", handlers.GenerateVerifyCode)
-	api.POST("/verify", handlers.VerifyCard)
-	api.GET("/merchants/:id/today-verify", handlers.GetTodayVerify)
+	auth.POST("/cards/:id/verify-code", handlers.GenerateVerifyCode)
+	auth.POST("/verify", handlers.VerifyCard)
+	auth.GET("/merchants/:id/today-verify", handlers.GetTodayVerify)
 
 	// 使用记录
-	api.GET("/cards/:id/usages", handlers.GetCardUsages)
-	api.GET("/merchants/:id/usages", handlers.GetMerchantUsages)
+	auth.GET("/cards/:id/usages", handlers.GetCardUsages)
+	auth.GET("/merchants/:id/usages", handlers.GetMerchantUsages)
 
 	// 通知相关
-	api.GET("/merchants/:id/notices", handlers.GetMerchantNotices)
-	api.POST("/notices", handlers.CreateNotice)
-	api.DELETE("/notices/:id", handlers.DeleteNotice)
-	api.PUT("/notices/:id/pin", handlers.TogglePinNotice)
+	auth.GET("/merchants/:id/notices", handlers.GetMerchantNotices)
+	auth.POST("/notices", handlers.CreateNotice)
+	auth.DELETE("/notices/:id", handlers.DeleteNotice)
+	auth.PUT("/notices/:id/pin", handlers.TogglePinNotice)
 
 	// 预约相关
-	api.GET("/merchants/:id/appointments", handlers.GetMerchantAppointments)
-	api.GET("/users/:id/appointments", handlers.GetUserAppointments)
-	api.GET("/cards/:id/appointment", handlers.GetCardAppointment)
-	api.POST("/appointments", handlers.CreateAppointment)
-	api.PUT("/appointments/:id/confirm", handlers.ConfirmAppointment)
-	api.PUT("/appointments/:id/finish", handlers.FinishAppointment)
-	api.PUT("/appointments/:id/cancel", handlers.CancelAppointment)
-	api.GET("/merchants/:id/queue", handlers.GetQueueStatus)
+	auth.GET("/merchants/:id/appointments", handlers.GetMerchantAppointments)
+	auth.GET("/users/:id/appointments", handlers.GetUserAppointments)
+	auth.GET("/cards/:id/appointment", handlers.GetCardAppointment)
+	auth.POST("/appointments", handlers.CreateAppointment)
+	auth.PUT("/appointments/:id/confirm", handlers.ConfirmAppointment)
+	auth.PUT("/appointments/:id/finish", handlers.FinishAppointment)
+	auth.PUT("/appointments/:id/cancel", handlers.CancelAppointment)
+	auth.GET("/merchants/:id/queue", handlers.GetQueueStatus)
 }
