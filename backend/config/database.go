@@ -43,6 +43,15 @@ func InitDB() {
 		log.Fatal("数据库迁移失败:", err)
 	}
 
+	// 添加表注释
+	DB.Exec("ALTER TABLE `users` COMMENT = '用户表'")
+	DB.Exec("ALTER TABLE `merchants` COMMENT = '商户表'")
+	DB.Exec("ALTER TABLE `cards` COMMENT = '用户会员卡表'")
+	DB.Exec("ALTER TABLE `usages` COMMENT = '卡片使用记录表'")
+	DB.Exec("ALTER TABLE `notices` COMMENT = '商户通知表'")
+	DB.Exec("ALTER TABLE `appointments` COMMENT = '用户预约排队表'")
+	DB.Exec("ALTER TABLE `verify_codes` COMMENT = '核销码表'")
+
 	log.Println("数据库初始化成功")
 
 	// 初始化测试数据
