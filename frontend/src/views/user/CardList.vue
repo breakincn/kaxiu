@@ -60,31 +60,30 @@
         :key="card.id"
         @click="goToDetail(card.id)"
         :class="[
-          'rounded-2xl p-5 text-white cursor-pointer transition-transform active:scale-[0.98]',
+          'rounded-2xl p-4 text-white cursor-pointer transition-transform active:scale-[0.98]',
           index % 2 === 0 ? 'card-gradient-orange' : 'card-gradient-blue'
         ]"
       >
-        <div class="flex justify-between items-start mb-2">
+        <!-- 顶部：商户名称和版本标签 -->
+        <div class="flex justify-between items-start mb-1">
           <div>
             <h3 class="text-lg font-bold">{{ card.merchant?.name }}</h3>
-            <p class="text-white/80 text-sm">{{ card.card_type }}</p>
+            <p class="text-white/70 text-xs mt-0.5">{{ card.card_type }}</p>
           </div>
-          <div class="text-right">
-            <div class="text-4xl font-bold">{{ card.remain_times }}</div>
-            <div class="text-white/80 text-xs">剩余次数</div>
+          <div class="bg-white/20 px-2.5 py-0.5 rounded-full">
+            <span class="text-xs font-medium">NO: G12345678981189</span>
           </div>
         </div>
-        <div class="text-white/60 text-xs mb-2">卡号: {{ card.card_no }}</div>
-        <div class="flex justify-between items-center mt-4">
-          <div class="flex items-center gap-1">
-            <span class="w-2 h-2 rounded-full" :class="getStatusColor(card)"></span>
-            <span class="text-sm text-white/80">有效期至 {{ card.end_date }}</span>
+
+        <!-- 底部：剩余次数和有效期 -->
+        <div class="flex justify-between items-end mt-6">
+          <div>
+            <div class="text-white/70 text-xs mb-0.5">剩余次数</div>
+            <div class="text-5xl font-bold leading-none">{{ card.remain_times }}</div>
           </div>
-          <div class="flex items-center gap-1 text-white font-medium">
-            立即使用
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-            </svg>
+          <div class="text-right">
+            <div class="text-white/70 text-xs mb-0.5">有效期至</div>
+            <div class="text-sm font-medium">{{ card.end_date }}</div>
           </div>
         </div>
       </div>
