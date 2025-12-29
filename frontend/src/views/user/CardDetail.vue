@@ -119,7 +119,10 @@
           <div v-for="usage in usages" :key="usage.id" class="flex justify-between items-center p-3 bg-white rounded-lg shadow-sm">
             <div>
               <div class="text-gray-800">核销次数: {{ usage.used_times }}</div>
-              <div class="text-gray-400 text-sm">{{ usage.used_at }}</div>
+              <div class="flex items-center gap-2">
+                <span class="text-gray-400 text-sm">{{ usage.used_at }}</span>
+                <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
+              </div>
             </div>
             <span :class="usage.status === 'success' ? 'text-green-500' : 'text-red-500'" class="text-sm font-medium">
               {{ usage.status === 'success' ? '成功' : '失败' }}
@@ -260,6 +263,13 @@ const getAppointmentStatusText = (status) => {
     canceled: '已取消'
   }
   return texts[status] || status
+}
+
+const getWeekDay = (dateStr) => {
+  if (!dateStr) return ''
+  const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  const date = new Date(dateStr)
+  return weekDays[date.getDay()]
 }
 
 onMounted(fetchCard)
