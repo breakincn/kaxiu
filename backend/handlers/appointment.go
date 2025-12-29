@@ -3,6 +3,7 @@ package handlers
 import (
 	"kabao/config"
 	"kabao/models"
+	"log"
 	"net/http"
 	"time"
 
@@ -40,6 +41,9 @@ func GetCardAppointment(c *gin.Context) {
 		return
 	}
 
+	// 添加调试日志
+	log.Printf("查询预约: 卡片ID=%s, 用户ID=%d, 商户ID=%d", cardID, card.UserID, card.MerchantID)
+
 	var appointment models.Appointment
 	err := config.DB.Preload("Merchant").
 		Where("user_id = ? AND merchant_id = ? AND status IN ('pending', 'confirmed')", card.UserID, card.MerchantID).
@@ -47,9 +51,12 @@ func GetCardAppointment(c *gin.Context) {
 		First(&appointment).Error
 
 	if err != nil {
+		log.Printf("未找到预约: %v", err)
 		c.JSON(http.StatusOK, gin.H{"data": nil})
 		return
 	}
+
+	log.Printf("找到预约: ID=%d, 状态=%s, 时间=%s", appointment.ID, appointment.Status, appointment.AppointmentTime)
 
 	// 计算排队信息
 	var queueBefore int64
@@ -100,17 +107,29 @@ func CreateAppointment(c *gin.Context) {
 		input.UserID, input.MerchantID).First(&existingAppointment).Error
 
 	if err == nil {
+		log.Printf("用户已有活跃预约: ID=%d, 状态=%s", existingAppointment.ID, existingAppointment.Status)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "您已有进行中的预约，请先取消后再预约"})
 		return
 	}
+
+	log.Printf("创建新预约: 用户ID=%d, 商户ID=%d, 时间=%s", input.UserID, input.MerchantID, input.AppointmentTime)
 
 	appointment := models.Appointment{
 		MerchantID:      input.MerchantID,
 		UserID:          input.UserID,
 		AppointmentTime: input.AppointmentTime,
 		Status:          "pending",
+		CreatedAt:       time.Now().Format("2006-01-02 15:04:05"),
 	}
-	config.DB.Create(&appointment)
+	result := config.DB.Create(&appointment)
+	if result.Error != nil {
+		log.Printf("创建预约失败: %v", result.Error)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建预约失败"})
+		return
+	}
+
+	log.Printf("预约创建成功: ID=%d, 状态=%s", appointment.ID, appointment.Status)
+
 	config.DB.Preload("User").Preload("Merchant").First(&appointment, appointment.ID)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
@@ -210,16 +229,29 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		date = time.Now().Format("2006-01-02")
 	}
 
+	// 验证日期格式
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
+		return
+	}
+
 	var merchant models.Merchant
 	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
 		return
 	}
 
+	if !merchant.SupportAppointment {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该商户不支持预约功能"})
+		return
+	}
+
 	// 获取当天的所有预约（pending和confirmed状态）
 	var appointments []models.Appointment
-	config.DB.Preload("User").Where("merchant_id = ? AND DATE(appointment_time) = ? AND status IN ('pending', 'confirmed')",
-		merchantID, date).Order("appointment_time ASC").Find(&appointments)
+	// 使用字符串前缀匹配来查询日期，避免DATE()函数的兼容性问题
+	datePrefix := date + " %"
+	config.DB.Preload("User").Where("merchant_id = ? AND appointment_time LIKE ? AND status IN ('pending', 'confirmed')",
+		merchantID, datePrefix).Order("appointment_time ASC").Find(&appointments)
 
 	// 生成可用时间段（营业时间 9:00-21:00，每个时间段为服务时长）
 	serviceMinutes := merchant.AvgServiceMinutes
@@ -228,11 +260,7 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	}
 
 	// 解析日期
-	targetDate, err := time.Parse("2006-01-02", date)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误"})
-		return
-	}
+	targetDate, _ := time.Parse("2006-01-02", date)
 
 	// 营业时间: 9:00 - 21:00
 	startHour := 9

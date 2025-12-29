@@ -107,7 +107,7 @@ type Appointment struct {
 	UserID          uint   `json:"user_id" gorm:"index;comment:用户ID（外键关联users表）"`
 	AppointmentTime string `json:"appointment_time" gorm:"comment:预约时间"`
 	Status          string `json:"status" gorm:"size:20;default:pending;comment:预约状态（pending-待确认，confirmed-已确认/排队中，finished-已完成，canceled-已取消）"`
-	CreatedAt       string `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	CreatedAt       string `json:"created_at" gorm:"comment:创建时间"`
 
 	User     User     `json:"user" gorm:"foreignKey:UserID"`
 	Merchant Merchant `json:"merchant" gorm:"foreignKey:MerchantID"`

@@ -323,14 +323,23 @@ const fetchNotices = async (merchantId) => {
 
 const fetchAppointment = async () => {
   try {
+    console.log('正在获取预约信息，卡片ID:', route.params.id)
     const res = await appointmentApi.getCardAppointment(route.params.id)
+    console.log('预约信息响应:', res.data)
     if (res.data.data) {
       appointment.value = res.data.data.appointment
       queueBefore.value = res.data.data.queue_before || 0
       estimatedMinutes.value = res.data.data.estimated_minutes || 0
+      console.log('预约信息已设置:', appointment.value)
+    } else {
+      console.log('未找到预约信息')
+      appointment.value = null
+      queueBefore.value = 0
+      estimatedMinutes.value = 0
     }
   } catch (err) {
     console.error('获取预约信息失败:', err)
+    console.error('错误详情:', err.response?.data)
   }
 }
 
@@ -352,6 +361,11 @@ const generateCode = async () => {
 
 // 显示预约弹窗
 const showAppointmentModal = async () => {
+  if (!card.value || !card.value.merchant_id) {
+    alert('卡片信息加载中，请稍后再试')
+    return
+  }
+  
   showModal.value = true
   selectedDate.value = getTodayDate()
   selectedTimeSlot.value = ''
@@ -387,15 +401,21 @@ const selectDate = async (type) => {
 
 // 加载可用时间段
 const loadTimeSlots = async (date) => {
-  if (!card.value.merchant_id) return
+  if (!card.value.merchant_id) {
+    console.error('商户ID不存在')
+    return
+  }
   
   loadingSlots.value = true
   try {
+    console.log('正在获取时间段，商户ID:', card.value.merchant_id, '日期:', date)
     const res = await appointmentApi.getAvailableTimeSlots(card.value.merchant_id, date)
+    console.log('获取时间段响应:', res.data)
     timeSlots.value = res.data.data.time_slots || []
   } catch (err) {
     console.error('获取可用时间段失败:', err)
-    alert('获取可用时间段失败')
+    console.error('错误详情:', err.response?.data)
+    alert(`获取可用时间段失败: ${err.response?.data?.error || err.message}`)
   } finally {
     loadingSlots.value = false
   }
