@@ -58,33 +58,52 @@
       <div
         v-for="(card, index) in cards"
         :key="card.id"
-        @click="goToDetail(card.id)"
-        :class="[
-          'rounded-2xl p-4 text-white cursor-pointer transition-transform active:scale-[0.98]',
-          index % 2 === 0 ? 'card-gradient-orange' : 'card-gradient-blue'
-        ]"
       >
-        <!-- 顶部：商户名称和版本标签 -->
-        <div class="flex justify-between items-start mb-1">
-          <div>
-            <h3 class="text-lg font-bold">{{ card.merchant?.name }}</h3>
-            <p class="text-white/70 text-xs mt-0.5">{{ card.card_type }}</p>
+        <div
+          @click="goToDetail(card.id)"
+          :class="[
+            'rounded-2xl p-4 text-white cursor-pointer transition-transform active:scale-[0.98]',
+            index % 2 === 0 ? 'card-gradient-orange' : 'card-gradient-blue'
+          ]"
+        >
+          <!-- 顶部：商户名称和版本标签 -->
+          <div class="flex justify-between items-start mb-1">
+            <div>
+              <h3 class="text-lg font-bold">{{ card.merchant?.name }}</h3>
+              <p class="text-white/70 text-xs mt-0.5">{{ card.card_type }}</p>
+            </div>
+            <div class="bg-white/20 px-2.5 py-0.5 rounded-full">
+              <span class="text-xs font-medium">NO: G12345678981189</span>
+            </div>
           </div>
-          <div class="bg-white/20 px-2.5 py-0.5 rounded-full">
-            <span class="text-xs font-medium">NO: G12345678981189</span>
+
+          <!-- 底部：剩余次数和有效期 -->
+          <div class="flex justify-between items-end mt-6">
+            <div>
+              <div class="text-white/70 text-xs mb-0.5">剩余次数</div>
+              <div class="text-5xl font-bold leading-none">{{ card.remain_times }}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-white/70 text-xs mb-0.5">有效期至</div>
+              <div class="text-sm font-medium">{{ card.end_date }}</div>
+            </div>
           </div>
         </div>
 
-        <!-- 底部：剩余次数和有效期 -->
-        <div class="flex justify-between items-end mt-6">
-          <div>
-            <div class="text-white/70 text-xs mb-0.5">剩余次数</div>
-            <div class="text-5xl font-bold leading-none">{{ card.remain_times }}</div>
+        <!-- 置顶通知 -->
+        <div 
+          v-if="card.pinnedNotice" 
+          class="mt-2 bg-yellow-50 border border-yellow-200 rounded-lg p-3 cursor-pointer"
+          @click="goToDetail(card.id)"
+        >
+          <div class="flex items-center gap-2 mb-1">
+            <svg class="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+            </svg>
+            <span class="text-yellow-800 font-medium text-sm">{{ card.pinnedNotice.title }}</span>
+            <span class="px-1.5 py-0.5 bg-yellow-500 text-white text-xs rounded">置顶</span>
           </div>
-          <div class="text-right">
-            <div class="text-white/70 text-xs mb-0.5">有效期至</div>
-            <div class="text-sm font-medium">{{ card.end_date }}</div>
-          </div>
+          <div class="text-yellow-700 text-xs line-clamp-1">{{ card.pinnedNotice.content }}</div>
         </div>
       </div>
 
@@ -98,7 +117,7 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { cardApi } from '../../api'
+import { cardApi, noticeApi } from '../../api'
 
 const router = useRouter()
 const userName = ref('张三')
@@ -109,7 +128,24 @@ const userId = 1
 const fetchCards = async () => {
   try {
     const res = await cardApi.getUserCards(userId, currentStatus.value)
-    cards.value = res.data.data || []
+    const cardsData = res.data.data || []
+    
+    // 为每个卡片获取对应商户的置顶通知
+    for (const card of cardsData) {
+      if (card.merchant_id) {
+        try {
+          const noticesRes = await noticeApi.getMerchantNotices(card.merchant_id, 3)
+          const notices = noticesRes.data.data || []
+          // 找到置顶通知
+          card.pinnedNotice = notices.find(n => n.is_pinned) || null
+        } catch (err) {
+          console.error('获取通知失败:', err)
+          card.pinnedNotice = null
+        }
+      }
+    }
+    
+    cards.value = cardsData
   } catch (err) {
     console.error('获取卡片失败:', err)
   }

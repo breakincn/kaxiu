@@ -40,6 +40,8 @@ func SetupRoutes(r *gin.Engine) {
 	// 通知相关
 	api.GET("/merchants/:id/notices", handlers.GetMerchantNotices)
 	api.POST("/notices", handlers.CreateNotice)
+	api.DELETE("/notices/:id", handlers.DeleteNotice)
+	api.PUT("/notices/:id/pin", handlers.TogglePinNotice)
 
 	// 预约相关
 	api.GET("/merchants/:id/appointments", handlers.GetMerchantAppointments)

@@ -158,21 +158,26 @@
     <div v-if="currentTab === 'notice'" class="px-4 py-4">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <h3 class="font-medium text-gray-800 mb-4">发布通知</h3>
+        <div v-if="notices.length >= 3" class="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
+          <p>已达到最大限制（3条），请先删除一条通知后再发布</p>
+        </div>
         <input
           v-model="noticeForm.title"
           type="text"
           placeholder="通知标题"
-          class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary mb-3"
+          :disabled="notices.length >= 3"
+          class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary mb-3 disabled:bg-gray-100"
         />
         <textarea
           v-model="noticeForm.content"
           placeholder="通知内容"
           rows="4"
-          class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary resize-none"
+          :disabled="notices.length >= 3"
+          class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary resize-none disabled:bg-gray-100"
         ></textarea>
         <button
           @click="publishNotice"
-          :disabled="!noticeForm.title || !noticeForm.content"
+          :disabled="!noticeForm.title || !noticeForm.content || notices.length >= 3"
           class="w-full mt-4 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
         >
           发布通知
@@ -181,12 +186,34 @@
 
       <!-- 历史通知 -->
       <div class="bg-white rounded-xl p-4 shadow-sm mt-4">
-        <h3 class="font-medium text-gray-800 mb-4">历史通知</h3>
+        <h3 class="font-medium text-gray-800 mb-4">已发布通知 ({{ notices.length }}/3)</h3>
         <div v-if="notices.length > 0" class="space-y-4">
-          <div v-for="notice in notices" :key="notice.id" class="border-l-2 border-primary pl-3">
-            <div class="font-medium text-gray-800">{{ notice.title }}</div>
-            <div class="text-gray-500 text-sm mt-1">{{ notice.content }}</div>
-            <div class="text-gray-400 text-xs mt-1">{{ notice.created_at }}</div>
+          <div v-for="notice in notices" :key="notice.id" class="border-l-2 pl-3 relative" :class="notice.is_pinned ? 'border-yellow-500 bg-yellow-50' : 'border-primary'">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="font-medium text-gray-800">{{ notice.title }}</span>
+                  <span v-if="notice.is_pinned" class="px-2 py-0.5 bg-yellow-500 text-white text-xs rounded">置顶</span>
+                </div>
+                <div class="text-gray-500 text-sm mt-1">{{ notice.content }}</div>
+                <div class="text-gray-400 text-xs mt-1">{{ notice.created_at }}</div>
+              </div>
+              <div class="flex flex-col gap-2">
+                <button
+                  @click="togglePin(notice.id)"
+                  class="px-3 py-1 text-xs rounded"
+                  :class="notice.is_pinned ? 'bg-gray-100 text-gray-600' : 'bg-yellow-100 text-yellow-600'"
+                >
+                  {{ notice.is_pinned ? '取消置顶' : '置顶' }}
+                </button>
+                <button
+                  @click="deleteNotice(notice.id)"
+                  class="px-3 py-1 bg-red-100 text-red-600 text-xs rounded"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
           </div>
         </div>
         <div v-else class="text-center text-gray-400 py-4">
@@ -323,7 +350,7 @@ const verifyCard = async () => {
 }
 
 const publishNotice = async () => {
-  if (!noticeForm.value.title || !noticeForm.value.content) return
+  if (!noticeForm.value.title || !noticeForm.value.content || notices.value.length >= 3) return
   
   try {
     await noticeApi.createNotice({
@@ -336,6 +363,27 @@ const publishNotice = async () => {
     alert('发布成功')
   } catch (err) {
     alert(err.response?.data?.error || '发布失败')
+  }
+}
+
+const deleteNotice = async (id) => {
+  if (!confirm('确定要删除这条通知吗？')) return
+  
+  try {
+    await noticeApi.deleteNotice(id)
+    fetchNotices()
+    alert('删除成功')
+  } catch (err) {
+    alert(err.response?.data?.error || '删除失败')
+  }
+}
+
+const togglePin = async (id) => {
+  try {
+    await noticeApi.togglePinNotice(id)
+    fetchNotices()
+  } catch (err) {
+    alert(err.response?.data?.error || '操作失败')
   }
 }
 

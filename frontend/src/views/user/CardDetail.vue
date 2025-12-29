@@ -150,8 +150,11 @@
           <span class="font-medium text-gray-800">商户通知</span>
         </div>
         <div v-if="notices.length > 0" class="space-y-4">
-          <div v-for="notice in notices" :key="notice.id" class="bg-white rounded-lg p-3 border-l-4 border-primary shadow-sm">
-            <div class="font-medium text-gray-800">{{ notice.title }}</div>
+          <div v-for="notice in notices" :key="notice.id" class="bg-white rounded-lg p-3 shadow-sm" :class="notice.is_pinned ? 'border-l-4 border-yellow-500' : 'border-l-4 border-primary'">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="font-medium text-gray-800">{{ notice.title }}</span>
+              <span v-if="notice.is_pinned" class="px-2 py-0.5 bg-yellow-500 text-white text-xs rounded">置顶</span>
+            </div>
             <div class="text-gray-500 text-sm mt-1">{{ notice.content }}</div>
             <div class="text-gray-400 text-xs mt-1">{{ notice.created_at }}</div>
           </div>

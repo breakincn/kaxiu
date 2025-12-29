@@ -54,6 +54,7 @@ type Notice struct {
 	MerchantID uint   `json:"merchant_id" gorm:"index"`
 	Title      string `json:"title" gorm:"size:200"`
 	Content    string `json:"content" gorm:"type:text"`
+	IsPinned   bool   `json:"is_pinned" gorm:"default:false"`
 	CreatedAt  string `json:"created_at"`
 
 	Merchant Merchant `json:"merchant" gorm:"foreignKey:MerchantID"`

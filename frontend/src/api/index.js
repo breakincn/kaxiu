@@ -38,7 +38,9 @@ export const usageApi = {
 
 export const noticeApi = {
   getMerchantNotices: (merchantId, limit) => api.get(`/merchants/${merchantId}/notices`, { params: { limit } }),
-  createNotice: (data) => api.post('/notices', data)
+  createNotice: (data) => api.post('/notices', data),
+  deleteNotice: (id) => api.delete(`/notices/${id}`),
+  togglePinNotice: (id) => api.put(`/notices/${id}/pin`)
 }
 
 export const appointmentApi = {
