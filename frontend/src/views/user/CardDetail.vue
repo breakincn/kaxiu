@@ -10,60 +10,6 @@
       <span class="font-medium text-gray-800">卡片详情</span>
     </header>
 
-    <!-- 核销码区域 -->
-    <div class="px-4 mt-4">
-      <div class="bg-white rounded-xl p-4 shadow-sm">
-        <div class="text-center text-gray-600 mb-3">到店出示核销码</div>
-        <button
-          @click="generateCode"
-          :disabled="generating || card.remain_times <= 0"
-          class="w-full py-3 border-2 border-primary text-primary font-medium rounded-lg hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {{ generating ? '生成中...' : (verifyCode ? verifyCode : '生成核销码') }}
-        </button>
-        <p v-if="codeExpireTime" class="text-center text-gray-400 text-sm mt-2">
-          有效期至 {{ codeExpireTime }}
-        </p>
-      </div>
-    </div>
-
-    <!-- 预约排队区域（如果支持） -->
-    <div v-if="card.merchant?.support_appointment" class="px-4 mt-4">
-      <div class="bg-blue-50 rounded-2xl p-5 shadow-md border border-blue-100">
-        <div class="flex items-center gap-2 mb-3">
-          <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-          <span class="font-medium text-gray-800">预约排队</span>
-        </div>
-        
-        <div v-if="appointment" class="space-y-3">
-          <div class="flex justify-between items-center">
-            <span class="text-gray-500">我的预约</span>
-            <span :class="getAppointmentStatusClass(appointment.status)">
-              {{ getAppointmentStatusText(appointment.status) }}
-            </span>
-          </div>
-          <div class="text-primary font-medium text-lg">{{ appointment.appointment_time }}</div>
-          <div class="grid grid-cols-2 gap-4 pt-3 mt-3 border-t border-blue-200">
-            <div>
-              <div class="text-gray-400 text-xs">前面排队</div>
-              <div class="text-2xl font-bold text-gray-800">{{ queueBefore }}<span class="text-sm font-normal">人</span></div>
-            </div>
-            <div>
-              <div class="text-gray-400 text-xs">预计等待</div>
-              <div class="text-2xl font-bold text-gray-800">{{ estimatedMinutes }}<span class="text-sm font-normal">分钟</span></div>
-            </div>
-          </div>
-          <p class="text-xs text-gray-400">* 排队进度由商户服务确认后即时更新</p>
-        </div>
-        
-        <div v-else class="text-center text-gray-400 py-4">
-          暂无预约
-        </div>
-      </div>
-    </div>
-
     <!-- 卡片详情 -->
     <div class="px-4 mt-4">
       <div class="bg-gray-50 rounded-2xl p-5 shadow-md border border-gray-200">
@@ -106,25 +52,57 @@
       </div>
     </div>
 
-    <!-- 商户通知 -->
-    <div class="px-4 mt-4">
-      <div class="bg-orange-50 rounded-2xl p-5 shadow-md border border-orange-100">
-        <div class="flex items-center gap-2 mb-4">
-          <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+    <!-- 预约排队区域（如果支持） -->
+    <div v-if="card.merchant?.support_appointment" class="px-4 mt-4">
+      <div class="bg-blue-50 rounded-2xl p-5 shadow-md border border-blue-100">
+        <div class="flex items-center gap-2 mb-3">
+          <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
-          <span class="font-medium text-gray-800">商户通知</span>
+          <span class="font-medium text-gray-800">预约排队</span>
         </div>
-        <div v-if="notices.length > 0" class="space-y-4">
-          <div v-for="notice in notices" :key="notice.id" class="bg-white rounded-lg p-3 border-l-4 border-primary shadow-sm">
-            <div class="font-medium text-gray-800">{{ notice.title }}</div>
-            <div class="text-gray-500 text-sm mt-1">{{ notice.content }}</div>
-            <div class="text-gray-400 text-xs mt-1">{{ notice.created_at }}</div>
+        
+        <div v-if="appointment" class="space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-gray-500">我的预约</span>
+            <span :class="getAppointmentStatusClass(appointment.status)">
+              {{ getAppointmentStatusText(appointment.status) }}
+            </span>
           </div>
+          <div class="text-primary font-medium text-lg">{{ appointment.appointment_time }}</div>
+          <div class="grid grid-cols-2 gap-4 pt-3 mt-3 border-t border-blue-200">
+            <div>
+              <div class="text-gray-400 text-xs">前面排队</div>
+              <div class="text-2xl font-bold text-gray-800">{{ queueBefore }}<span class="text-sm font-normal">人</span></div>
+            </div>
+            <div>
+              <div class="text-gray-400 text-xs">预计等待</div>
+              <div class="text-2xl font-bold text-gray-800">{{ estimatedMinutes }}<span class="text-sm font-normal">分钟</span></div>
+            </div>
+          </div>
+          <p class="text-xs text-gray-400">* 排队进度由商户服务确认后即时更新</p>
         </div>
+        
         <div v-else class="text-center text-gray-400 py-4">
-          暂无通知
+          暂无预约
         </div>
+      </div>
+    </div>
+
+    <!-- 核销码区域 -->
+    <div class="px-4 mt-4">
+      <div class="bg-white rounded-xl p-4 shadow-sm">
+        <div class="text-center text-gray-600 mb-3">到店出示核销码</div>
+        <button
+          @click="generateCode"
+          :disabled="generating || card.remain_times <= 0"
+          class="w-full py-3 border-2 border-primary text-primary font-medium rounded-lg hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {{ generating ? '生成中...' : (verifyCode ? verifyCode : '生成核销码') }}
+        </button>
+        <p v-if="codeExpireTime" class="text-center text-gray-400 text-sm mt-2">
+          有效期至 {{ codeExpireTime }}
+        </p>
       </div>
     </div>
 
@@ -150,6 +128,28 @@
         </div>
         <div v-else class="text-center text-gray-400 py-4">
           暂无使用记录
+        </div>
+      </div>
+    </div>
+
+    <!-- 商户通知 -->
+    <div class="px-4 mt-4">
+      <div class="bg-orange-50 rounded-2xl p-5 shadow-md border border-orange-100">
+        <div class="flex items-center gap-2 mb-4">
+          <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+          </svg>
+          <span class="font-medium text-gray-800">商户通知</span>
+        </div>
+        <div v-if="notices.length > 0" class="space-y-4">
+          <div v-for="notice in notices" :key="notice.id" class="bg-white rounded-lg p-3 border-l-4 border-primary shadow-sm">
+            <div class="font-medium text-gray-800">{{ notice.title }}</div>
+            <div class="text-gray-500 text-sm mt-1">{{ notice.content }}</div>
+            <div class="text-gray-400 text-xs mt-1">{{ notice.created_at }}</div>
+          </div>
+        </div>
+        <div v-else class="text-center text-gray-400 py-4">
+          暂无通知
         </div>
       </div>
     </div>
