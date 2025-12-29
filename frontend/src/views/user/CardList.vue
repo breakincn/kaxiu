@@ -3,8 +3,8 @@
     <!-- 顶部导航 -->
     <header class="bg-white px-4 py-3 flex items-center justify-between border-b">
       <div class="flex items-center gap-2">
-        <span class="text-primary font-bold text-xl">卡秀</span>
-        <span class="text-gray-400 text-xs">KAXIU.VIP</span>
+        <span class="text-primary font-bold text-xl">卡包</span>
+        <span class="text-gray-400 text-xs">kabao.me</span>
       </div>
       <router-link to="/merchant" class="text-sm text-gray-500 hover:text-primary">
         切换商户端

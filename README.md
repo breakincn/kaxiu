@@ -1,11 +1,11 @@
-# 卡秀 kaxiu.vip
+# 卡包 kabao.me
 
 小商户通用卡片 & 预约排队管理平台
 
 ## 项目结构
 
 ```
-kaxiu/
+kabao/
 ├── backend/          # Go 后端
 │   ├── config/       # 配置（数据库）
 │   ├── handlers/     # API 处理器
@@ -33,12 +33,12 @@ kaxiu/
 ### 1. 数据库准备
 
 ```sql
-CREATE DATABASE kaxiu CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE kabao CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
 根据需要修改 `backend/config/database.go` 中的数据库连接配置：
 ```go
-dsn := "root:123456@tcp(127.0.0.1:3306)/kaxiu?charset=utf8mb4&parseTime=True&loc=Local"
+dsn := "root:123456@tcp(127.0.0.1:3306)/kabao?charset=utf8mb4&parseTime=True&loc=Local"
 ```
 
 ### 2. 启动后端

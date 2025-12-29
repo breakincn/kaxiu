@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"kaxiu/handlers"
+	"kabao/handlers"
 
 	"github.com/gin-gonic/gin"
 )

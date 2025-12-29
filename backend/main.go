@@ -1,8 +1,8 @@
 package main
 
 import (
-	"kaxiu/config"
-	"kaxiu/routes"
+	"kabao/config"
+	"kabao/routes"
 	"log"
 
 	"github.com/gin-contrib/cors"
@@ -28,7 +28,7 @@ func main() {
 	routes.SetupRoutes(r)
 
 	// 启动服务
-	log.Println("卡秀后端服务启动于 :8080")
+	log.Println("卡包后端服务启动于 :8080")
 	if err := r.Run(":8080"); err != nil {
 		log.Fatal("服务启动失败:", err)
 	}

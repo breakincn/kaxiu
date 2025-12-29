@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"kaxiu/config"
-	"kaxiu/models"
+	"kabao/config"
+	"kabao/models"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
