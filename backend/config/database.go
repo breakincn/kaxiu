@@ -13,10 +13,21 @@ var DB *gorm.DB
 func InitDB() {
 	dsn := "root:root123@tcp(127.0.0.1:3306)/kabao?charset=utf8mb4&parseTime=True&loc=Local"
 	var err error
-	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
+		DisableForeignKeyConstraintWhenMigrating: true,
+	})
 	if err != nil {
 		log.Fatal("数据库连接失败:", err)
 	}
+
+	// 先删除旧的外键约束(忽略错误)
+	DB.Exec("ALTER TABLE `cards` DROP FOREIGN KEY `fk_cards_user`")
+	DB.Exec("ALTER TABLE `cards` DROP FOREIGN KEY `fk_cards_merchant`")
+	DB.Exec("ALTER TABLE `usages` DROP FOREIGN KEY `fk_usages_card`")
+	DB.Exec("ALTER TABLE `usages` DROP FOREIGN KEY `fk_usages_merchant`")
+	DB.Exec("ALTER TABLE `notices` DROP FOREIGN KEY `fk_notices_merchant`")
+	DB.Exec("ALTER TABLE `appointments` DROP FOREIGN KEY `fk_appointments_user`")
+	DB.Exec("ALTER TABLE `appointments` DROP FOREIGN KEY `fk_appointments_merchant`")
 
 	// 自动迁移
 	err = DB.AutoMigrate(
