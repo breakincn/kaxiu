@@ -120,8 +120,8 @@
             <div>
               <div class="text-gray-800">核销次数: {{ usage.used_times }}</div>
               <div class="flex items-center gap-2">
-                <span class="text-gray-400 text-sm">{{ usage.used_at }}</span>
                 <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
+                <span class="text-gray-400 text-sm">{{ usage.used_at }}</span>
               </div>
             </div>
             <span :class="usage.status === 'success' ? 'text-green-500' : 'text-red-500'" class="text-sm font-medium">
