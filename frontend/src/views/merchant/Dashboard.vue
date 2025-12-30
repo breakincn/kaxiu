@@ -100,7 +100,7 @@
             <div class="font-medium text-gray-800">用户 ID: {{ appt.user?.nickname || appt.user_id }}</div>
             <div class="text-gray-500 text-sm">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
             <!-- 已确认预约的倒计时 -->
-            <div v-if="appt.status === 'confirmed' && getAppointmentCountdown(appt) !== null" :class="getCountdownClass(appt)">
+            <div v-if="appt.status === 'confirmed' && getAppointmentCountdown(appt) !== null && !isServiceTimeExpired(appt)" :class="getCountdownClass(appt)">
               {{ getCountdownDisplay(appt) }}
             </div>
           </div>
@@ -584,7 +584,7 @@ const getStatusText = (appt) => {
   }
 
   if (appt.status === 'confirmed' && isWriteOffExpired(appt)) {
-    return '预约失败'
+    return '已过服务时间'
   }
 
   const texts = {
@@ -612,6 +612,17 @@ const isWriteOffExpired = (appt) => {
   return currentTime.value > deadlineMs
 }
 
+// 判断是否已过服务时间（不显示倒计时）
+const isServiceTimeExpired = (appt) => {
+  if (!appt || appt.status !== 'confirmed' || !appt.appointment_time) return false
+
+  const appointmentTime = new Date(appt.appointment_time).getTime()
+  let serviceMinutes = merchant.value.avg_service_minutes
+  if (!serviceMinutes || serviceMinutes <= 0) serviceMinutes = 30
+  const serviceDeadlineMs = appointmentTime + serviceMinutes * 60 * 1000
+  return currentTime.value > serviceDeadlineMs
+}
+
 // 计算预约倒计时（秒）
 const getAppointmentCountdown = (appt) => {
   if (!appt || !appt.appointment_time) return null
@@ -625,20 +636,12 @@ const getCountdownDisplay = (appt) => {
   const countdown = getAppointmentCountdown(appt)
   if (countdown === null) return ''
   
-  // 预约时间已过，显示倒计时
+  // 预约时间已过，显示服务时间倒计时
   if (countdown <= 0) {
-    if (isWriteOffExpired(appt)) {
-      return '预约失败'
-    }
-
     const elapsed = Math.abs(countdown)
     const hours = Math.floor(elapsed / 3600)
     const minutes = Math.floor((elapsed % 3600) / 60)
     const seconds = elapsed % 60
-    
-    // 判断是否已过服务时间
-    const serviceMinutes = merchant.value.avg_service_minutes || 0
-    const serviceElapsedSeconds = serviceMinutes * 60
     
     let timeText = ''
     if (hours > 0) {
@@ -649,12 +652,7 @@ const getCountdownDisplay = (appt) => {
       timeText = `${seconds}秒`
     }
     
-    // 如果已过服务时间，显示"已过服务时间"，否则显示"已服务时间"
-    if (elapsed > serviceElapsedSeconds) {
-      return `已过服务时间 ${timeText}`
-    } else {
-      return `已服务时间 ${timeText}`
-    }
+    return `已服务时间 ${timeText}`
   }
   
   // 预约时间未到
@@ -662,7 +660,7 @@ const getCountdownDisplay = (appt) => {
 }
 
 const getCountdownClass = (appt) => {
-  if (isWriteOffExpired(appt)) {
+  if (isServiceTimeExpired(appt)) {
     return 'text-gray-400 text-sm font-medium mt-1'
   }
   return 'text-primary text-sm font-medium mt-1'
