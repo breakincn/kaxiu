@@ -69,7 +69,20 @@
               {{ getAppointmentStatusText(appointment.status) }}
             </span>
           </div>
-          <div class="text-primary font-medium text-lg">{{ formatDateTime(appointment.appointment_time) }}</div>
+          <div class="flex justify-between items-center">
+            <div :class="getAppointmentTimeClass()" class="font-medium text-lg">
+              {{ formatDateTime(appointment.appointment_time) }}
+            </div>
+            <div class="text-right">
+              <div v-if="appointment.status === 'confirmed'" class="text-sm text-gray-600 mb-1">排队中</div>
+              <div v-if="!isAppointmentPassed()" :class="getCountdownClass()" class="text-sm font-medium">
+                {{ getCountdownText() }}
+              </div>
+              <div v-else class="text-sm text-gray-400">
+                预约已过
+              </div>
+            </div>
+          </div>
           <div class="grid grid-cols-2 gap-4 pt-3 mt-3 border-t border-blue-200">
             <div>
               <div class="text-gray-400 text-xs">前面排队</div>
@@ -156,7 +169,7 @@
     </div>
 
     <!-- 商户通知 -->
-    <div class="px-4 mt-4">
+    <div v-if="notices.length > 0" class="px-4 mt-4">
       <div class="bg-orange-50 rounded-2xl p-5 shadow-md border border-orange-100">
         <div class="flex items-center gap-2 mb-4">
           <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -164,7 +177,7 @@
           </svg>
           <span class="font-medium text-gray-800">商户通知</span>
         </div>
-        <div v-if="notices.length > 0" class="space-y-4">
+        <div class="space-y-4">
           <div v-for="notice in notices" :key="notice.id" class="bg-white rounded-lg p-3 shadow-sm" :class="notice.is_pinned ? 'border-l-4 border-yellow-500' : 'border-l-4 border-primary'">
             <div class="flex items-center gap-2 mb-1">
               <span class="font-medium text-gray-800">{{ notice.title }}</span>
@@ -173,9 +186,6 @@
             <div class="text-gray-500 text-sm mt-1">{{ notice.content }}</div>
             <div class="text-gray-400 text-xs mt-1">{{ formatDateTime(notice.created_at) }}</div>
           </div>
-        </div>
-        <div v-else class="text-center text-gray-400 py-4">
-          暂无通知
         </div>
       </div>
     </div>
@@ -256,7 +266,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { cardApi, usageApi, noticeApi, appointmentApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
@@ -270,6 +280,8 @@ const notices = ref([])
 const appointment = ref(null)
 const queueBefore = ref(0)
 const estimatedMinutes = ref(0)
+const countdown = ref(0)
+let countdownTimer = null
 
 const verifyCode = ref('')
 const codeExpireTime = ref('')
@@ -332,11 +344,14 @@ const fetchAppointment = async () => {
       queueBefore.value = res.data.data.queue_before || 0
       estimatedMinutes.value = res.data.data.estimated_minutes || 0
       console.log('预约信息已设置:', appointment.value)
+      // 启动倒计时
+      startCountdownTimer()
     } else {
       console.log('未找到预约信息')
       appointment.value = null
       queueBefore.value = 0
       estimatedMinutes.value = 0
+      stopCountdownTimer()
     }
   } catch (err) {
     console.error('获取预约信息失败:', err)
@@ -478,6 +493,7 @@ const cancelAppointment = async () => {
     appointment.value = null
     queueBefore.value = 0
     estimatedMinutes.value = 0
+    stopCountdownTimer()
     
     alert('已取消预约')
   } catch (err) {
@@ -514,5 +530,88 @@ const getWeekDay = (dateStr) => {
   return weekDays[date.getDay()]
 }
 
-onMounted(fetchCard)
+// 计算倒计时（秒）
+const calculateCountdown = () => {
+  if (!appointment.value || !appointment.value.appointment_time) return 0
+  const appointmentTime = new Date(appointment.value.appointment_time).getTime()
+  const now = Date.now()
+  return Math.floor((appointmentTime - now) / 1000)
+}
+
+// 更新倒计时
+const updateCountdown = () => {
+  countdown.value = calculateCountdown()
+}
+
+// 启动倒计时定时器
+const startCountdownTimer = () => {
+  stopCountdownTimer()
+  updateCountdown()
+  countdownTimer = setInterval(updateCountdown, 1000)
+}
+
+// 停止倒计时定时器
+const stopCountdownTimer = () => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+}
+
+// 判断预约是否已过（超过预约时间1分钟）
+const isAppointmentPassed = () => {
+  return countdown.value < -60
+}
+
+// 获取预约时间的颜色类
+const getAppointmentTimeClass = () => {
+  if (countdown.value < -60) {
+    return 'text-gray-400' // 超过1分钟，灰色
+  } else if (countdown.value > 0 && countdown.value <= 300) {
+    return 'text-red-500' // 5分钟内，红色
+  } else {
+    return 'text-green-500' // 默认绿色
+  }
+}
+
+// 获取倒计时文字颜色类
+const getCountdownClass = () => {
+  if (countdown.value > 0 && countdown.value <= 300) {
+    return 'text-red-500' // 5分钟内，红色
+  } else {
+    return 'text-green-500' // 默认绿色
+  }
+}
+
+// 获取倒计时文字
+const getCountdownText = () => {
+  if (countdown.value <= 0 && countdown.value > -60) {
+    return '预约时间已到'
+  }
+  
+  const totalSeconds = Math.abs(countdown.value)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  
+  if (hours > 0) {
+    return `${hours}小时${minutes}分${seconds}秒`
+  } else if (minutes > 0) {
+    return `${minutes}分${seconds}秒`
+  } else {
+    return `${seconds}秒`
+  }
+}
+
+onMounted(() => {
+  fetchCard()
+  // 如果有预约，启动倒计时
+  if (appointment.value) {
+    startCountdownTimer()
+  }
+})
+
+onUnmounted(() => {
+  stopCountdownTimer()
+})
 </script>
