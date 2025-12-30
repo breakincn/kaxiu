@@ -28,7 +28,9 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    console.log('API响应错误:', error.response?.status, error.config?.url)
     if (error.response && error.response.status === 401) {
+      console.log('收到401错误，清除localStorage并跳转登录页')
       // 根据当前路径判断跳转到哪个登录页
       const isMerchant = window.location.pathname.startsWith('/merchant')
       
@@ -38,13 +40,17 @@ api.interceptors.response.use(
         localStorage.removeItem('merchantId')
         localStorage.removeItem('merchantName')
         localStorage.removeItem('merchantPhone')
-        window.location.href = '/merchant/login'
+        import('../router').then(({ default: router }) => {
+          router.replace('/merchant/login')
+        })
       } else {
         // 用户端，清空用户登录信息
         localStorage.removeItem('userToken')
         localStorage.removeItem('userId')
         localStorage.removeItem('userName')
-        window.location.href = '/user/login'
+        import('../router').then(({ default: router }) => {
+          router.replace('/user/login')
+        })
       }
     }
     return Promise.reject(error)

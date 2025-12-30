@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // AuthMiddleware 验证用户登录状态
@@ -25,34 +26,80 @@ func AuthMiddleware() gin.HandlerFunc {
 		if strings.HasPrefix(token, "Bearer ") {
 			token = token[7:]
 		}
-		
-		// 从 token 中解析 user_id（简化版本）
-		// 格式: user_{userID}_{timestamp}
-		parts := strings.Split(token, "_")
-		if len(parts) < 3 || parts[0] != "user" {
+
+		// 兼容旧版用户 token: user_{userID}_{timestamp}
+		if strings.HasPrefix(token, "user_") {
+			parts := strings.Split(token, "_")
+			if len(parts) < 3 || parts[0] != "user" {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
+				c.Abort()
+				return
+			}
+
+			userID, err := strconv.ParseUint(parts[1], 10, 32)
+			if err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
+				c.Abort()
+				return
+			}
+
+			var user models.User
+			if err := config.DB.First(&user, userID).Error; err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+				c.Abort()
+				return
+			}
+
+			c.Set("user_id", uint(userID))
+			c.Set("user", user)
+			c.Next()
+			return
+		}
+
+		// 商户端使用 JWT
+		parsedToken, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, jwt.ErrTokenSignatureInvalid
+			}
+			return []byte("your-secret-key"), nil
+		})
+		if err != nil || parsedToken == nil || !parsedToken.Valid {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
 			c.Abort()
 			return
 		}
-		
-		userID, err := strconv.ParseUint(parts[1], 10, 32)
-		if err != nil {
+
+		claims, ok := parsedToken.Claims.(jwt.MapClaims)
+		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
 			c.Abort()
 			return
 		}
-		
-		// 验证用户是否存在
-		var user models.User
-		if err := config.DB.First(&user, userID).Error; err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
+
+		typeVal, _ := claims["type"].(string)
+		if typeVal != "merchant" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
 			c.Abort()
 			return
 		}
-		
-		// 将用户ID存入上下文
-		c.Set("user_id", uint(userID))
-		c.Set("user", user)
+
+		merchantIDFloat, ok := claims["merchant_id"].(float64)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
+			c.Abort()
+			return
+		}
+
+		merchantID := uint(merchantIDFloat)
+		var merchant models.Merchant
+		if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "商户不存在"})
+			c.Abort()
+			return
+		}
+
+		c.Set("merchant_id", merchantID)
+		c.Set("merchant", merchant)
 		c.Next()
 	}
 }

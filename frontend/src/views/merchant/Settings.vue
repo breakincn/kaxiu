@@ -45,7 +45,9 @@ const handleLogout = () => {
   if (confirm('确定要退出登录吗？')) {
     // 清除登录状态
     localStorage.removeItem('merchantToken')
+    localStorage.removeItem('merchantId')
     localStorage.removeItem('merchantName')
+    localStorage.removeItem('merchantPhone')
     
     // 跳转到商户登录页
     router.push('/merchant/login')

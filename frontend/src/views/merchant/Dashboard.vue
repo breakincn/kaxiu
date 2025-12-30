@@ -229,9 +229,11 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi } from '../../api'
 
-const merchantId = 1
+const router = useRouter()
+const merchantId = ref(null)
 const merchant = ref({})
 const currentTab = ref('queue')
 
@@ -252,7 +254,7 @@ const noticeForm = ref({
 
 const fetchMerchant = async () => {
   try {
-    const res = await merchantApi.getMerchant(merchantId)
+    const res = await merchantApi.getMerchant(merchantId.value)
     merchant.value = res.data.data
   } catch (err) {
     console.error('获取商户信息失败:', err)
@@ -261,7 +263,7 @@ const fetchMerchant = async () => {
 
 const fetchQueueStatus = async () => {
   try {
-    const res = await merchantApi.getQueueStatus(merchantId)
+    const res = await merchantApi.getQueueStatus(merchantId.value)
     todayVerifyCount.value = res.data.data.today_verify_count || 0
     pendingAppointments.value = res.data.data.pending_appointments || 0
   } catch (err) {
@@ -271,7 +273,7 @@ const fetchQueueStatus = async () => {
 
 const fetchAppointments = async () => {
   try {
-    const res = await appointmentApi.getMerchantAppointments(merchantId)
+    const res = await appointmentApi.getMerchantAppointments(merchantId.value)
     appointments.value = (res.data.data || []).filter(a => a.status !== 'finished' && a.status !== 'canceled')
   } catch (err) {
     console.error('获取预约列表失败:', err)
@@ -280,7 +282,7 @@ const fetchAppointments = async () => {
 
 const fetchTodayUsages = async () => {
   try {
-    const res = await usageApi.getMerchantUsages(merchantId)
+    const res = await usageApi.getMerchantUsages(merchantId.value)
     const today = new Date().toISOString().split('T')[0]
     todayUsages.value = (res.data.data || []).filter(u => u.used_at && u.used_at.startsWith(today))
   } catch (err) {
@@ -290,7 +292,7 @@ const fetchTodayUsages = async () => {
 
 const fetchNotices = async () => {
   try {
-    const res = await noticeApi.getMerchantNotices(merchantId)
+    const res = await noticeApi.getMerchantNotices(merchantId.value)
     notices.value = res.data.data || []
   } catch (err) {
     console.error('获取通知列表失败:', err)
@@ -357,7 +359,7 @@ const publishNotice = async () => {
   
   try {
     await noticeApi.createNotice({
-      merchant_id: merchantId,
+      merchant_id: merchantId.value,
       title: noticeForm.value.title,
       content: noticeForm.value.content
     })
@@ -421,6 +423,29 @@ watch(currentTab, (tab) => {
 })
 
 onMounted(() => {
+  // 在页面最顶部打印一个标记，确保能看到
+  document.title = 'Dashboard Loaded'
+  console.error('=== Dashboard MOUNTED ===')
+  console.log('Dashboard mounted, checking localStorage...')
+  console.log('localStorage merchantToken:', localStorage.getItem('merchantToken'))
+  console.log('localStorage merchantId:', localStorage.getItem('merchantId'))
+  
+  const storedMerchantId = localStorage.getItem('merchantId')
+  if (!storedMerchantId) {
+    console.log('No merchantId found, redirecting to login')
+    router.replace('/merchant/login')
+    return
+  }
+
+  const parsedMerchantId = Number.parseInt(storedMerchantId, 10)
+  if (Number.isNaN(parsedMerchantId) || parsedMerchantId <= 0) {
+    console.log('Invalid merchantId:', storedMerchantId, 'redirecting to login')
+    router.replace('/merchant/login')
+    return
+  }
+
+  console.log('Valid merchantId:', parsedMerchantId, 'loading data...')
+  merchantId.value = parsedMerchantId
   fetchMerchant()
   fetchQueueStatus()
   fetchAppointments()

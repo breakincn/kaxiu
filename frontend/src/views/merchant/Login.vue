@@ -151,7 +151,18 @@ const handleLogin = async () => {
   loading.value = true
   
   try {
+    console.log('正在登录，手机号:', phone.value)
     const res = await merchantApi.login(phone.value, password.value)
+    console.log('登录响应:', res.data)
+    console.log('完整响应对象:', res)
+    
+    // 检查响应结构
+    if (!res.data || !res.data.merchant) {
+      console.error('登录响应结构异常:', res.data)
+      throw new Error('登录响应数据格式错误')
+    }
+    
+    console.log('商户信息:', res.data.merchant)
     
     // 保存登录状态
     localStorage.setItem('merchantToken', res.data.token)
@@ -159,11 +170,19 @@ const handleLogin = async () => {
     localStorage.setItem('merchantName', res.data.merchant.name)
     localStorage.setItem('merchantPhone', res.data.merchant.phone)
     
-    alert('登录成功！')
+    console.log('登录信息已保存，准备跳转...')
+    console.log('merchantToken:', localStorage.getItem('merchantToken'))
+    console.log('merchantId:', localStorage.getItem('merchantId'))
     
-    // 跳转到商户仪表盘
-    router.push('/merchant')
+    console.log('即将执行 router.push("/merchant")')
+    router.push('/merchant').then(() => {
+      console.log('router.push 成功')
+    }).catch(err => {
+      console.error('router.push 失败:', err)
+    })
   } catch (err) {
+    console.error('登录失败:', err)
+    console.error('错误响应:', err.response)
     alert(err.response?.data?.error || '登录失败，请重试')
   } finally {
     loading.value = false
