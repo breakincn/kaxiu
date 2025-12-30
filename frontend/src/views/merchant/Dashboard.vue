@@ -349,11 +349,12 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 
 const router = useRouter()
+const route = useRoute()
 const merchantId = ref(null)
 const merchant = ref({})
 const currentTab = ref('queue')
@@ -722,6 +723,12 @@ onMounted(() => {
   console.log('Dashboard mounted, checking localStorage...')
   console.log('localStorage merchantToken:', localStorage.getItem('merchantToken'))
   console.log('localStorage merchantId:', localStorage.getItem('merchantId'))
+  
+  // 检查查询参数，自动切换到指定Tab
+  const tabParam = route.query.tab
+  if (tabParam && ['queue', 'verify', 'notice', 'cards'].includes(tabParam)) {
+    currentTab.value = tabParam
+  }
   
   const storedMerchantId = localStorage.getItem('merchantId')
   if (!storedMerchantId) {

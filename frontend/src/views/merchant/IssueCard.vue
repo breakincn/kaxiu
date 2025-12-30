@@ -157,7 +157,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { cardApi, merchantApi } from '../../api'
 
@@ -181,6 +181,16 @@ const cardForm = ref({
   card_no: '',
   start_date: '',
   end_date: ''
+})
+
+// 监听开始日期变化，自动设置结束日期为两年后
+watch(() => cardForm.value.start_date, (newStartDate) => {
+  if (newStartDate) {
+    const startDate = new Date(newStartDate)
+    const endDate = new Date(startDate)
+    endDate.setFullYear(endDate.getFullYear() + 2)
+    cardForm.value.end_date = endDate.toISOString().split('T')[0]
+  }
 })
 
 const canSubmit = computed(() => {
@@ -270,7 +280,9 @@ const submit = async () => {
 
     const res = await cardApi.createCard(payload)
     const card = res.data.data
-    submitSuccess.value = `发卡成功：卡号 ${card?.card_no || ''}`
+    alert(`发卡成功：卡号 ${card?.card_no || ''}`)
+    // 跳转到卡片管理页
+    router.push('/merchant?tab=cards')
   } catch (err) {
     submitError.value = err.response?.data?.error || '发卡失败'
   } finally {
@@ -280,5 +292,9 @@ const submit = async () => {
 
 onMounted(() => {
   ensureMerchantLogin()
+  // 设置默认开始日期为今天
+  const today = new Date().toISOString().split('T')[0]
+  cardForm.value.start_date = today
+  // 结束日期会通过watch自动设置为两年后
 })
 </script>
