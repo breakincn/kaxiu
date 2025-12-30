@@ -582,12 +582,24 @@ const getCountdownDisplay = (appt) => {
     const minutes = Math.floor((elapsed % 3600) / 60)
     const seconds = elapsed % 60
     
+    // 判断是否已过服务时间
+    const serviceMinutes = merchant.value.avg_service_minutes || 0
+    const serviceElapsedSeconds = serviceMinutes * 60
+    
+    let timeText = ''
     if (hours > 0) {
-      return `已过预约时间 ${hours}小时${minutes}分${seconds}秒`
+      timeText = `${hours}小时${minutes}分${seconds}秒`
     } else if (minutes > 0) {
-      return `已过预约时间 ${minutes}分${seconds}秒`
+      timeText = `${minutes}分${seconds}秒`
     } else {
-      return `已过预约时间 ${seconds}秒`
+      timeText = `${seconds}秒`
+    }
+    
+    // 如果已过服务时间，显示"已过服务时间"，否则显示"已服务时间"
+    if (elapsed > serviceElapsedSeconds) {
+      return `已过服务时间 ${timeText}`
+    } else {
+      return `已服务时间 ${timeText}`
     }
   }
   
