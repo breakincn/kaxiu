@@ -282,6 +282,46 @@
         {{ cardsError }}
       </div>
 
+      <div class="bg-white rounded-xl p-4 shadow-sm mb-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <input
+            v-model="cardSearch.phone"
+            class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            placeholder="按手机号搜索"
+          />
+          <input
+            v-model="cardSearch.nickname"
+            class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            placeholder="按用户名(昵称)搜索"
+          />
+          <input
+            v-model="cardSearch.card_no"
+            class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            placeholder="按卡号搜索"
+          />
+          <input
+            v-model="cardSearch.card_type"
+            class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            placeholder="按卡片类型搜索"
+          />
+        </div>
+
+        <div class="flex gap-2 mt-3">
+          <button
+            @click="searchCards"
+            class="px-4 py-2 bg-primary text-white text-sm rounded-lg"
+          >
+            查询
+          </button>
+          <button
+            @click="resetCardSearch"
+            class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg"
+          >
+            重置
+          </button>
+        </div>
+      </div>
+
       <div v-if="cardsLoading" class="text-center py-12 text-gray-400">
         加载中...
       </div>
@@ -393,6 +433,13 @@ const cardsLoading = ref(false)
 const cardsError = ref('')
 const expandedCardId = ref(null)
 
+const cardSearch = ref({
+  phone: '',
+  nickname: '',
+  card_no: '',
+  card_type: ''
+})
+
 const goScanVerify = () => {
   router.push('/merchant/scan-verify')
 }
@@ -404,6 +451,17 @@ const fetchMerchant = async () => {
   } catch (err) {
     console.error('获取商户信息失败:', err)
   }
+}
+
+const searchCards = async () => {
+  expandedCardId.value = null
+  await fetchIssuedCards()
+}
+
+const resetCardSearch = async () => {
+  cardSearch.value = { phone: '', nickname: '', card_no: '', card_type: '' }
+  expandedCardId.value = null
+  await fetchIssuedCards()
 }
 
 const fetchQueueStatus = async () => {
@@ -451,7 +509,13 @@ const fetchIssuedCards = async () => {
   cardsLoading.value = true
   cardsError.value = ''
   try {
-    const res = await cardApi.getMerchantCards(merchantId.value)
+    const params = {}
+    if (cardSearch.value.phone) params.phone = cardSearch.value.phone
+    if (cardSearch.value.nickname) params.nickname = cardSearch.value.nickname
+    if (cardSearch.value.card_no) params.card_no = cardSearch.value.card_no
+    if (cardSearch.value.card_type) params.card_type = cardSearch.value.card_type
+
+    const res = await cardApi.getMerchantCards(merchantId.value, params)
     let cardsList = res.data.data || []
     
     // 排序：先按创建时间降序，再按最近使用时间降序

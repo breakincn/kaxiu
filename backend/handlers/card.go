@@ -81,8 +81,36 @@ func GetMerchantCards(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
 		return
 	}
+
+	phone := c.Query("phone")
+	nickname := c.Query("nickname")
+	cardNo := c.Query("card_no")
+	cardType := c.Query("card_type")
+
 	var cards []models.Card
-	config.DB.Preload("User").Where("merchant_id = ?", merchantID).Order("id desc").Find(&cards)
+	query := config.DB.
+		Model(&models.Card{}).
+		Joins("LEFT JOIN users ON users.id = cards.user_id").
+		Where("cards.merchant_id = ?", merchantID)
+
+	if phone != "" {
+		query = query.Where("users.phone LIKE ?", "%"+phone+"%")
+	}
+	if nickname != "" {
+		query = query.Where("users.nickname LIKE ?", "%"+nickname+"%")
+	}
+	if cardNo != "" {
+		query = query.Where("cards.card_no LIKE ?", "%"+cardNo+"%")
+	}
+	if cardType != "" {
+		query = query.Where("cards.card_type LIKE ?", "%"+cardType+"%")
+	}
+
+	query.
+		Select("cards.*").
+		Preload("User").
+		Order("cards.id desc").
+		Find(&cards)
 	c.JSON(http.StatusOK, gin.H{"data": cards})
 }
 
