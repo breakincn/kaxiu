@@ -98,20 +98,20 @@
           <!-- 取消预约按钮 -->
           <button
             @click="cancelAppointment"
-            :disabled="canceling || appointment.status === 'finished' || appointment.status === 'canceled'"
+            :disabled="cancelButtonDisabled"
             class="w-full py-2.5 border-2 border-red-400 text-red-500 font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-3"
           >
-            {{ canceling ? '取消中...' : '取消预约' }}
+            {{ cancelButtonText }}
           </button>
         </div>
         
         <div v-else class="text-center">
           <button
             @click="showAppointmentModal"
-            :disabled="appointing"
+            :disabled="appointing || isInCooldown"
             class="w-full py-3 border-2 border-primary text-primary font-medium rounded-lg hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            我要预约
+            {{ isInCooldown ? cooldownButtonText : '我要预约' }}
           </button>
         </div>
       </div>
@@ -266,7 +266,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { cardApi, usageApi, noticeApi, appointmentApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
@@ -282,6 +282,8 @@ const queueBefore = ref(0)
 const estimatedMinutes = ref(0)
 const countdown = ref(0)
 let countdownTimer = null
+
+const cooldownUntil = ref(null)
 
 const verifyCode = ref('')
 const codeExpireTime = ref('')
@@ -339,25 +341,66 @@ const fetchAppointment = async () => {
     console.log('正在获取预约信息，卡片ID:', route.params.id)
     const res = await appointmentApi.getCardAppointment(route.params.id)
     console.log('预约信息响应:', res.data)
-    if (res.data.data) {
-      appointment.value = res.data.data.appointment
-      queueBefore.value = res.data.data.queue_before || 0
-      estimatedMinutes.value = res.data.data.estimated_minutes || 0
+    const data = res.data.data
+    cooldownUntil.value = data?.cooldown_until || null
+
+    if (data?.appointment) {
+      appointment.value = data.appointment
+      queueBefore.value = data.queue_before || 0
+      estimatedMinutes.value = data.estimated_minutes || 0
       console.log('预约信息已设置:', appointment.value)
       // 启动倒计时
       startCountdownTimer()
-    } else {
-      console.log('未找到预约信息')
-      appointment.value = null
-      queueBefore.value = 0
-      estimatedMinutes.value = 0
-      stopCountdownTimer()
+      return
     }
+
+    console.log('未找到预约信息')
+    appointment.value = null
+    queueBefore.value = 0
+    estimatedMinutes.value = 0
+    stopCountdownTimer()
   } catch (err) {
     console.error('获取预约信息失败:', err)
     console.error('错误详情:', err.response?.data)
   }
 }
+
+const getCooldownRemainingSeconds = () => {
+  if (!cooldownUntil.value) return 0
+  const until = new Date(cooldownUntil.value).getTime()
+  const now = Date.now()
+  return Math.max(0, Math.floor((until - now) / 1000))
+}
+
+const isInCooldown = computed(() => {
+  return getCooldownRemainingSeconds() > 0
+})
+
+const cooldownButtonText = computed(() => {
+  const seconds = getCooldownRemainingSeconds()
+  if (seconds <= 0) return '我要预约'
+  const minutes = Math.ceil(seconds / 60)
+  return `冷却中（约${minutes}分钟后可预约）`
+})
+
+const isAppointmentFailed = computed(() => {
+  if (!appointment.value || !appointment.value.appointment_time) return false
+  if (appointment.value.status !== 'pending' && appointment.value.status !== 'confirmed') return false
+  const appointmentTimeMs = new Date(appointment.value.appointment_time).getTime()
+  const nowMs = Date.now()
+  return nowMs - appointmentTimeMs >= 30 * 60 * 1000
+})
+
+const cancelButtonDisabled = computed(() => {
+  if (!appointment.value) return true
+  if (isAppointmentFailed.value) return true
+  return canceling.value || appointment.value.status === 'finished' || appointment.value.status === 'canceled'
+})
+
+const cancelButtonText = computed(() => {
+  if (isAppointmentFailed.value) return '预约失败'
+  return canceling.value ? '取消中...' : '取消预约'
+})
 
 const generateCode = async () => {
   if (generating.value || card.value.remain_times <= 0) return
@@ -483,6 +526,8 @@ const confirmAppointment = async () => {
 
 const cancelAppointment = async () => {
   if (canceling.value) return
+
+  if (isAppointmentFailed.value) return
   
   if (!confirm('确定要取消预约吗？')) return
   

@@ -5,10 +5,56 @@ import (
 	"kabao/models"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+func cancelAppointmentWithTime(appointment *models.Appointment, canceledAt time.Time) error {
+	return config.DB.Model(appointment).Updates(map[string]interface{}{
+		"status":      "canceled",
+		"canceled_at": canceledAt,
+	}).Error
+}
+
+func autoCancelAppointmentIfOverdue(appointment *models.Appointment, now time.Time) (bool, error) {
+	if appointment == nil || appointment.AppointmentTime == nil {
+		return false, nil
+	}
+	if appointment.Status != "pending" && appointment.Status != "confirmed" {
+		return false, nil
+	}
+	deadline := appointment.AppointmentTime.Add(35 * time.Minute)
+	if now.Before(deadline) {
+		return false, nil
+	}
+	if err := cancelAppointmentWithTime(appointment, now); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func getCooldownUntil(userID uint, merchantID uint) (*time.Time, error) {
+	var lastCanceled models.Appointment
+	err := config.DB.
+		Where("user_id = ? AND merchant_id = ? AND status = 'canceled'", userID, merchantID).
+		Order("canceled_at DESC").
+		Limit(1).
+		First(&lastCanceled).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if lastCanceled.CanceledAt == nil {
+		return nil, nil
+	}
+	until := lastCanceled.CanceledAt.Add(1 * time.Hour)
+	return &until, nil
+}
 
 func GetMerchantAppointments(c *gin.Context) {
 	merchantID := c.Param("id")
@@ -52,11 +98,39 @@ func GetCardAppointment(c *gin.Context) {
 
 	if err != nil {
 		log.Printf("未找到预约: %v", err)
-		c.JSON(http.StatusOK, gin.H{"data": nil})
+		cooldownUntil, cooldownErr := getCooldownUntil(card.UserID, card.MerchantID)
+		if cooldownErr != nil {
+			log.Printf("查询冷却时间失败: %v", cooldownErr)
+			cooldownUntil = nil
+		}
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{
+			"appointment":     nil,
+			"queue_before":    0,
+			"estimated_minutes": 0,
+			"cooldown_until":  cooldownUntil,
+		}})
 		return
 	}
 
 	log.Printf("找到预约: ID=%d, 状态=%s, 时间=%v", appointment.ID, appointment.Status, appointment.AppointmentTime)
+
+	now := time.Now()
+	autoCanceled, autoCancelErr := autoCancelAppointmentIfOverdue(&appointment, now)
+	if autoCancelErr != nil {
+		log.Printf("自动取消预约失败: %v", autoCancelErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "自动取消预约失败"})
+		return
+	}
+	if autoCanceled {
+		cooldownUntil := now.Add(1 * time.Hour)
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{
+			"appointment":     nil,
+			"queue_before":    0,
+			"estimated_minutes": 0,
+			"cooldown_until":  &cooldownUntil,
+		}})
+		return
+	}
 
 	// 计算排队信息
 	var queueBefore int64
@@ -70,11 +144,17 @@ func GetCardAppointment(c *gin.Context) {
 	var merchant models.Merchant
 	config.DB.First(&merchant, card.MerchantID)
 
+	cooldownUntil, cooldownErr := getCooldownUntil(card.UserID, card.MerchantID)
+	if cooldownErr != nil {
+		cooldownUntil = nil
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"appointment":       appointment,
 			"queue_before":      queueBefore,
 			"estimated_minutes": int(queueBefore) * merchant.AvgServiceMinutes,
+			"cooldown_until":    cooldownUntil,
 		},
 	})
 }
@@ -103,12 +183,40 @@ func CreateAppointment(c *gin.Context) {
 		return
 	}
 
+	// 检查取消后冷却(1小时)
+	var lastCanceled models.Appointment
+	lastCanceledErr := config.DB.
+		Where("user_id = ? AND merchant_id = ? AND status = 'canceled' AND canceled_at IS NOT NULL", input.UserID, input.MerchantID).
+		Order("canceled_at DESC").
+		Limit(1).
+		First(&lastCanceled).Error
+	if lastCanceledErr == nil && lastCanceled.CanceledAt != nil {
+		cooldownUntil := lastCanceled.CanceledAt.Add(1 * time.Hour)
+		if time.Now().Before(cooldownUntil) {
+			remaining := int64(cooldownUntil.Sub(time.Now()).Seconds())
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":            "取消预约后1小时内不可再次预约",
+				"cooldown_until":   cooldownUntil,
+				"cooldown_seconds": remaining,
+			})
+			return
+		}
+	}
+
 	// 检查用户在该商户是否已有活跃的预约
 	var existingAppointment models.Appointment
 	err := config.DB.Where("user_id = ? AND merchant_id = ? AND status IN ('pending', 'confirmed')",
 		input.UserID, input.MerchantID).First(&existingAppointment).Error
 
 	if err == nil {
+		if autoCanceled, autoCancelErr := autoCancelAppointmentIfOverdue(&existingAppointment, time.Now()); autoCancelErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "自动取消预约失败"})
+			return
+		} else if autoCanceled {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "您已有预约但已超时取消，请稍后再试"})
+			return
+		}
+
 		log.Printf("用户已有活跃预约: ID=%d, 状态=%s", existingAppointment.ID, existingAppointment.Status)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "您已有进行中的预约，请先取消后再预约"})
 		return
@@ -149,6 +257,14 @@ func ConfirmAppointment(c *gin.Context) {
 		return
 	}
 
+	if autoCanceled, autoCancelErr := autoCancelAppointmentIfOverdue(&appointment, time.Now()); autoCancelErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "自动取消预约失败"})
+		return
+	} else if autoCanceled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "预约已超时取消，无法确认"})
+		return
+	}
+
 	if appointment.Status != "pending" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "只能确认待处理的预约"})
 		return
@@ -175,6 +291,14 @@ func FinishAppointment(c *gin.Context) {
 	var appointment models.Appointment
 	if err := config.DB.First(&appointment, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
+		return
+	}
+
+	if autoCanceled, autoCancelErr := autoCancelAppointmentIfOverdue(&appointment, time.Now()); autoCancelErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "自动取消预约失败"})
+		return
+	} else if autoCanceled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "预约已超时取消，无法核销"})
 		return
 	}
 
@@ -225,9 +349,46 @@ func CancelAppointment(c *gin.Context) {
 		return
 	}
 
-	config.DB.Model(&appointment).Update("status", "canceled")
+	now := time.Now()
+	if err := cancelAppointmentWithTime(&appointment, now); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "取消预约失败"})
+		return
+	}
 	config.DB.Preload("User").Preload("Merchant").First(&appointment, id)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
+}
+
+func CancelOverdueAppointments(c *gin.Context) {
+	merchantIDStr := c.Query("merchant_id")
+	var merchantID uint64
+	var err error
+	if merchantIDStr != "" {
+		merchantID, err = strconv.ParseUint(merchantIDStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "merchant_id 参数错误"})
+			return
+		}
+	}
+
+	now := time.Now()
+	deadline := now.Add(-35 * time.Minute)
+
+	q := config.DB.Model(&models.Appointment{}).
+		Where("status IN ('pending','confirmed') AND appointment_time IS NOT NULL AND appointment_time <= ?", deadline)
+	if merchantIDStr != "" {
+		q = q.Where("merchant_id = ?", merchantID)
+	}
+
+	result := q.Updates(map[string]interface{}{
+		"status":      "canceled",
+		"canceled_at": now,
+	})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "批量取消失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"canceled": result.RowsAffected}})
 }
 
 func GetQueueStatus(c *gin.Context) {
@@ -286,6 +447,16 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该商户不支持预约功能"})
 		return
 	}
+
+	// 懒更新：自动取消该商户已超时(>=35分钟)但未核销的预约，避免继续占用时间段
+	now := time.Now()
+	overdueDeadline := now.Add(-35 * time.Minute)
+	config.DB.Model(&models.Appointment{}).
+		Where("merchant_id = ? AND status IN ('pending','confirmed') AND appointment_time IS NOT NULL AND appointment_time <= ?", merchantID, overdueDeadline).
+		Updates(map[string]interface{}{
+			"status":      "canceled",
+			"canceled_at": now,
+		})
 
 	// 获取当天的所有预约（pending和confirmed状态）
 	var appointments []models.Appointment
