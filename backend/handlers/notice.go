@@ -49,7 +49,7 @@ func CreateNotice(c *gin.Context) {
 		Title:      input.Title,
 		Content:    input.Content,
 		IsPinned:   false,
-		CreatedAt:  time.Now().Format("2006-01-02"),
+		CreatedAt:  func() *time.Time { t := time.Now(); return &t }(),
 	}
 	config.DB.Create(&notice)
 	c.JSON(http.StatusOK, gin.H{"data": notice})

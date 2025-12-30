@@ -46,7 +46,7 @@ func MerchantRegister(c *gin.Context) {
 		Password:  string(hashedPassword),
 		Name:      input.Name,
 		Type:      input.Type,
-		CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
+		CreatedAt: func() *time.Time { t := time.Now(); return &t }(),
 	}
 
 	if err := config.DB.Create(&merchant).Error; err != nil {
