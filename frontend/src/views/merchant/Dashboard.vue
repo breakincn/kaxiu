@@ -99,6 +99,10 @@
           <div>
             <div class="font-medium text-gray-800">用户 ID: {{ appt.user?.nickname || appt.user_id }}</div>
             <div class="text-gray-500 text-sm">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
+            <!-- 已确认预约的倒计时 -->
+            <div v-if="appt.status === 'confirmed' && getAppointmentCountdown(appt) !== null" class="text-primary text-sm font-medium mt-1">
+              {{ getCountdownDisplay(appt) }}
+            </div>
           </div>
           <span :class="getStatusBadgeClass(appt.status)">
             {{ getStatusText(appt.status) }}
@@ -114,7 +118,7 @@
             确认预约
           </button>
           <button
-            v-if="appt.status === 'confirmed'"
+            v-if="shouldShowFinishButton(appt)"
             @click="finishAppointment(appt.id)"
             class="flex-1 py-2 bg-green-500 text-white rounded-lg text-sm font-medium"
           >
@@ -330,7 +334,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
@@ -345,6 +349,8 @@ const pendingAppointments = ref(0)
 const appointments = ref([])
 const todayUsages = ref([])
 const notices = ref([])
+const currentTime = ref(Date.now())
+let countdownTimer = null
 
 const verifyCodeInput = ref('')
 const verifying = ref(false)
@@ -556,15 +562,83 @@ const getStatusText = (status) => {
   return texts[status] || status
 }
 
+// 计算预约倒计时（秒）
+const getAppointmentCountdown = (appt) => {
+  if (!appt || !appt.appointment_time) return null
+  const appointmentTime = new Date(appt.appointment_time).getTime()
+  const now = currentTime.value
+  return Math.floor((appointmentTime - now) / 1000)
+}
+
+// 获取倒计时显示文本
+const getCountdownDisplay = (appt) => {
+  const countdown = getAppointmentCountdown(appt)
+  if (countdown === null) return ''
+  
+  // 预约时间已过，显示倒计时
+  if (countdown <= 0) {
+    const elapsed = Math.abs(countdown)
+    const hours = Math.floor(elapsed / 3600)
+    const minutes = Math.floor((elapsed % 3600) / 60)
+    const seconds = elapsed % 60
+    
+    if (hours > 0) {
+      return `已过预约时间 ${hours}小时${minutes}分${seconds}秒`
+    } else if (minutes > 0) {
+      return `已过预约时间 ${minutes}分${seconds}秒`
+    } else {
+      return `已过预约时间 ${seconds}秒`
+    }
+  }
+  
+  // 预约时间未到
+  return ''
+}
+
+// 判断是否应该显示完成服务按钮
+const shouldShowFinishButton = (appt) => {
+  if (appt.status !== 'confirmed') return false
+  if (!appt.appointment_time || !merchant.value.avg_service_minutes) return false
+  
+  const appointmentTime = new Date(appt.appointment_time).getTime()
+  const now = currentTime.value
+  const elapsed = now - appointmentTime // 已过的时间（毫秒）
+  
+  // 需要过了预约时间 + 服务时长 - 1分钟 才显示按钮
+  const requiredElapsed = (merchant.value.avg_service_minutes - 1) * 60 * 1000
+  
+  return elapsed >= requiredElapsed
+}
+
+// 启动倒计时定时器
+const startCountdownTimer = () => {
+  stopCountdownTimer()
+  countdownTimer = setInterval(() => {
+    currentTime.value = Date.now()
+  }, 1000)
+}
+
+// 停止倒计时定时器
+const stopCountdownTimer = () => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+}
+
 watch(currentTab, (tab) => {
   if (tab === 'queue') {
     fetchAppointments()
-  } else if (tab === 'verify') {
-    fetchTodayUsages()
-  } else if (tab === 'notice') {
-    fetchNotices()
-  } else if (tab === 'cards') {
-    fetchIssuedCards()
+    startCountdownTimer()
+  } else {
+    stopCountdownTimer()
+    if (tab === 'verify') {
+      fetchTodayUsages()
+    } else if (tab === 'notice') {
+      fetchNotices()
+    } else if (tab === 'cards') {
+      fetchIssuedCards()
+    }
   }
 })
 
@@ -595,5 +669,10 @@ onMounted(() => {
   fetchMerchant()
   fetchQueueStatus()
   fetchAppointments()
+  startCountdownTimer()
+})
+
+onUnmounted(() => {
+  stopCountdownTimer()
 })
 </script>
