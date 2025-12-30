@@ -247,8 +247,8 @@
     </div>
 
     <!-- 卡片管理 -->
-    <div v-if="currentTab === 'cards'" class="px-4 py-4 space-y-4">
-      <div v-if="cardsError" class="bg-red-50 border border-red-100 text-red-600 rounded-lg p-3 text-sm">
+    <div v-if="currentTab === 'cards'" class="px-4 py-4">
+      <div v-if="cardsError" class="bg-red-50 border border-red-100 text-red-600 rounded-lg p-3 text-sm mb-4">
         {{ cardsError }}
       </div>
 
@@ -257,7 +257,7 @@
       </div>
 
       <div v-else>
-        <div v-for="(card, index) in issuedCards" :key="card.id">
+        <div v-for="(card, index) in issuedCards" :key="card.id" class="mb-6">
           <div
             @click="toggleCardExpand(card.id)"
             :class="[
