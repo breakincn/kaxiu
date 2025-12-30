@@ -66,7 +66,7 @@
             : 'border-transparent text-gray-500'
         ]"
       >
-        快捷核销
+        扫码核销
       </button>
       <button
         @click="currentTab = 'notice'"
@@ -157,7 +157,7 @@
       </div>
     </div>
 
-    <!-- 快捷核销 -->
+    <!-- 扫码核销 -->
     <div v-if="currentTab === 'verify'" class="px-4 py-4">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <h3 class="font-medium text-gray-800 mb-4">输入核销码</h3>
@@ -184,7 +184,15 @@
 
       <!-- 今日核销记录 -->
       <div class="bg-white rounded-xl p-4 shadow-sm mt-4">
-        <h3 class="font-medium text-gray-800 mb-4">今日核销记录</h3>
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-medium text-gray-800">今日核销记录</h3>
+          <button
+            @click="goScanVerify"
+            class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+          >
+            扫码核销
+          </button>
+        </div>
         <div v-if="todayUsages.length > 0" class="space-y-3">
           <div v-for="usage in todayUsages" :key="usage.id" class="flex justify-between items-center py-2 border-b last:border-0">
             <div>
@@ -384,6 +392,10 @@ const issuedCards = ref([])
 const cardsLoading = ref(false)
 const cardsError = ref('')
 const expandedCardId = ref(null)
+
+const goScanVerify = () => {
+  router.push('/merchant/scan-verify')
+}
 
 const fetchMerchant = async () => {
   try {

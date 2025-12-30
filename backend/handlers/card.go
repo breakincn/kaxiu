@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"kabao/config"
 	"kabao/models"
 	"net/http"
@@ -8,7 +9,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+type apiErr struct {
+	status int
+	msg    string
+}
+
+func (e apiErr) Error() string { return e.msg }
 
 func parseDatePtr(v string) (*time.Time, error) {
 	if v == "" {
@@ -246,6 +256,17 @@ func GenerateVerifyCode(c *gin.Context) {
 }
 
 func VerifyCard(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可核销"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
 	var input struct {
 		Code string `json:"code" binding:"required"`
 	}
@@ -256,56 +277,104 @@ func VerifyCard(c *gin.Context) {
 	}
 
 	var verifyCode models.VerifyCode
-	if err := config.DB.Where("code = ?", input.Code).First(&verifyCode).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "核销码不存在"})
-		return
-	}
-
-	if verifyCode.Used {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "核销码已使用"})
-		return
-	}
-
-	if time.Now().Unix() > verifyCode.ExpireAt {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "核销码已过期"})
-		return
-	}
-
 	var card models.Card
-	config.DB.Preload("Merchant").First(&card, verifyCode.CardID)
+	var usedAt time.Time
+	var remainTimes int
 
-	if card.RemainTimes <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "剩余次数不足"})
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", input.Code).First(&verifyCode).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apiErr{status: http.StatusNotFound, msg: "核销码不存在"}
+			}
+			return err
+		}
+
+		if verifyCode.Used {
+			return apiErr{status: http.StatusBadRequest, msg: "核销码已使用"}
+		}
+
+		if now.Unix() > verifyCode.ExpireAt {
+			return apiErr{status: http.StatusBadRequest, msg: "核销码已过期"}
+		}
+
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&card, verifyCode.CardID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apiErr{status: http.StatusNotFound, msg: "卡片不存在"}
+			}
+			return err
+		}
+
+		if card.MerchantID != merchantID {
+			return apiErr{status: http.StatusForbidden, msg: "无权核销此卡"}
+		}
+
+		if card.EndDate != nil && now.After(*card.EndDate) {
+			return apiErr{status: http.StatusBadRequest, msg: "卡片已过期"}
+		}
+		if card.RemainTimes <= 0 {
+			return apiErr{status: http.StatusBadRequest, msg: "剩余次数不足"}
+		}
+
+		res := tx.Model(&models.VerifyCode{}).
+			Where("id = ? AND used = ?", verifyCode.ID, false).
+			Update("used", true)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return apiErr{status: http.StatusBadRequest, msg: "核销码已使用"}
+		}
+
+		usedAt = now
+		res = tx.Model(&models.Card{}).
+			Where("id = ? AND remain_times > 0", card.ID).
+			Updates(map[string]interface{}{
+				"remain_times": gorm.Expr("remain_times - ?", 1),
+				"used_times":   gorm.Expr("used_times + ?", 1),
+				"last_used_at": usedAt,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return apiErr{status: http.StatusBadRequest, msg: "剩余次数不足"}
+		}
+
+		if err := tx.First(&card, card.ID).Error; err != nil {
+			return err
+		}
+		remainTimes = card.RemainTimes
+
+		usage := models.Usage{
+			CardID:     card.ID,
+			MerchantID: card.MerchantID,
+			UsedTimes:  1,
+			UsedAt:     &usedAt,
+			Status:     "success",
+		}
+		if err := tx.Create(&usage).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	// 扣减次数
-	now := time.Now()
-	config.DB.Model(&card).Updates(map[string]interface{}{
-		"remain_times": card.RemainTimes - 1,
-		"used_times":   card.UsedTimes + 1,
-		"last_used_at": now,
-	})
-
-	// 标记核销码已使用
-	config.DB.Model(&verifyCode).Update("used", true)
-
-	// 创建使用记录
-	usage := models.Usage{
-		CardID:     card.ID,
-		MerchantID: card.MerchantID,
-		UsedTimes:  1,
-		UsedAt:     &now,
-		Status:     "success",
-	}
-	config.DB.Create(&usage)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "核销成功",
 		"data": gin.H{
 			"card_id":      card.ID,
-			"remain_times": card.RemainTimes - 1,
-			"used_at":      now.Format("2006-01-02 15:04:05"),
+			"remain_times": remainTimes,
+			"used_at":      usedAt.Format("2006-01-02 15:04:05"),
 		},
 	})
 }

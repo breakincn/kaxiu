@@ -128,6 +128,10 @@
         >
           {{ generating ? '生成中...' : (verifyCode ? verifyCode : '生成核销码') }}
         </button>
+
+			<div v-if="verifyQrDataUrl" class="mt-4 flex justify-center">
+				<img :src="verifyQrDataUrl" alt="核销二维码" class="w-48 h-48" />
+			</div>
         <p v-if="codeExpireTime" class="text-center text-gray-400 text-sm mt-2">
           有效期至 {{ codeExpireTime }}
         </p>
@@ -270,6 +274,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { cardApi, usageApi, noticeApi, appointmentApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
+import QRCode from 'qrcode'
 
 const router = useRouter()
 const route = useRoute()
@@ -288,6 +293,8 @@ const cooldownUntil = ref(null)
 const verifyCode = ref('')
 const codeExpireTime = ref('')
 const generating = ref(false)
+const verifyQrDataUrl = ref('')
+let verifyExpireTimer = null
 const appointing = ref(false)
 const canceling = ref(false)
 
@@ -411,6 +418,24 @@ const generateCode = async () => {
     verifyCode.value = res.data.data.code
     const expireAt = new Date(res.data.data.expire_at * 1000)
     codeExpireTime.value = expireAt.toLocaleTimeString()
+
+		verifyQrDataUrl.value = await QRCode.toDataURL(verifyCode.value, {
+			margin: 1,
+			scale: 8,
+			errorCorrectionLevel: 'M'
+		})
+
+		if (verifyExpireTimer) {
+			clearTimeout(verifyExpireTimer)
+			verifyExpireTimer = null
+		}
+		const delayMs = Math.max(0, expireAt.getTime() - Date.now())
+		verifyExpireTimer = setTimeout(() => {
+			verifyCode.value = ''
+			codeExpireTime.value = ''
+			verifyQrDataUrl.value = ''
+			verifyExpireTimer = null
+		}, delayMs)
   } catch (err) {
     alert(err.response?.data?.error || '生成核销码失败')
   } finally {
@@ -679,5 +704,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopCountdownTimer()
+	if (verifyExpireTimer) {
+		clearTimeout(verifyExpireTimer)
+		verifyExpireTimer = null
+	}
 })
 </script>
