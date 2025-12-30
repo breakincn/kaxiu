@@ -100,29 +100,43 @@
             <div class="font-medium text-gray-800">用户 ID: {{ appt.user?.nickname || appt.user_id }}</div>
             <div class="text-gray-500 text-sm">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
             <!-- 已确认预约的倒计时 -->
-            <div v-if="appt.status === 'confirmed' && getAppointmentCountdown(appt) !== null" class="text-primary text-sm font-medium mt-1">
+            <div v-if="appt.status === 'confirmed' && getAppointmentCountdown(appt) !== null" :class="getCountdownClass(appt)">
               {{ getCountdownDisplay(appt) }}
             </div>
           </div>
-          <span :class="getStatusBadgeClass(appt.status)">
-            {{ getStatusText(appt.status) }}
+          <span :class="getStatusBadgeClass(appt)">
+            {{ getStatusText(appt) }}
           </span>
         </div>
         
         <div class="flex gap-2 mt-3">
           <button
-            v-if="appt.status === 'pending'"
+            v-if="appt.status === 'pending' && !isPendingExpired(appt)"
             @click="confirmAppointment(appt.id)"
             class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
           >
             确认预约
           </button>
           <button
-            v-if="shouldShowFinishButton(appt)"
+            v-if="appt.status === 'pending' && isPendingExpired(appt)"
+            disabled
+            class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
+          >
+            未确认预约
+          </button>
+          <button
+            v-if="shouldShowFinishButton(appt) && !isWriteOffExpired(appt)"
             @click="finishAppointment(appt.id)"
             class="flex-1 py-2 bg-green-500 text-white rounded-lg text-sm font-medium"
           >
             完成服务 (扣次)
+          </button>
+          <button
+            v-if="appt.status === 'confirmed' && isWriteOffExpired(appt)"
+            disabled
+            class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
+          >
+            未核销
           </button>
           <button
             v-if="appt.status !== 'finished' && appt.status !== 'canceled'"
@@ -542,24 +556,60 @@ const togglePin = async (id) => {
   }
 }
 
-const getStatusBadgeClass = (status) => {
+const getStatusBadgeClass = (appt) => {
+  if (!appt) return ''
+
+  if (appt.status === 'pending' && isPendingExpired(appt)) {
+    return 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500'
+  }
+
+  if (appt.status === 'confirmed' && isWriteOffExpired(appt)) {
+    return 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500'
+  }
+
   const classes = {
     pending: 'px-2 py-1 rounded text-xs font-medium bg-orange-100 text-primary',
     confirmed: 'px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-600',
     finished: 'px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-600',
     canceled: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500'
   }
-  return classes[status] || ''
+  return classes[appt.status] || ''
 }
 
-const getStatusText = (status) => {
+const getStatusText = (appt) => {
+  if (!appt) return ''
+
+  if (appt.status === 'pending' && isPendingExpired(appt)) {
+    return '过期未确认'
+  }
+
+  if (appt.status === 'confirmed' && isWriteOffExpired(appt)) {
+    return '预约失败'
+  }
+
   const texts = {
     pending: '待确认',
     confirmed: '排队中',
     finished: '已完成',
     canceled: '已取消'
   }
-  return texts[status] || status
+  return texts[appt.status] || appt.status
+}
+
+const isPendingExpired = (appt) => {
+  if (!appt || appt.status !== 'pending' || !appt.appointment_time) return false
+  const appointmentTime = new Date(appt.appointment_time).getTime()
+  return currentTime.value > appointmentTime
+}
+
+const isWriteOffExpired = (appt) => {
+  if (!appt || appt.status !== 'confirmed' || !appt.appointment_time) return false
+
+  const appointmentTime = new Date(appt.appointment_time).getTime()
+  let serviceMinutes = merchant.value.avg_service_minutes
+  if (!serviceMinutes || serviceMinutes <= 0) serviceMinutes = 30
+  const deadlineMs = appointmentTime + (serviceMinutes + 30) * 60 * 1000
+  return currentTime.value > deadlineMs
 }
 
 // 计算预约倒计时（秒）
@@ -577,6 +627,10 @@ const getCountdownDisplay = (appt) => {
   
   // 预约时间已过，显示倒计时
   if (countdown <= 0) {
+    if (isWriteOffExpired(appt)) {
+      return '预约失败'
+    }
+
     const elapsed = Math.abs(countdown)
     const hours = Math.floor(elapsed / 3600)
     const minutes = Math.floor((elapsed % 3600) / 60)
@@ -607,19 +661,28 @@ const getCountdownDisplay = (appt) => {
   return ''
 }
 
+const getCountdownClass = (appt) => {
+  if (isWriteOffExpired(appt)) {
+    return 'text-gray-400 text-sm font-medium mt-1'
+  }
+  return 'text-primary text-sm font-medium mt-1'
+}
+
 // 判断是否应该显示完成服务按钮
 const shouldShowFinishButton = (appt) => {
   if (appt.status !== 'confirmed') return false
-  if (!appt.appointment_time || !merchant.value.avg_service_minutes) return false
+  if (!appt.appointment_time) return false
   
   const appointmentTime = new Date(appt.appointment_time).getTime()
   const now = currentTime.value
   const elapsed = now - appointmentTime // 已过的时间（毫秒）
   
   // 需要过了预约时间 + 服务时长 - 1分钟 才显示按钮
-  const requiredElapsed = (merchant.value.avg_service_minutes - 1) * 60 * 1000
+  let serviceMinutes = merchant.value.avg_service_minutes
+  if (!serviceMinutes || serviceMinutes <= 0) serviceMinutes = 30
+  const requiredTime = (serviceMinutes - 1) * 60 * 1000
   
-  return elapsed >= requiredElapsed
+  return elapsed >= requiredTime
 }
 
 // 启动倒计时定时器

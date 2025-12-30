@@ -154,6 +154,17 @@ func ConfirmAppointment(c *gin.Context) {
 		return
 	}
 
+	if appointment.AppointmentTime == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "预约时间为空"})
+		return
+	}
+
+	now := time.Now()
+	if now.After(*appointment.AppointmentTime) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "预约已过期，无法确认"})
+		return
+	}
+
 	config.DB.Model(&appointment).Update("status", "confirmed")
 	config.DB.Preload("User").Preload("Merchant").First(&appointment, id)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
@@ -169,6 +180,29 @@ func FinishAppointment(c *gin.Context) {
 
 	if appointment.Status != "confirmed" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "只能完成已确认的预约"})
+		return
+	}
+
+	if appointment.AppointmentTime == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "预约时间为空"})
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, appointment.MerchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+
+	serviceMinutes := merchant.AvgServiceMinutes
+	if serviceMinutes <= 0 {
+		serviceMinutes = 30
+	}
+
+	now := time.Now()
+	finishDeadline := appointment.AppointmentTime.Add(time.Duration(serviceMinutes+30) * time.Minute)
+	if now.After(finishDeadline) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "已过服务时间，无法核销"})
 		return
 	}
 
