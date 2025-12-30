@@ -76,7 +76,8 @@ export const merchantApi = {
   getMerchant: (id) => api.get(`/merchants/${id}`),
   createMerchant: (data) => api.post('/merchants', data),
   updateMerchant: (id, data) => api.put(`/merchants/${id}`, data),
-  getQueueStatus: (id) => api.get(`/merchants/${id}/queue`)
+  getQueueStatus: (id) => api.get(`/merchants/${id}/queue`),
+  searchUsersByPhone: (phone) => api.get('/merchant/users/search', { params: { phone } })
 }
 
 export const cardApi = {

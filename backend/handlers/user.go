@@ -5,6 +5,7 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,27 @@ func GetUser(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": user})
+}
+
+func MerchantSearchUsers(c *gin.Context) {
+	if _, ok := c.Get("merchant_id"); !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	phone := strings.TrimSpace(c.Query("phone"))
+	if phone == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供手机号"})
+		return
+	}
+
+	var users []models.User
+	config.DB.
+		Where("phone LIKE ?", "%"+phone+"%").
+		Limit(20).
+		Find(&users)
+
+	c.JSON(http.StatusOK, gin.H{"data": users})
 }
 
 func CreateUser(c *gin.Context) {

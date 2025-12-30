@@ -39,6 +39,11 @@ const routes = [
     path: '/merchant/settings',
     name: 'MerchantSettings',
     component: () => import('../views/merchant/Settings.vue')
+  },
+  {
+    path: '/merchant/issue-card',
+    name: 'MerchantIssueCard',
+    component: () => import('../views/merchant/IssueCard.vue')
   }
 ]
 

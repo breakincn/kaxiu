@@ -52,9 +52,19 @@ func GetMerchantCards(c *gin.Context) {
 }
 
 func CreateCard(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可发卡"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
 	var input struct {
 		UserID         uint   `json:"user_id" binding:"required"`
-		MerchantID     uint   `json:"merchant_id" binding:"required"`
 		CardNo         string `json:"card_no"`
 		CardType       string `json:"card_type" binding:"required"`
 		TotalTimes     int    `json:"total_times" binding:"required"`
@@ -68,11 +78,26 @@ func CreateCard(c *gin.Context) {
 		return
 	}
 
+	if input.TotalTimes <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "总次数必须大于0"})
+		return
+	}
+
+	var user models.User
+	if err := config.DB.First(&user, input.UserID).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "用户不存在"})
+		return
+	}
+
 	now := time.Now().Format("2006-01-02")
+	cardNo := input.CardNo
+	if cardNo == "" {
+		cardNo = uuid.New().String()[:8]
+	}
 	card := models.Card{
 		UserID:         input.UserID,
-		MerchantID:     input.MerchantID,
-		CardNo:         input.CardNo,
+		MerchantID:     merchantID,
+		CardNo:         cardNo,
 		CardType:       input.CardType,
 		TotalTimes:     input.TotalTimes,
 		RemainTimes:    input.TotalTimes,
