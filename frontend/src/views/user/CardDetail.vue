@@ -52,8 +52,8 @@
       </div>
     </div>
 
-    <!-- 预约排队区域（如果支持） -->
-    <div v-if="card.merchant?.support_appointment" class="px-4 mt-4">
+    <!-- 预约排队区域（如果支持且不在冷却中） -->
+    <div v-if="card.merchant?.support_appointment && !isInCooldown" class="px-4 mt-4">
       <div class="bg-blue-50 rounded-2xl p-5 shadow-md border border-blue-100">
         <div class="flex items-center gap-2 mb-3">
           <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
