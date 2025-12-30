@@ -56,14 +56,16 @@ func GetCardAppointment(c *gin.Context) {
 		return
 	}
 
-	log.Printf("找到预约: ID=%d, 状态=%s, 时间=%s", appointment.ID, appointment.Status, appointment.AppointmentTime)
+	log.Printf("找到预约: ID=%d, 状态=%s, 时间=%v", appointment.ID, appointment.Status, appointment.AppointmentTime)
 
 	// 计算排队信息
 	var queueBefore int64
-	config.DB.Model(&models.Appointment{}).
-		Where("merchant_id = ? AND status IN ('pending', 'confirmed') AND appointment_time < ?",
-			card.MerchantID, appointment.AppointmentTime).
-		Count(&queueBefore)
+	if appointment.AppointmentTime != nil {
+		config.DB.Model(&models.Appointment{}).
+			Where("merchant_id = ? AND status IN ('pending', 'confirmed') AND appointment_time < ?",
+				card.MerchantID, appointment.AppointmentTime).
+			Count(&queueBefore)
+	}
 
 	var merchant models.Merchant
 	config.DB.First(&merchant, card.MerchantID)
@@ -114,12 +116,17 @@ func CreateAppointment(c *gin.Context) {
 
 	log.Printf("创建新预约: 用户ID=%d, 商户ID=%d, 时间=%s", input.UserID, input.MerchantID, input.AppointmentTime)
 
+	appointmentTime, err := time.ParseInLocation("2006-01-02 15:04:05", input.AppointmentTime, time.Local)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "预约时间格式错误"})
+		return
+	}
+
 	appointment := models.Appointment{
 		MerchantID:      input.MerchantID,
 		UserID:          input.UserID,
-		AppointmentTime: input.AppointmentTime,
+		AppointmentTime: &appointmentTime,
 		Status:          "pending",
-		CreatedAt:       time.Now().Format("2006-01-02 15:04:05"),
 	}
 	result := config.DB.Create(&appointment)
 	if result.Error != nil {

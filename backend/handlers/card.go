@@ -10,6 +10,22 @@ import (
 	"github.com/google/uuid"
 )
 
+func parseDatePtr(v string) (*time.Time, error) {
+	if v == "" {
+		return nil, nil
+	}
+	t, err := time.ParseInLocation("2006-01-02", v, time.Local)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func dateOnlyPtr(t time.Time) *time.Time {
+	d := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	return &d
+}
+
 func GetCards(c *gin.Context) {
 	var cards []models.Card
 	config.DB.Preload("User").Preload("Merchant").Find(&cards)
@@ -33,11 +49,11 @@ func GetUserCards(c *gin.Context) {
 	var cards []models.Card
 	query := config.DB.Preload("Merchant").Where("user_id = ?", userID)
 
-	now := time.Now().Format("2006-01-02")
+	now := time.Now()
 	if status == "active" {
-		query = query.Where("end_date >= ? AND remain_times > 0", now)
+		query = query.Where("end_date >= ? AND remain_times > 0", dateOnlyPtr(now))
 	} else if status == "expired" {
-		query = query.Where("end_date < ? OR remain_times = 0", now)
+		query = query.Where("end_date < ? OR remain_times = 0", dateOnlyPtr(now))
 	}
 
 	query.Find(&cards)
@@ -89,7 +105,22 @@ func CreateCard(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().Format("2006-01-02")
+	startDate, err := parseDatePtr(input.StartDate)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "开始日期格式错误"})
+		return
+	}
+	endDate, err := parseDatePtr(input.EndDate)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "结束日期格式错误"})
+		return
+	}
+	if endDate == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "结束日期不能为空"})
+		return
+	}
+
+	now := time.Now()
 	cardNo := input.CardNo
 	if cardNo == "" {
 		cardNo = uuid.New().String()[:8]
@@ -103,13 +134,12 @@ func CreateCard(c *gin.Context) {
 		RemainTimes:    input.TotalTimes,
 		UsedTimes:      0,
 		RechargeAmount: input.RechargeAmount,
-		RechargeAt:     now,
-		StartDate:      input.StartDate,
-		EndDate:        input.EndDate,
+		RechargeAt:     dateOnlyPtr(now),
+		StartDate:      startDate,
+		EndDate:        endDate,
 	}
-
-	if card.StartDate == "" {
-		card.StartDate = now
+	if card.StartDate == nil {
+		card.StartDate = dateOnlyPtr(now)
 	}
 
 	if err := config.DB.Create(&card).Error; err != nil {
@@ -149,10 +179,15 @@ func UpdateCard(c *gin.Context) {
 	}
 	if input.RechargeAmount != nil {
 		updates["recharge_amount"] = *input.RechargeAmount
-		updates["recharge_at"] = time.Now().Format("2006-01-02")
+		updates["recharge_at"] = dateOnlyPtr(time.Now())
 	}
 	if input.EndDate != "" {
-		updates["end_date"] = input.EndDate
+		endDate, err := parseDatePtr(input.EndDate)
+		if err != nil || endDate == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "结束日期格式错误"})
+			return
+		}
+		updates["end_date"] = endDate
 	}
 
 	config.DB.Model(&card).Updates(updates)
@@ -170,8 +205,7 @@ func GenerateVerifyCode(c *gin.Context) {
 
 	// 检查卡片是否有效
 	now := time.Now()
-	endDate, _ := time.Parse("2006-01-02", card.EndDate)
-	if now.After(endDate) {
+	if card.EndDate != nil && now.After(*card.EndDate) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "卡片已过期"})
 		return
 	}
@@ -237,7 +271,7 @@ func VerifyCard(c *gin.Context) {
 	}
 
 	// 扣减次数
-	now := time.Now().Format("2006-01-02 15:04:05")
+	now := time.Now()
 	config.DB.Model(&card).Updates(map[string]interface{}{
 		"remain_times": card.RemainTimes - 1,
 		"used_times":   card.UsedTimes + 1,
@@ -252,7 +286,7 @@ func VerifyCard(c *gin.Context) {
 		CardID:     card.ID,
 		MerchantID: card.MerchantID,
 		UsedTimes:  1,
-		UsedAt:     now,
+		UsedAt:     &now,
 		Status:     "success",
 	}
 	config.DB.Create(&usage)
@@ -262,7 +296,7 @@ func VerifyCard(c *gin.Context) {
 		"data": gin.H{
 			"card_id":      card.ID,
 			"remain_times": card.RemainTimes - 1,
-			"used_at":      now,
+			"used_at":      now.Format("2006-01-02 15:04:05"),
 		},
 	})
 }

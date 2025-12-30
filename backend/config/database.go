@@ -3,6 +3,7 @@ package config
 import (
 	"kabao/models"
 	"log"
+	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -82,6 +83,20 @@ func initTestData() {
 	DB.Create(&merchants)
 
 	// 创建测试卡片
+	parseDate := func(s string) *time.Time {
+		t, err := time.ParseInLocation("2006-01-02", s, time.Local)
+		if err != nil {
+			return nil
+		}
+		return &t
+	}
+	parseDateTime := func(s string) *time.Time {
+		t, err := time.ParseInLocation("2006-01-02 15:04:05", s, time.Local)
+		if err != nil {
+			return nil
+		}
+		return &t
+	}
 	cards := []models.Card{
 		{
 			UserID:         1,
@@ -92,9 +107,9 @@ func initTestData() {
 			RemainTimes:    8,
 			UsedTimes:      2,
 			RechargeAmount: 200,
-			RechargeAt:     "2023-10-01",
-			StartDate:      "2023-10-01",
-			EndDate:        "2030-01-01",
+			RechargeAt:     parseDate("2023-10-01"),
+			StartDate:      parseDate("2023-10-01"),
+			EndDate:        parseDate("2030-01-01"),
 		},
 		{
 			UserID:         1,
@@ -105,9 +120,9 @@ func initTestData() {
 			RemainTimes:    4,
 			UsedTimes:      6,
 			RechargeAmount: 300,
-			RechargeAt:     "2023-06-01",
-			StartDate:      "2023-06-01",
-			EndDate:        "2030-06-01",
+			RechargeAt:     parseDate("2023-06-01"),
+			StartDate:      parseDate("2023-06-01"),
+			EndDate:        parseDate("2030-06-01"),
 		},
 		{
 			UserID:         1,
@@ -118,33 +133,33 @@ func initTestData() {
 			RemainTimes:    7,
 			UsedTimes:      3,
 			RechargeAmount: 200,
-			RechargeAt:     "2023-10-01",
-			LastUsedAt:     "2023-11-20 22:30:00",
-			StartDate:      "2023-10-01",
-			EndDate:        "2024-10-01",
+			RechargeAt:     parseDate("2023-10-01"),
+			LastUsedAt:     parseDateTime("2023-11-20 22:30:00"),
+			StartDate:      parseDate("2023-10-01"),
+			EndDate:        parseDate("2024-10-01"),
 		},
 	}
 	DB.Create(&cards)
 
 	// 创建测试使用记录
 	usages := []models.Usage{
-		{CardID: 3, MerchantID: 1, UsedTimes: 1, UsedAt: "2023-11-20 22:30:00", Status: "success"},
-		{CardID: 3, MerchantID: 1, UsedTimes: 1, UsedAt: "2023-11-15 17:30:00", Status: "success"},
+		{CardID: 3, MerchantID: 1, UsedTimes: 1, UsedAt: parseDateTime("2023-11-20 22:30:00"), Status: "success"},
+		{CardID: 3, MerchantID: 1, UsedTimes: 1, UsedAt: parseDateTime("2023-11-15 17:30:00"), Status: "success"},
 	}
 	DB.Create(&usages)
 
 	// 创建测试通知
 	notices := []models.Notice{
-		{MerchantID: 1, Title: "元旦休息通知", Content: "本店将于1月1日至1月3日放假休息，敬请谅解...", CreatedAt: "2023-12-28"},
-		{MerchantID: 1, Title: "会员升级活动", Content: "新老客户充值享8折优惠，仅限本周。", CreatedAt: "2023-12-20"},
+		{MerchantID: 1, Title: "元旦休息通知", Content: "本店将于1月1日至1月3日放假休息，敬请谅解..."},
+		{MerchantID: 1, Title: "会员升级活动", Content: "新老客户充值享8折优惠，仅限本周。"},
 	}
 	DB.Create(&notices)
 
 	// 创建测试预约
 	appointments := []models.Appointment{
-		{MerchantID: 1, UserID: 2, AppointmentTime: "2024-01-05 18:00:00", Status: "pending"},
-		{MerchantID: 1, UserID: 3, AppointmentTime: "2024-01-05 17:00:00", Status: "confirmed"},
-		{MerchantID: 1, UserID: 1, AppointmentTime: "2024-01-05 18:00:00", Status: "pending"},
+		{MerchantID: 1, UserID: 2, AppointmentTime: parseDateTime("2024-01-05 18:00:00"), Status: "pending"},
+		{MerchantID: 1, UserID: 3, AppointmentTime: parseDateTime("2024-01-05 17:00:00"), Status: "confirmed"},
+		{MerchantID: 1, UserID: 1, AppointmentTime: parseDateTime("2024-01-05 18:00:00"), Status: "pending"},
 	}
 	DB.Create(&appointments)
 
