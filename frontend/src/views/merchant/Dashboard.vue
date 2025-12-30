@@ -489,10 +489,15 @@ const finishAppointment = async (id) => {
 }
 
 const cancelAppointment = async (id) => {
+  if (!confirm('确定要取消这个预约吗？此操作不可撤销。')) {
+    return
+  }
+  
   try {
     await appointmentApi.cancelAppointment(id)
     fetchAppointments()
     fetchQueueStatus()
+    alert('预约已取消')
   } catch (err) {
     alert(err.response?.data?.error || '取消失败')
   }
