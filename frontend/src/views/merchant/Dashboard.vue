@@ -415,7 +415,23 @@ const fetchIssuedCards = async () => {
   cardsError.value = ''
   try {
     const res = await cardApi.getMerchantCards(merchantId.value)
-    issuedCards.value = res.data.data || []
+    let cardsList = res.data.data || []
+    
+    // 排序：先按创建时间降序，再按最近使用时间降序
+    cardsList.sort((a, b) => {
+      // 先按 created_at 降序排列
+      const createTimeA = new Date(a.created_at).getTime()
+      const createTimeB = new Date(b.created_at).getTime()
+      if (createTimeA !== createTimeB) {
+        return createTimeB - createTimeA
+      }
+      // 如果创建时间相同，按 last_used_at 降序排列
+      const lastUsedA = a.last_used_at ? new Date(a.last_used_at).getTime() : 0
+      const lastUsedB = b.last_used_at ? new Date(b.last_used_at).getTime() : 0
+      return lastUsedB - lastUsedA
+    })
+    
+    issuedCards.value = cardsList
   } catch (err) {
     cardsError.value = err.response?.data?.error || '获取卡片列表失败'
   } finally {
