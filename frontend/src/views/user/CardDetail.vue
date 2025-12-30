@@ -30,7 +30,7 @@
           </div>
           <div class="flex justify-between">
             <span class="text-gray-500">开卡/充值</span>
-            <span class="text-gray-800">{{ card.recharge_at }} / ¥{{ card.recharge_amount }}</span>
+            <span class="text-gray-800">{{ formatDateTime(card.recharge_at) }} / ¥{{ card.recharge_amount }}</span>
           </div>
           <div class="flex justify-between">
             <span class="text-gray-500">总次数</span>
@@ -42,11 +42,11 @@
           </div>
           <div class="flex justify-between">
             <span class="text-gray-500">上次使用</span>
-            <span class="text-gray-800">{{ card.last_used_at || '未使用' }}</span>
+            <span class="text-gray-800">{{ card.last_used_at ? formatDateTime(card.last_used_at) : '未使用' }}</span>
           </div>
           <div class="flex justify-between">
             <span class="text-gray-500">有效期</span>
-            <span class="text-gray-800">{{ card.start_date }} 至 {{ card.end_date }}</span>
+            <span class="text-gray-800">{{ formatDate(card.start_date) }} 至 {{ formatDate(card.end_date) }}</span>
           </div>
         </div>
       </div>
@@ -69,7 +69,7 @@
               {{ getAppointmentStatusText(appointment.status) }}
             </span>
           </div>
-          <div class="text-primary font-medium text-lg">{{ appointment.appointment_time }}</div>
+          <div class="text-primary font-medium text-lg">{{ formatDateTime(appointment.appointment_time) }}</div>
           <div class="grid grid-cols-2 gap-4 pt-3 mt-3 border-t border-blue-200">
             <div>
               <div class="text-gray-400 text-xs">前面排队</div>
@@ -141,7 +141,7 @@
               <div class="text-gray-800">核销次数: {{ usage.used_times }}</div>
               <div class="flex items-center gap-2">
                 <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
-                <span class="text-gray-400 text-sm">{{ usage.used_at }}</span>
+                <span class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</span>
               </div>
             </div>
             <span :class="usage.status === 'success' ? 'text-green-500' : 'text-red-500'" class="text-sm font-medium">
@@ -171,7 +171,7 @@
               <span v-if="notice.is_pinned" class="px-2 py-0.5 bg-yellow-500 text-white text-xs rounded">置顶</span>
             </div>
             <div class="text-gray-500 text-sm mt-1">{{ notice.content }}</div>
-            <div class="text-gray-400 text-xs mt-1">{{ notice.created_at }}</div>
+            <div class="text-gray-400 text-xs mt-1">{{ formatDateTime(notice.created_at) }}</div>
           </div>
         </div>
         <div v-else class="text-center text-gray-400 py-4">
@@ -259,6 +259,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { cardApi, usageApi, noticeApi, appointmentApi } from '../../api'
+import { formatDateTime, formatDate } from '../../utils/dateFormat'
 
 const router = useRouter()
 const route = useRoute()

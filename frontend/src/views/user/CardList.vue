@@ -88,7 +88,7 @@
             </div>
             <div class="text-right">
               <div class="text-white/70 text-xs mb-0.5">有效期至</div>
-              <div class="text-sm font-medium">{{ card.end_date }}</div>
+              <div class="text-sm font-medium">{{ formatDate(card.end_date) }}</div>
             </div>
           </div>
         </div>
@@ -121,6 +121,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { cardApi, noticeApi } from '../../api'
+import { formatDate } from '../../utils/dateFormat'
 
 const router = useRouter()
 const userName = ref('')

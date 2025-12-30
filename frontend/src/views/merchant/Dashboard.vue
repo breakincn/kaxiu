@@ -87,7 +87,7 @@
         <div class="flex justify-between items-start mb-2">
           <div>
             <div class="font-medium text-gray-800">用户 ID: {{ appt.user?.nickname || appt.user_id }}</div>
-            <div class="text-gray-500 text-sm">预约时间: {{ appt.appointment_time }}</div>
+            <div class="text-gray-500 text-sm">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
           </div>
           <span :class="getStatusBadgeClass(appt.status)">
             {{ getStatusText(appt.status) }}
@@ -156,7 +156,7 @@
           <div v-for="usage in todayUsages" :key="usage.id" class="flex justify-between items-center py-2 border-b last:border-0">
             <div>
               <div class="text-gray-800">{{ usage.card?.user?.nickname || '用户' }}</div>
-              <div class="text-gray-400 text-sm">{{ usage.used_at }}</div>
+              <div class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</div>
             </div>
             <span class="text-green-500 text-sm">核销 {{ usage.used_times }} 次</span>
           </div>
@@ -209,7 +209,7 @@
                   <span v-if="notice.is_pinned" class="px-2 py-0.5 bg-yellow-500 text-white text-xs rounded">置顶</span>
                 </div>
                 <div class="text-gray-500 text-sm mt-1">{{ notice.content }}</div>
-                <div class="text-gray-400 text-xs mt-1">{{ notice.created_at }}</div>
+                <div class="text-gray-400 text-xs mt-1">{{ formatDateTime(notice.created_at) }}</div>
               </div>
               <div class="flex flex-col gap-2">
                 <button
@@ -241,6 +241,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi } from '../../api'
+import { formatDateTime } from '../../utils/dateFormat'
 
 const router = useRouter()
 const merchantId = ref(null)
