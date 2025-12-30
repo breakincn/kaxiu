@@ -711,15 +711,35 @@ const getCountdownDisplay = (appt) => {
     return `已服务时间 ${timeText}`
   }
   
-  // 预约时间未到
-  return ''
+  // 预约时间未到，显示倒计时
+  const totalSeconds = Math.abs(countdown)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  
+  if (hours > 0) {
+    return `${hours}小时${minutes}分${seconds}秒`
+  } else if (minutes > 0) {
+    return `${minutes}分${seconds}秒`
+  } else {
+    return `${seconds}秒`
+  }
 }
 
 const getCountdownClass = (appt) => {
   if (isServiceTimeExpired(appt)) {
     return 'text-gray-400 text-sm font-medium mt-1'
   }
-  return 'text-primary text-sm font-medium mt-1'
+  
+  const countdown = getAppointmentCountdown(appt)
+  if (countdown === null) return 'text-primary text-sm font-medium mt-1'
+  
+  // 大于10分钟显示绿色，否则显示橙色
+  if (countdown > 600) {
+    return 'text-green-500 text-sm font-medium mt-1'
+  } else {
+    return 'text-orange-500 text-sm font-medium mt-1'
+  }
 }
 
 // 判断是否应该显示完成服务按钮
