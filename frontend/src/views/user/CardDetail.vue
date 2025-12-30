@@ -118,7 +118,7 @@
     </div>
 
     <!-- 核销码区域 -->
-    <div class="px-4 mt-4">
+    <div v-if="shouldShowVerifyCode()" class="px-4 mt-4">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <div class="text-center text-gray-600 mb-3">到店出示核销码</div>
         <button
@@ -601,6 +601,27 @@ const getCountdownText = () => {
   } else {
     return `${seconds}秒`
   }
+}
+
+// 判断是否应该显示核销码区域
+const shouldShowVerifyCode = () => {
+  // 如果没有预约，显示核销码
+  if (!appointment.value) {
+    return true
+  }
+  
+  // 如果有预约，判断条件
+  // 1. 预约状态必须是已确认(confirmed)
+  // 2. 当前时间距离预约时间小于等于5分钟（即倒计时 <= 300秒 且 > -60秒）
+  if (appointment.value.status === 'confirmed') {
+    // countdown.value > 0 表示还没到预约时间
+    // countdown.value <= 300 表示距离预约时间小于等于5分钟
+    // countdown.value > -60 表示还没有超过预约时间1分钟
+    return countdown.value <= 300 && countdown.value > -60
+  }
+  
+  // 其他状态（pending, finished, canceled）不显示核销码
+  return false
 }
 
 onMounted(() => {
