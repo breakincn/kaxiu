@@ -112,7 +112,10 @@ func CreateCard(c *gin.Context) {
 		card.StartDate = now
 	}
 
-	config.DB.Create(&card)
+	if err := config.DB.Create(&card).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	config.DB.Preload("User").Preload("Merchant").First(&card, card.ID)
 	c.JSON(http.StatusOK, gin.H{"data": card})
 }

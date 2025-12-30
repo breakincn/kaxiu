@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 type User struct {
 	ID        uint   `json:"id" gorm:"primaryKey;comment:用户ID"`
 	Phone     string `json:"phone" gorm:"size:20;uniqueIndex;comment:手机号"`
@@ -49,7 +51,7 @@ type Card struct {
 	LastUsedAt     string `json:"last_used_at" gorm:"comment:最后使用时间"`
 	StartDate      string `json:"start_date" gorm:"comment:有效期开始日期"`
 	EndDate        string `json:"end_date" gorm:"comment:有效期结束日期"`
-	CreatedAt      string `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	CreatedAt      *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	User     User     `json:"user" gorm:"foreignKey:UserID"`
 	Merchant Merchant `json:"merchant" gorm:"foreignKey:MerchantID"`
