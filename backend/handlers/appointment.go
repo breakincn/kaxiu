@@ -304,7 +304,10 @@ func GetAvailableTimeSlots(c *gin.Context) {
 
 		// 检查这个时间段是否与现有预约冲突
 		for _, apt := range appointments {
-			aptTime, _ := time.Parse("2006-01-02 15:04:05", apt.AppointmentTime)
+			if apt.AppointmentTime == nil {
+				continue
+			}
+			aptTime := *apt.AppointmentTime
 			
 			// 如果预约时间在当前时间段内，或者当前时间段在预约的服务时长内
 			if slotTime.Equal(aptTime) || 
