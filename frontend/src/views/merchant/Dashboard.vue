@@ -99,6 +99,10 @@
           <div>
             <div class="font-medium text-gray-800">用户 ID: {{ appt.user?.nickname || appt.user_id }}</div>
             <div class="text-gray-500 text-sm">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
+            <!-- 待确认预约的倒计时 -->
+            <div v-if="appt.status === 'pending' && getPendingCountdown(appt) !== null" :class="getPendingCountdownClass(appt)">
+              {{ getPendingCountdownDisplay(appt) }}
+            </div>
             <!-- 已确认预约的倒计时 -->
             <div v-if="appt.status === 'confirmed' && getAppointmentCountdown(appt) !== null && !isServiceTimeExpired(appt)" :class="getCountdownClass(appt)">
               {{ getCountdownDisplay(appt) }}
@@ -622,6 +626,52 @@ const isServiceTimeExpired = (appt) => {
   if (!serviceMinutes || serviceMinutes <= 0) serviceMinutes = 30
   const serviceDeadlineMs = appointmentTime + serviceMinutes * 60 * 1000
   return currentTime.value > serviceDeadlineMs
+}
+
+// 计算待确认预约倒计时（秒）
+const getPendingCountdown = (appt) => {
+  if (!appt || appt.status !== 'pending' || !appt.appointment_time) return null
+  const appointmentTime = new Date(appt.appointment_time).getTime()
+  const now = currentTime.value
+  return Math.floor((appointmentTime - now) / 1000)
+}
+
+// 获取待确认预约倒计时显示文本
+const getPendingCountdownDisplay = (appt) => {
+  const countdown = getPendingCountdown(appt)
+  if (countdown === null) return ''
+  
+  if (countdown <= 0) {
+    return '预约时间已过'
+  }
+  
+  const totalSeconds = Math.abs(countdown)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  
+  if (hours > 0) {
+    return `${hours}小时${minutes}分${seconds}秒`
+  } else if (minutes > 0) {
+    return `${minutes}分${seconds}秒`
+  } else {
+    return `${seconds}秒`
+  }
+}
+
+// 获取待确认预约倒计时颜色类
+const getPendingCountdownClass = (appt) => {
+  const countdown = getPendingCountdown(appt)
+  if (countdown === null || countdown <= 0) {
+    return 'text-gray-400 text-sm font-medium mt-1'
+  }
+  
+  // 预约时间前10分钟内（600秒）显示红色，否则绿色
+  if (countdown <= 600) {
+    return 'text-red-500 text-sm font-medium mt-1'
+  } else {
+    return 'text-green-500 text-sm font-medium mt-1'
+  }
 }
 
 // 计算预约倒计时（秒）
