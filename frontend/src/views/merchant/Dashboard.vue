@@ -79,6 +79,17 @@
       >
         通知管理
       </button>
+      <button
+        @click="currentTab = 'cards'"
+        :class="[
+          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          currentTab === 'cards'
+            ? 'border-primary text-primary'
+            : 'border-transparent text-gray-500'
+        ]"
+      >
+        卡片管理
+      </button>
     </div>
 
     <!-- 排队管理 -->
@@ -234,6 +245,87 @@
         </div>
       </div>
     </div>
+
+    <!-- 卡片管理 -->
+    <div v-if="currentTab === 'cards'" class="px-4 py-4 space-y-4">
+      <div v-if="cardsError" class="bg-red-50 border border-red-100 text-red-600 rounded-lg p-3 text-sm">
+        {{ cardsError }}
+      </div>
+
+      <div v-if="cardsLoading" class="text-center py-12 text-gray-400">
+        加载中...
+      </div>
+
+      <div v-else>
+        <div v-for="(card, index) in issuedCards" :key="card.id">
+          <div
+            @click="toggleCardExpand(card.id)"
+            :class="[
+              'rounded-2xl p-4 text-white cursor-pointer transition-transform active:scale-[0.98]',
+              index % 2 === 0 ? 'card-gradient-blue' : 'card-gradient-orange'
+            ]"
+          >
+            <div class="flex justify-between items-start mb-1">
+              <div>
+                <h3 class="text-lg font-bold">{{ card.user?.nickname || card.user_id }}</h3>
+                <p class="text-white/70 text-xs mt-0.5">{{ card.card_type }}</p>
+              </div>
+              <div class="bg-white/20 px-2.5 py-0.5 rounded-full">
+                <span class="text-xs font-medium">NO: {{ card.card_no || '-' }}</span>
+              </div>
+            </div>
+
+            <div class="flex justify-between items-end mt-6">
+              <div>
+                <div class="text-white/70 text-xs mb-0.5">剩余次数</div>
+                <div class="text-5xl font-bold leading-none">{{ card.remain_times }}</div>
+              </div>
+              <div class="text-right">
+                <div class="text-white/70 text-xs mb-0.5">有效期至</div>
+                <div class="text-sm font-medium">{{ formatDate(card.end_date) }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="expandedCardId === card.id" class="mt-3 bg-gray-50 rounded-2xl p-5 shadow-md border border-gray-200">
+            <div class="space-y-3.5">
+              <div class="flex justify-between">
+                <span class="text-gray-500">用户</span>
+                <span class="text-gray-800">{{ card.user?.nickname || card.user_id }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-500">卡类型</span>
+                <span class="text-gray-800">{{ card.card_type }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-500">开卡/充值</span>
+                <span class="text-gray-800">{{ formatDateTime(card.recharge_at) }} / ¥{{ card.recharge_amount }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-500">总次数</span>
+                <span class="text-gray-800">{{ card.total_times }} 次</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-500">已使用</span>
+                <span class="text-gray-800">{{ card.used_times }} 次</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-500">上次使用</span>
+                <span class="text-gray-800">{{ card.last_used_at ? formatDateTime(card.last_used_at) : '未使用' }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-500">有效期</span>
+                <span class="text-gray-800">{{ formatDate(card.start_date) }} 至 {{ formatDate(card.end_date) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="issuedCards.length === 0" class="text-center py-12 text-gray-400">
+          暂无已发卡
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -241,7 +333,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi } from '../../api'
-import { formatDateTime } from '../../utils/dateFormat'
+import { formatDateTime, formatDate } from '../../utils/dateFormat'
 
 const router = useRouter()
 const merchantId = ref(null)
@@ -262,6 +354,11 @@ const noticeForm = ref({
   title: '',
   content: ''
 })
+
+const issuedCards = ref([])
+const cardsLoading = ref(false)
+const cardsError = ref('')
+const expandedCardId = ref(null)
 
 const fetchMerchant = async () => {
   try {
@@ -308,6 +405,26 @@ const fetchNotices = async () => {
   } catch (err) {
     console.error('获取通知列表失败:', err)
   }
+}
+
+const fetchIssuedCards = async () => {
+  if (!merchantId.value) return
+  if (cardsLoading.value) return
+
+  cardsLoading.value = true
+  cardsError.value = ''
+  try {
+    const res = await cardApi.getMerchantCards(merchantId.value)
+    issuedCards.value = res.data.data || []
+  } catch (err) {
+    cardsError.value = err.response?.data?.error || '获取卡片列表失败'
+  } finally {
+    cardsLoading.value = false
+  }
+}
+
+const toggleCardExpand = (cardId) => {
+  expandedCardId.value = expandedCardId.value === cardId ? null : cardId
 }
 
 const confirmAppointment = async (id) => {
@@ -430,6 +547,8 @@ watch(currentTab, (tab) => {
     fetchTodayUsages()
   } else if (tab === 'notice') {
     fetchNotices()
+  } else if (tab === 'cards') {
+    fetchIssuedCards()
   }
 })
 

@@ -61,9 +61,18 @@ func GetUserCards(c *gin.Context) {
 }
 
 func GetMerchantCards(c *gin.Context) {
-	merchantID := c.Param("id")
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可查看"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
 	var cards []models.Card
-	config.DB.Preload("User").Where("merchant_id = ?", merchantID).Find(&cards)
+	config.DB.Preload("User").Where("merchant_id = ?", merchantID).Order("id desc").Find(&cards)
 	c.JSON(http.StatusOK, gin.H{"data": cards})
 }
 
