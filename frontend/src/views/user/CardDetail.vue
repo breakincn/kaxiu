@@ -306,7 +306,7 @@ const timeSlots = ref([])
 const loadingSlots = ref(false)
 
 const goBack = () => {
-  router.back()
+  router.push('/user/cards')
 }
 
 const fetchCard = async () => {
