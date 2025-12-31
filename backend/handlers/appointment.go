@@ -426,13 +426,24 @@ func GetQueueStatus(c *gin.Context) {
 func GetAvailableTimeSlots(c *gin.Context) {
 	merchantID := c.Param("id")
 	date := c.Query("date") // 格式: 2024-01-01
+	loc, locErr := time.LoadLocation("Asia/Shanghai")
+	if locErr != nil {
+		loc = time.Local
+	}
 
 	if date == "" {
-		date = time.Now().Format("2006-01-02")
+		date = time.Now().In(loc).Format("2006-01-02")
+	}
+
+	// 仅支持查询今天的可预约时间段
+	todayStr := time.Now().In(loc).Format("2006-01-02")
+	if date != todayStr {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持查询今天的可预约时间段"})
+		return
 	}
 
 	// 验证日期格式
-	if _, err := time.Parse("2006-01-02", date); err != nil {
+	if _, err := time.ParseInLocation("2006-01-02", date, loc); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
 		return
 	}
@@ -449,7 +460,7 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	}
 
 	// 懒更新：自动取消该商户已超时(>=35分钟)但未核销的预约，避免继续占用时间段
-	now := time.Now()
+	now := time.Now().In(loc)
 	overdueDeadline := now.Add(-35 * time.Minute)
 	config.DB.Model(&models.Appointment{}).
 		Where("merchant_id = ? AND status IN ('pending','confirmed') AND appointment_time IS NOT NULL AND appointment_time <= ?", merchantID, overdueDeadline).
@@ -468,11 +479,21 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	// 生成可用时间段（营业时间 9:00-21:00，每个时间段为服务时长）
 	serviceMinutes := merchant.AvgServiceMinutes
 	if serviceMinutes == 0 {
-		serviceMinutes = 30 // 默认30分钟
+		serviceMinutes = 30
+	}
+
+	// 今天仅展示从当前时间之后的时间段，且需要满足：now + (avg_service_minutes + 5分钟)
+	// 若商户未配置 avg_service_minutes，则按 now + 1小时
+	now = time.Now().In(loc)
+	var minStartTime time.Time
+	if merchant.AvgServiceMinutes == 0 {
+		minStartTime = now.Add(1 * time.Hour)
+	} else {
+		minStartTime = now.Add(time.Duration(merchant.AvgServiceMinutes)*time.Minute + 5*time.Minute)
 	}
 
 	// 解析日期
-	targetDate, _ := time.Parse("2006-01-02", date)
+	targetDate, _ := time.ParseInLocation("2006-01-02", date, loc)
 
 	// 营业时间: 9:00 - 21:00
 	startHour := 9
@@ -483,10 +504,10 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	for hour := startHour; hour < endHour; hour++ {
 		for minute := 0; minute < 60; minute += serviceMinutes {
 			slotTime := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(),
-				hour, minute, 0, 0, time.Local)
-			
-			// 如果是今天，只显示未来的时间段
-			if date == time.Now().Format("2006-01-02") && slotTime.Before(time.Now()) {
+				hour, minute, 0, 0, loc)
+
+			// 仅展示满足最小开始时间后的时间段
+			if slotTime.Before(minStartTime) {
 				continue
 			}
 			
@@ -525,11 +546,14 @@ func GetAvailableTimeSlots(c *gin.Context) {
 			}
 		}
 
-		timeSlots = append(timeSlots, TimeSlot{
-			Time:      slot,
-			Available: available,
-			UserName:  userName,
-		})
+		// 仅返回可预约的时间段（排除已被预约/占用的时间段）
+		if available {
+			timeSlots = append(timeSlots, TimeSlot{
+				Time:      slot,
+				Available: available,
+				UserName:  userName,
+			})
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
