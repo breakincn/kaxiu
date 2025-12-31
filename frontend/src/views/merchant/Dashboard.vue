@@ -159,8 +159,27 @@
 
     <!-- 扫码核销 -->
     <div v-if="currentTab === 'verify'" class="px-4 py-4">
-      <div class="bg-white rounded-xl p-4 shadow-sm">
-        <h3 class="font-medium text-gray-800 mb-4">输入核销码</h3>
+      <!-- 默认显示大按钮 -->
+      <div v-if="!showVerifyInput" class="bg-white rounded-xl p-4 shadow-sm">
+        <button
+          @click="goScanVerify"
+          class="w-full py-3 bg-primary text-white rounded-lg font-medium"
+        >
+          扫码核销
+        </button>
+      </div>
+
+      <!-- 输入核销码区域 -->
+      <div v-else class="bg-white rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-medium text-gray-800">输入核销码</h3>
+          <button
+            @click="showVerifyInput = false; verifyCodeInput = ''; verifyResult = null"
+            class="text-gray-500 hover:text-gray-700 text-sm"
+          >
+            取消
+          </button>
+        </div>
         <input
           v-model="verifyCodeInput"
           type="text"
@@ -187,7 +206,15 @@
         <div class="flex items-center justify-between mb-4">
           <h3 class="font-medium text-gray-800">今日核销记录</h3>
           <button
-            @click="goScanVerify"
+            v-if="!showVerifyInput"
+            @click="showVerifyInput = true"
+            class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+          >
+            输入核销码
+          </button>
+          <button
+            v-else
+            @click="showVerifyInput = false; verifyCodeInput = ''; verifyResult = null"
             class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
           >
             扫码核销
@@ -422,6 +449,7 @@ let countdownTimer = null
 const verifyCodeInput = ref('')
 const verifying = ref(false)
 const verifyResult = ref(null)
+const showVerifyInput = ref(false)
 
 const noticeForm = ref({
   title: '',
@@ -594,6 +622,12 @@ const verifyCard = async () => {
     verifyCodeInput.value = ''
     fetchQueueStatus()
     fetchTodayUsages()
+    
+    // 核销成功后2秒关闭输入框
+    setTimeout(() => {
+      showVerifyInput.value = false
+      verifyResult.value = null
+    }, 2000)
   } catch (err) {
     verifyResult.value = {
       success: false,
@@ -858,6 +892,10 @@ watch(currentTab, (tab) => {
   } else {
     stopCountdownTimer()
     if (tab === 'verify') {
+      // 重置为默认状态
+      showVerifyInput.value = false
+      verifyCodeInput.value = ''
+      verifyResult.value = null
       fetchTodayUsages()
     } else if (tab === 'notice') {
       fetchNotices()
