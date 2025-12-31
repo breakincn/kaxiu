@@ -12,7 +12,8 @@ import (
 var DB *gorm.DB
 
 func InitDB() {
-	dsn := "root:root123@tcp(127.0.0.1:3306)/kabao?charset=utf8mb4&parseTime=True&loc=Local"
+	dbConfig := GetDatabaseConfig()
+	dsn := dbConfig.GetDSN()
 	var err error
 	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
