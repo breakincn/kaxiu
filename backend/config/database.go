@@ -39,6 +39,11 @@ func InitDB() {
 		&models.Notice{},
 		&models.Appointment{},
 		&models.VerifyCode{},
+		// Shop 模块（商户收款二维码 + 卡包直购）
+		&models.PaymentConfig{},
+		&models.CardTemplate{},
+		&models.DirectPurchase{},
+		&models.MerchantShopSlug{},
 	)
 	if err != nil {
 		log.Fatal("数据库迁移失败:", err)
@@ -52,6 +57,11 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `notices` COMMENT = '商户通知表'")
 	DB.Exec("ALTER TABLE `appointments` COMMENT = '用户预约排队表'")
 	DB.Exec("ALTER TABLE `verify_codes` COMMENT = '核销码表'")
+	// Shop 模块表注释
+	DB.Exec("ALTER TABLE `payment_configs` COMMENT = '商户收款配置表'")
+	DB.Exec("ALTER TABLE `card_templates` COMMENT = '卡片售卖模板表'")
+	DB.Exec("ALTER TABLE `direct_purchases` COMMENT = '直购订单记录表'")
+	DB.Exec("ALTER TABLE `merchant_shop_slugs` COMMENT = '商户店铺短链接表'")
 
 	log.Println("数据库初始化成功")
 

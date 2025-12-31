@@ -21,12 +21,20 @@
           <h1 class="text-xl font-bold text-gray-800">{{ merchant.name }}</h1>
           <p class="text-gray-500 text-sm mt-1">管理后台</p>
         </div>
-        <router-link
-          to="/merchant/issue-card"
-          class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
-        >
-          发卡/开卡
-        </router-link>
+        <div class="flex gap-2">
+          <router-link
+            to="/merchant/shop-manage"
+            class="px-3 py-2 bg-green-500 text-white rounded-lg text-sm font-medium"
+          >
+            售卡管理
+          </router-link>
+          <router-link
+            to="/merchant/issue-card"
+            class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+          >
+            发卡/开卡
+          </router-link>
+        </div>
       </div>
     </div>
 

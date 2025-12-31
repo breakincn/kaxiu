@@ -65,4 +65,31 @@ func SetupRoutes(r *gin.Engine) {
 	auth.PUT("/appointments/:id/cancel", handlers.CancelAppointment)
 	auth.GET("/merchants/:id/queue", handlers.GetQueueStatus)
 	auth.GET("/merchants/:id/available-slots", handlers.GetAvailableTimeSlots)
+
+	// ==================== Shop 模块（商户收款二维码 + 卡包直购） ====================
+	// 公开接口（无需登录）
+	api.GET("/shop/:slug", handlers.GetShopInfo)
+	api.GET("/shop/id/:id", handlers.GetShopInfoByID)
+
+	// 商户端：收款配置
+	auth.GET("/merchant/payment-config", handlers.GetPaymentConfig)
+	auth.POST("/merchant/payment-config", handlers.SavePaymentConfig)
+
+	// 商户端：卡片模板管理
+	auth.GET("/merchant/card-templates", handlers.GetCardTemplates)
+	auth.POST("/merchant/card-templates", handlers.CreateCardTemplate)
+	auth.PUT("/merchant/card-templates/:id", handlers.UpdateCardTemplate)
+	auth.DELETE("/merchant/card-templates/:id", handlers.DeleteCardTemplate)
+
+	// 商户端：店铺短链接
+	auth.GET("/merchant/shop-slug", handlers.GetShopSlug)
+	auth.POST("/merchant/shop-slug", handlers.SaveShopSlug)
+
+	// 商户端：直购订单
+	auth.GET("/merchant/direct-purchases", handlers.GetMerchantDirectPurchases)
+
+	// 用户端：直购流程
+	auth.POST("/direct-purchase", handlers.CreateDirectPurchase)
+	auth.POST("/direct-purchase/:order_no/confirm", handlers.ConfirmDirectPurchase)
+	auth.GET("/direct-purchases", handlers.GetDirectPurchases)
 }

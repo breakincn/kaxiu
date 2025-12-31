@@ -115,4 +115,33 @@ export const appointmentApi = {
   cancelAppointment: (id) => api.put(`/appointments/${id}/cancel`)
 }
 
+// ==================== Shop 模块（商户收款二维码 + 卡包直购） ====================
+export const shopApi = {
+  // 商户端：收款配置
+  getPaymentConfig: () => api.get('/merchant/payment-config'),
+  savePaymentConfig: (data) => api.post('/merchant/payment-config', data),
+  
+  // 商户端：卡片模板管理
+  getCardTemplates: () => api.get('/merchant/card-templates'),
+  createCardTemplate: (data) => api.post('/merchant/card-templates', data),
+  updateCardTemplate: (id, data) => api.put(`/merchant/card-templates/${id}`, data),
+  deleteCardTemplate: (id) => api.delete(`/merchant/card-templates/${id}`),
+  
+  // 商户端：店铺短链接
+  getShopSlug: () => api.get('/merchant/shop-slug'),
+  saveShopSlug: (slug) => api.post('/merchant/shop-slug', { slug }),
+  
+  // 商户端：直购订单
+  getMerchantDirectPurchases: () => api.get('/merchant/direct-purchases'),
+  
+  // 公开接口：店铺信息
+  getShopInfo: (slug) => api.get(`/shop/${slug}`),
+  getShopInfoByID: (id) => api.get(`/shop/id/${id}`),
+  
+  // 用户端：直购流程
+  createDirectPurchase: (data) => api.post('/direct-purchase', data),
+  confirmDirectPurchase: (orderNo) => api.post(`/direct-purchase/${orderNo}/confirm`),
+  getDirectPurchases: () => api.get('/direct-purchases')
+}
+
 export default api

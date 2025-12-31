@@ -49,6 +49,22 @@ const routes = [
     path: '/merchant/scan-verify',
     name: 'MerchantScanVerify',
     component: () => import('../views/merchant/ScanVerify.vue')
+  },
+  {
+    path: '/merchant/shop-manage',
+    name: 'MerchantShopManage',
+    component: () => import('../views/merchant/ShopManage.vue')
+  },
+  // Shop 模块：用户扫码售卡页面
+  {
+    path: '/shop/:slug',
+    name: 'Shop',
+    component: () => import('../views/user/Shop.vue')
+  },
+  {
+    path: '/shop/id/:id',
+    name: 'ShopById',
+    component: () => import('../views/user/Shop.vue')
   }
 ]
 
