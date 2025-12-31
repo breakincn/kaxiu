@@ -435,13 +435,6 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		date = time.Now().In(loc).Format("2006-01-02")
 	}
 
-	// 仅支持查询今天的可预约时间段
-	todayStr := time.Now().In(loc).Format("2006-01-02")
-	if date != todayStr {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持查询今天的可预约时间段"})
-		return
-	}
-
 	// 验证日期格式
 	if _, err := time.ParseInLocation("2006-01-02", date, loc); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
@@ -482,14 +475,18 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		serviceMinutes = 30
 	}
 
-	// 今天仅展示从当前时间之后的时间段，且需要满足：now + (avg_service_minutes + 5分钟)
-	// 若商户未配置 avg_service_minutes，则按 now + 1小时
-	now = time.Now().In(loc)
+	// 判断是否为今天
+	isToday := date == time.Now().In(loc).Format("2006-01-02")
 	var minStartTime time.Time
-	if merchant.AvgServiceMinutes == 0 {
-		minStartTime = now.Add(1 * time.Hour)
-	} else {
-		minStartTime = now.Add(time.Duration(merchant.AvgServiceMinutes)*time.Minute + 5*time.Minute)
+	if isToday {
+		// 今天仅展示从当前时间之后的时间段，且需要满足：now + (avg_service_minutes + 5分钟)
+		// 若商户未配置 avg_service_minutes，则按 now + 1小时
+		now := time.Now().In(loc)
+		if merchant.AvgServiceMinutes == 0 {
+			minStartTime = now.Add(1 * time.Hour)
+		} else {
+			minStartTime = now.Add(time.Duration(merchant.AvgServiceMinutes)*time.Minute + 5*time.Minute)
+		}
 	}
 
 	// 解析日期
@@ -506,8 +503,8 @@ func GetAvailableTimeSlots(c *gin.Context) {
 			slotTime := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(),
 				hour, minute, 0, 0, loc)
 
-			// 仅展示满足最小开始时间后的时间段
-			if slotTime.Before(minStartTime) {
+			// 如果是今天，仅展示满足最小开始时间后的时间段
+			if isToday && slotTime.Before(minStartTime) {
 				continue
 			}
 			
