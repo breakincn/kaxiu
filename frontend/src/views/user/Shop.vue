@@ -405,9 +405,16 @@ function openPaymentApp() {
     // 调起失败，显示底部按钮
   }
   
-  // 点击提示条后显示底部按钮
-  showPaymentGuide.value = false
-  showPaymentActions.value = true
+  // 15秒后隐藏提示条并显示底部按钮
+  if (paymentActionsTimer) {
+    clearTimeout(paymentActionsTimer)
+    paymentActionsTimer = null
+  }
+  paymentActionsTimer = setTimeout(() => {
+    showPaymentGuide.value = false
+    showPaymentActions.value = true
+    paymentActionsTimer = null
+  }, 15000)
 }
 
 function cancelPayment() {
