@@ -6,7 +6,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
         </svg>
       </button>
-      <span class="font-medium text-gray-800">扫码付款</span>
+      <span class="font-medium text-gray-800">扫码进店</span>
       <div class="w-8"></div>
     </header>
 
@@ -53,26 +53,8 @@
         </div>
 
         <p class="text-gray-400 text-xs mt-3">
-          提示：扫码后会自动跳转到商户配置的支付宝/微信收款链接（优先支付宝）。
+          提示：请扫描商户售卡二维码，识别后将进入对应店铺页。
         </p>
-      </div>
-
-      <div v-if="fallbackQrCode" class="bg-white rounded-xl p-4 shadow-sm mt-4">
-        <div class="font-medium text-gray-800 mb-2">未配置收款链接，请扫码收款码付款</div>
-        <div class="flex justify-center">
-          <img :src="fallbackQrCode" alt="收款码" class="max-w-[240px] rounded-lg border border-gray-200" />
-        </div>
-      </div>
-
-      <div v-if="fallbackLink" class="bg-white rounded-xl p-4 shadow-sm mt-4">
-        <div class="font-medium text-gray-800 mb-2">未自动跳转？</div>
-        <button
-          type="button"
-          @click="openPayLink"
-          class="block w-full text-center py-3 bg-primary text-white rounded-lg font-medium"
-        >
-          点击打开付款链接
-        </button>
       </div>
     </div>
   </div>
@@ -82,7 +64,6 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Html5Qrcode } from 'html5-qrcode'
-import { shopApi } from '../../api'
 
 const router = useRouter()
 
@@ -91,9 +72,6 @@ const resolving = ref(false)
 const hasStarted = ref(false)
 const errorText = ref('')
 const statusText = ref('')
-
-const fallbackQrCode = ref('')
-const fallbackLink = ref('')
 
 const currentCameraIndex = ref(0)
 const cameras = ref([])
@@ -133,27 +111,6 @@ const loadCameras = async () => {
   }
 }
 
-const isNavigableLink = (url) => {
-  const u = (url || '').trim()
-  if (!u) return false
-  return (
-    u.startsWith('https://') ||
-    u.startsWith('http://') ||
-    u.startsWith('weixin://') ||
-    u.startsWith('wxp://') ||
-    u.startsWith('alipay://')
-  )
-}
-
-const openPayLink = () => {
-  const url = (fallbackLink.value || '').trim()
-  if (!isNavigableLink(url)) {
-    errorText.value = '付款链接格式不正确，请让商户配置 http(s)/weixin/alipay 开头的链接，或使用收款码图片。'
-    return
-  }
-  window.location.assign(url)
-}
-
 const ensureInstance = () => {
   if (!html5QrCode) {
     html5QrCode = new Html5Qrcode('qr-reader-pay')
@@ -165,9 +122,6 @@ const start = async () => {
 
   errorText.value = ''
   statusText.value = ''
-  fallbackQrCode.value = ''
-  fallbackLink.value = ''
-
   starting.value = true
   try {
     ensureInstance()
@@ -260,25 +214,6 @@ const parseShopTarget = (rawText) => {
   }
 }
 
-const choosePayTarget = (paymentConfig) => {
-  const alipayLink = (paymentConfig?.alipay_link || '').trim()
-  const wechatLink = (paymentConfig?.wechat_link || '').trim()
-  const alipayQr = (paymentConfig?.alipay_qr_code || '').trim()
-  const wechatQr = (paymentConfig?.wechat_qr_code || '').trim()
-
-  if (alipayLink && isNavigableLink(alipayLink)) return { type: 'link', url: alipayLink }
-  if (wechatLink && isNavigableLink(wechatLink)) return { type: 'link', url: wechatLink }
-
-  if (alipayQr) return { type: 'qr', url: alipayQr }
-  if (wechatQr) return { type: 'qr', url: wechatQr }
-
-  if (alipayLink || wechatLink) {
-    return { type: 'invalid_link', url: alipayLink || wechatLink }
-  }
-
-  return null
-}
-
 const onDecoded = async (decodedText) => {
   if (resolving.value) return
 
@@ -290,43 +225,16 @@ const onDecoded = async (decodedText) => {
 
   resolving.value = true
   try {
-    statusText.value = '识别成功，获取商户收款信息中...'
+    statusText.value = '识别成功，进入店铺中...'
 
-    let res
-    if (target.kind === 'slug') {
-      res = await shopApi.getShopInfo(target.value)
-    } else {
-      res = await shopApi.getShopInfoByID(target.value)
-    }
+    const path = target.kind === 'slug'
+      ? `/shop/${encodeURIComponent(target.value)}`
+      : `/shop/id/${encodeURIComponent(target.value)}`
 
-    const shopInfo = res.data.data
-    const paymentConfig = shopInfo?.payment_config
-
-    const pay = choosePayTarget(paymentConfig)
-    if (!pay) {
-      errorText.value = '商户未配置收款信息'
-      statusText.value = ''
-      return
-    }
-
-    if (pay.type === 'link') {
-      statusText.value = '即将跳转到商户收款链接...'
-      fallbackLink.value = pay.url
-      await stop()
-      window.location.assign(pay.url)
-      return
-    }
-
-    if (pay.type === 'invalid_link') {
-      statusText.value = ''
-      errorText.value = '商户配置的收款链接不是可打开的URL（需以 http(s)/weixin/alipay 开头），请让商户改为正确链接，或使用收款码图片。'
-      return
-    }
-
-    statusText.value = '商户未配置收款链接，已展示收款码'
-    fallbackQrCode.value = pay.url
+    await stop()
+    router.replace(path)
   } catch (err) {
-    errorText.value = err.response?.data?.error || '获取商户收款信息失败'
+    errorText.value = err?.message || '跳转失败'
     statusText.value = ''
   } finally {
     resolving.value = false

@@ -143,7 +143,7 @@
                 <img :src="paymentUrl" alt="收款码" v-if="paymentUrl && isImageUrl(paymentUrl)" />
                 <div v-else-if="paymentUrl" class="payment-link">
                   <p>请点击下方链接完成付款</p>
-                  <a :href="paymentUrl" target="_blank" class="pay-link-btn">去付款</a>
+                  <button type="button" class="pay-link-btn" @click="openPaymentLink">去付款</button>
                 </div>
               </div>
               
@@ -236,7 +236,7 @@ function getCardTypeLabel(type) {
 
 function selectCard(card) {
   selectedCard.value = card
-  paymentMethod.value = ''
+  paymentMethod.value = getDefaultPaymentMethod()
   showPurchaseModal.value = true
 }
 
@@ -253,7 +253,11 @@ function goLogin() {
 
 async function createPurchase() {
   if (!paymentMethod.value) {
-    alert('请选择支付方式')
+    paymentMethod.value = getDefaultPaymentMethod()
+  }
+
+  if (!paymentMethod.value) {
+    alert('商户未配置收款方式')
     return
   }
   
@@ -279,6 +283,29 @@ async function createPurchase() {
 function isImageUrl(url) {
   if (!url) return false
   return url.match(/\.(jpg|jpeg|png|gif|webp)$/i) || url.includes('qr') || url.includes('code')
+}
+
+function isNavigableLink(url) {
+  if (!url) return false
+  const u = String(url).trim()
+  return u.startsWith('https://') || u.startsWith('http://') || u.startsWith('weixin://') || u.startsWith('wxp://') || u.startsWith('alipay://')
+}
+
+function openPaymentLink() {
+  if (!paymentUrl.value) return
+  if (!isNavigableLink(paymentUrl.value)) {
+    alert('付款链接格式不正确，请让商户配置正确的收款链接，或使用收款码图片。')
+    return
+  }
+  window.location.assign(paymentUrl.value)
+}
+
+function getDefaultPaymentMethod() {
+  const cfg = shopInfo.value?.payment_config
+  if (!cfg) return ''
+  if (cfg.has_alipay) return 'alipay'
+  if (cfg.has_wechat) return 'wechat'
+  return ''
 }
 
 function cancelPayment() {
