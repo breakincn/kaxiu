@@ -359,28 +359,22 @@ async function savePayment() {
     const ext = extByType[blob.type] || 'jpg'
     const filename = `payment_qrcode_${Date.now()}.${ext}`
 
-    // 优先尝试系统分享（部分手机可直接存到相册/文件）
+    // 只尝试系统分享，不触发下载
     if (navigator.share && window.File) {
       try {
         const file = new File([blob], filename, { type: blob.type || 'image/jpeg' })
         await navigator.share({ files: [file], title: '收款码' })
       } catch (e) {
-        // ignore and fallback
+        // 分享失败也不进行下载
+        console.log('分享失败或取消')
       }
+    } else {
+      // 不支持分享API的情况，也不进行下载
+      console.log('当前浏览器不支持分享功能')
     }
-
-    const objectUrl = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = objectUrl
-    link.download = filename
-    link.target = '_blank'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(objectUrl)
   } catch (e) {
-    // 部分浏览器/跨域场景 fetch 可能失败，兜底用直链打开
-    window.open(paymentUrl.value, '_blank')
+    // fetch 失败也不进行任何操作
+    console.log('获取图片失败')
   }
 
   // 保存后按钮变灰，提示条高亮可点击
