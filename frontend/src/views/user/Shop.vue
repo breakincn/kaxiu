@@ -96,7 +96,7 @@
                   v-if="shopInfo.payment_config.has_alipay"
                   class="payment-option"
                   :class="{ selected: paymentMethod === 'alipay' }"
-                  @click="paymentMethod = 'alipay'"
+                  @click="handlePaymentMethodClick('alipay')"
                 >
                   <div class="payment-icon alipay">支</div>
                   <span>支付宝</span>
@@ -105,7 +105,7 @@
                   v-if="shopInfo.payment_config.has_wechat"
                   class="payment-option"
                   :class="{ selected: paymentMethod === 'wechat' }"
-                  @click="paymentMethod = 'wechat'"
+                  @click="handlePaymentMethodClick('wechat')"
                 >
                   <div class="payment-icon wechat">微</div>
                   <span>微信支付</span>
@@ -270,6 +270,16 @@ function selectCard(card) {
   selectedCard.value = card
   paymentMethod.value = getDefaultPaymentMethod()
   showPurchaseModal.value = true
+}
+
+function handlePaymentMethodClick(method) {
+  if (paymentMethod.value === method) {
+    // 如果点击的是已选中的支付方式，直接触发购买
+    createPurchase()
+  } else {
+    // 否则只是切换支付方式
+    paymentMethod.value = method
+  }
 }
 
 function closePurchaseModal() {
