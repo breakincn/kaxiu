@@ -132,13 +132,11 @@
       <div v-if="showPaymentModal" class="modal-overlay">
         <div class="modal payment-modal">
           <div class="modal-header">
-            <h3>完成付款</h3>
+            <h3 class="payment-title">{{ paymentTitle }}</h3>
           </div>
           
           <div class="modal-body">
             <div class="payment-info">
-              <p class="payment-hint">请使用{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}扫描下方二维码完成付款</p>
-              
               <div class="payment-qrcode">
                 <img :src="paymentUrl" alt="收款码" v-if="paymentUrl" />
               </div>
@@ -147,9 +145,20 @@
                 <span>支付金额：</span>
                 <span class="amount">¥{{ (currentOrder?.price / 100).toFixed(2) }}</span>
               </div>
+
+              <div v-if="showPaymentGuide" class="payment-guide">
+                <div class="payment-guide-icon">📱</div>
+                <div class="payment-guide-text">
+                  打开{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}扫一扫点击相册，确认支付¥{{ (currentOrder?.price / 100).toFixed(2) }}
+                </div>
+              </div>
+              
+              <button class="save-payment-btn" @click="savePayment">
+                保存至手机付款
+              </button>
             </div>
             
-            <div class="payment-actions">
+            <div v-if="showPaymentActions" class="payment-actions">
               <button class="cancel-btn" @click="cancelPayment">取消</button>
               <button class="confirm-btn" @click="confirmPayment" :disabled="confirming">
                 {{ confirming ? '开卡中...' : '已完成付款' }}
@@ -173,7 +182,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { shopApi } from '../../api/index.js'
 
@@ -192,8 +201,32 @@ const currentOrder = ref(null)
 const purchasing = ref(false)
 const confirming = ref(false)
 
+const showPaymentGuide = ref(true)
+const showPaymentActions = ref(false)
+
+let paymentActionsTimer = null
+
+onBeforeUnmount(() => {
+  if (paymentActionsTimer) {
+    clearTimeout(paymentActionsTimer)
+    paymentActionsTimer = null
+  }
+})
+
 const isLoggedIn = computed(() => {
   return !!localStorage.getItem('userToken')
+})
+
+const paymentTitle = computed(() => {
+  const card = selectedCard.value
+  if (!card) return '完成付款'
+
+  if (card.card_type === 'balance') {
+    return `${card.name} 充${(card.recharge_amount / 100).toFixed(0)}元`
+  }
+
+  const unit = card.card_type === 'lesson' ? '课时' : '次'
+  return `${card.name} ${card.total_times}${unit}`
 })
 
 onMounted(() => {
@@ -266,6 +299,13 @@ async function createPurchase() {
     
     currentOrder.value = res.data.data
     paymentUrl.value = res.data.data.payment_url
+
+    showPaymentGuide.value = true
+    showPaymentActions.value = false
+    if (paymentActionsTimer) {
+      clearTimeout(paymentActionsTimer)
+      paymentActionsTimer = null
+    }
     
     showPurchaseModal.value = false
     showPaymentModal.value = true
@@ -291,10 +331,65 @@ function getDefaultPaymentMethod() {
   return ''
 }
 
+async function savePayment() {
+  if (!paymentUrl.value) return
+
+  try {
+    const resp = await fetch(paymentUrl.value)
+    const blob = await resp.blob()
+
+    const extByType = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/webp': 'webp',
+    }
+    const ext = extByType[blob.type] || 'jpg'
+    const filename = `payment_qrcode_${Date.now()}.${ext}`
+
+    // 优先尝试系统分享（部分手机可直接存到相册/文件）
+    if (navigator.share && window.File) {
+      try {
+        const file = new File([blob], filename, { type: blob.type || 'image/jpeg' })
+        await navigator.share({ files: [file], title: '收款码' })
+      } catch (e) {
+        // ignore and fallback
+      }
+    }
+
+    const objectUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = filename
+    link.target = '_blank'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(objectUrl)
+  } catch (e) {
+    // 部分浏览器/跨域场景 fetch 可能失败，兜底用直链打开
+    window.open(paymentUrl.value, '_blank')
+  }
+
+  if (paymentActionsTimer) {
+    clearTimeout(paymentActionsTimer)
+  }
+  paymentActionsTimer = setTimeout(() => {
+    showPaymentGuide.value = false
+    showPaymentActions.value = true
+  }, 30 * 1000)
+}
+
 function cancelPayment() {
   showPaymentModal.value = false
   currentOrder.value = null
   paymentUrl.value = ''
+
+  showPaymentGuide.value = true
+  showPaymentActions.value = false
+  if (paymentActionsTimer) {
+    clearTimeout(paymentActionsTimer)
+    paymentActionsTimer = null
+  }
 }
 
 async function confirmPayment() {
@@ -305,6 +400,13 @@ async function confirmPayment() {
     await shopApi.confirmDirectPurchase(currentOrder.value.order_no)
     showPaymentModal.value = false
     showSuccessModal.value = true
+
+    showPaymentGuide.value = true
+    showPaymentActions.value = false
+    if (paymentActionsTimer) {
+      clearTimeout(paymentActionsTimer)
+      paymentActionsTimer = null
+    }
   } catch (e) {
     alert(e.response?.data?.error || '开卡失败')
   } finally {
@@ -653,16 +755,24 @@ function goToCards() {
 }
 
 /* 支付弹窗 */
+.payment-modal .modal-header {
+  justify-content: center;
+}
+
+.payment-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  text-align: center;
+}
+
 .payment-info {
   text-align: center;
 }
 
-.payment-hint {
-  color: #666;
-  margin-bottom: 16px;
-}
-
 .payment-qrcode {
+  display: flex;
+  justify-content: center;
   margin-bottom: 16px;
 }
 
@@ -688,12 +798,53 @@ function goToCards() {
 .payment-amount {
   font-size: 16px;
   color: #333;
+  margin-bottom: 20px;
 }
 
 .payment-amount .amount {
   font-size: 24px;
   font-weight: 600;
   color: #f50;
+}
+
+.payment-guide {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: #f2f4f7;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+.payment-guide-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex: 0 0 auto;
+}
+
+.payment-guide-text {
+  color: #333;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.save-payment-btn {
+  width: 100%;
+  padding: 14px;
+  background: #1890ff;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: 20px;
 }
 
 .payment-actions {
@@ -706,7 +857,8 @@ function goToCards() {
   flex: 1;
   padding: 14px;
   background: #f5f5f5;
-  border: none;
+  color: #666;
+  border: 1px solid #ddd;
   border-radius: 8px;
   font-size: 16px;
   cursor: pointer;
