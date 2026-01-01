@@ -57,6 +57,6 @@ func UploadPaymentQRCode(c *gin.Context) {
 		return
 	}
 
-	urlPath := "/uploads/" + filepath.ToSlash(filepath.Join(relDir, filename))
+	urlPath := "/api/uploads/" + filepath.ToSlash(filepath.Join(relDir, filename))
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"url": urlPath}})
 }

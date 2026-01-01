@@ -8,6 +8,9 @@ import (
 )
 
 func SetupRoutes(r *gin.Engine) {
+	// 线上常见仅反代 /api，因此静态资源挂到 /api/uploads
+	// 同时保留 /uploads 兼容旧数据
+	r.Static("/api/uploads", "./uploads")
 	r.Static("/uploads", "./uploads")
 
 	api := r.Group("/api")
