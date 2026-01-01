@@ -148,13 +148,15 @@
               </div>
               
               <button class="save-payment-btn" @click="savePayment" :disabled="saveButtonDisabled">
-                保存至手机付款
+                保存支付码至手机付款
               </button>
 
               <div v-if="showPaymentGuide" class="payment-guide" :class="{ highlighted: guideHighlighted }" @click="openPaymentApp">
                 <div class="payment-guide-icon">📱</div>
                 <div class="payment-guide-text">
-                  打开{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}扫一扫,点击相册,选择支付码;确认输入付款¥{{ (currentOrder?.price / 100).toFixed(2) }}元
+<!--                  打开{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}扫一扫,点击相册,选择支付码;确认输入付款¥{{ (currentOrder?.price / 100).toFixed(2) }}元-->
+<!--                  在{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}中：点击"相册" → 选择刚保存的支付码 → 确认支付¥{{ (currentOrder?.price / 100).toFixed(2) }}-->
+                  打开{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}扫一扫 → 点击相册 → 选择支付码;输入付款金额¥{{ (currentOrder?.price / 100).toFixed(2) }}元
                 </div>
               </div>
             </div>
