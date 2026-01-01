@@ -139,6 +139,7 @@ export const shopApi = {
   
   // 商户端：直购订单
   getMerchantDirectPurchases: () => api.get('/merchant/direct-purchases'),
+  confirmMerchantDirectPurchase: (orderNo) => api.post(`/merchant/direct-purchases/${orderNo}/confirm`),
   
   // 公开接口：店铺信息
   getShopInfo: (slug) => api.get(`/shop/${slug}`),

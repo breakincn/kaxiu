@@ -48,31 +48,57 @@
         <div 
           v-for="tpl in templates" 
           :key="tpl.id" 
-          class="template-card"
-          :class="{ inactive: !tpl.is_active }"
+          class="template-item"
         >
-          <div class="template-info">
-            <div class="template-name">{{ tpl.name }}</div>
-            <div class="template-meta">
-              <span class="type-tag">{{ getCardTypeLabel(tpl.card_type) }}</span>
-              <span class="price">¥{{ (tpl.price / 100).toFixed(2) }}</span>
+          <div
+            class="template-card"
+            :class="{ inactive: !tpl.is_active }"
+          >
+            <div class="template-info">
+              <div class="template-name">{{ tpl.name }}</div>
+              <div class="template-meta">
+                <span class="type-tag">{{ getCardTypeLabel(tpl.card_type) }}</span>
+                <span class="price">¥{{ (tpl.price / 100).toFixed(2) }}</span>
+              </div>
+              <div class="template-detail">
+                <span v-if="tpl.card_type !== 'balance'">{{ tpl.total_times }}次</span>
+                <span v-else>充值{{ (tpl.recharge_amount / 100).toFixed(0) }}元</span>
+                <span v-if="tpl.valid_days > 0">· {{ tpl.valid_days }}天有效</span>
+                <span v-else>· 永久有效</span>
+              </div>
             </div>
-            <div class="template-detail">
-              <span v-if="tpl.card_type !== 'balance'">{{ tpl.total_times }}次</span>
-              <span v-else>充值{{ (tpl.recharge_amount / 100).toFixed(0) }}元</span>
-              <span v-if="tpl.valid_days > 0">· {{ tpl.valid_days }}天有效</span>
-              <span v-else>· 永久有效</span>
+            <div class="template-actions">
+              <button class="action-btn" @click="editTemplate(tpl)">编辑</button>
+              <button
+                class="action-btn"
+                :class="tpl.is_active ? 'danger' : 'success'"
+                @click="toggleTemplateStatus(tpl)"
+              >
+                {{ tpl.is_active ? '下架' : '上架' }}
+              </button>
             </div>
           </div>
-          <div class="template-actions">
-            <button class="action-btn" @click="editTemplate(tpl)">编辑</button>
-            <button 
-              class="action-btn" 
-              :class="tpl.is_active ? 'danger' : 'success'"
-              @click="toggleTemplateStatus(tpl)"
+
+          <div v-if="paidOrdersByTemplate[tpl.id]?.length" class="paid-orders">
+            <div
+              v-for="order in paidOrdersByTemplate[tpl.id]"
+              :key="order.id"
+              class="paid-order-notice"
             >
-              {{ tpl.is_active ? '下架' : '上架' }}
-            </button>
+              <div class="notice-left">
+                <div class="notice-title">用户已完成付款</div>
+                <div class="notice-sub">
+                  {{ order.user?.nickname || order.user?.phone }} · {{ order.payment_method === 'alipay' ? '支付宝' : '微信' }} · {{ formatTime(order.paid_at) }} · 已付款 {{ formatElapsed(order.paid_at) }}
+                </div>
+              </div>
+              <button
+                class="notice-action"
+                @click="confirmMerchantOrder(order)"
+                :disabled="confirmingMap[order.order_no]"
+              >
+                {{ confirmingMap[order.order_no] ? '确认中...' : '确认订单' }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -263,7 +289,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, onBeforeUnmount } from 'vue'
 import { shopApi } from '../../api/index.js'
 
 const activeTab = ref('templates')
@@ -302,6 +328,11 @@ const slugChanged = ref(false)
 // 直购订单
 const orders = ref([])
 
+const confirmingMap = ref({})
+const nowTick = ref(Date.now())
+let nowTimer = null
+let ordersPollTimer = null
+
 // 二维码URL
 const shopFullUrl = computed(() => {
   if (!shopSlug.value) return ''
@@ -318,6 +349,37 @@ onMounted(() => {
   loadPaymentConfig()
   loadShopSlug()
   loadOrders()
+
+  nowTimer = setInterval(() => {
+    nowTick.value = Date.now()
+  }, 1000)
+
+  ordersPollTimer = setInterval(() => {
+    loadOrders()
+  }, 5000)
+})
+
+onBeforeUnmount(() => {
+  if (nowTimer) {
+    clearInterval(nowTimer)
+    nowTimer = null
+  }
+  if (ordersPollTimer) {
+    clearInterval(ordersPollTimer)
+    ordersPollTimer = null
+  }
+})
+
+const paidOrdersByTemplate = computed(() => {
+  const map = {}
+  for (const o of orders.value || []) {
+    if (o?.status !== 'paid') continue
+    const tplID = o.card_template_id
+    if (!tplID) continue
+    if (!map[tplID]) map[tplID] = []
+    map[tplID].push(o)
+  }
+  return map
 })
 
 async function loadTemplates() {
@@ -397,13 +459,39 @@ function getCardTypeLabel(type) {
 }
 
 function getOrderStatusLabel(status) {
-  const labels = { pending: '待支付', confirmed: '已完成', canceled: '已取消' }
+  const labels = { pending: '待支付', paid: '待确认', confirmed: '已完成', canceled: '已取消' }
   return labels[status] || status
 }
 
 function formatTime(time) {
   if (!time) return ''
   return new Date(time).toLocaleString('zh-CN')
+}
+
+function formatElapsed(paidAt) {
+  if (!paidAt) return ''
+  const paidTs = new Date(paidAt).getTime()
+  if (!paidTs) return ''
+  const diff = Math.max(0, Math.floor((nowTick.value - paidTs) / 1000))
+  const h = Math.floor(diff / 3600)
+  const m = Math.floor((diff % 3600) / 60)
+  const s = diff % 60
+  if (h > 0) return `${h}小时${m}分${s}秒`
+  if (m > 0) return `${m}分${s}秒`
+  return `${s}秒`
+}
+
+async function confirmMerchantOrder(order) {
+  if (!order?.order_no) return
+  confirmingMap.value = { ...confirmingMap.value, [order.order_no]: true }
+  try {
+    await shopApi.confirmMerchantDirectPurchase(order.order_no)
+    await loadOrders()
+  } catch (e) {
+    alert(e.response?.data?.error || '确认失败')
+  } finally {
+    confirmingMap.value = { ...confirmingMap.value, [order.order_no]: false }
+  }
 }
 
 function editTemplate(tpl) {
@@ -618,6 +706,12 @@ function downloadQrcode() {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.template-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .template-card {
@@ -887,6 +981,11 @@ function downloadQrcode() {
   color: #fa8c16;
 }
 
+.order-status.paid {
+  background: #fffbe6;
+  color: #ad8b00;
+}
+
 .order-status.confirmed {
   background: #f6ffed;
   color: #52c41a;
@@ -922,6 +1021,56 @@ function downloadQrcode() {
   justify-content: space-between;
   font-size: 12px;
   color: #999;
+}
+
+.paid-orders {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.paid-order-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px;
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 10px;
+}
+
+.notice-left {
+  min-width: 0;
+}
+
+.notice-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ad8b00;
+  margin-bottom: 4px;
+}
+
+.notice-sub {
+  font-size: 12px;
+  color: #8c8c8c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notice-action {
+  flex: none;
+  padding: 8px 12px;
+  border: none;
+  background: #1890ff;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.notice-action:disabled {
+  background: #ccc;
 }
 
 /* 弹窗 */

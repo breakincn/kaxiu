@@ -164,7 +164,7 @@
             <div v-if="showPaymentActions" class="payment-actions">
               <button class="cancel-btn" @click="cancelPayment">取消</button>
               <button class="confirm-btn" @click="confirmPayment" :disabled="confirming">
-                {{ confirming ? '开卡中...' : '已完成付款' }}
+                {{ confirming ? '提交中...' : '已完成付款' }}
               </button>
             </div>
           </div>
@@ -175,8 +175,8 @@
       <div v-if="showSuccessModal" class="modal-overlay">
         <div class="modal success-modal">
           <div class="success-icon">✓</div>
-          <h3>开卡成功</h3>
-          <p>卡片已加入您的卡包</p>
+          <h3>已提交付款</h3>
+          <p>等待商户确认后，卡片将自动加入您的卡包</p>
           <button class="view-btn" @click="goToCards">查看我的卡包</button>
         </div>
       </div>
@@ -450,7 +450,7 @@ async function confirmPayment() {
       paymentActionsTimer = null
     }
   } catch (e) {
-    alert(e.response?.data?.error || '开卡失败')
+    alert(e.response?.data?.error || '提交失败')
   } finally {
     confirming.value = false
   }

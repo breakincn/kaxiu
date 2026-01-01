@@ -95,6 +95,7 @@ func SetupRoutes(r *gin.Engine) {
 
 	// 商户端：直购订单
 	auth.GET("/merchant/direct-purchases", handlers.GetMerchantDirectPurchases)
+	auth.POST("/merchant/direct-purchases/:order_no/confirm", handlers.MerchantConfirmDirectPurchase)
 
 	// 用户端：直购流程
 	auth.POST("/direct-purchase", handlers.CreateDirectPurchase)

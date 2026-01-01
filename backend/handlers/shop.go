@@ -556,7 +556,60 @@ func ConfirmDirectPurchase(c *gin.Context) {
 		return
 	}
 
+	if purchase.Status == "paid" {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "已提交付款，等待商户确认",
+			"data":    purchase,
+		})
+		return
+	}
+
 	if purchase.Status != "pending" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "订单状态无效"})
+		return
+	}
+
+	now := time.Now()
+	if err := config.DB.Model(&purchase).Updates(map[string]interface{}{
+		"status":  "paid",
+		"paid_at": &now,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交失败"})
+		return
+	}
+
+	config.DB.First(&purchase, purchase.ID)
+	c.JSON(http.StatusOK, gin.H{
+		"message": "已提交付款，等待商户确认",
+		"data":    purchase,
+	})
+}
+
+// MerchantConfirmDirectPurchase 商户确认直购订单（商户确认后开卡）
+func MerchantConfirmDirectPurchase(c *gin.Context) {
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+
+	orderNo := c.Param("order_no")
+
+	var purchase models.DirectPurchase
+	if err := config.DB.Where("order_no = ? AND merchant_id = ?", orderNo, merchantID).First(&purchase).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "订单不存在"})
+		return
+	}
+
+	if purchase.Status == "confirmed" {
+		config.DB.Preload("Card").Preload("CardTemplate").Preload("User").First(&purchase, purchase.ID)
+		c.JSON(http.StatusOK, gin.H{
+			"message": "订单已确认",
+			"data":    purchase,
+		})
+		return
+	}
+
+	if purchase.Status != "paid" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "订单状态无效"})
 		return
 	}
@@ -568,33 +621,29 @@ func ConfirmDirectPurchase(c *gin.Context) {
 		return
 	}
 
-	// 开始事务：更新订单状态并创建卡片
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
 		confirmedAt := now
 
-		// 计算有效期
 		var endDate *time.Time
 		if template.ValidDays > 0 {
 			end := now.AddDate(0, 0, template.ValidDays)
 			endDate = &end
 		} else {
-			// 永久有效设置为100年后
 			end := now.AddDate(100, 0, 0)
 			endDate = &end
 		}
 
-		// 创建卡片
 		cardNo := uuid.New().String()[:8]
 		card := models.Card{
-			UserID:         userID,
+			UserID:         purchase.UserID,
 			MerchantID:     purchase.MerchantID,
 			CardNo:         cardNo,
 			CardType:       template.Name,
 			TotalTimes:     template.TotalTimes,
 			RemainTimes:    template.TotalTimes,
 			UsedTimes:      0,
-			RechargeAmount: template.RechargeAmount / 100, // 分转元
+			RechargeAmount: template.RechargeAmount / 100,
 			RechargeAt:     &now,
 			StartDate:      &now,
 			EndDate:        endDate,
@@ -604,10 +653,9 @@ func ConfirmDirectPurchase(c *gin.Context) {
 			return err
 		}
 
-		// 更新订单状态
 		if err := tx.Model(&purchase).Updates(map[string]interface{}{
 			"status":       "confirmed",
-			"confirmed_at": confirmedAt,
+			"confirmed_at": &confirmedAt,
 			"card_id":      card.ID,
 		}).Error; err != nil {
 			return err
@@ -621,9 +669,7 @@ func ConfirmDirectPurchase(c *gin.Context) {
 		return
 	}
 
-	// 重新加载订单信息
-	config.DB.Preload("Card").Preload("CardTemplate").First(&purchase, purchase.ID)
-
+	config.DB.Preload("Card").Preload("CardTemplate").Preload("User").First(&purchase, purchase.ID)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "开卡成功",
 		"data":    purchase,

@@ -64,7 +64,8 @@ type DirectPurchase struct {
 	CardID         *uint  `json:"card_id" gorm:"index;comment:生成的卡片ID（外键关联cards表，确认后填充）"`
 	Price          int    `json:"price" gorm:"comment:购买价格（单位：分）"`
 	PaymentMethod  string `json:"payment_method" gorm:"size:20;comment:支付方式（alipay-支付宝，wechat-微信）"`
-	Status         string `json:"status" gorm:"size:20;default:pending;comment:订单状态（pending-待支付，confirmed-已确认，canceled-已取消）"`
+	Status         string `json:"status" gorm:"size:20;default:pending;comment:订单状态（pending-待支付，paid-已付款待确认，confirmed-已确认，canceled-已取消）"`
+	PaidAt         *time.Time `json:"paid_at" gorm:"type:datetime(3);comment:用户点击已完成付款时间"`
 	ConfirmedAt    *time.Time `json:"confirmed_at" gorm:"type:datetime(3);comment:用户确认付款时间"`
 	CreatedAt      *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
