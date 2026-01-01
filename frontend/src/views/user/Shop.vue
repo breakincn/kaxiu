@@ -147,11 +147,11 @@
                 <span class="amount">¥{{ (currentOrder?.price / 100).toFixed(2) }}</span>
               </div>
               
-              <button class="save-payment-btn" @click="savePayment">
+              <button class="save-payment-btn" @click="savePayment" :disabled="saveButtonDisabled">
                 保存至手机付款
               </button>
 
-              <div v-if="showPaymentGuide" class="payment-guide">
+              <div v-if="showPaymentGuide" class="payment-guide" :class="{ highlighted: guideHighlighted }" @click="openPaymentApp">
                 <div class="payment-guide-icon">📱</div>
                 <div class="payment-guide-text">
                   打开{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}扫一扫,点击相册,选择支付码;确认输入付款¥{{ (currentOrder?.price / 100).toFixed(2) }}元
@@ -204,6 +204,8 @@ const confirming = ref(false)
 
 const showPaymentGuide = ref(true)
 const showPaymentActions = ref(false)
+const saveButtonDisabled = ref(false)
+const guideHighlighted = ref(false)
 
 let paymentActionsTimer = null
 
@@ -371,13 +373,35 @@ async function savePayment() {
     window.open(paymentUrl.value, '_blank')
   }
 
-  if (paymentActionsTimer) {
-    clearTimeout(paymentActionsTimer)
+  // 保存后按钮变灰，提示条高亮可点击
+  saveButtonDisabled.value = true
+  guideHighlighted.value = true
+  
+  // 不再使用30秒定时器自动显示底部按钮
+  // 用户需要点击提示条来显示底部按钮
+}
+
+function openPaymentApp() {
+  if (!guideHighlighted.value) return
+  
+  const isAlipay = paymentMethod.value === 'alipay'
+  
+  // 尝试调起对应的支付应用
+  try {
+    if (isAlipay) {
+      // 尝试调起支付宝
+      window.location.href = 'alipayqr://platformapi/startapp?saId=10000007'
+    } else {
+      // 尝试调起微信
+      window.location.href = 'weixin://'
+    }
+  } catch (e) {
+    // 调起失败，显示底部按钮
   }
-  paymentActionsTimer = setTimeout(() => {
-    showPaymentGuide.value = false
-    showPaymentActions.value = true
-  }, 30 * 1000)
+  
+  // 点击提示条后显示底部按钮
+  showPaymentGuide.value = false
+  showPaymentActions.value = true
 }
 
 function cancelPayment() {
@@ -387,6 +411,8 @@ function cancelPayment() {
 
   showPaymentGuide.value = true
   showPaymentActions.value = false
+  saveButtonDisabled.value = false
+  guideHighlighted.value = false
   if (paymentActionsTimer) {
     clearTimeout(paymentActionsTimer)
     paymentActionsTimer = null
@@ -404,6 +430,8 @@ async function confirmPayment() {
 
     showPaymentGuide.value = true
     showPaymentActions.value = false
+    saveButtonDisabled.value = false
+    guideHighlighted.value = false
     if (paymentActionsTimer) {
       clearTimeout(paymentActionsTimer)
       paymentActionsTimer = null
@@ -830,6 +858,22 @@ function goToCards() {
   border-radius: 10px;
   margin-bottom: 8px;
   text-align: left;
+  transition: all 0.3s ease;
+}
+
+.payment-guide.highlighted {
+  background: #1890ff;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.payment-guide.highlighted .payment-guide-text {
+  color: #fff;
+}
+
+.payment-guide.highlighted .payment-guide-icon {
+  filter: brightness(0) invert(1);
 }
 
 .payment-guide-icon {
@@ -859,6 +903,13 @@ function goToCards() {
   font-weight: 500;
   cursor: pointer;
   margin-bottom: 20px;
+  transition: all 0.3s ease;
+}
+
+.save-payment-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .payment-actions {
