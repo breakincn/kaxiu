@@ -44,9 +44,8 @@ func SavePaymentConfig(c *gin.Context) {
 
 	var input struct {
 		AlipayQRCode string `json:"alipay_qr_code"`
-		AlipayLink   string `json:"alipay_link"`
 		WechatQRCode string `json:"wechat_qr_code"`
-		WechatLink   string `json:"wechat_link"`
+		DefaultMethod string `json:"default_method"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -55,10 +54,33 @@ func SavePaymentConfig(c *gin.Context) {
 	}
 
 	// 至少需要配置一种收款方式
-	if input.AlipayQRCode == "" && input.AlipayLink == "" &&
-		input.WechatQRCode == "" && input.WechatLink == "" {
+	if input.AlipayQRCode == "" && input.WechatQRCode == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请至少配置一种收款方式"})
 		return
+	}
+
+	// 校验默认方式
+	defaultMethod := strings.TrimSpace(input.DefaultMethod)
+	if defaultMethod != "" && defaultMethod != "alipay" && defaultMethod != "wechat" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的默认收款方式"})
+		return
+	}
+	if defaultMethod == "alipay" && input.AlipayQRCode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "未配置支付宝收款码，无法设为默认"})
+		return
+	}
+	if defaultMethod == "wechat" && input.WechatQRCode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "未配置微信收款码，无法设为默认"})
+		return
+	}
+
+	// 未指定默认方式时自动推导
+	if defaultMethod == "" {
+		if input.AlipayQRCode != "" {
+			defaultMethod = "alipay"
+		} else {
+			defaultMethod = "wechat"
+		}
 	}
 
 	var paymentConfig models.PaymentConfig
@@ -69,9 +91,8 @@ func SavePaymentConfig(c *gin.Context) {
 		paymentConfig = models.PaymentConfig{
 			MerchantID:   merchantID,
 			AlipayQRCode: input.AlipayQRCode,
-			AlipayLink:   input.AlipayLink,
 			WechatQRCode: input.WechatQRCode,
-			WechatLink:   input.WechatLink,
+			DefaultMethod: defaultMethod,
 		}
 		if err := config.DB.Create(&paymentConfig).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
@@ -81,9 +102,8 @@ func SavePaymentConfig(c *gin.Context) {
 		// 更新配置
 		updates := map[string]interface{}{
 			"alipay_qr_code": input.AlipayQRCode,
-			"alipay_link":    input.AlipayLink,
 			"wechat_qr_code": input.WechatQRCode,
-			"wechat_link":    input.WechatLink,
+			"default_method": defaultMethod,
 		}
 		if err := config.DB.Model(&paymentConfig).Updates(updates).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
@@ -382,12 +402,11 @@ func GetShopInfo(c *gin.Context) {
 				"type": merchant.Type,
 			},
 			"payment_config": gin.H{
-				"has_alipay":     paymentConfig.AlipayQRCode != "" || paymentConfig.AlipayLink != "",
-				"has_wechat":     paymentConfig.WechatQRCode != "" || paymentConfig.WechatLink != "",
+				"has_alipay":     paymentConfig.AlipayQRCode != "",
+				"has_wechat":     paymentConfig.WechatQRCode != "",
 				"alipay_qr_code": paymentConfig.AlipayQRCode,
-				"alipay_link":    paymentConfig.AlipayLink,
 				"wechat_qr_code": paymentConfig.WechatQRCode,
-				"wechat_link":    paymentConfig.WechatLink,
+				"default_method": paymentConfig.DefaultMethod,
 			},
 			"card_templates": templates,
 		},
@@ -422,12 +441,11 @@ func GetShopInfoByID(c *gin.Context) {
 				"type": merchant.Type,
 			},
 			"payment_config": gin.H{
-				"has_alipay":       paymentConfig.AlipayQRCode != "" || paymentConfig.AlipayLink != "",
-				"has_wechat":       paymentConfig.WechatQRCode != "" || paymentConfig.WechatLink != "",
-				"alipay_qr_code":   paymentConfig.AlipayQRCode,
-				"alipay_link":      paymentConfig.AlipayLink,
-				"wechat_qr_code":   paymentConfig.WechatQRCode,
-				"wechat_link":      paymentConfig.WechatLink,
+				"has_alipay":     paymentConfig.AlipayQRCode != "",
+				"has_wechat":     paymentConfig.WechatQRCode != "",
+				"alipay_qr_code": paymentConfig.AlipayQRCode,
+				"wechat_qr_code": paymentConfig.WechatQRCode,
+				"default_method": paymentConfig.DefaultMethod,
 			},
 			"card_templates": templates,
 		},
@@ -480,18 +498,14 @@ func CreateDirectPurchase(c *gin.Context) {
 	// 验证商户是否配置了对应的支付方式
 	var paymentURL string
 	if input.PaymentMethod == "alipay" {
-		if paymentConfig.AlipayLink != "" {
-			paymentURL = paymentConfig.AlipayLink
-		} else if paymentConfig.AlipayQRCode != "" {
+		if paymentConfig.AlipayQRCode != "" {
 			paymentURL = paymentConfig.AlipayQRCode
 		} else {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "商户未配置支付宝收款"})
 			return
 		}
 	} else {
-		if paymentConfig.WechatLink != "" {
-			paymentURL = paymentConfig.WechatLink
-		} else if paymentConfig.WechatQRCode != "" {
+		if paymentConfig.WechatQRCode != "" {
 			paymentURL = paymentConfig.WechatQRCode
 		} else {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "商户未配置微信收款"})

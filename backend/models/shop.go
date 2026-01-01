@@ -8,9 +8,8 @@ type PaymentConfig struct {
 	ID           uint   `json:"id" gorm:"primaryKey;comment:配置ID"`
 	MerchantID   uint   `json:"merchant_id" gorm:"uniqueIndex;comment:商户ID（外键关联merchants表）"`
 	AlipayQRCode string `json:"alipay_qr_code" gorm:"size:500;comment:支付宝收款码图片URL"`
-	AlipayLink   string `json:"alipay_link" gorm:"size:500;comment:支付宝收款链接"`
 	WechatQRCode string `json:"wechat_qr_code" gorm:"size:500;comment:微信收款码图片URL"`
-	WechatLink   string `json:"wechat_link" gorm:"size:500;comment:微信收款链接"`
+	DefaultMethod string `json:"default_method" gorm:"size:20;comment:默认收款方式（alipay/wechat）"`
 	CreatedAt    *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt    *time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 

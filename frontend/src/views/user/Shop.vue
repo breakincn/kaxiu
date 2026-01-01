@@ -140,11 +140,7 @@
               <p class="payment-hint">请使用{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}扫描下方二维码完成付款</p>
               
               <div class="payment-qrcode">
-                <img :src="paymentUrl" alt="收款码" v-if="paymentUrl && isImageUrl(paymentUrl)" />
-                <div v-else-if="paymentUrl" class="payment-link">
-                  <p>请点击下方链接完成付款</p>
-                  <button type="button" class="pay-link-btn" @click="openPaymentLink">去付款</button>
-                </div>
+                <img :src="paymentUrl" alt="收款码" v-if="paymentUrl" />
               </div>
               
               <div class="payment-amount">
@@ -285,24 +281,11 @@ function isImageUrl(url) {
   return url.match(/\.(jpg|jpeg|png|gif|webp)$/i) || url.includes('qr') || url.includes('code')
 }
 
-function isNavigableLink(url) {
-  if (!url) return false
-  const u = String(url).trim()
-  return u.startsWith('https://') || u.startsWith('http://') || u.startsWith('weixin://') || u.startsWith('wxp://') || u.startsWith('alipay://')
-}
-
-function openPaymentLink() {
-  if (!paymentUrl.value) return
-  if (!isNavigableLink(paymentUrl.value)) {
-    alert('付款链接格式不正确，请让商户配置正确的收款链接，或使用收款码图片。')
-    return
-  }
-  window.location.assign(paymentUrl.value)
-}
-
 function getDefaultPaymentMethod() {
   const cfg = shopInfo.value?.payment_config
   if (!cfg) return ''
+  if (cfg.default_method === 'alipay' && cfg.has_alipay) return 'alipay'
+  if (cfg.default_method === 'wechat' && cfg.has_wechat) return 'wechat'
   if (cfg.has_alipay) return 'alipay'
   if (cfg.has_wechat) return 'wechat'
   return ''

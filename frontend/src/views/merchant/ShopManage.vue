@@ -84,41 +84,41 @@
         <div class="form-section">
           <h3>支付宝收款</h3>
           <div class="form-group">
-            <label>收款码图片URL</label>
-            <input 
-              v-model="paymentConfig.alipay_qr_code" 
-              type="text" 
-              placeholder="粘贴支付宝收款码图片链接"
-            />
+            <label>收款码图片</label>
+            <input type="file" accept="image/*" @change="(e) => onUploadQRCode(e, 'alipay')" />
+            <div v-if="paymentConfig.alipay_qr_code" class="qr-preview">
+              <img :src="paymentConfig.alipay_qr_code" alt="支付宝收款码" />
+            </div>
           </div>
-          <div class="form-group">
-            <label>收款链接</label>
-            <input 
-              v-model="paymentConfig.alipay_link" 
-              type="text" 
-              placeholder="粘贴支付宝收款链接（可选）"
-            />
-          </div>
+          <button
+            v-if="canSetDefault && paymentConfig.alipay_qr_code"
+            type="button"
+            class="action-btn"
+            :class="paymentConfig.default_method === 'alipay' ? 'success' : ''"
+            @click="paymentConfig.default_method = 'alipay'"
+          >
+            {{ paymentConfig.default_method === 'alipay' ? '默认收款码' : '设为默认' }}
+          </button>
         </div>
         
         <div class="form-section">
           <h3>微信收款</h3>
           <div class="form-group">
-            <label>收款码图片URL</label>
-            <input 
-              v-model="paymentConfig.wechat_qr_code" 
-              type="text" 
-              placeholder="粘贴微信收款码图片链接"
-            />
+            <label>收款码图片</label>
+            <input type="file" accept="image/*" @change="(e) => onUploadQRCode(e, 'wechat')" />
+            <div v-if="paymentConfig.wechat_qr_code" class="qr-preview">
+              <img :src="paymentConfig.wechat_qr_code" alt="微信收款码" />
+            </div>
           </div>
-          <div class="form-group">
-            <label>收款链接</label>
-            <input 
-              v-model="paymentConfig.wechat_link" 
-              type="text" 
-              placeholder="粘贴微信收款链接（可选）"
-            />
-          </div>
+          <button
+            v-if="canSetDefault && paymentConfig.wechat_qr_code"
+            type="button"
+            class="action-btn"
+            :class="paymentConfig.default_method === 'wechat' ? 'success' : ''"
+            @click="paymentConfig.default_method = 'wechat'"
+          >
+            {{ paymentConfig.default_method === 'wechat' ? '默认收款码' : '设为默认' }}
+          </button>
         </div>
         
         <div class="form-tip">
@@ -287,9 +287,12 @@ const templateForm = ref({
 // 收款配置
 const paymentConfig = ref({
   alipay_qr_code: '',
-  alipay_link: '',
   wechat_qr_code: '',
-  wechat_link: ''
+  default_method: ''
+})
+
+const canSetDefault = computed(() => {
+  return !!paymentConfig.value.alipay_qr_code && !!paymentConfig.value.wechat_qr_code
 })
 
 // 店铺短链接
@@ -330,10 +333,41 @@ async function loadPaymentConfig() {
   try {
     const res = await shopApi.getPaymentConfig()
     if (res.data.data) {
-      paymentConfig.value = res.data.data
+      paymentConfig.value = {
+        alipay_qr_code: res.data.data.alipay_qr_code || '',
+        wechat_qr_code: res.data.data.wechat_qr_code || '',
+        default_method: res.data.data.default_method || ''
+      }
     }
   } catch (e) {
     console.error('加载收款配置失败', e)
+  }
+}
+
+async function onUploadQRCode(e, method) {
+  const file = e?.target?.files?.[0]
+  if (!file) return
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await shopApi.uploadPaymentQRCode(fd)
+    const url = res?.data?.data?.url || ''
+    if (!url) {
+      alert('上传失败')
+      return
+    }
+    if (method === 'alipay') {
+      paymentConfig.value.alipay_qr_code = url
+    } else {
+      paymentConfig.value.wechat_qr_code = url
+    }
+    if (!paymentConfig.value.default_method) {
+      paymentConfig.value.default_method = method
+    }
+  } catch (err) {
+    alert(err.response?.data?.error || '上传失败')
+  } finally {
+    if (e?.target) e.target.value = ''
   }
 }
 
@@ -444,8 +478,7 @@ async function toggleTemplateStatus(tpl) {
 
 async function savePaymentConfig() {
   const config = paymentConfig.value
-  if (!config.alipay_qr_code && !config.alipay_link && 
-      !config.wechat_qr_code && !config.wechat_link) {
+  if (!config.alipay_qr_code && !config.wechat_qr_code) {
     alert('请至少配置一种收款方式')
     return
   }

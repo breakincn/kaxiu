@@ -125,6 +125,7 @@ export const shopApi = {
   // 商户端：收款配置
   getPaymentConfig: () => api.get('/merchant/payment-config'),
   savePaymentConfig: (data) => api.post('/merchant/payment-config', data),
+  uploadPaymentQRCode: (formData) => api.post('/merchant/payment-qrcode/upload', formData),
   
   // 商户端：卡片模板管理
   getCardTemplates: () => api.get('/merchant/card-templates'),

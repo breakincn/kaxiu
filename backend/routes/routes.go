@@ -8,6 +8,8 @@ import (
 )
 
 func SetupRoutes(r *gin.Engine) {
+	r.Static("/uploads", "./uploads")
+
 	api := r.Group("/api")
 
 	// 公开接口（不需要登录）
@@ -76,6 +78,7 @@ func SetupRoutes(r *gin.Engine) {
 	// 商户端：收款配置
 	auth.GET("/merchant/payment-config", handlers.GetPaymentConfig)
 	auth.POST("/merchant/payment-config", handlers.SavePaymentConfig)
+	auth.POST("/merchant/payment-qrcode/upload", handlers.UploadPaymentQRCode)
 
 	// 商户端：卡片模板管理
 	auth.GET("/merchant/card-templates", handlers.GetCardTemplates)
