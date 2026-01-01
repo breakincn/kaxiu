@@ -154,7 +154,7 @@
               <div v-if="showPaymentGuide" class="payment-guide">
                 <div class="payment-guide-icon">📱</div>
                 <div class="payment-guide-text">
-                  打开{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}扫一扫点击相册选择支付码，确认输入付款¥{{ (currentOrder?.price / 100).toFixed(2) }}
+                  打开{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}扫一扫,点击相册选择支付码,确认输入付款¥{{ (currentOrder?.price / 100).toFixed(2) }}元
                 </div>
               </div>
             </div>
