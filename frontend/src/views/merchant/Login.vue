@@ -60,7 +60,7 @@
 
     <!-- 注册弹窗 -->
     <div v-if="showRegister" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-4 z-50" @click.self="showRegister = false">
-      <div class="bg-white rounded-2xl w-full max-w-md p-6">
+      <div class="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
         <div class="flex items-center justify-between mb-6">
           <h3 class="text-xl font-bold text-gray-800">商户注册</h3>
           <button @click="showRegister = false" class="text-gray-400 hover:text-gray-600">
@@ -95,7 +95,7 @@
               <button
                 type="button"
                 :disabled="sendingCode || countdown > 0"
-                class="px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+                class="px-3 py-3 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
                 @click="sendRegisterCode"
               >
                 {{ countdown > 0 ? `${countdown}s` : (sendingCode ? '发送中...' : '发送验证码') }}
