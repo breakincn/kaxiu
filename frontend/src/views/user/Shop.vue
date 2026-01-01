@@ -934,7 +934,7 @@ function goToCards() {
 .save-payment-btn:disabled {
   background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
   color: #999;
-  border-color: #ccc;
+  border: none;
   cursor: not-allowed;
   transform: none;
   animation: none;
