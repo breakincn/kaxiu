@@ -133,6 +133,7 @@
         <div class="modal payment-modal">
           <div class="modal-header">
             <h3 class="payment-title">{{ paymentTitle }}</h3>
+            <button class="close-btn" @click="cancelPayment">×</button>
           </div>
           
           <div class="modal-body">
@@ -756,7 +757,8 @@ function goToCards() {
 
 /* 支付弹窗 */
 .payment-modal .modal-header {
-  justify-content: center;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .payment-title {
@@ -764,6 +766,18 @@ function goToCards() {
   font-weight: 600;
   margin: 0;
   text-align: center;
+  flex: 1;
+}
+
+.payment-modal .close-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  font-size: 24px;
+  color: #999;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .payment-info {
@@ -814,7 +828,7 @@ function goToCards() {
   padding: 12px;
   background: #f2f4f7;
   border-radius: 10px;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
   text-align: left;
 }
 
