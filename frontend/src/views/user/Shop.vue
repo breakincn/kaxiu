@@ -129,7 +129,7 @@
       </div>
 
       <!-- 支付中弹窗 -->
-      <div v-if="showPaymentModal" class="modal-overlay">
+      <div v-if="showPaymentModal" class="modal-overlay" @click.self="cancelPayment">
         <div class="modal payment-modal">
           <div class="modal-header">
             <h3 class="payment-title">{{ paymentTitle }}</h3>
@@ -145,17 +145,17 @@
                 <span>支付金额：</span>
                 <span class="amount">¥{{ (currentOrder?.price / 100).toFixed(2) }}</span>
               </div>
-
-              <div v-if="showPaymentGuide" class="payment-guide">
-                <div class="payment-guide-icon">📱</div>
-                <div class="payment-guide-text">
-                  打开{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}扫一扫点击相册，确认支付¥{{ (currentOrder?.price / 100).toFixed(2) }}
-                </div>
-              </div>
               
               <button class="save-payment-btn" @click="savePayment">
                 保存至手机付款
               </button>
+
+              <div v-if="showPaymentGuide" class="payment-guide">
+                <div class="payment-guide-icon">📱</div>
+                <div class="payment-guide-text">
+                  打开{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}扫一扫点击相册选择支付码，确认输入付款¥{{ (currentOrder?.price / 100).toFixed(2) }}
+                </div>
+              </div>
             </div>
             
             <div v-if="showPaymentActions" class="payment-actions">
