@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 func GetUsers(c *gin.Context) {
@@ -68,6 +69,66 @@ func CreateUser(c *gin.Context) {
 	
 	config.DB.Create(&user)
 	c.JSON(http.StatusOK, gin.H{"data": user})
+}
+
+func UserRegister(c *gin.Context) {
+	var input struct {
+		Phone    string `json:"phone" binding:"required"`
+		Password string `json:"password" binding:"required,min=6"`
+		Code     string `json:"code" binding:"required"`
+		Nickname string `json:"nickname"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 检查手机号是否已注册
+	var existing models.User
+	if err := config.DB.Where("phone = ?", input.Phone).First(&existing).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该手机号已注册"})
+		return
+	}
+
+	// 校验并消耗验证码
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := consumeSMSCode(tx, input.Phone, "user_register", input.Code); err != nil {
+			return err
+		}
+
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+
+		nickname := strings.TrimSpace(input.Nickname)
+		user := models.User{
+			Phone:    input.Phone,
+			Password: string(hashedPassword),
+			Nickname: nickname,
+		}
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		c.Set("_registered_user", user)
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	registeredUserAny, _ := c.Get("_registered_user")
+	registeredUser, _ := registeredUserAny.(models.User)
+	token := generateToken(registeredUser.ID)
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"token":    token,
+			"user_id":  registeredUser.ID,
+			"phone":    registeredUser.Phone,
+			"nickname": registeredUser.Nickname,
+		},
+	})
 }
 
 // 用户登录

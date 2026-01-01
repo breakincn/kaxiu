@@ -59,7 +59,12 @@ api.interceptors.response.use(
 
 export const authApi = {
   login: (phone, password) => api.post('/login', { phone, password }),
+  register: (data) => api.post('/user/register', data),
   getCurrentUser: () => api.get('/me')
+}
+
+export const smsApi = {
+  send: (phone, purpose) => api.post('/sms/send', { phone, purpose })
 }
 
 export const userApi = {

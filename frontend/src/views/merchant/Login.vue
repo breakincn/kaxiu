@@ -83,6 +83,27 @@
           </div>
 
           <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-medium mb-2">验证码</label>
+            <div class="flex gap-2">
+              <input
+                v-model="registerForm.code"
+                type="text"
+                placeholder="请输入验证码"
+                class="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                required
+              />
+              <button
+                type="button"
+                :disabled="sendingCode || countdown > 0"
+                class="px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+                @click="sendRegisterCode"
+              >
+                {{ countdown > 0 ? `${countdown}s` : (sendingCode ? '发送中...' : '发送验证码') }}
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-4">
             <label class="block text-gray-700 text-sm font-medium mb-2">密码</label>
             <input
               v-model="registerForm.password"
@@ -115,6 +136,17 @@
             />
           </div>
 
+          <div class="mb-6">
+            <label class="block text-gray-700 text-sm font-medium mb-2">邀请码</label>
+            <input
+              v-model="registerForm.invite_code"
+              type="text"
+              placeholder="请输入邀请码"
+              class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+              required
+            />
+          </div>
+
           <button
             type="submit"
             :disabled="registering"
@@ -129,9 +161,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { merchantApi } from '../../api'
+import { merchantApi, smsApi } from '../../api'
 
 const router = useRouter()
 const phone = ref('')
@@ -140,12 +172,60 @@ const loading = ref(false)
 
 const showRegister = ref(false)
 const registering = ref(false)
+const sendingCode = ref(false)
+
+const countdown = ref(0)
+let timer = null
+
 const registerForm = ref({
   phone: '',
+  code: '',
   password: '',
   name: '',
-  type: ''
+  type: '',
+  invite_code: ''
 })
+
+const startCountdown = () => {
+  countdown.value = 60
+  timer = setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0) {
+      clearInterval(timer)
+      timer = null
+    }
+  }, 1000)
+}
+
+onBeforeUnmount(() => {
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
+})
+
+const sendRegisterCode = async () => {
+  if (!registerForm.value.phone) {
+    alert('请先输入手机号')
+    return
+  }
+
+  sendingCode.value = true
+  try {
+    const res = await smsApi.send(registerForm.value.phone, 'merchant_register')
+    const debugCode = res.data?.data?.debug_code
+    if (debugCode) {
+      alert(`验证码已发送（开发模式）：${debugCode}`)
+    } else {
+      alert('验证码已发送')
+    }
+    startCountdown()
+  } catch (err) {
+    alert(err.response?.data?.error || '发送失败，请重试')
+  } finally {
+    sendingCode.value = false
+  }
+}
 
 const handleLogin = async () => {
   loading.value = true
@@ -207,9 +287,11 @@ const handleRegister = async () => {
     // 清空注册表单
     registerForm.value = {
       phone: '',
+      code: '',
       password: '',
       name: '',
-      type: ''
+      type: '',
+      invite_code: ''
     }
   } catch (err) {
     console.error('注册失败:', err)

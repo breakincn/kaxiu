@@ -45,6 +45,12 @@
         </form>
 
         <div class="mt-6 text-center">
+          <div class="mb-2">
+            <span class="text-sm text-gray-500">还没有账号？</span>
+            <router-link to="/user/register" class="text-sm text-primary hover:underline ml-1">
+              立即注册
+            </router-link>
+          </div>
           <router-link to="/merchant/login" class="text-sm text-primary hover:underline">
             切换到商户端登录
           </router-link>

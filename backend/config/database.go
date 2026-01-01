@@ -40,6 +40,8 @@ func InitDB() {
 		&models.Notice{},
 		&models.Appointment{},
 		&models.VerifyCode{},
+		&models.SMSCode{},
+		&models.InviteCode{},
 		// Shop 模块（商户收款二维码 + 卡包直购）
 		&models.PaymentConfig{},
 		&models.CardTemplate{},
@@ -58,6 +60,8 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `notices` COMMENT = '商户通知表'")
 	DB.Exec("ALTER TABLE `appointments` COMMENT = '用户预约排队表'")
 	DB.Exec("ALTER TABLE `verify_codes` COMMENT = '核销码表'")
+	DB.Exec("ALTER TABLE `sms_codes` COMMENT = '短信验证码表'")
+	DB.Exec("ALTER TABLE `invite_codes` COMMENT = '邀请码表'")
 	// Shop 模块表注释
 	DB.Exec("ALTER TABLE `payment_configs` COMMENT = '商户收款配置表'")
 	DB.Exec("ALTER TABLE `card_templates` COMMENT = '卡片售卖模板表'")
@@ -66,8 +70,29 @@ func InitDB() {
 
 	log.Println("数据库初始化成功")
 
+	// 初始化商户注册邀请码（幂等）
+	initInviteCodes()
+
 	// 初始化测试数据
 	initTestData()
+}
+
+func initInviteCodes() {
+	defaultCodes := []string{
+		"KABAO-20260101-001",
+		"KABAO-20260101-002",
+		"KABAO-20260101-003",
+		"KABAO-20260101-004",
+		"KABAO-20260101-005",
+	}
+
+	for _, code := range defaultCodes {
+		var existing models.InviteCode
+		if err := DB.Where("code = ?", code).First(&existing).Error; err == nil {
+			continue
+		}
+		DB.Create(&models.InviteCode{Code: code, Used: false})
+	}
 }
 
 func initTestData() {

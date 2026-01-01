@@ -142,3 +142,31 @@ func (VerifyCode) TableName() string {
 func (VerifyCode) TableComment() string {
 	return "核销码表"
 }
+
+type SMSCode struct {
+	ID        uint   `json:"id" gorm:"primaryKey;comment:短信验证码ID"`
+	Phone     string `json:"phone" gorm:"size:20;index;comment:手机号"`
+	Purpose   string `json:"purpose" gorm:"size:50;index;comment:用途"`
+	Code      string `json:"-" gorm:"size:10;comment:验证码"`
+	ExpiresAt int64  `json:"expires_at" gorm:"index;comment:过期时间（Unix时间戳）"`
+	Used      bool   `json:"used" gorm:"default:false;comment:是否已使用（0-未使用，1-已使用）"`
+	UsedAt    *time.Time `json:"used_at" gorm:"type:datetime(3);comment:使用时间"`
+	CreatedAt *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+}
+
+func (SMSCode) TableName() string {
+	return "sms_codes"
+}
+
+type InviteCode struct {
+	ID               uint   `json:"id" gorm:"primaryKey;comment:邀请码ID"`
+	Code             string `json:"code" gorm:"size:50;uniqueIndex;comment:邀请码"`
+	Used             bool   `json:"used" gorm:"default:false;comment:是否已使用（0-未使用，1-已使用）"`
+	UsedByMerchantID *uint  `json:"used_by_merchant_id" gorm:"index;comment:使用该邀请码注册的商户ID"`
+	UsedAt           *time.Time `json:"used_at" gorm:"type:datetime(3);comment:使用时间"`
+	CreatedAt        *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+}
+
+func (InviteCode) TableName() string {
+	return "invite_codes"
+}

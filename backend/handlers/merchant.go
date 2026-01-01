@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"kabao/config"
 	"kabao/models"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // MerchantRegister 商户注册
@@ -19,6 +21,8 @@ func MerchantRegister(c *gin.Context) {
 		Password string `json:"password" binding:"required,min=6"`
 		Name     string `json:"name" binding:"required"`
 		Type     string `json:"type"`
+		Code     string `json:"code" binding:"required"`
+		InviteCode string `json:"invite_code" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -33,25 +37,54 @@ func MerchantRegister(c *gin.Context) {
 		return
 	}
 
-	// 加密密码
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
-	if err != nil {
-		log.Printf("密码加密失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "注册失败"})
-		return
-	}
+	var merchant models.Merchant
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := consumeSMSCode(tx, input.Phone, "merchant_register", input.Code); err != nil {
+			return err
+		}
 
-	merchant := models.Merchant{
-		Phone:     input.Phone,
-		Password:  string(hashedPassword),
-		Name:      input.Name,
-		Type:      input.Type,
-		CreatedAt: func() *time.Time { t := time.Now(); return &t }(),
-	}
+		var invite models.InviteCode
+		if err := tx.Where("code = ? AND used = ?", input.InviteCode, false).First(&invite).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("邀请码无效或已使用")
+			}
+			return err
+		}
 
-	if err := config.DB.Create(&merchant).Error; err != nil {
-		log.Printf("创建商户失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "注册失败"})
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+
+		merchant = models.Merchant{
+			Phone:     input.Phone,
+			Password:  string(hashedPassword),
+			Name:      input.Name,
+			Type:      input.Type,
+			CreatedAt: func() *time.Time { t := time.Now(); return &t }(),
+		}
+		if err := tx.Create(&merchant).Error; err != nil {
+			return err
+		}
+
+		usedAt := time.Now()
+		updates := map[string]interface{}{
+			"used":                true,
+			"used_at":             &usedAt,
+			"used_by_merchant_id": merchant.ID,
+		}
+		res := tx.Model(&models.InviteCode{}).
+			Where("code = ? AND used = ?", input.InviteCode, false).
+			Updates(updates)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return errors.New("邀请码无效或已使用")
+		}
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
