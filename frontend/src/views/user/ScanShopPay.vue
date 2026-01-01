@@ -66,9 +66,13 @@
 
       <div v-if="fallbackLink" class="bg-white rounded-xl p-4 shadow-sm mt-4">
         <div class="font-medium text-gray-800 mb-2">未自动跳转？</div>
-        <a :href="fallbackLink" target="_blank" class="block w-full text-center py-3 bg-primary text-white rounded-lg font-medium">
+        <button
+          type="button"
+          @click="openPayLink"
+          class="block w-full text-center py-3 bg-primary text-white rounded-lg font-medium"
+        >
           点击打开付款链接
-        </a>
+        </button>
       </div>
     </div>
   </div>
@@ -93,6 +97,8 @@ const fallbackLink = ref('')
 
 const currentCameraIndex = ref(0)
 const cameras = ref([])
+const hasAutoSelectedBackCamera = ref(false)
+const hasUserSwitchedCamera = ref(false)
 
 let html5QrCode = null
 let lastScannedAt = 0
@@ -104,9 +110,48 @@ const goBack = () => {
 const loadCameras = async () => {
   try {
     cameras.value = await Html5Qrcode.getCameras()
+
+    if (!hasAutoSelectedBackCamera.value && cameras.value.length > 0) {
+      const idx = cameras.value.findIndex((c) => {
+        const label = String(c?.label || '').toLowerCase()
+        return (
+          label.includes('back') ||
+          label.includes('rear') ||
+          label.includes('environment') ||
+          label.includes('后') ||
+          label.includes('背') ||
+          label.includes('外')
+        )
+      })
+      if (idx >= 0) {
+        currentCameraIndex.value = idx
+      }
+      hasAutoSelectedBackCamera.value = true
+    }
   } catch (e) {
     cameras.value = []
   }
+}
+
+const isNavigableLink = (url) => {
+  const u = (url || '').trim()
+  if (!u) return false
+  return (
+    u.startsWith('https://') ||
+    u.startsWith('http://') ||
+    u.startsWith('weixin://') ||
+    u.startsWith('wxp://') ||
+    u.startsWith('alipay://')
+  )
+}
+
+const openPayLink = () => {
+  const url = (fallbackLink.value || '').trim()
+  if (!isNavigableLink(url)) {
+    errorText.value = '付款链接格式不正确，请让商户配置 http(s)/weixin/alipay 开头的链接，或使用收款码图片。'
+    return
+  }
+  window.location.assign(url)
 }
 
 const ensureInstance = () => {
@@ -136,7 +181,7 @@ const start = async () => {
       aspectRatio: 1.777778
     }
 
-    const constraints = cameraId
+    const constraints = (hasUserSwitchedCamera.value && cameraId)
       ? { deviceId: { exact: cameraId } }
       : { facingMode: 'environment' }
 
@@ -177,6 +222,7 @@ const switchCamera = async () => {
   if (!hasStarted.value) return
   if (!cameras.value || cameras.value.length <= 1) return
 
+  hasUserSwitchedCamera.value = true
   currentCameraIndex.value = (currentCameraIndex.value + 1) % cameras.value.length
   await stop()
   await start()
@@ -220,11 +266,15 @@ const choosePayTarget = (paymentConfig) => {
   const alipayQr = (paymentConfig?.alipay_qr_code || '').trim()
   const wechatQr = (paymentConfig?.wechat_qr_code || '').trim()
 
-  if (alipayLink) return { type: 'link', url: alipayLink }
-  if (wechatLink) return { type: 'link', url: wechatLink }
+  if (alipayLink && isNavigableLink(alipayLink)) return { type: 'link', url: alipayLink }
+  if (wechatLink && isNavigableLink(wechatLink)) return { type: 'link', url: wechatLink }
 
   if (alipayQr) return { type: 'qr', url: alipayQr }
   if (wechatQr) return { type: 'qr', url: wechatQr }
+
+  if (alipayLink || wechatLink) {
+    return { type: 'invalid_link', url: alipayLink || wechatLink }
+  }
 
   return null
 }
@@ -263,7 +313,13 @@ const onDecoded = async (decodedText) => {
       statusText.value = '即将跳转到商户收款链接...'
       fallbackLink.value = pay.url
       await stop()
-      window.location.href = pay.url
+      window.location.assign(pay.url)
+      return
+    }
+
+    if (pay.type === 'invalid_link') {
+      statusText.value = ''
+      errorText.value = '商户配置的收款链接不是可打开的URL（需以 http(s)/weixin/alipay 开头），请让商户改为正确链接，或使用收款码图片。'
       return
     }
 
