@@ -208,10 +208,15 @@
           
           <div class="modal-body">
             <div class="payment-info">
+              <div class="payment-amount">
+                <span>支付金额：</span>
+                <span class="amount">¥{{ (currentOrder?.price / 100).toFixed(2) }}</span>
+              </div>
+              
               <div v-if="paymentUrl" class="payment-qrcode">
-                <div v-if="isImageUrl(paymentUrl)" style="width: 100%;">
-                  <div style="text-align: center; color: #666; font-size: 14px; margin-bottom: 10px;" @click="launchScanApp(paymentMethod)">点击支付码 直接扫码支付</div>
+                <div v-if="isImageUrl(paymentUrl)" class="qrcode-container">
                   <img :src="paymentUrl" alt="收款码" @click="launchScanApp(paymentMethod)" />
+                  <div class="qrcode-text" @click="launchScanApp(paymentMethod)">点击支付码 直接扫码支付</div>
                 </div>
               </div>
               <button
@@ -222,11 +227,6 @@
               >
                 {{ paymentMethod === 'alipay' ? '打开支付宝扫一扫' : '打开微信扫一扫' }}
               </button>
-              
-              <div class="payment-amount">
-                <span>支付金额：</span>
-                <span class="amount">¥{{ (currentOrder?.price / 100).toFixed(2) }}</span>
-              </div>
               
               <button class="save-payment-btn" @click="savePayment" :disabled="saveButtonDisabled">
                 保存支付码至手机付款
@@ -1073,12 +1073,27 @@ function goToCards() {
 .payment-qrcode {
   display: flex;
   justify-content: center;
-  margin-bottom: 16px;
+  margin: 20px 0;
 }
 
-.payment-qrcode img {
+.qrcode-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.qrcode-container img {
   max-width: 200px;
   border-radius: 8px;
+  cursor: pointer;
+}
+
+.qrcode-text {
+  color: #666;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: center;
 }
 
 .payment-link {
@@ -1099,6 +1114,7 @@ function goToCards() {
   font-size: 16px;
   color: #333;
   margin-bottom: 20px;
+  text-align: center;
 }
 
 .payment-amount .amount {
