@@ -135,9 +135,17 @@
               <div class="purchase-tip">
                 <p>💡 付款将直接转给商户，卡包不参与收款</p>
               </div>
-              
-              <button 
-                class="purchase-btn" 
+
+              <div
+                v-if="!shopInfo.payment_config.has_alipay || !shopInfo.payment_config.has_wechat"
+                class="purchase-scan-guide"
+              >
+                打开{{ paymentMethod ? (paymentMethod === 'alipay' ? '支付宝' : '微信') : '支付宝/微信' }}扫一扫 → 扫描支付码;输入付款金额¥{{ (selectedCard.price / 100).toFixed(2) }}元
+              </div>
+
+              <button
+                v-else
+                class="purchase-btn"
                 @click="createPurchase"
                 :disabled="!paymentMethod || purchasing"
               >
@@ -1039,6 +1047,18 @@ function goToCards() {
 
 .purchase-btn:disabled {
   background: #ccc;
+}
+
+.purchase-scan-guide {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #fff8e1 0%, #ffe082 100%);
+  border: 2px dashed #ffa726;
+  border-radius: 10px;
+  color: #e65100;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: left;
 }
 
 /* 支付弹窗 */
