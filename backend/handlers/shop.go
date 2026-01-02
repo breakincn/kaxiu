@@ -44,8 +44,8 @@ func SavePaymentConfig(c *gin.Context) {
 	}
 
 	var input struct {
-		AlipayQRCode string `json:"alipay_qr_code"`
-		WechatQRCode string `json:"wechat_qr_code"`
+		AlipayQRCode  string `json:"alipay_qr_code"`
+		WechatQRCode  string `json:"wechat_qr_code"`
 		DefaultMethod string `json:"default_method"`
 	}
 
@@ -90,9 +90,9 @@ func SavePaymentConfig(c *gin.Context) {
 	if err == gorm.ErrRecordNotFound {
 		// 创建新配置
 		paymentConfig = models.PaymentConfig{
-			MerchantID:   merchantID,
-			AlipayQRCode: input.AlipayQRCode,
-			WechatQRCode: input.WechatQRCode,
+			MerchantID:    merchantID,
+			AlipayQRCode:  input.AlipayQRCode,
+			WechatQRCode:  input.WechatQRCode,
 			DefaultMethod: defaultMethod,
 		}
 		if err := config.DB.Create(&paymentConfig).Error; err != nil {
@@ -520,11 +520,11 @@ func CreateDirectPurchase(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"order_no":       orderNo,
+			"order_no":         orderNo,
 			"card_template_id": template.ID,
-			"price":          template.Price,
-			"payment_url":    paymentURL,
-			"payment_method": input.PaymentMethod,
+			"price":            template.Price,
+			"payment_url":      paymentURL,
+			"payment_method":   input.PaymentMethod,
 		},
 	})
 }
@@ -710,7 +710,9 @@ func GetDirectPurchases(c *gin.Context) {
 
 	var purchases []models.DirectPurchase
 	config.DB.Preload("Merchant").Preload("CardTemplate").Preload("Card").
-		Where("user_id = ?", userID).Order("id desc").Find(&purchases)
+		Where("user_id = ?", userID).
+		Order("CASE WHEN status = 'paid' THEN 0 ELSE 1 END, CASE WHEN status = 'paid' THEN created_at END ASC, created_at DESC").
+		Find(&purchases)
 
 	c.JSON(http.StatusOK, gin.H{"data": purchases})
 }
@@ -724,7 +726,9 @@ func GetMerchantDirectPurchases(c *gin.Context) {
 
 	var purchases []models.DirectPurchase
 	config.DB.Preload("User").Preload("CardTemplate").Preload("Card").
-		Where("merchant_id = ?", merchantID).Order("id desc").Find(&purchases)
+		Where("merchant_id = ?", merchantID).
+		Order("CASE WHEN status = 'paid' THEN 0 ELSE 1 END, CASE WHEN status = 'paid' THEN created_at END ASC, created_at DESC").
+		Find(&purchases)
 
 	c.JSON(http.StatusOK, gin.H{"data": purchases})
 }
