@@ -471,6 +471,7 @@ function formatElapsed(fromTime) {
 
 async function confirmMerchantOrder(order) {
   if (!order?.order_no) return
+  if (!confirm('确认已收到该笔付款，并为用户发卡吗？')) return
   confirmingMap.value = { ...confirmingMap.value, [order.order_no]: true }
   try {
     await shopApi.confirmMerchantDirectPurchase(order.order_no)
@@ -994,6 +995,10 @@ function downloadQrcode() {
   border: 1px solid #f5222d;
 }
 
+.order-status.confirm-order:not(:disabled) {
+  animation: pulse-animation 2s ease-in-out infinite;
+}
+
 .order-status.confirm-order:disabled {
   cursor: not-allowed;
   opacity: 0.7;
@@ -1001,6 +1006,17 @@ function downloadQrcode() {
 
 .paid-elapsed {
   color: #fa8c16;
+}
+
+@keyframes pulse-animation {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(245, 34, 45, 0);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 4px 16px rgba(245, 34, 45, 0.25);
+  }
 }
 
 .order-info {

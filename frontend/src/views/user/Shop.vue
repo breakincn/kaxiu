@@ -437,7 +437,10 @@ async function confirmPayment() {
   
   confirming.value = true
   try {
-    await shopApi.confirmDirectPurchase(currentOrder.value.order_no)
+    await shopApi.confirmDirectPurchase(currentOrder.value.order_no, {
+      card_template_id: currentOrder.value.card_template_id,
+      payment_method: currentOrder.value.payment_method
+    })
     showPaymentModal.value = false
     showSuccessModal.value = true
 

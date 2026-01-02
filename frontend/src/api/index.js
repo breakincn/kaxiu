@@ -147,7 +147,7 @@ export const shopApi = {
   
   // 用户端：直购流程
   createDirectPurchase: (data) => api.post('/direct-purchase', data),
-  confirmDirectPurchase: (orderNo) => api.post(`/direct-purchase/${orderNo}/confirm`),
+  confirmDirectPurchase: (orderNo, data) => api.post(`/direct-purchase/${orderNo}/confirm`, data),
   getDirectPurchases: () => api.get('/direct-purchases')
 }
 

@@ -454,7 +454,7 @@ func GetShopInfoByID(c *gin.Context) {
 
 // ==================== 直购流程 ====================
 
-// CreateDirectPurchase 创建直购订单
+// CreateDirectPurchase 创建直购订单（仅返回收款信息，不落库）
 func CreateDirectPurchase(c *gin.Context) {
 	userID, ok := getUserID(c)
 	if !ok {
@@ -513,35 +513,22 @@ func CreateDirectPurchase(c *gin.Context) {
 		}
 	}
 
-	// 生成订单号
+	// 生成订单号（不落库，仅用于后续用户确认时落库）
+	_ = userID
 	orderNo := fmt.Sprintf("DP%s%s", time.Now().Format("20060102150405"), uuid.New().String()[:6])
-
-	purchase := models.DirectPurchase{
-		OrderNo:        orderNo,
-		MerchantID:     template.MerchantID,
-		UserID:         userID,
-		CardTemplateID: template.ID,
-		Price:          template.Price,
-		PaymentMethod:  input.PaymentMethod,
-		Status:         "pending",
-	}
-
-	if err := config.DB.Create(&purchase).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建订单失败"})
-		return
-	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"order_no":       purchase.OrderNo,
-			"price":          purchase.Price,
+			"order_no":       orderNo,
+			"card_template_id": template.ID,
+			"price":          template.Price,
 			"payment_url":    paymentURL,
-			"payment_method": purchase.PaymentMethod,
+			"payment_method": input.PaymentMethod,
 		},
 	})
 }
 
-// ConfirmDirectPurchase 确认直购订单（用户确认已付款）
+// ConfirmDirectPurchase 确认直购订单（用户确认已付款，首次确认才落库）
 func ConfirmDirectPurchase(c *gin.Context) {
 	userID, ok := getUserID(c)
 	if !ok {
@@ -550,35 +537,64 @@ func ConfirmDirectPurchase(c *gin.Context) {
 
 	orderNo := c.Param("order_no")
 
+	var input struct {
+		CardTemplateID uint   `json:"card_template_id" binding:"required"`
+		PaymentMethod  string `json:"payment_method" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if input.PaymentMethod != "alipay" && input.PaymentMethod != "wechat" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的支付方式"})
+		return
+	}
+
 	var purchase models.DirectPurchase
-	if err := config.DB.Where("order_no = ? AND user_id = ?", orderNo, userID).First(&purchase).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "订单不存在"})
-		return
-	}
-
-	if purchase.Status == "paid" {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "已提交付款，等待商户确认",
-			"data":    purchase,
-		})
-		return
-	}
-
-	if purchase.Status != "pending" {
+	err := config.DB.Where("order_no = ? AND user_id = ?", orderNo, userID).First(&purchase).Error
+	if err == nil {
+		if purchase.Status == "paid" {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "已提交付款，等待商户确认",
+				"data":    purchase,
+			})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "订单状态无效"})
+		return
+	}
+	if err != nil && err != gorm.ErrRecordNotFound {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+
+	// 首次确认：创建订单记录并标记为已付款
+	var template models.CardTemplate
+	if err := config.DB.First(&template, input.CardTemplateID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "卡片不存在"})
+		return
+	}
+	if !template.IsActive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该卡片已下架"})
 		return
 	}
 
 	now := time.Now()
-	if err := config.DB.Model(&purchase).Updates(map[string]interface{}{
-		"status":  "paid",
-		"paid_at": &now,
-	}).Error; err != nil {
+	purchase = models.DirectPurchase{
+		OrderNo:        orderNo,
+		MerchantID:     template.MerchantID,
+		UserID:         userID,
+		CardTemplateID: template.ID,
+		Price:          template.Price,
+		PaymentMethod:  input.PaymentMethod,
+		Status:         "paid",
+		PaidAt:         &now,
+	}
+	if err := config.DB.Create(&purchase).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交失败"})
 		return
 	}
 
-	config.DB.First(&purchase, purchase.ID)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "已提交付款，等待商户确认",
 		"data":    purchase,
