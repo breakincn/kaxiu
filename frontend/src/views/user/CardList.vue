@@ -135,7 +135,7 @@
 
           <div class="flex justify-between items-end mt-6">
             <div>
-              <div class="text-gray-500 text-xs mb-0.5">订单状态</div>
+              <div class="text-gray-500 text-xs mb-0.5">卡片状态</div>
               <div class="text-xl font-bold text-gray-600">待确认</div>
             </div>
             <div class="text-right">
