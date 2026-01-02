@@ -232,7 +232,7 @@
                 保存支付码至手机付款
               </button>
 
-              <div v-if="showPaymentGuide" class="payment-guide" :class="{ highlighted: guideHighlighted }" @click="openPaymentApp">
+              <div v-if="showPaymentGuide" class="payment-guide" :class="{ 'payment-guide-wechat': paymentMethod === 'wechat', highlighted: guideHighlighted }" @click="openPaymentApp">
                 <div class="payment-guide-icon">📱</div>
                 <div class="payment-guide-text">
 <!--                  打开{{ paymentMethod === 'alipay' ? '支付宝' : '微信' }}扫一扫,点击相册,选择支付码;确认输入付款¥{{ (currentOrder?.price / 100).toFixed(2) }}元-->
@@ -1157,6 +1157,11 @@ function goToCards() {
   margin-bottom: 8px;
   text-align: left;
   transition: all 0.3s ease;
+}
+
+/* 微信支付引导专用间距 */
+.payment-guide-wechat {
+  margin-bottom: 0px; /* 只减少微信支付的间距 */
 }
 
 .payment-guide.highlighted {
