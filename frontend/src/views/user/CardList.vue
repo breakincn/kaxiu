@@ -129,14 +129,14 @@
               <p class="text-gray-500 text-xs mt-0.5">{{ item.card_name }}</p>
             </div>
             <div class="bg-white/60 px-2.5 py-0.5 rounded-full">
-              <span class="text-xs font-medium text-gray-600">待商家确认</span>
+              <span class="text-xs font-medium text-gray-600">{{ formatPaymentMethod(item.payment_method) }}</span>
             </div>
           </div>
 
           <div class="flex justify-between items-end mt-6">
             <div>
               <div class="text-gray-500 text-xs mb-0.5">卡片状态</div>
-              <div class="text-xl font-bold text-gray-600">待确认</div>
+              <div class="text-xl font-bold text-gray-600">待商家确认</div>
             </div>
             <div class="text-right">
               <div class="text-gray-500 text-xs mb-0.5">已付款</div>
@@ -210,6 +210,7 @@ const displayItems = computed(() => {
       _key: `pending-${o.order_no}`,
       order_no: o.order_no,
       paid_at: o.paid_at,
+      payment_method: o.payment_method,
       merchant_name: o.merchant?.name || '商户',
       card_name: o.card_template?.name || '卡片'
     })
@@ -281,6 +282,17 @@ function formatElapsed(fromTime) {
   if (h > 0) return `${h}小时${m}分${s}秒`
   if (m > 0) return `${m}分${s}秒`
   return `${s}秒`
+}
+
+function formatPaymentMethod(method) {
+  if (!method) return '未知支付方式'
+  const methodMap = {
+    'wechat': '微信支付',
+    'alipay': '支付宝',
+    'unionpay': '银联支付',
+    'cash': '现金支付'
+  }
+  return methodMap[method] || method
 }
 
 watch(currentStatus, async () => {
