@@ -142,6 +142,7 @@
               <div class="text-xs text-gray-400 pb-0.5">{{ formatPaymentMethod(item.payment_method) }}</div>
             </div>
             <div class="text-right">
+              <div class="text-gray-500 text-xs mb-0.5">{{ formatDateTime(item.paid_at) }}</div>
               <div class="text-gray-500 text-xs mb-0.5">已付款 ¥{{ (item.price / 100).toFixed(2) }}</div>
               <div class="text-sm font-medium text-orange-500">{{ formatElapsed(item.paid_at) }}</div>
             </div>
@@ -297,6 +298,20 @@ function formatPaymentMethod(method) {
     'cash': '现金支付'
   }
   return methodMap[method] || method
+}
+
+function formatDateTime(dateTime) {
+  if (!dateTime) return ''
+  const date = new Date(dateTime)
+  if (isNaN(date.getTime())) return ''
+  
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  
+  return `${year}-${month}-${day} ${hours}:${minutes}`
 }
 
 watch(currentStatus, async () => {
