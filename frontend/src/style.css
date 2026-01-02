@@ -31,10 +31,10 @@ body {
 }
 
 .card-gradient-yellow {
-  background: var(--kb-surface-muted);
-  color: var(--kb-text);
-  border: 1px solid var(--kb-border);
-  box-shadow: var(--kb-shadow);
+  background: linear-gradient(135deg, #fff8e1 0%, #ffe082 100%);
+  color: #e65100;
+  border: 2px dashed #ffa726;
+  box-shadow: 0 2px 8px rgba(255, 167, 38, 0.2);
 }
 
 .card-gradient-blue {
