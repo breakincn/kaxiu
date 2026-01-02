@@ -208,12 +208,12 @@
           
           <div class="modal-body">
             <div class="payment-info">
-              <div class="payment-amount">
+              <div class="payment-amount" :class="{ 'payment-amount-alipay': paymentMethod === 'alipay', 'payment-amount-wechat': paymentMethod === 'wechat' }">
                 <span>支付金额：</span>
                 <span class="amount">¥{{ (currentOrder?.price / 100).toFixed(2) }}</span>
               </div>
               
-              <div v-if="paymentUrl" class="payment-qrcode">
+              <div v-if="paymentUrl" class="payment-qrcode" :class="{ 'payment-qrcode-alipay': paymentMethod === 'alipay', 'payment-qrcode-wechat': paymentMethod === 'wechat' }">
                 <div v-if="isImageUrl(paymentUrl)" class="qrcode-container">
                   <img :src="paymentUrl" alt="收款码" @click="launchScanApp(paymentMethod)" />
                   <div class="qrcode-text" @click="launchScanApp(paymentMethod)">点击支付码 直接扫码支付</div>
@@ -228,7 +228,7 @@
                 {{ paymentMethod === 'alipay' ? '打开支付宝扫一扫' : '打开微信扫一扫' }}
               </button>
               
-              <button class="save-payment-btn" @click="savePayment" :disabled="saveButtonDisabled">
+              <button class="save-payment-btn" :class="{ 'save-payment-btn-wechat': paymentMethod === 'wechat' }" @click="savePayment" :disabled="saveButtonDisabled">
                 保存支付码至手机付款
               </button>
 
@@ -1073,7 +1073,7 @@ function goToCards() {
 .payment-qrcode {
   display: flex;
   justify-content: center;
-  margin: 20px 0;
+  margin: 8px 0; /* 进一步减少间距，与支付金额的margin-bottom保持一致 */
 }
 
 .qrcode-container {
@@ -1113,14 +1113,38 @@ function goToCards() {
 .payment-amount {
   font-size: 16px;
   color: #333;
-  margin-bottom: 20px;
+  margin: 4px 0 6px 0; /* 减少上方间距，保持下方间距 */
   text-align: center;
+}
+
+.payment-amount-alipay {
+  margin: 0 0 2px 0; /* 支付宝支付金额的上方间距 */
+}
+
+.payment-amount-wechat {
+  margin: -10px 0 10px 0; /* 微信支付金额的上方间距进一步减少，下方间距与支付宝保持一致 */
 }
 
 .payment-amount .amount {
   font-size: 24px;
   font-weight: 600;
   color: #f50;
+}
+
+.payment-qrcode {
+  display: flex;
+  justify-content: center;
+  margin: 6px 0; /* 减少间距 */
+}
+
+/* 支付宝支付码专用间距 */
+.payment-qrcode-alipay {
+  margin: 6px 0; /* 减少支付宝支付码的间距 */
+}
+
+/* 微信支付码专用间距 */
+.payment-qrcode-wechat {
+  margin: 6px 0; /* 微信支付码的间距与支付宝保持一致 */
 }
 
 .payment-guide {
@@ -1193,6 +1217,11 @@ function goToCards() {
   margin-bottom: 20px;
   transition: all 0.3s ease;
   box-shadow: 0 2px 8px rgba(255, 167, 38, 0.2);
+}
+
+/* 微信支付保存按钮专用间距 */
+.save-payment-btn-wechat {
+  margin-top: 12px; /* 微信支付保存按钮的上方间距，与支付宝保持一致 */
 }
 
 .save-payment-btn:not(:disabled) {
