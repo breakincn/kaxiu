@@ -58,7 +58,7 @@ api.interceptors.response.use(
 )
 
 export const authApi = {
-  login: (phone, password) => api.post('/login', { phone, password }),
+  login: (username, password) => api.post('/login', { username, password }),
   register: (data) => api.post('/user/register', data),
   getCurrentUser: () => api.get('/me')
 }
@@ -71,6 +71,7 @@ export const userApi = {
   getUsers: () => api.get('/users'),
   getUser: (id) => api.get(`/users/${id}`),
   createUser: (data) => api.post('/users', data),
+  bindPhone: (phone, code) => api.post('/user/bind-phone', { phone, code }),
   getCurrentUser: () => api.get('/me')
 }
 

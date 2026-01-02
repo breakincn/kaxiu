@@ -14,17 +14,27 @@
 
         <form @submit.prevent="handleRegister">
           <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">手机号</label>
+            <label class="block text-gray-700 text-sm font-medium mb-2">用户名</label>
             <input
-              v-model="form.phone"
-              type="tel"
-              placeholder="请输入手机号"
+              v-model="form.username"
+              type="text"
+              placeholder="请输入用户名"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
               required
             />
           </div>
 
           <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-medium mb-2">手机号（可选）</label>
+            <input
+              v-model="form.phone"
+              type="tel"
+              placeholder="请输入手机号"
+              class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          <div v-if="form.phone" class="mb-4">
             <label class="block text-gray-700 text-sm font-medium mb-2">验证码</label>
             <div class="flex gap-2">
               <input
@@ -94,6 +104,7 @@ import { authApi, smsApi } from '../../api'
 const router = useRouter()
 
 const form = ref({
+  username: '',
   phone: '',
   code: '',
   password: '',
@@ -151,11 +162,11 @@ const handleRegister = async () => {
   registering.value = true
   try {
     const res = await authApi.register(form.value)
-    const { token, user_id, nickname, phone } = res.data.data
+    const { token, user_id, nickname, username } = res.data.data
 
     localStorage.setItem('userToken', token)
     localStorage.setItem('userId', user_id)
-    localStorage.setItem('userName', nickname || phone)
+    localStorage.setItem('userName', nickname || username)
 
     router.push('/user/cards')
   } catch (err) {

@@ -14,11 +14,11 @@
         
         <form @submit.prevent="handleLogin">
           <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">手机号</label>
+            <label class="block text-gray-700 text-sm font-medium mb-2">用户名</label>
             <input
               v-model="username"
               type="text"
-              placeholder="请输入手机号"
+              placeholder="请输入用户名"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
               required
             />

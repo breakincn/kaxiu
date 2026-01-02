@@ -128,6 +128,56 @@
         </div>
       </div>
 
+      <!-- 绑定手机号弹窗 -->
+      <div v-if="showBindPhoneModal" class="modal-overlay" @click.self="closeBindPhoneModal">
+        <div class="modal purchase-modal">
+          <div class="modal-header">
+            <h3>绑定手机号</h3>
+            <button class="close-btn" @click="closeBindPhoneModal">×</button>
+          </div>
+
+          <div class="modal-body">
+            <div class="mb-4">
+              <label class="block text-gray-700 text-sm font-medium mb-2">手机号</label>
+              <input
+                v-model="bindPhoneForm.phone"
+                type="tel"
+                placeholder="请输入手机号"
+                class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            <div class="mb-4">
+              <label class="block text-gray-700 text-sm font-medium mb-2">验证码</label>
+              <div class="flex gap-2">
+                <input
+                  v-model="bindPhoneForm.code"
+                  type="text"
+                  placeholder="请输入验证码"
+                  class="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                />
+                <button
+                  type="button"
+                  :disabled="sendingBindCode || bindCountdown > 0"
+                  class="px-3 py-3 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
+                  @click="sendBindCode"
+                >
+                  {{ bindCountdown > 0 ? `${bindCountdown}s` : (sendingBindCode ? '发送中...' : '发送验证码') }}
+                </button>
+              </div>
+            </div>
+
+            <button
+              class="purchase-btn"
+              @click="submitBindPhone"
+              :disabled="bindingPhone"
+            >
+              {{ bindingPhone ? '处理中...' : '绑定并继续' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- 支付中弹窗 -->
       <div v-if="showPaymentModal" class="modal-overlay" @click.self="cancelPayment">
         <div class="modal payment-modal">
@@ -187,7 +237,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { shopApi } from '../../api/index.js'
+import { authApi, shopApi, smsApi, userApi } from '../../api/index.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -198,6 +248,21 @@ const selectedCard = ref(null)
 const showPurchaseModal = ref(false)
 const showPaymentModal = ref(false)
 const showSuccessModal = ref(false)
+
+const currentUser = ref(null)
+const showBindPhoneModal = ref(false)
+const bindingPhone = ref(false)
+const sendingBindCode = ref(false)
+
+const bindPhoneForm = ref({
+  phone: '',
+  code: ''
+})
+
+const bindCountdown = ref(0)
+let bindTimer = null
+
+const pendingAfterBind = ref(null)
 const paymentMethod = ref('')
 const paymentUrl = ref('')
 const currentOrder = ref(null)
@@ -216,6 +281,11 @@ onBeforeUnmount(() => {
     clearTimeout(paymentActionsTimer)
     paymentActionsTimer = null
   }
+
+	if (bindTimer) {
+		clearInterval(bindTimer)
+		bindTimer = null
+	}
 })
 
 const isLoggedIn = computed(() => {
@@ -236,7 +306,105 @@ const paymentTitle = computed(() => {
 
 onMounted(() => {
   loadShopInfo()
+	if (isLoggedIn.value) {
+		fetchCurrentUser()
+	}
 })
+
+async function fetchCurrentUser() {
+	try {
+		const res = await authApi.getCurrentUser()
+		currentUser.value = res.data.data
+	} catch (e) {
+		currentUser.value = null
+	}
+}
+
+function hasBoundPhone(user) {
+	return !!(user && user.phone)
+}
+
+function closeBindPhoneModal() {
+	showBindPhoneModal.value = false
+	bindPhoneForm.value = { phone: '', code: '' }
+	bindCountdown.value = 0
+	if (bindTimer) {
+		clearInterval(bindTimer)
+		bindTimer = null
+	}
+	pendingAfterBind.value = null
+}
+
+function startBindCountdown() {
+	bindCountdown.value = 60
+	bindTimer = setInterval(() => {
+		bindCountdown.value -= 1
+		if (bindCountdown.value <= 0) {
+			clearInterval(bindTimer)
+			bindTimer = null
+		}
+	}, 1000)
+}
+
+async function sendBindCode() {
+	if (!bindPhoneForm.value.phone) {
+		alert('请先输入手机号')
+		return
+	}
+
+	sendingBindCode.value = true
+	try {
+		const res = await smsApi.send(bindPhoneForm.value.phone, 'user_bind_phone')
+		const debugCode = res.data?.data?.debug_code
+		if (debugCode) {
+			alert(`验证码已发送（开发模式）：${debugCode}`)
+		} else {
+			alert('验证码已发送')
+		}
+		startBindCountdown()
+	} catch (err) {
+		alert(err.response?.data?.error || '发送失败，请重试')
+	} finally {
+		sendingBindCode.value = false
+	}
+}
+
+async function submitBindPhone() {
+	if (!bindPhoneForm.value.phone) {
+		alert('请输入手机号')
+		return
+	}
+	if (!bindPhoneForm.value.code) {
+		alert('请输入验证码')
+		return
+	}
+
+	bindingPhone.value = true
+	try {
+		const res = await userApi.bindPhone(bindPhoneForm.value.phone, bindPhoneForm.value.code)
+		currentUser.value = res.data.data
+		showBindPhoneModal.value = false
+		const fn = pendingAfterBind.value
+		pendingAfterBind.value = null
+		bindPhoneForm.value = { phone: '', code: '' }
+		if (fn) {
+			await fn()
+		}
+	} catch (err) {
+		alert(err.response?.data?.error || '绑定失败，请重试')
+	} finally {
+		bindingPhone.value = false
+	}
+}
+
+async function ensurePhoneBound(continuation) {
+	if (!isLoggedIn.value) return true
+	await fetchCurrentUser()
+	if (hasBoundPhone(currentUser.value)) return true
+	showBindPhoneModal.value = true
+	pendingAfterBind.value = continuation || null
+	return false
+}
 
 async function loadShopInfo() {
   loading.value = true
@@ -304,6 +472,11 @@ async function createPurchase() {
     alert('商户未配置收款方式')
     return
   }
+
+	const ok = await ensurePhoneBound(createPurchase)
+	if (!ok) {
+		return
+	}
   
   purchasing.value = true
   try {

@@ -52,6 +52,9 @@ func InitDB() {
 		log.Fatal("数据库迁移失败:", err)
 	}
 
+	// 兼容历史数据：为旧用户补充默认 username，避免新增唯一索引导致异常
+	DB.Exec("UPDATE users SET username = CONCAT('u', id) WHERE username IS NULL OR username = ''")
+
 	// 添加表注释
 	DB.Exec("ALTER TABLE `users` COMMENT = '用户表'")
 	DB.Exec("ALTER TABLE `merchants` COMMENT = '商户表'")
@@ -104,10 +107,13 @@ func initTestData() {
 	}
 
 	// 创建测试用户
+	p1 := "13800138001"
+	p2 := "13800138002"
+	p3 := "13800138003"
 	users := []models.User{
-		{Phone: "13800138001", Nickname: "张三"},
-		{Phone: "13800138002", Nickname: "u1"},
-		{Phone: "13800138003", Nickname: "u2"},
+		{Username: "u1", Phone: &p1, Nickname: "张三"},
+		{Username: "u2", Phone: &p2, Nickname: "u1"},
+		{Username: "u3", Phone: &p3, Nickname: "u2"},
 	}
 	DB.Create(&users)
 

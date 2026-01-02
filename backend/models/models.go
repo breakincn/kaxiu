@@ -3,10 +3,11 @@ package models
 import "time"
 
 type User struct {
-	ID        uint   `json:"id" gorm:"primaryKey;comment:用户ID"`
-	Phone     string `json:"phone" gorm:"size:20;uniqueIndex;comment:手机号"`
-	Password  string `json:"-" gorm:"size:255;comment:登录密码（bcrypt加密）"`
-	Nickname  string `json:"nickname" gorm:"size:50;comment:用户昵称"`
+	ID        uint       `json:"id" gorm:"primaryKey;comment:用户ID"`
+	Username  string     `json:"username" gorm:"size:50;uniqueIndex;comment:用户名"`
+	Phone     *string    `json:"phone" gorm:"size:20;uniqueIndex;comment:手机号"`
+	Password  string     `json:"-" gorm:"size:255;comment:登录密码（bcrypt加密）"`
+	Nickname  string     `json:"nickname" gorm:"size:50;comment:用户昵称"`
 	CreatedAt *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 }
 
@@ -19,13 +20,13 @@ func (User) TableComment() string {
 }
 
 type Merchant struct {
-	ID                 uint   `json:"id" gorm:"primaryKey;comment:商户ID"`
-	Name               string `json:"name" gorm:"size:100;comment:商户名称"`
-	Phone              string `json:"phone" gorm:"size:20;uniqueIndex;comment:手机号"`
-	Password           string `json:"-" gorm:"size:255;comment:登录密码（bcrypt加密）"`
-	Type               string `json:"type" gorm:"size:50;comment:商户类型（如：理发、美容等）"`
-	SupportAppointment bool   `json:"support_appointment" gorm:"default:false;comment:是否支持预约（0-不支持，1-支持）"`
-	AvgServiceMinutes  int    `json:"avg_service_minutes" gorm:"default:30;comment:平均服务时长（分钟）"`
+	ID                 uint       `json:"id" gorm:"primaryKey;comment:商户ID"`
+	Name               string     `json:"name" gorm:"size:100;comment:商户名称"`
+	Phone              string     `json:"phone" gorm:"size:20;uniqueIndex;comment:手机号"`
+	Password           string     `json:"-" gorm:"size:255;comment:登录密码（bcrypt加密）"`
+	Type               string     `json:"type" gorm:"size:50;comment:商户类型（如：理发、美容等）"`
+	SupportAppointment bool       `json:"support_appointment" gorm:"default:false;comment:是否支持预约（0-不支持，1-支持）"`
+	AvgServiceMinutes  int        `json:"avg_service_minutes" gorm:"default:30;comment:平均服务时长（分钟）"`
 	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 }
 
@@ -38,15 +39,15 @@ func (Merchant) TableComment() string {
 }
 
 type Card struct {
-	ID             uint   `json:"id" gorm:"primaryKey;comment:卡片ID"`
-	UserID         uint   `json:"user_id" gorm:"index;comment:用户ID（外键关联users表）"`
-	MerchantID     uint   `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
-	CardNo         string `json:"card_no" gorm:"size:50;comment:卡号"`
-	CardType       string `json:"card_type" gorm:"size:100;comment:卡片类型（如：洗剪吹10次卡）"`
-	TotalTimes     int    `json:"total_times" gorm:"comment:总次数"`
-	RemainTimes    int    `json:"remain_times" gorm:"comment:剩余次数"`
-	UsedTimes      int    `json:"used_times" gorm:"comment:已使用次数"`
-	RechargeAmount int    `json:"recharge_amount" gorm:"comment:充值金额（单位：元）"`
+	ID             uint       `json:"id" gorm:"primaryKey;comment:卡片ID"`
+	UserID         uint       `json:"user_id" gorm:"index;comment:用户ID（外键关联users表）"`
+	MerchantID     uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
+	CardNo         string     `json:"card_no" gorm:"size:50;comment:卡号"`
+	CardType       string     `json:"card_type" gorm:"size:100;comment:卡片类型（如：洗剪吹10次卡）"`
+	TotalTimes     int        `json:"total_times" gorm:"comment:总次数"`
+	RemainTimes    int        `json:"remain_times" gorm:"comment:剩余次数"`
+	UsedTimes      int        `json:"used_times" gorm:"comment:已使用次数"`
+	RechargeAmount int        `json:"recharge_amount" gorm:"comment:充值金额（单位：元）"`
 	RechargeAt     *time.Time `json:"recharge_at" gorm:"type:date;comment:充值时间/开卡时间"`
 	LastUsedAt     *time.Time `json:"last_used_at" gorm:"type:datetime(3);comment:最后使用时间"`
 	StartDate      *time.Time `json:"start_date" gorm:"type:date;comment:有效期开始日期"`
@@ -66,12 +67,12 @@ func (Card) TableComment() string {
 }
 
 type Usage struct {
-	ID         uint   `json:"id" gorm:"primaryKey;comment:记录ID"`
-	CardID     uint   `json:"card_id" gorm:"index;comment:卡片ID（外键关联cards表）"`
-	MerchantID uint   `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
-	UsedTimes  int    `json:"used_times" gorm:"comment:本次核销次数"`
+	ID         uint       `json:"id" gorm:"primaryKey;comment:记录ID"`
+	CardID     uint       `json:"card_id" gorm:"index;comment:卡片ID（外键关联cards表）"`
+	MerchantID uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
+	UsedTimes  int        `json:"used_times" gorm:"comment:本次核销次数"`
 	UsedAt     *time.Time `json:"used_at" gorm:"type:datetime(3);comment:使用时间"`
-	Status     string `json:"status" gorm:"size:20;default:success;comment:状态（success-成功，failed-失败）"`
+	Status     string     `json:"status" gorm:"size:20;default:success;comment:状态（success-成功，failed-失败）"`
 	CreatedAt  *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	Card     Card     `json:"card" gorm:"foreignKey:CardID"`
@@ -87,11 +88,11 @@ func (Usage) TableComment() string {
 }
 
 type Notice struct {
-	ID         uint   `json:"id" gorm:"primaryKey;comment:通知ID"`
-	MerchantID uint   `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
-	Title      string `json:"title" gorm:"size:200;comment:通知标题"`
-	Content    string `json:"content" gorm:"type:text;comment:通知内容"`
-	IsPinned   bool   `json:"is_pinned" gorm:"default:false;comment:是否置顶（0-否，1-是）"`
+	ID         uint       `json:"id" gorm:"primaryKey;comment:通知ID"`
+	MerchantID uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
+	Title      string     `json:"title" gorm:"size:200;comment:通知标题"`
+	Content    string     `json:"content" gorm:"type:text;comment:通知内容"`
+	IsPinned   bool       `json:"is_pinned" gorm:"default:false;comment:是否置顶（0-否，1-是）"`
 	CreatedAt  *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	Merchant Merchant `json:"merchant" gorm:"foreignKey:MerchantID"`
@@ -106,11 +107,11 @@ func (Notice) TableComment() string {
 }
 
 type Appointment struct {
-	ID              uint   `json:"id" gorm:"primaryKey;comment:预约ID"`
-	MerchantID      uint   `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
-	UserID          uint   `json:"user_id" gorm:"index;comment:用户ID（外键关联users表）"`
+	ID              uint       `json:"id" gorm:"primaryKey;comment:预约ID"`
+	MerchantID      uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
+	UserID          uint       `json:"user_id" gorm:"index;comment:用户ID（外键关联users表）"`
 	AppointmentTime *time.Time `json:"appointment_time" gorm:"type:datetime(3);comment:预约时间"`
-	Status          string `json:"status" gorm:"size:20;default:pending;comment:预约状态（pending-待确认，confirmed-已确认/排队中，finished-已完成，canceled-已取消）"`
+	Status          string     `json:"status" gorm:"size:20;default:pending;comment:预约状态（pending-待确认，confirmed-已确认/排队中，finished-已完成，canceled-已取消）"`
 	CanceledAt      *time.Time `json:"canceled_at" gorm:"type:datetime(3);comment:取消时间"`
 	CreatedAt       *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
@@ -127,11 +128,11 @@ func (Appointment) TableComment() string {
 }
 
 type VerifyCode struct {
-	ID        uint   `json:"id" gorm:"primaryKey;comment:核销码ID"`
-	CardID    uint   `json:"card_id" gorm:"index;comment:卡片ID（外键关联cards表）"`
-	Code      string `json:"code" gorm:"size:50;uniqueIndex;comment:核销码"`
-	ExpireAt  int64  `json:"expire_at" gorm:"comment:过期时间（Unix时间戳）"`
-	Used      bool   `json:"used" gorm:"default:false;comment:是否已使用（0-未使用，1-已使用）"`
+	ID        uint       `json:"id" gorm:"primaryKey;comment:核销码ID"`
+	CardID    uint       `json:"card_id" gorm:"index;comment:卡片ID（外键关联cards表）"`
+	Code      string     `json:"code" gorm:"size:50;uniqueIndex;comment:核销码"`
+	ExpireAt  int64      `json:"expire_at" gorm:"comment:过期时间（Unix时间戳）"`
+	Used      bool       `json:"used" gorm:"default:false;comment:是否已使用（0-未使用，1-已使用）"`
 	CreatedAt *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 }
 
@@ -144,12 +145,12 @@ func (VerifyCode) TableComment() string {
 }
 
 type SMSCode struct {
-	ID        uint   `json:"id" gorm:"primaryKey;comment:短信验证码ID"`
-	Phone     string `json:"phone" gorm:"size:20;index;comment:手机号"`
-	Purpose   string `json:"purpose" gorm:"size:50;index;comment:用途"`
-	Code      string `json:"-" gorm:"size:10;comment:验证码"`
-	ExpiresAt int64  `json:"expires_at" gorm:"index;comment:过期时间（Unix时间戳）"`
-	Used      bool   `json:"used" gorm:"default:false;comment:是否已使用（0-未使用，1-已使用）"`
+	ID        uint       `json:"id" gorm:"primaryKey;comment:短信验证码ID"`
+	Phone     string     `json:"phone" gorm:"size:20;index;comment:手机号"`
+	Purpose   string     `json:"purpose" gorm:"size:50;index;comment:用途"`
+	Code      string     `json:"-" gorm:"size:10;comment:验证码"`
+	ExpiresAt int64      `json:"expires_at" gorm:"index;comment:过期时间（Unix时间戳）"`
+	Used      bool       `json:"used" gorm:"default:false;comment:是否已使用（0-未使用，1-已使用）"`
 	UsedAt    *time.Time `json:"used_at" gorm:"type:datetime(3);comment:使用时间"`
 	CreatedAt *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 }
@@ -159,10 +160,10 @@ func (SMSCode) TableName() string {
 }
 
 type InviteCode struct {
-	ID               uint   `json:"id" gorm:"primaryKey;comment:邀请码ID"`
-	Code             string `json:"code" gorm:"size:50;uniqueIndex;comment:邀请码"`
-	Used             bool   `json:"used" gorm:"default:false;comment:是否已使用（0-未使用，1-已使用）"`
-	UsedByMerchantID *uint  `json:"used_by_merchant_id" gorm:"index;comment:使用该邀请码注册的商户ID"`
+	ID               uint       `json:"id" gorm:"primaryKey;comment:邀请码ID"`
+	Code             string     `json:"code" gorm:"size:50;uniqueIndex;comment:邀请码"`
+	Used             bool       `json:"used" gorm:"default:false;comment:是否已使用（0-未使用，1-已使用）"`
+	UsedByMerchantID *uint      `json:"used_by_merchant_id" gorm:"index;comment:使用该邀请码注册的商户ID"`
 	UsedAt           *time.Time `json:"used_at" gorm:"type:datetime(3);comment:使用时间"`
 	CreatedAt        *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 }

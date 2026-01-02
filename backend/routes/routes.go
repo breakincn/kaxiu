@@ -31,6 +31,7 @@ func SetupRoutes(r *gin.Engine) {
 	auth.GET("/users", handlers.GetUsers)
 	auth.GET("/users/:id", handlers.GetUser)
 	auth.GET("/me", handlers.GetCurrentUser)
+	auth.POST("/user/bind-phone", handlers.BindUserPhone)
 	auth.GET("/merchant/users/search", handlers.MerchantSearchUsers)
 
 	// 商户相关
