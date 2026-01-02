@@ -12,7 +12,7 @@
 
     <!-- 卡片详情 -->
     <div class="px-4 mt-4">
-      <div class="bg-gray-50 rounded-2xl p-5 shadow-md border border-gray-200">
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center gap-2 mb-4">
           <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
@@ -54,7 +54,7 @@
 
     <!-- 预约排队区域（如果支持且不在冷却中） -->
     <div v-if="card.merchant?.support_appointment && !isInCooldown" class="px-4 mt-4">
-      <div class="bg-blue-50 rounded-2xl p-5 shadow-md border border-blue-100">
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center gap-2 mb-3">
           <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -83,7 +83,7 @@
               </div>
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-4 pt-3 mt-3 border-t border-blue-200">
+          <div class="grid grid-cols-2 gap-4 pt-3 mt-3 border-t border-gray-200">
             <div>
               <div class="text-gray-400 text-xs">前面排队</div>
               <div class="text-2xl font-bold text-gray-800">{{ queueBefore }}<span class="text-sm font-normal">人</span></div>
@@ -140,7 +140,7 @@
 
     <!-- 使用记录 -->
     <div class="px-4 mt-4">
-      <div class="bg-green-50 rounded-2xl p-5 shadow-md border border-green-100">
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center justify-between mb-4">
           <div class="flex items-center gap-2">
             <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -161,7 +161,7 @@
                 <span class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</span>
               </div>
             </div>
-            <span :class="usage.status === 'success' ? 'text-green-500' : 'text-red-500'" class="text-sm font-medium">
+            <span :class="usage.status === 'success' ? 'text-primary' : 'text-red-500'" class="text-sm font-medium">
               {{ usage.status === 'success' ? '成功' : '失败' }}
             </span>
           </div>
@@ -174,7 +174,7 @@
 
     <!-- 商户通知 -->
     <div v-if="notices.length > 0" class="px-4 mt-4">
-      <div class="bg-orange-50 rounded-2xl p-5 shadow-md border border-orange-100">
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center gap-2 mb-4">
           <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
@@ -182,10 +182,10 @@
           <span class="font-medium text-gray-800">商户通知</span>
         </div>
         <div class="space-y-4">
-          <div v-for="notice in notices" :key="notice.id" class="bg-white rounded-lg p-3 shadow-sm" :class="notice.is_pinned ? 'border-l-4 border-yellow-500' : 'border-l-4 border-primary'">
+          <div v-for="notice in notices" :key="notice.id" class="bg-white rounded-lg p-3 shadow-sm" :class="notice.is_pinned ? 'border-l-4 border-gray-700' : 'border-l-4 border-primary'">
             <div class="flex items-center gap-2 mb-1">
               <span class="font-medium text-gray-800">{{ notice.title }}</span>
-              <span v-if="notice.is_pinned" class="px-2 py-0.5 bg-yellow-500 text-white text-xs rounded">置顶</span>
+              <span v-if="notice.is_pinned" class="px-2 py-0.5 bg-gray-700 text-white text-xs rounded">置顶</span>
             </div>
             <div class="text-gray-500 text-sm mt-1">{{ notice.content }}</div>
             <div class="text-gray-400 text-xs mt-1">{{ formatDateTime(notice.created_at) }}</div>
@@ -576,8 +576,8 @@ const cancelAppointment = async () => {
 const getAppointmentStatusClass = (status) => {
   const classes = {
     pending: 'text-primary',
-    confirmed: 'text-blue-500',
-    finished: 'text-green-500',
+    confirmed: 'text-primary',
+    finished: 'text-gray-600',
     canceled: 'text-gray-400'
   }
   return classes[status] || 'text-gray-500'
@@ -640,7 +640,7 @@ const getAppointmentTimeClass = () => {
   } else if (countdown.value > 0 && countdown.value <= 300) {
     return 'text-red-500' // 5分钟内，红色
   } else {
-    return 'text-green-500' // 默认绿色
+    return 'text-gray-800' // 默认使用正文色
   }
 }
 
@@ -649,7 +649,7 @@ const getCountdownClass = () => {
   if (countdown.value > 0 && countdown.value <= 300) {
     return 'text-red-500' // 5分钟内，红色
   } else {
-    return 'text-green-500' // 默认绿色
+    return 'text-gray-600' // 默认中性色
   }
 }
 
