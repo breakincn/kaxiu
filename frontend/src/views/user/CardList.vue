@@ -139,7 +139,7 @@
               <div class="text-xl font-bold text-gray-600">待商家确认</div>
             </div>
             <div class="text-right">
-              <div class="text-gray-500 text-xs mb-0.5">已付款</div>
+              <div class="text-gray-500 text-xs mb-0.5">已付款 ¥{{ (item.price / 100).toFixed(2) }}</div>
               <div class="text-sm font-medium text-orange-500">{{ formatElapsed(item.paid_at) }}</div>
             </div>
           </div>
@@ -211,6 +211,7 @@ const displayItems = computed(() => {
       order_no: o.order_no,
       paid_at: o.paid_at,
       payment_method: o.payment_method,
+      price: o.price,
       merchant_name: o.merchant?.name || '商户',
       card_name: o.card_template?.name || '卡片'
     })
