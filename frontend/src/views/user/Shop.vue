@@ -434,6 +434,19 @@ function cancelPayment() {
 
 async function confirmPayment() {
   if (!currentOrder.value) return
+
+  if (!currentOrder.value.order_no) {
+    alert('订单信息缺失，请重新发起购买')
+    return
+  }
+  if (!currentOrder.value.card_template_id) {
+    alert('卡片信息缺失，请重新发起购买')
+    return
+  }
+  if (!currentOrder.value.payment_method) {
+    alert('支付方式缺失，请重新选择支付方式')
+    return
+  }
   
   confirming.value = true
   try {
@@ -453,7 +466,11 @@ async function confirmPayment() {
       paymentActionsTimer = null
     }
   } catch (e) {
-    alert(e.response?.data?.error || '提交失败')
+    const rawMsg = e?.response?.data?.error || e?.message || ''
+    const friendlyMsg = rawMsg && String(rawMsg).toLowerCase().includes('eof')
+      ? '提交失败：请求参数异常，请重新发起购买'
+      : (rawMsg || '提交失败')
+    alert(friendlyMsg)
   } finally {
     confirming.value = false
   }

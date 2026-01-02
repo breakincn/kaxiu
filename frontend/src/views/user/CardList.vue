@@ -67,58 +67,87 @@
     <!-- 卡片列表 -->
     <div class="px-4 pb-6 space-y-4">
       <div
-        v-for="(card, index) in cards"
-        :key="card.id"
+        v-for="(item, index) in displayItems"
+        :key="item._key"
       >
-        <div
-          @click="goToDetail(card.id)"
-          :class="[
-            'rounded-2xl p-4 text-white cursor-pointer transition-transform active:scale-[0.98]',
-            index % 2 === 0 ? 'card-gradient-orange' : 'card-gradient-blue'
-          ]"
-        >
-          <!-- 顶部：商户名称和版本标签 -->
-          <div class="flex justify-between items-start mb-1">
-            <div>
-              <h3 class="text-lg font-bold">{{ card.merchant?.name }}</h3>
-              <p class="text-white/70 text-xs mt-0.5">{{ card.card_type }}</p>
+        <template v-if="item._type === 'card'">
+          <div
+            @click="goToDetail(item.id)"
+            :class="[
+              'rounded-2xl p-4 text-white cursor-pointer transition-transform active:scale-[0.98]',
+              index % 2 === 0 ? 'card-gradient-orange' : 'card-gradient-blue'
+            ]"
+          >
+            <!-- 顶部：商户名称和版本标签 -->
+            <div class="flex justify-between items-start mb-1">
+              <div>
+                <h3 class="text-lg font-bold">{{ item.merchant?.name }}</h3>
+                <p class="text-white/70 text-xs mt-0.5">{{ item.card_type }}</p>
+              </div>
+              <div class="bg-white/20 px-2.5 py-0.5 rounded-full">
+                <span class="text-xs font-medium">NO: G12345678981189</span>
+              </div>
             </div>
-            <div class="bg-white/20 px-2.5 py-0.5 rounded-full">
-              <span class="text-xs font-medium">NO: G12345678981189</span>
+
+            <!-- 底部：剩余次数和有效期 -->
+            <div class="flex justify-between items-end mt-6">
+              <div>
+                <div class="text-white/70 text-xs mb-0.5">剩余次数</div>
+                <div class="text-5xl font-bold leading-none">{{ item.remain_times }}</div>
+              </div>
+              <div class="text-right">
+                <div class="text-white/70 text-xs mb-0.5">有效期至</div>
+                <div class="text-sm font-medium">{{ formatDate(item.end_date) }}</div>
+              </div>
             </div>
           </div>
 
-          <!-- 底部：剩余次数和有效期 -->
+          <!-- 置顶通知（仅卡片显示） -->
+          <div 
+            v-if="item.pinnedNotice" 
+            class="mt-2 bg-yellow-50 border border-yellow-200 rounded-lg p-3 cursor-pointer"
+            @click="goToDetail(item.id)"
+          >
+            <div class="flex items-center gap-2 mb-1">
+              <svg class="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+              </svg>
+              <span class="text-yellow-800 font-medium text-sm">{{ item.pinnedNotice.title }}</span>
+              <span class="px-1.5 py-0.5 bg-yellow-500 text-white text-xs rounded">置顶</span>
+            </div>
+            <div class="text-yellow-700 text-xs line-clamp-1">{{ item.pinnedNotice.content }}</div>
+          </div>
+        </template>
+
+        <div
+          v-else
+          class="rounded-2xl p-4 bg-gray-200 text-gray-600 cursor-not-allowed"
+        >
+          <div class="flex justify-between items-start mb-2">
+            <div>
+              <h3 class="text-lg font-bold">{{ item.merchant_name }}</h3>
+              <p class="text-gray-500 text-xs mt-0.5">{{ item.card_name }}</p>
+            </div>
+            <div class="bg-white/60 px-2.5 py-0.5 rounded-full">
+              <span class="text-xs font-medium text-gray-600">待商家确认</span>
+            </div>
+          </div>
+
           <div class="flex justify-between items-end mt-6">
             <div>
-              <div class="text-white/70 text-xs mb-0.5">剩余次数</div>
-              <div class="text-5xl font-bold leading-none">{{ card.remain_times }}</div>
+              <div class="text-gray-500 text-xs mb-0.5">订单状态</div>
+              <div class="text-xl font-bold text-gray-600">待确认</div>
             </div>
             <div class="text-right">
-              <div class="text-white/70 text-xs mb-0.5">有效期至</div>
-              <div class="text-sm font-medium">{{ formatDate(card.end_date) }}</div>
+              <div class="text-gray-500 text-xs mb-0.5">已付款</div>
+              <div class="text-sm font-medium text-orange-500">{{ formatElapsed(item.paid_at) }}</div>
             </div>
           </div>
         </div>
 
-        <!-- 置顶通知 -->
-        <div 
-          v-if="card.pinnedNotice" 
-          class="mt-2 bg-yellow-50 border border-yellow-200 rounded-lg p-3 cursor-pointer"
-          @click="goToDetail(card.id)"
-        >
-          <div class="flex items-center gap-2 mb-1">
-            <svg class="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-            </svg>
-            <span class="text-yellow-800 font-medium text-sm">{{ card.pinnedNotice.title }}</span>
-            <span class="px-1.5 py-0.5 bg-yellow-500 text-white text-xs rounded">置顶</span>
-          </div>
-          <div class="text-yellow-700 text-xs line-clamp-1">{{ card.pinnedNotice.content }}</div>
-        </div>
       </div>
 
-      <div v-if="cards.length === 0" class="text-center py-12 text-gray-400">
+      <div v-if="displayItems.length === 0" class="text-center py-12 text-gray-400">
         暂无{{ currentStatus === 'active' ? '有效' : '失效' }}卡片
       </div>
     </div>
@@ -126,16 +155,21 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { cardApi, noticeApi } from '../../api'
+import { cardApi, noticeApi, shopApi } from '../../api'
 import { formatDate } from '../../utils/dateFormat'
 
 const router = useRouter()
 const userName = ref('')
 const currentStatus = ref('active')
 const cards = ref([])
+const pendingPaidOrders = ref([])
 const userId = ref(null)
+
+const nowTick = ref(Date.now())
+let nowTimer = null
+let pollTimer = null
 
 // 从 localStorage 获取当前用户信息
 const initUser = () => {
@@ -147,10 +181,44 @@ const initUser = () => {
     router.push('/user/login')
     return
   }
-  
+
   userId.value = parseInt(storedUserId)
   userName.value = storedUserName || '用户'
 }
+
+const fetchPendingOrders = async () => {
+  if (!userId.value) return
+  if (currentStatus.value !== 'active') {
+    pendingPaidOrders.value = []
+    return
+  }
+  try {
+    const res = await shopApi.getDirectPurchases()
+    const list = res.data.data || []
+    pendingPaidOrders.value = list.filter(o => o && o.status === 'paid')
+  } catch (err) {
+    console.error('获取待确认订单失败:', err)
+    pendingPaidOrders.value = []
+  }
+}
+
+const displayItems = computed(() => {
+  const items = []
+  for (const o of pendingPaidOrders.value || []) {
+    items.push({
+      _type: 'pending',
+      _key: `pending-${o.order_no}`,
+      order_no: o.order_no,
+      paid_at: o.paid_at,
+      merchant_name: o.merchant?.name || '商户',
+      card_name: o.card_template?.name || '卡片'
+    })
+  }
+  for (const c of cards.value || []) {
+    items.push({ ...c, _type: 'card', _key: `card-${c.id}` })
+  }
+  return items
+})
 
 const fetchCards = async () => {
   if (!userId.value) return
@@ -202,10 +270,47 @@ const getStatusColor = (card) => {
   return 'bg-green-400'
 }
 
-watch(currentStatus, fetchCards)
+function formatElapsed(fromTime) {
+  if (!fromTime) return ''
+  const fromTs = new Date(fromTime).getTime()
+  if (!fromTs) return ''
+  const diff = Math.max(0, Math.floor((nowTick.value - fromTs) / 1000))
+  const h = Math.floor(diff / 3600)
+  const m = Math.floor((diff % 3600) / 60)
+  const s = diff % 60
+  if (h > 0) return `${h}小时${m}分${s}秒`
+  if (m > 0) return `${m}分${s}秒`
+  return `${s}秒`
+}
+
+watch(currentStatus, async () => {
+  await fetchCards()
+  await fetchPendingOrders()
+})
 
 onMounted(() => {
   initUser()
   fetchCards()
+  fetchPendingOrders()
+
+  nowTimer = setInterval(() => {
+    nowTick.value = Date.now()
+  }, 1000)
+
+  pollTimer = setInterval(() => {
+    fetchCards()
+    fetchPendingOrders()
+  }, 8000)
+})
+
+onUnmounted(() => {
+  if (nowTimer) {
+    clearInterval(nowTimer)
+    nowTimer = null
+  }
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
 })
 </script>

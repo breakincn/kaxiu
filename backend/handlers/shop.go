@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"io"
 	"kabao/config"
 	"kabao/models"
 	"net/http"
@@ -542,6 +543,14 @@ func ConfirmDirectPurchase(c *gin.Context) {
 		PaymentMethod  string `json:"payment_method" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
+		if err == io.EOF {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数为空"})
+			return
+		}
+		if strings.Contains(err.Error(), "EOF") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数为空"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
