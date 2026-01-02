@@ -111,6 +111,26 @@
                   <span>微信支付</span>
                 </div>
               </div>
+
+              <div v-if="!shopInfo.payment_config.has_alipay || !shopInfo.payment_config.has_wechat" style="margin-bottom: 16px;">
+                <button
+                  v-if="!shopInfo.payment_config.has_alipay"
+                  class="purchase-btn"
+                  type="button"
+                  @click="launchScanApp('alipay')"
+                  style="margin-bottom: 10px;"
+                >
+                  支付宝扫码支付
+                </button>
+                <button
+                  v-if="!shopInfo.payment_config.has_wechat"
+                  class="purchase-btn"
+                  type="button"
+                  @click="launchScanApp('wechat')"
+                >
+                  微信扫码支付
+                </button>
+              </div>
               
               <div class="purchase-tip">
                 <p>💡 付款将直接转给商户，卡包不参与收款</p>
@@ -188,9 +208,20 @@
           
           <div class="modal-body">
             <div class="payment-info">
-              <div class="payment-qrcode">
-                <img :src="paymentUrl" alt="收款码" v-if="paymentUrl" />
+              <div v-if="paymentUrl" class="payment-qrcode">
+                <div v-if="isImageUrl(paymentUrl)" style="width: 100%;">
+                  <div style="text-align: center; color: #666; font-size: 14px; margin-bottom: 10px;" @click="launchScanApp(paymentMethod)">点击支付码 直接扫码支付</div>
+                  <img :src="paymentUrl" alt="收款码" @click="launchScanApp(paymentMethod)" />
+                </div>
               </div>
+              <button
+                v-if="paymentMethod && !paymentUrl"
+                class="purchase-btn"
+                type="button"
+                @click="launchScanApp(paymentMethod)"
+              >
+                {{ paymentMethod === 'alipay' ? '打开支付宝扫一扫' : '打开微信扫一扫' }}
+              </button>
               
               <div class="payment-amount">
                 <span>支付金额：</span>
@@ -258,6 +289,27 @@ const bindPhoneForm = ref({
   phone: '',
   code: ''
 })
+
+function hasPaymentQRCode(method) {
+  const cfg = shopInfo.value?.payment_config
+  if (!cfg) return false
+  if (method === 'alipay') return !!cfg.has_alipay
+  if (method === 'wechat') return !!cfg.has_wechat
+  return false
+}
+
+function launchScanApp(method) {
+  if (!method) return
+  paymentMethod.value = method
+  try {
+    if (method === 'alipay') {
+      window.location.href = 'alipayqr://platformapi/startapp?saId=10000007'
+    } else {
+      window.location.href = 'weixin://'
+    }
+  } catch (e) {
+  }
+}
 
 const bindCountdown = ref(0)
 let bindTimer = null
