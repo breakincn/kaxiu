@@ -195,7 +195,7 @@
       </div>
       
       <div v-else class="order-list">
-        <div v-for="order in orders" :key="order.id" class="order-card">
+        <div v-for="order in orders" :key="order.id" class="order-card" :class="{ 'paid-order': order.status === 'paid' }">
           <div class="order-header">
             <span class="order-no">{{ order.order_no }}</span>
             <button
@@ -946,6 +946,38 @@ function downloadQrcode() {
   padding: 16px;
   background: #fff;
   border-radius: 12px;
+}
+
+.order-card.paid-order {
+  background: linear-gradient(135deg, #fff8e1 0%, #ffe082 100%);
+  border: 2px dashed #ffa726;
+  box-shadow: 0 2px 8px rgba(255, 167, 38, 0.2);
+}
+
+.order-card.paid-order .order-card-name {
+  color: #333;
+  font-weight: 500;
+}
+
+.order-card.paid-order .order-user {
+  color: #666;
+}
+
+.order-card.paid-order .order-price {
+  color: #333;
+  font-weight: 600;
+}
+
+.order-card.paid-order .order-time {
+  color: #999;
+}
+
+.order-card.paid-order .paid-elapsed {
+  color: #fa8c16;
+}
+
+.order-card.paid-order .payment-method {
+  color: #666;
 }
 
 .order-header {
