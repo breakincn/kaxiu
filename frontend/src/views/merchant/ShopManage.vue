@@ -127,7 +127,7 @@
         </div>
         
         <div class="form-tip">
-          <p>💡 提示：资金将直接进入您的支付宝/微信账户，卡包不参与收款</p>
+          <p>💡 提示：资金将直接进入您的支付宝/微信账户，卡包不参与收款，如不配置收款码则只能到店现场扫码支付</p>
         </div>
         
         <button class="save-btn" @click="savePaymentConfig" :disabled="saving">
