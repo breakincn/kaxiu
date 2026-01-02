@@ -25,37 +25,6 @@
           </div>
 
           <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">手机号（可选）</label>
-            <input
-              v-model="form.phone"
-              type="tel"
-              placeholder="请输入手机号"
-              class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-            />
-          </div>
-
-          <div v-if="form.phone" class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">验证码</label>
-            <div class="flex gap-2">
-              <input
-                v-model="form.code"
-                type="text"
-                placeholder="请输入验证码"
-                class="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-                required
-              />
-              <button
-                type="button"
-                :disabled="sendingCode || countdown > 0"
-                class="px-3 py-3 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
-                @click="sendCode"
-              >
-                {{ countdown > 0 ? `${countdown}s` : (sendingCode ? '发送中...' : '发送验证码') }}
-              </button>
-            </div>
-          </div>
-
-          <div class="mb-4">
             <label class="block text-gray-700 text-sm font-medium mb-2">密码</label>
             <input
               v-model="form.password"
@@ -65,6 +34,37 @@
               required
               minlength="6"
             />
+          </div>
+
+          <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-medium mb-2">手机号（可选）</label>
+            <input
+                v-model="form.phone"
+                type="tel"
+                placeholder="请输入手机号"
+                class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          <div v-if="form.phone" class="mb-4">
+            <label class="block text-gray-700 text-sm font-medium mb-2">验证码</label>
+            <div class="flex gap-2">
+              <input
+                  v-model="form.code"
+                  type="text"
+                  placeholder="请输入验证码"
+                  class="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                  required
+              />
+              <button
+                  type="button"
+                  :disabled="sendingCode || countdown > 0"
+                  class="px-3 py-3 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-50 whitespace-nowrap shrink-0"
+                  @click="sendCode"
+              >
+                {{ countdown > 0 ? `${countdown}s` : (sendingCode ? '发送中...' : '发送验证码') }}
+              </button>
+            </div>
           </div>
 
           <div class="mb-6">
