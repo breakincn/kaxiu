@@ -39,16 +39,25 @@
     </div>
 
     <!-- 数据统计卡片 -->
-    <div class="px-4 py-4 grid grid-cols-2 gap-4">
-      <div class="bg-primary-light rounded-xl p-4">
-        <div class="text-gray-600 text-sm mb-1">今日核销</div>
-        <div class="text-3xl font-bold text-primary">{{ todayVerifyCount }}</div>
-        <div class="text-gray-500 text-sm">次</div>
-      </div>
+    <div class="px-4 py-4 grid grid-cols-3 gap-3">
+      <button
+        type="button"
+        class="bg-red-50 rounded-xl p-4 text-left"
+        @click="goToDirectPurchaseOrders"
+      >
+        <div class="text-gray-600 text-sm mb-1">待确认订单</div>
+        <div class="text-3xl font-bold text-red-500">{{ pendingDirectPurchases }}</div>
+        <div class="text-gray-500 text-sm">单</div>
+      </button>
       <div class="bg-secondary-light rounded-xl p-4">
         <div class="text-gray-600 text-sm mb-1">待处理预约</div>
         <div class="text-3xl font-bold text-secondary">{{ pendingAppointments }}</div>
         <div class="text-gray-500 text-sm">人</div>
+      </div>
+      <div class="bg-primary-light rounded-xl p-4">
+        <div class="text-gray-600 text-sm mb-1">今日核销</div>
+        <div class="text-3xl font-bold text-primary">{{ todayVerifyCount }}</div>
+        <div class="text-gray-500 text-sm">次</div>
       </div>
     </div>
 
@@ -437,7 +446,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi } from '../../api'
+import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi, shopApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 
 const router = useRouter()
@@ -448,6 +457,7 @@ const currentTab = ref('queue')
 
 const todayVerifyCount = ref(0)
 const pendingAppointments = ref(0)
+const pendingDirectPurchases = ref(0)
 const appointments = ref([])
 const todayUsages = ref([])
 const notices = ref([])
@@ -480,6 +490,10 @@ const goScanVerify = () => {
   router.push('/merchant/scan-verify')
 }
 
+const goToDirectPurchaseOrders = () => {
+  router.push({ path: '/merchant/shop-manage', query: { tab: 'orders' } })
+}
+
 const fetchMerchant = async () => {
   try {
     const res = await merchantApi.getMerchant(merchantId.value)
@@ -507,6 +521,16 @@ const fetchQueueStatus = async () => {
     pendingAppointments.value = res.data.data.pending_appointments || 0
   } catch (err) {
     console.error('获取队列状态失败:', err)
+  }
+}
+
+const fetchPendingDirectPurchases = async () => {
+  try {
+    const res = await shopApi.getMerchantDirectPurchases()
+    const list = res.data.data || []
+    pendingDirectPurchases.value = list.filter(o => o && o.status === 'paid').length
+  } catch (err) {
+    console.error('获取待确认订单失败:', err)
   }
 }
 
@@ -945,6 +969,7 @@ onMounted(() => {
   merchantId.value = parsedMerchantId
   fetchMerchant()
   fetchQueueStatus()
+  fetchPendingDirectPurchases()
   fetchAppointments()
   startCountdownTimer()
 })

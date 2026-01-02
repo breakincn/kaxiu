@@ -79,27 +79,6 @@
             </div>
           </div>
 
-          <div v-if="paidOrdersByTemplate[tpl.id]?.length" class="paid-orders">
-            <div
-              v-for="order in paidOrdersByTemplate[tpl.id]"
-              :key="order.id"
-              class="paid-order-notice"
-            >
-              <div class="notice-left">
-                <div class="notice-title">用户已完成付款</div>
-                <div class="notice-sub">
-                  {{ order.user?.nickname || order.user?.phone }} · {{ order.payment_method === 'alipay' ? '支付宝' : '微信' }} · {{ formatTime(order.paid_at) }} · 已付款 {{ formatElapsed(order.paid_at) }}
-                </div>
-              </div>
-              <button
-                class="notice-action"
-                @click="confirmMerchantOrder(order)"
-                :disabled="confirmingMap[order.order_no]"
-              >
-                {{ confirmingMap[order.order_no] ? '确认中...' : '确认订单' }}
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -219,7 +198,17 @@
         <div v-for="order in orders" :key="order.id" class="order-card">
           <div class="order-header">
             <span class="order-no">{{ order.order_no }}</span>
-            <span class="order-status" :class="order.status">
+            <button
+              v-if="order.status === 'paid'"
+              type="button"
+              class="order-status confirm-order"
+              :class="order.status"
+              @click="confirmMerchantOrder(order)"
+              :disabled="confirmingMap[order.order_no]"
+            >
+              {{ confirmingMap[order.order_no] ? '确认中...' : '确认订单' }}
+            </button>
+            <span v-else class="order-status" :class="order.status">
               {{ getOrderStatusLabel(order.status) }}
             </span>
           </div>
@@ -230,6 +219,9 @@
           </div>
           <div class="order-footer">
             <span class="order-time">{{ formatTime(order.created_at) }}</span>
+            <span v-if="order.status === 'paid'" class="paid-elapsed">
+              已付款 {{ formatElapsed(order.paid_at) }}
+            </span>
             <span class="payment-method">{{ order.payment_method === 'alipay' ? '支付宝' : '微信' }}</span>
           </div>
         </div>
@@ -290,7 +282,10 @@
 
 <script setup>
 import { ref, onMounted, computed, onBeforeUnmount } from 'vue'
+import { useRoute } from 'vue-router'
 import { shopApi } from '../../api/index.js'
+
+const route = useRoute()
 
 const activeTab = ref('templates')
 const loading = ref(false)
@@ -345,6 +340,11 @@ const qrcodeUrl = computed(() => {
 })
 
 onMounted(() => {
+  const tabParam = route.query.tab
+  if (tabParam && ['templates', 'payment', 'qrcode', 'orders'].includes(tabParam)) {
+    activeTab.value = tabParam
+  }
+
   loadTemplates()
   loadPaymentConfig()
   loadShopSlug()
@@ -368,18 +368,6 @@ onBeforeUnmount(() => {
     clearInterval(ordersPollTimer)
     ordersPollTimer = null
   }
-})
-
-const paidOrdersByTemplate = computed(() => {
-  const map = {}
-  for (const o of orders.value || []) {
-    if (o?.status !== 'paid') continue
-    const tplID = o.card_template_id
-    if (!tplID) continue
-    if (!map[tplID]) map[tplID] = []
-    map[tplID].push(o)
-  }
-  return map
 })
 
 async function loadTemplates() {
@@ -468,11 +456,11 @@ function formatTime(time) {
   return new Date(time).toLocaleString('zh-CN')
 }
 
-function formatElapsed(paidAt) {
-  if (!paidAt) return ''
-  const paidTs = new Date(paidAt).getTime()
-  if (!paidTs) return ''
-  const diff = Math.max(0, Math.floor((nowTick.value - paidTs) / 1000))
+function formatElapsed(fromTime) {
+  if (!fromTime) return ''
+  const fromTs = new Date(fromTime).getTime()
+  if (!fromTs) return ''
+  const diff = Math.max(0, Math.floor((nowTick.value - fromTs) / 1000))
   const h = Math.floor(diff / 3600)
   const m = Math.floor((diff % 3600) / 60)
   const s = diff % 60
@@ -994,6 +982,25 @@ function downloadQrcode() {
 .order-status.canceled {
   background: #fff1f0;
   color: #f5222d;
+}
+
+.order-status.confirm-order {
+  border: none;
+  cursor: pointer;
+}
+
+.order-status.paid.confirm-order {
+  color: #f5222d;
+  border: 1px solid #f5222d;
+}
+
+.order-status.confirm-order:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.paid-elapsed {
+  color: #fa8c16;
 }
 
 .order-info {
