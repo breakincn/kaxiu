@@ -24,13 +24,13 @@
         <div class="flex gap-2">
           <router-link
             to="/merchant/shop-manage"
-            class="px-3 py-2 bg-green-500 text-white rounded-lg text-sm font-medium"
+            class="px-3 py-2 bg-slate-600 text-white rounded-lg text-sm font-medium hover:bg-slate-700 transition-colors"
           >
             售卡管理
           </router-link>
           <router-link
             to="/merchant/issue-card"
-            class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+            class="px-3 py-2 bg-slate-600 text-white rounded-lg text-sm font-medium hover:bg-slate-700 transition-colors"
           >
             发卡/开卡
           </router-link>
@@ -42,21 +42,21 @@
     <div class="px-4 py-4 grid grid-cols-3 gap-3">
       <button
         type="button"
-        class="bg-red-50 rounded-xl p-4 text-left"
+        class="bg-white rounded-xl p-4 text-left border border-gray-100"
         @click="goToDirectPurchaseOrders"
       >
         <div class="text-gray-600 text-sm mb-1">待确认订单</div>
         <div class="text-3xl font-bold text-red-500">{{ pendingDirectPurchases }}</div>
         <div class="text-gray-500 text-sm">单</div>
       </button>
-      <div class="bg-secondary-light rounded-xl p-4">
+      <div class="bg-white rounded-xl p-4 border border-gray-100">
         <div class="text-gray-600 text-sm mb-1">待处理预约</div>
-        <div class="text-3xl font-bold text-secondary">{{ pendingAppointments }}</div>
+        <div class="text-3xl font-bold text-orange-500">{{ pendingAppointments }}</div>
         <div class="text-gray-500 text-sm">人</div>
       </div>
-      <div class="bg-primary-light rounded-xl p-4">
+      <div class="bg-white rounded-xl p-4 border border-gray-100">
         <div class="text-gray-600 text-sm mb-1">今日核销</div>
-        <div class="text-3xl font-bold text-primary">{{ todayVerifyCount }}</div>
+        <div class="text-3xl font-bold text-secondary">{{ todayVerifyCount }}</div>
         <div class="text-gray-500 text-sm">次</div>
       </div>
     </div>
@@ -148,7 +148,7 @@
           <button
             v-if="shouldShowFinishButton(appt) && !isWriteOffExpired(appt)"
             @click="finishAppointment(appt.id)"
-            class="flex-1 py-2 bg-green-500 text-white rounded-lg text-sm font-medium"
+            class="flex-1 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium"
           >
             完成服务 (扣次)
           </button>
@@ -211,8 +211,8 @@
           {{ verifying ? '核销中...' : '确认核销' }}
         </button>
         
-        <div v-if="verifyResult" class="mt-4 p-4 rounded-lg" :class="verifyResult.success ? 'bg-green-50' : 'bg-red-50'">
-          <p :class="verifyResult.success ? 'text-green-600' : 'text-red-600'">
+        <div v-if="verifyResult" class="mt-4 p-4 rounded-lg" :class="verifyResult.success ? 'bg-primary-light' : 'bg-gray-50'">
+          <p :class="verifyResult.success ? 'text-primary' : 'text-gray-700'">
             {{ verifyResult.message }}
           </p>
         </div>
@@ -243,7 +243,7 @@
               <div class="text-gray-800">{{ usage.card?.user?.nickname || '用户' }}</div>
               <div class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</div>
             </div>
-            <span class="text-green-500 text-sm">核销 {{ usage.used_times }} 次</span>
+            <span class="text-gray-700 text-sm">核销 {{ usage.used_times }} 次</span>
           </div>
         </div>
         <div v-else class="text-center text-gray-400 py-4">
@@ -256,7 +256,7 @@
     <div v-if="currentTab === 'notice'" class="px-4 py-4">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <h3 class="font-medium text-gray-800 mb-4">发布通知</h3>
-        <div v-if="notices.length >= 3" class="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
+        <div v-if="notices.length >= 3" class="mb-3 p-3 bg-primary-light border border-gray-100 rounded-lg text-gray-700 text-sm">
           <p>已达到最大限制（3条），请先删除一条通知后再发布</p>
         </div>
         <input
@@ -286,12 +286,12 @@
       <div class="bg-white rounded-xl p-4 shadow-sm mt-4">
         <h3 class="font-medium text-gray-800 mb-4">已发布通知 ({{ notices.length }}/3)</h3>
         <div v-if="notices.length > 0" class="space-y-4">
-          <div v-for="notice in notices" :key="notice.id" class="border-l-2 pl-3 relative" :class="notice.is_pinned ? 'border-yellow-500 bg-yellow-50' : 'border-primary'">
+          <div v-for="notice in notices" :key="notice.id" class="border-l-2 pl-3 relative" :class="notice.is_pinned ? 'border-primary bg-primary-light' : 'border-primary'">
             <div class="flex items-start justify-between gap-2">
               <div class="flex-1">
                 <div class="flex items-center gap-2">
                   <span class="font-medium text-gray-800">{{ notice.title }}</span>
-                  <span v-if="notice.is_pinned" class="px-2 py-0.5 bg-yellow-500 text-white text-xs rounded">置顶</span>
+                  <span v-if="notice.is_pinned" class="px-2 py-0.5 bg-primary-light text-primary text-xs rounded">置顶</span>
                 </div>
                 <div class="text-gray-500 text-sm mt-1">{{ notice.content }}</div>
                 <div class="text-gray-400 text-xs mt-1">{{ formatDateTime(notice.created_at) }}</div>
@@ -300,13 +300,13 @@
                 <button
                   @click="togglePin(notice.id)"
                   class="px-3 py-1 text-xs rounded"
-                  :class="notice.is_pinned ? 'bg-gray-100 text-gray-600' : 'bg-yellow-100 text-yellow-600'"
+                  :class="notice.is_pinned ? 'bg-gray-100 text-gray-600' : 'bg-primary-light text-primary'"
                 >
                   {{ notice.is_pinned ? '取消置顶' : '置顶' }}
                 </button>
                 <button
                   @click="deleteNotice(notice.id)"
-                  class="px-3 py-1 bg-red-100 text-red-600 text-xs rounded"
+                  class="px-3 py-1 bg-gray-100 text-gray-700 text-xs rounded"
                 >
                   删除
                 </button>
@@ -322,7 +322,7 @@
 
     <!-- 卡片管理 -->
     <div v-if="currentTab === 'cards'" class="px-4 py-4">
-      <div v-if="cardsError" class="bg-red-50 border border-red-100 text-red-600 rounded-lg p-3 text-sm mb-4">
+      <div v-if="cardsError" class="bg-gray-50 border border-gray-100 text-gray-700 rounded-lg p-3 text-sm mb-4">
         {{ cardsError }}
       </div>
 
@@ -375,27 +375,27 @@
           <div
             @click="toggleCardExpand(card.id)"
             :class="[
-              'rounded-2xl p-4 text-white cursor-pointer transition-transform active:scale-[0.98]',
-              index % 2 === 0 ? 'card-gradient-blue' : 'card-gradient-orange'
+              'rounded-2xl p-4 cursor-pointer transition-transform active:scale-[0.98]',
+              'kb-card'
             ]"
           >
             <div class="flex justify-between items-start mb-1">
               <div>
                 <h3 class="text-lg font-bold">{{ card.user?.nickname || card.user_id }}</h3>
-                <p class="text-white/70 text-xs mt-0.5">{{ card.card_type }}</p>
+                <p class="text-gray-500 text-xs mt-0.5">{{ card.card_type }}</p>
               </div>
-              <div class="bg-white/20 px-2.5 py-0.5 rounded-full">
+              <div class="bg-gray-100 px-2.5 py-0.5 rounded-full">
                 <span class="text-xs font-medium">NO: {{ card.card_no || '-' }}</span>
               </div>
             </div>
 
             <div class="flex justify-between items-end mt-6">
               <div>
-                <div class="text-white/70 text-xs mb-0.5">剩余次数</div>
+                <div class="text-gray-500 text-xs mb-0.5">剩余次数</div>
                 <div class="text-5xl font-bold leading-none">{{ card.remain_times }}</div>
               </div>
               <div class="text-right">
-                <div class="text-white/70 text-xs mb-0.5">有效期至</div>
+                <div class="text-gray-500 text-xs mb-0.5">有效期至</div>
                 <div class="text-sm font-medium">{{ formatDate(card.end_date) }}</div>
               </div>
             </div>
@@ -720,9 +720,9 @@ const getStatusBadgeClass = (appt) => {
   }
 
   const classes = {
-    pending: 'px-2 py-1 rounded text-xs font-medium bg-orange-100 text-primary',
-    confirmed: 'px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-600',
-    finished: 'px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-600',
+    pending: 'px-2 py-1 rounded text-xs font-medium bg-primary-light text-primary',
+    confirmed: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700',
+    finished: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700',
     canceled: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500'
   }
   return classes[appt.status] || ''
@@ -812,13 +812,12 @@ const getPendingCountdownClass = (appt) => {
   if (countdown === null || countdown <= 0) {
     return 'text-gray-400 text-sm font-medium mt-1'
   }
-  
-  // 预约时间前10分钟内（600秒）显示红色，否则绿色
+
+  // 预约时间临近时用主色提示，其余用弱化文本（避免红绿灯）
   if (countdown <= 600) {
-    return 'text-red-500 text-sm font-medium mt-1'
-  } else {
-    return 'text-green-500 text-sm font-medium mt-1'
+    return 'text-primary text-sm font-medium mt-1'
   }
+  return 'text-gray-500 text-sm font-medium mt-1'
 }
 
 // 计算预约倒计时（秒）
@@ -875,13 +874,12 @@ const getCountdownClass = (appt) => {
   
   const countdown = getAppointmentCountdown(appt)
   if (countdown === null) return 'text-primary text-sm font-medium mt-1'
-  
-  // 大于10分钟显示绿色，否则显示橙色
-  if (countdown > 600) {
-    return 'text-green-500 text-sm font-medium mt-1'
-  } else {
-    return 'text-orange-500 text-sm font-medium mt-1'
+
+  // 统一色相：临近用主色，其余用灰
+  if (countdown <= 600) {
+    return 'text-primary text-sm font-medium mt-1'
   }
+  return 'text-gray-500 text-sm font-medium mt-1'
 }
 
 // 判断是否应该显示完成服务按钮

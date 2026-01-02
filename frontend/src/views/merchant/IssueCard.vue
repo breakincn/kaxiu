@@ -28,7 +28,7 @@
           </button>
         </div>
 
-        <div v-if="searchError" class="mt-3 text-sm text-red-600">
+        <div v-if="searchError" class="mt-3 text-sm text-gray-700">
           {{ searchError }}
         </div>
 
@@ -144,10 +144,10 @@
             {{ submitting ? '提交中...' : '确认发卡' }}
           </button>
 
-          <div v-if="submitError" class="text-sm text-red-600">
+          <div v-if="submitError" class="text-sm text-gray-700">
             {{ submitError }}
           </div>
-          <div v-if="submitSuccess" class="text-sm text-green-600">
+          <div v-if="submitSuccess" class="text-sm text-primary">
             {{ submitSuccess }}
           </div>
         </div>

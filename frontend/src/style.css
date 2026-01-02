@@ -21,6 +21,13 @@ body {
   --kb-text: #111827;
   --kb-text-muted: #6b7280;
   --kb-shadow: 0 2px 10px rgba(17, 24, 39, 0.06);
+  --kb-primary: #FF6B35;
+  --kb-primary-dark: #E85A2B;
+  --kb-primary-soft: #FFF4F0;
+  --kb-accent: #4A90D9;
+  --kb-accent-soft: #E8F4FD;
+  --kb-warning-soft: #FFF7ED;
+  --kb-danger-soft: #FEF2F2;
 }
 
 .card-gradient-orange {

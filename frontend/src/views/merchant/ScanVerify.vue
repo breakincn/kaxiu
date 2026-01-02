@@ -23,11 +23,11 @@
           </button>
         </div>
 
-        <div v-if="errorText" class="mb-3 p-3 bg-red-50 border border-red-100 text-red-600 rounded-lg text-sm">
+        <div v-if="errorText" class="mb-3 p-3 bg-gray-50 border border-gray-100 text-gray-700 rounded-lg text-sm">
           {{ errorText }}
         </div>
 
-        <div v-if="resultText" class="mb-3 p-3 rounded-lg text-sm" :class="resultSuccess ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-600 border border-red-100'">
+        <div v-if="resultText" class="mb-3 p-3 rounded-lg text-sm" :class="resultSuccess ? 'bg-primary-light text-primary border border-gray-100' : 'bg-gray-50 text-gray-700 border border-gray-100'">
           {{ resultText }}
         </div>
 

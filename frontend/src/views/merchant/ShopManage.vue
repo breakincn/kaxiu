@@ -605,7 +605,7 @@ function downloadQrcode() {
 <style scoped>
 .shop-manage {
   min-height: 100vh;
-  background: #f5f5f5;
+  background: var(--kb-surface-muted);
 }
 
 .header {
@@ -613,15 +613,15 @@ function downloadQrcode() {
   align-items: center;
   justify-content: space-between;
   padding: 16px;
-  background: #fff;
-  border-bottom: 1px solid #eee;
+  background: var(--kb-surface);
+  border-bottom: 1px solid var(--kb-border);
 }
 
 .back-btn {
   width: 36px;
   height: 36px;
   border: none;
-  background: #f5f5f5;
+  background: var(--kb-surface-muted);
   border-radius: 8px;
   font-size: 18px;
   cursor: pointer;
@@ -630,6 +630,7 @@ function downloadQrcode() {
 .header h1 {
   font-size: 18px;
   font-weight: 600;
+  color: var(--kb-text);
 }
 
 .placeholder {
@@ -638,8 +639,8 @@ function downloadQrcode() {
 
 .tabs {
   display: flex;
-  background: #fff;
-  border-bottom: 1px solid #eee;
+  background: var(--kb-surface);
+  border-bottom: 1px solid var(--kb-border);
   overflow-x: auto;
 }
 
@@ -649,14 +650,14 @@ function downloadQrcode() {
   padding: 12px 8px;
   text-align: center;
   font-size: 14px;
-  color: #666;
+  color: var(--kb-text-muted);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .tab.active {
-  color: #1890ff;
-  border-bottom: 2px solid #1890ff;
+  color: var(--kb-primary);
+  border-bottom: 2px solid var(--kb-primary);
 }
 
 .tab-content {
@@ -673,11 +674,12 @@ function downloadQrcode() {
 .section-header h2 {
   font-size: 16px;
   font-weight: 600;
+  color: var(--kb-text);
 }
 
 .add-btn {
   padding: 8px 16px;
-  background: #1890ff;
+  background: var(--kb-primary);
   color: #fff;
   border: none;
   border-radius: 6px;
@@ -688,7 +690,7 @@ function downloadQrcode() {
 .empty-state {
   padding: 40px 20px;
   text-align: center;
-  color: #999;
+  color: var(--kb-text-muted);
 }
 
 .template-list {
@@ -708,9 +710,9 @@ function downloadQrcode() {
   justify-content: space-between;
   align-items: center;
   padding: 16px;
-  background: #fff;
+  background: var(--kb-surface);
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  box-shadow: var(--kb-shadow);
 }
 
 .template-card.inactive {
@@ -721,6 +723,7 @@ function downloadQrcode() {
   font-size: 16px;
   font-weight: 600;
   margin-bottom: 6px;
+  color: var(--kb-text);
 }
 
 .template-meta {
@@ -732,8 +735,8 @@ function downloadQrcode() {
 
 .type-tag {
   padding: 2px 8px;
-  background: #e6f7ff;
-  color: #1890ff;
+  background: var(--kb-primary-soft);
+  color: var(--kb-primary-dark);
   border-radius: 4px;
   font-size: 12px;
 }
@@ -741,12 +744,12 @@ function downloadQrcode() {
 .price {
   font-size: 16px;
   font-weight: 600;
-  color: #f50;
+  color: var(--kb-text);
 }
 
 .template-detail {
   font-size: 12px;
-  color: #999;
+  color: var(--kb-text-muted);
 }
 
 .template-actions {
@@ -756,26 +759,27 @@ function downloadQrcode() {
 
 .action-btn {
   padding: 6px 12px;
-  border: 1px solid #ddd;
-  background: #fff;
+  border: 1px solid var(--kb-border);
+  background: var(--kb-surface);
   border-radius: 6px;
   font-size: 12px;
   cursor: pointer;
+  color: var(--kb-text);
 }
 
 .action-btn.danger {
-  color: #f50;
-  border-color: #f50;
+  color: var(--kb-primary-dark);
+  border-color: var(--kb-primary);
 }
 
 .action-btn.success {
-  color: #52c41a;
-  border-color: #52c41a;
+  color: var(--kb-primary-dark);
+  border-color: var(--kb-primary);
 }
 
 /* 收款配置 */
 .payment-form {
-  background: #fff;
+  background: var(--kb-surface);
   border-radius: 12px;
   padding: 20px;
 }
@@ -787,7 +791,7 @@ function downloadQrcode() {
 .form-section h3 {
   font-size: 16px;
   margin-bottom: 12px;
-  color: #333;
+  color: var(--kb-text);
 }
 
 .form-group {
@@ -798,7 +802,7 @@ function downloadQrcode() {
   display: block;
   margin-bottom: 6px;
   font-size: 14px;
-  color: #666;
+  color: var(--kb-text-muted);
 }
 
 .form-group input,
@@ -806,15 +810,17 @@ function downloadQrcode() {
 .form-group textarea {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--kb-border);
   border-radius: 8px;
   font-size: 14px;
   box-sizing: border-box;
+  background: var(--kb-surface);
+  color: var(--kb-text);
 }
 
 .form-tip {
   padding: 12px;
-  background: #fffbe6;
+  background: var(--kb-warning-soft);
   border-radius: 8px;
   margin-bottom: 20px;
 }
@@ -822,13 +828,13 @@ function downloadQrcode() {
 .form-tip p {
   margin: 0;
   font-size: 13px;
-  color: #ad8b00;
+  color: var(--kb-text-muted);
 }
 
 .save-btn {
   width: 100%;
   padding: 12px;
-  background: #1890ff;
+  background: var(--kb-primary);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -837,12 +843,12 @@ function downloadQrcode() {
 }
 
 .save-btn:disabled {
-  background: #ccc;
+  background: var(--kb-border);
 }
 
 /* 二维码 */
 .qrcode-section {
-  background: #fff;
+  background: var(--kb-surface);
   border-radius: 12px;
   padding: 20px;
 }
@@ -850,15 +856,15 @@ function downloadQrcode() {
 .slug-input {
   display: flex;
   align-items: center;
-  border: 1px solid #ddd;
+  border: 1px solid var(--kb-border);
   border-radius: 8px;
   overflow: hidden;
 }
 
 .slug-input .prefix {
   padding: 10px 12px;
-  background: #f5f5f5;
-  color: #999;
+  background: var(--kb-surface-muted);
+  color: var(--kb-text-muted);
   font-size: 14px;
 }
 
@@ -872,7 +878,7 @@ function downloadQrcode() {
 .slug-tip {
   margin-top: 6px;
   font-size: 12px;
-  color: #999;
+  color: var(--kb-text-muted);
 }
 
 .qrcode-preview {
@@ -883,13 +889,14 @@ function downloadQrcode() {
 .qrcode-preview h3 {
   font-size: 16px;
   margin-bottom: 16px;
+  color: var(--kb-text);
 }
 
 .qrcode-box {
   display: inline-block;
   padding: 16px;
-  background: #fff;
-  border: 1px solid #eee;
+  background: var(--kb-surface);
+  border: 1px solid var(--kb-border);
   border-radius: 12px;
 }
 
@@ -901,7 +908,7 @@ function downloadQrcode() {
 .shop-url {
   margin-top: 12px;
   font-size: 14px;
-  color: #666;
+  color: var(--kb-text-muted);
 }
 
 .qrcode-actions {
@@ -914,13 +921,14 @@ function downloadQrcode() {
 .qrcode-tips {
   margin-top: 24px;
   padding: 16px;
-  background: #f5f5f5;
+  background: var(--kb-surface-muted);
   border-radius: 8px;
 }
 
 .qrcode-tips h4 {
   font-size: 14px;
   margin-bottom: 8px;
+  color: var(--kb-text);
 }
 
 .qrcode-tips ul {
@@ -931,7 +939,7 @@ function downloadQrcode() {
 
 .qrcode-tips li {
   font-size: 13px;
-  color: #666;
+  color: var(--kb-text-muted);
   margin-bottom: 4px;
 }
 
@@ -944,14 +952,14 @@ function downloadQrcode() {
 
 .order-card {
   padding: 16px;
-  background: #fff;
+  background: var(--kb-surface);
   border-radius: 12px;
+  box-shadow: var(--kb-shadow);
 }
 
 .order-card.paid-order {
-  background: linear-gradient(135deg, #fff8e1 0%, #ffe082 100%);
-  border: 2px dashed #ffa726;
-  box-shadow: 0 2px 8px rgba(255, 167, 38, 0.2);
+  border: 1px solid var(--kb-primary);
+  background: var(--kb-primary-soft);
 }
 
 .order-header {
@@ -962,7 +970,7 @@ function downloadQrcode() {
 
 .order-no {
   font-size: 12px;
-  color: #999;
+  color: var(--kb-text-muted);
 }
 
 .order-status {
@@ -972,23 +980,23 @@ function downloadQrcode() {
 }
 
 .order-status.pending {
-  background: #fff7e6;
-  color: #fa8c16;
+  background: var(--kb-surface-muted);
+  color: var(--kb-text-muted);
 }
 
 .order-status.paid {
-  background: #fffbe6;
-  color: #ad8b00;
+  background: var(--kb-primary-soft);
+  color: var(--kb-primary-dark);
 }
 
 .order-status.confirmed {
-  background: #f6ffed;
-  color: #52c41a;
+  background: var(--kb-accent-soft);
+  color: var(--kb-accent);
 }
 
 .order-status.canceled {
-  background: #fff1f0;
-  color: #f5222d;
+  background: var(--kb-surface-muted);
+  color: var(--kb-text-muted);
 }
 
 .order-status.confirm-order {
@@ -997,8 +1005,8 @@ function downloadQrcode() {
 }
 
 .order-status.paid.confirm-order {
-  color: #f5222d;
-  border: 1px solid #f5222d;
+  color: var(--kb-primary-dark);
+  border: 1px solid var(--kb-primary);
 }
 
 .order-status.confirm-order:not(:disabled) {
@@ -1011,17 +1019,17 @@ function downloadQrcode() {
 }
 
 .paid-elapsed {
-  color: #fa8c16;
+  color: var(--kb-primary-dark);
 }
 
 @keyframes pulse-animation {
   0%, 100% {
     transform: scale(1);
-    box-shadow: 0 0 0 rgba(245, 34, 45, 0);
+    box-shadow: 0 0 0 rgba(255, 107, 53, 0);
   }
   50% {
     transform: scale(1.02);
-    box-shadow: 0 4px 16px rgba(245, 34, 45, 0.25);
+    box-shadow: 0 4px 16px rgba(255, 107, 53, 0.22);
   }
 }
 
@@ -1031,25 +1039,26 @@ function downloadQrcode() {
 
 .order-user {
   font-size: 14px;
-  color: #333;
+  color: var(--kb-text);
 }
 
 .order-card-name {
   font-size: 14px;
   font-weight: 500;
+  color: var(--kb-text);
 }
 
 .order-price {
   font-size: 16px;
   font-weight: 600;
-  color: #f50;
+  color: var(--kb-text);
 }
 
 .order-footer {
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: #999;
+  color: var(--kb-text-muted);
 }
 
 .paid-orders {
@@ -1063,8 +1072,8 @@ function downloadQrcode() {
   align-items: center;
   justify-content: space-between;
   padding: 12px 12px;
-  background: #fffbe6;
-  border: 1px solid #ffe58f;
+  background: var(--kb-warning-soft);
+  border: 1px solid var(--kb-border);
   border-radius: 10px;
 }
 
@@ -1075,13 +1084,13 @@ function downloadQrcode() {
 .notice-title {
   font-size: 14px;
   font-weight: 600;
-  color: #ad8b00;
+  color: var(--kb-text);
   margin-bottom: 4px;
 }
 
 .notice-sub {
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--kb-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1091,7 +1100,7 @@ function downloadQrcode() {
   flex: none;
   padding: 8px 12px;
   border: none;
-  background: #1890ff;
+  background: var(--kb-primary);
   color: #fff;
   border-radius: 8px;
   font-size: 12px;
@@ -1099,7 +1108,7 @@ function downloadQrcode() {
 }
 
 .notice-action:disabled {
-  background: #ccc;
+  background: var(--kb-border);
 }
 
 /* 弹窗 */
@@ -1120,7 +1129,7 @@ function downloadQrcode() {
   width: 90%;
   max-width: 400px;
   max-height: 80vh;
-  background: #fff;
+  background: var(--kb-surface);
   border-radius: 12px;
   overflow: hidden;
   display: flex;
@@ -1132,12 +1141,13 @@ function downloadQrcode() {
   justify-content: space-between;
   align-items: center;
   padding: 16px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--kb-border);
 }
 
 .modal-header h3 {
   font-size: 16px;
   margin: 0;
+  color: var(--kb-text);
 }
 
 .close-btn {
@@ -1146,7 +1156,7 @@ function downloadQrcode() {
   border: none;
   background: none;
   font-size: 24px;
-  color: #999;
+  color: var(--kb-text-muted);
   cursor: pointer;
 }
 
@@ -1160,23 +1170,24 @@ function downloadQrcode() {
   display: flex;
   gap: 12px;
   padding: 16px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--kb-border);
 }
 
 .cancel-btn {
   flex: 1;
   padding: 12px;
-  background: #f5f5f5;
+  background: var(--kb-surface-muted);
   border: none;
   border-radius: 8px;
   font-size: 14px;
   cursor: pointer;
+  color: var(--kb-text);
 }
 
 .confirm-btn {
   flex: 1;
   padding: 12px;
-  background: #1890ff;
+  background: var(--kb-primary);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -1185,6 +1196,6 @@ function downloadQrcode() {
 }
 
 .confirm-btn:disabled {
-  background: #ccc;
+  background: var(--kb-border);
 }
 </style>
