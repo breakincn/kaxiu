@@ -1118,7 +1118,7 @@ function goToCards() {
 }
 
 .payment-amount-alipay {
-  margin: -6px 0 -5px 0; /* 支付宝支付金额的上方间距 */
+  margin: -6px 0 -4px 0; /* 支付宝支付金额的上方间距 */
 }
 
 .payment-amount-wechat {
