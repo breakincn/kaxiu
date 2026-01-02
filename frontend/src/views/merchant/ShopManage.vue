@@ -954,32 +954,6 @@ function downloadQrcode() {
   box-shadow: 0 2px 8px rgba(255, 167, 38, 0.2);
 }
 
-.order-card.paid-order .order-card-name {
-  color: #333;
-  font-weight: 500;
-}
-
-.order-card.paid-order .order-user {
-  color: #666;
-}
-
-.order-card.paid-order .order-price {
-  color: #333;
-  font-weight: 600;
-}
-
-.order-card.paid-order .order-time {
-  color: #999;
-}
-
-.order-card.paid-order .paid-elapsed {
-  color: #fa8c16;
-}
-
-.order-card.paid-order .payment-method {
-  color: #666;
-}
-
 .order-header {
   display: flex;
   justify-content: space-between;
