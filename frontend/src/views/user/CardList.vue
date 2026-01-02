@@ -129,14 +129,17 @@
               <p class="text-gray-500 text-xs mt-0.5">{{ item.card_name }}</p>
             </div>
             <div class="bg-white/60 px-2.5 py-0.5 rounded-full">
-              <span class="text-xs font-medium text-gray-600">{{ formatPaymentMethod(item.payment_method) }}</span>
+              <span class="text-xs font-medium text-gray-600">NO: {{ item.order_no }}</span>
             </div>
           </div>
 
           <div class="flex justify-between items-end mt-6">
-            <div>
-              <div class="text-gray-500 text-xs mb-0.5">卡片状态</div>
-              <div class="text-xl font-bold text-gray-600">待商家确认</div>
+            <div class="flex items-end gap-2">
+              <div>
+                <div class="text-gray-500 text-xs mb-0.5">卡片状态</div>
+                <div class="text-xl font-bold text-gray-600">待商家确认</div>
+              </div>
+              <div class="text-xs text-gray-400 pb-0.5">{{ formatPaymentMethod(item.payment_method) }}</div>
             </div>
             <div class="text-right">
               <div class="text-gray-500 text-xs mb-0.5">已付款 ¥{{ (item.price / 100).toFixed(2) }}</div>
