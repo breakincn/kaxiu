@@ -121,30 +121,30 @@
 
         <div
           v-else
-          class="rounded-2xl p-4 bg-gray-200 text-gray-600 cursor-not-allowed"
+          class="rounded-2xl p-4 card-gradient-yellow cursor-not-allowed"
         >
           <div class="flex justify-between items-start mb-2">
             <div>
-              <h3 class="text-lg font-bold">{{ item.merchant_name }}</h3>
-              <p class="text-gray-500 text-xs mt-0.5">{{ item.card_name }}</p>
+              <h3 class="text-lg font-bold text-gray-800">{{ item.merchant_name }}</h3>
+              <p class="text-gray-600 text-xs mt-0.5">{{ item.card_name }}</p>
             </div>
-            <div class="bg-white/60 px-2.5 py-0.5 rounded-full">
-              <span class="text-xs font-medium text-gray-600">NO: {{ item.order_no }}</span>
+            <div class="bg-white/80 px-2.5 py-0.5 rounded-full">
+              <span class="text-xs font-medium text-gray-700">NO: {{ item.order_no }}</span>
             </div>
           </div>
 
           <div class="flex justify-between items-end mt-6">
             <div class="flex items-end gap-2">
               <div>
-                <div class="text-gray-500 text-xs mb-0.5">卡片状态</div>
-                <div class="text-xl font-bold text-gray-600">待商家确认</div>
+                <div class="text-gray-600 text-xs mb-0.5">卡片状态</div>
+                <div class="text-xl font-bold text-gray-800">待商家确认</div>
               </div>
-              <div class="text-xs text-gray-400 pb-0.5">{{ formatPaymentMethod(item.payment_method) }}</div>
+              <div class="text-xs text-gray-600 pb-0.5">{{ formatPaymentMethod(item.payment_method) }}</div>
             </div>
             <div class="text-right">
-              <div class="text-gray-500 text-xs mb-0.5">{{ formatDateTime(item.paid_at) }}</div>
-              <div class="text-gray-500 text-xs mb-0.5">已付款 ¥{{ (item.price / 100).toFixed(2) }}</div>
-              <div class="text-sm font-medium text-orange-500">{{ formatElapsed(item.paid_at) }}</div>
+              <div class="text-gray-600 text-xs mb-0.5">{{ formatDateTime(item.paid_at) }}</div>
+              <div class="text-gray-600 text-xs mb-0.5">已付款 ¥{{ (item.price / 100).toFixed(2) }}</div>
+              <div class="text-sm font-medium text-yellow-800">{{ formatElapsed(item.paid_at) }}</div>
             </div>
           </div>
         </div>
