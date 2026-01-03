@@ -87,7 +87,33 @@ const goBack = () => {
 
 const loadCameras = async () => {
   try {
-    cameras.value = await Html5Qrcode.getCameras()
+    const allCameras = await Html5Qrcode.getCameras()
+    cameras.value = allCameras
+    
+    // 默认选择后置摄像头（environment facing mode）
+    if (allCameras && allCameras.length > 0) {
+      const backCamera = allCameras.find(camera => 
+        camera.label.toLowerCase().includes('back') || 
+        camera.label.toLowerCase().includes('environment') ||
+        camera.label.toLowerCase().includes('后') ||
+        camera.label.toLowerCase().includes('主')
+      )
+      
+      if (backCamera) {
+        currentCameraIndex.value = allCameras.indexOf(backCamera)
+      } else {
+        // 如果找不到后置摄像头，尝试通过 facingMode 判断
+        const environmentCamera = allCameras.find(camera => 
+          !camera.label.toLowerCase().includes('front') &&
+          !camera.label.toLowerCase().includes('user') &&
+          !camera.label.toLowerCase().includes('前') &&
+          !camera.label.toLowerCase().includes('自')
+        )
+        if (environmentCamera) {
+          currentCameraIndex.value = allCameras.indexOf(environmentCamera)
+        }
+      }
+    }
   } catch (e) {
     cameras.value = []
   }
@@ -120,7 +146,7 @@ const start = async () => {
 
     const constraints = cameraId
       ? { deviceId: { exact: cameraId } }
-      : { facingMode: 'environment' }
+      : { facingMode: { exact: 'environment' } }
 
     await html5QrCode.start(
       constraints,
