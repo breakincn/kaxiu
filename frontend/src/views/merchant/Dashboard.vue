@@ -40,7 +40,6 @@
         </div>
         <div class="flex gap-2">
           <router-link
-            v-if="merchant.support_direct_sale"
             to="/merchant/shop-manage"
             class="px-3 py-2 bg-slate-600 text-white rounded-lg text-sm font-medium hover:bg-slate-700 transition-colors"
           >
@@ -59,6 +58,7 @@
     <!-- 数据统计卡片 -->
     <div class="px-4 py-4 grid grid-cols-3 gap-3">
       <button
+        v-if="merchant.support_direct_sale"
         type="button"
         class="bg-white rounded-xl p-4 text-left border border-gray-100"
         @click="goToDirectPurchaseOrders"
@@ -586,6 +586,7 @@ const onTopScanTouchEnd = () => {
 }
 
 const goToDirectPurchaseOrders = () => {
+  if (!merchant.value.support_direct_sale) return
   router.push({ path: '/merchant/shop-manage', query: { tab: 'orders' } })
 }
 

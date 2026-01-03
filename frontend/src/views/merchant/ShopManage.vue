@@ -17,16 +17,19 @@
         @click="activeTab = 'templates'"
       >在售卡片</div>
       <div 
+        v-if="merchant.support_direct_sale"
         class="tab" 
         :class="{ active: activeTab === 'payment' }"
         @click="activeTab = 'payment'"
       >收款配置</div>
       <div 
+        v-if="merchant.support_direct_sale"
         class="tab" 
         :class="{ active: activeTab === 'qrcode' }"
         @click="activeTab = 'qrcode'"
       >售卡二维码</div>
       <div 
+        v-if="merchant.support_direct_sale"
         class="tab" 
         :class="{ active: activeTab === 'orders' }"
         @click="activeTab = 'orders'"
@@ -84,7 +87,7 @@
     </div>
 
     <!-- 收款配置 -->
-    <div v-if="activeTab === 'payment'" class="tab-content">
+    <div v-if="merchant.support_direct_sale && activeTab === 'payment'" class="tab-content">
       <div class="payment-form">
         <div class="form-section">
           <h3>支付宝收款</h3>
@@ -137,7 +140,7 @@
     </div>
 
     <!-- 售卡二维码 -->
-    <div v-if="activeTab === 'qrcode'" class="tab-content">
+    <div v-if="merchant.support_direct_sale && activeTab === 'qrcode'" class="tab-content">
       <div class="qrcode-section">
         <div class="form-group">
           <label>店铺短链接</label>
@@ -189,7 +192,7 @@
     </div>
 
     <!-- 直购订单 -->
-    <div v-if="activeTab === 'orders'" class="tab-content">
+    <div v-if="merchant.support_direct_sale && activeTab === 'orders'" class="tab-content">
       <div v-if="orders.length === 0" class="empty-state">
         <p>暂无直购订单</p>
       </div>
@@ -289,6 +292,8 @@ import { shopApi } from '../../api/index.js'
 const route = useRoute()
 const router = useRouter()
 
+const merchant = ref({ support_direct_sale: false })
+
 const activeTab = ref('templates')
 const loading = ref(false)
 const saving = ref(false)
@@ -343,13 +348,15 @@ const qrcodeUrl = computed(() => {
 
 onMounted(() => {
   merchantApi.getCurrentMerchant().then((res) => {
-    const m = res?.data?.data || {}
-    if (!m.support_direct_sale) {
-      alert('商户未开启直购售卡服务')
-      router.replace('/merchant')
+    merchant.value = res?.data?.data || { support_direct_sale: false }
+    if (!merchant.value.support_direct_sale && ['payment', 'qrcode', 'orders'].includes(activeTab.value)) {
+      activeTab.value = 'templates'
     }
   }).catch(() => {
-    // ignore
+    merchant.value = { support_direct_sale: false }
+    if (['payment', 'qrcode', 'orders'].includes(activeTab.value)) {
+      activeTab.value = 'templates'
+    }
   })
 
   const tabParam = route.query.tab
@@ -358,16 +365,18 @@ onMounted(() => {
   }
 
   loadTemplates()
-  loadPaymentConfig()
-  loadShopSlug()
-  loadOrders()
+  if (merchant.value.support_direct_sale) {
+    loadPaymentConfig()
+    loadShopSlug()
+    loadOrders()
+  }
 
   nowTimer = setInterval(() => {
     nowTick.value = Date.now()
   }, 1000)
 
   ordersPollTimer = setInterval(() => {
-    loadOrders()
+    if (merchant.value.support_direct_sale) loadOrders()
   }, 5000)
 })
 

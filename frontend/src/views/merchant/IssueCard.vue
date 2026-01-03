@@ -91,14 +91,10 @@
             </select>
           </div>
 
-          <div>
-            <label class="block text-gray-700 text-sm font-medium mb-2">卡号</label>
-            <input
-              v-model="cardForm.card_no"
-              type="text"
-              disabled
-              class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary bg-gray-50 text-gray-500"
-            />
+          <div v-if="selectedTemplate" class="px-4 py-3 border border-gray-100 rounded-lg bg-gray-50">
+            <div class="text-sm text-gray-700">类型：{{ getCardTypeLabel(selectedTemplate.card_type) }}</div>
+            <div v-if="selectedTemplate.card_type !== 'balance'" class="text-sm text-gray-700">次数：{{ selectedTemplate.total_times }}</div>
+            <div class="text-sm text-gray-700">售价：¥{{ (selectedTemplate.price / 100).toFixed(2) }}</div>
           </div>
 
           <div class="grid grid-cols-2 gap-3">
@@ -161,7 +157,6 @@ const submitSuccess = ref('')
 
 const cardForm = ref({
   template_id: 0,
-  card_no: '',
   start_date: '',
   end_date: ''
 })
@@ -177,18 +172,9 @@ const loadTemplates = async () => {
   try {
     const res = await shopApi.getCardTemplates()
     const list = res.data.data || []
-    templates.value = list.filter(t => t && (t.card_type === 'times' || t.card_type === 'lesson'))
+    templates.value = list.filter(t => t && (t.card_type === 'times' || t.card_type === 'lesson' || t.card_type === 'balance'))
   } catch (e) {
     templates.value = []
-  }
-}
-
-const loadNextCardNo = async () => {
-  try {
-    const res = await merchantApi.getNextCardNo()
-    cardForm.value.card_no = res?.data?.data?.card_no || ''
-  } catch (_) {
-    cardForm.value.card_no = ''
   }
 }
 
@@ -199,9 +185,14 @@ const calcEndDate = (startDateStr, validDays) => {
   if (days > 0) {
     end.setDate(end.getDate() + days)
   } else {
-    end.setFullYear(end.getFullYear() + 100)
+    end.setFullYear(end.getFullYear() + 20)
   }
   return end.toISOString().split('T')[0]
+}
+
+const getCardTypeLabel = (type) => {
+  const labels = { times: '次数卡', lesson: '课时卡', balance: '充值卡' }
+  return labels[type] || type
 }
 
 watch(
@@ -309,7 +300,6 @@ const submit = async () => {
     const res = await cardApi.createCard(payload)
     const card = res.data.data
     alert(`发卡成功：卡号 ${card?.card_no || ''}`)
-    await loadNextCardNo()
     // 跳转到卡片管理页
     router.push('/merchant?tab=cards')
   } catch (err) {
@@ -322,7 +312,6 @@ const submit = async () => {
 onMounted(() => {
   ensureMerchantLogin()
   loadTemplates()
-  loadNextCardNo()
   // 设置默认开始日期为今天
   const today = new Date().toISOString().split('T')[0]
   cardForm.value.start_date = today
