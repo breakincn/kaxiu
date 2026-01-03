@@ -74,6 +74,7 @@
           <div
             @click="onCardClick(item.id)"
             @touchstart="onCardTouchStart(item)"
+            @touchmove="onCardTouchMove"
             @touchend="onCardTouchEnd"
             @touchcancel="onCardTouchEnd"
             :class="[
@@ -176,16 +177,17 @@
             <div class="text-gray-500 text-sm mt-1">{{ selectedCard?.card_type || '' }}</div>
           </div>
 
-          <div v-if="cardQrDataUrl" class="mt-4 flex justify-center">
-            <img
-              :src="cardQrDataUrl"
-              alt="卡片二维码"
-              class="w-56 h-56"
-              draggable="false"
-              @contextmenu.prevent
-              @dragstart.prevent
+          <div class="mt-4 flex justify-center">
+            <div
+              class="select-none"
+              style="-webkit-touch-callout: none; -webkit-user-select: none; user-select: none; pointer-events: none; touch-action: none;"
               @touchstart.prevent
-            />
+              @touchmove.prevent
+              @touchend.prevent
+              @contextmenu.prevent
+            >
+              <canvas ref="cardQrCanvas" class="w-56 h-56" style="-webkit-touch-callout: none;"></canvas>
+            </div>
           </div>
 
           <div class="mt-4 text-center text-gray-400 text-xs">
@@ -198,7 +200,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed, onUnmounted } from 'vue'
+import { ref, onMounted, watch, computed, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { cardApi, noticeApi, shopApi } from '../../api'
 import { formatDate } from '../../utils/dateFormat'
@@ -213,9 +215,10 @@ const userId = ref(null)
 
 const showCardQrModal = ref(false)
 const selectedCard = ref(null)
-const cardQrDataUrl = ref('')
+const cardQrCanvas = ref(null)
 
 let longPressTimer = null
+let longPressStart = null
 const suppressClickUntil = ref(0)
 
 const nowTick = ref(Date.now())
@@ -320,10 +323,30 @@ const onCardTouchStart = (card) => {
     clearTimeout(longPressTimer)
     longPressTimer = null
   }
+
+  longPressStart = null
   longPressTimer = setTimeout(async () => {
-    suppressClickUntil.value = Date.now() + 800
+    suppressClickUntil.value = Date.now() + 900
     await openCardQrModal(card)
-  }, 520)
+  }, 820)
+}
+
+const onCardTouchMove = (e) => {
+  if (!longPressTimer) return
+  const t = e?.touches?.[0]
+  if (!t) return
+
+  if (!longPressStart) {
+    longPressStart = { x: t.clientX, y: t.clientY }
+    return
+  }
+
+  const dx = t.clientX - longPressStart.x
+  const dy = t.clientY - longPressStart.y
+  if (dx * dx + dy * dy > 12 * 12) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
 }
 
 const onCardTouchEnd = () => {
@@ -336,23 +359,24 @@ const onCardTouchEnd = () => {
 const openCardQrModal = async (card) => {
   selectedCard.value = card
   showCardQrModal.value = true
-  cardQrDataUrl.value = ''
   try {
     const content = `kabao-card:${card.id}`
-    cardQrDataUrl.value = await QRCode.toDataURL(content, {
-      margin: 1,
-      scale: 8,
-      errorCorrectionLevel: 'M'
-    })
+    await nextTick()
+    if (cardQrCanvas.value) {
+      await QRCode.toCanvas(cardQrCanvas.value, content, {
+        margin: 1,
+        scale: 8,
+        errorCorrectionLevel: 'M'
+      })
+    }
   } catch (e) {
-    cardQrDataUrl.value = ''
+    // ignore
   }
 }
 
 const closeCardQrModal = () => {
   showCardQrModal.value = false
   selectedCard.value = null
-  cardQrDataUrl.value = ''
 }
 
 const getStatusColor = (card) => {

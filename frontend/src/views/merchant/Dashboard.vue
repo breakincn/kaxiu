@@ -7,12 +7,20 @@
         <span class="text-gray-400 text-xs">kabao.me</span>
       </div>
       <div class="flex items-center gap-3">
-        <router-link to="/merchant/scan-card" class="p-1 text-gray-500 hover:text-primary">
+        <button
+          type="button"
+          class="p-1 text-gray-500 hover:text-primary"
+          @click="onTopScanClick"
+          @touchstart="onTopScanTouchStart"
+          @touchmove="onTopScanTouchMove"
+          @touchend="onTopScanTouchEnd"
+          @touchcancel="onTopScanTouchEnd"
+        >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4h-1a2 2 0 00-2 2v1m0 10v1a2 2 0 002 2h1m10-16h1a2 2 0 012 2v1m0 10v1a2 2 0 01-2 2h-1"/>
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11h8m-8 4h8"/>
           </svg>
-        </router-link>
+        </button>
         <router-link to="/merchant/settings" class="p-1 text-gray-500 hover:text-primary">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
@@ -469,6 +477,9 @@ import { formatDateTime, formatDate } from '../../utils/dateFormat'
 
 const router = useRouter()
 const route = useRoute()
+let topScanLongPressTimer = null
+let topScanStart = null
+const suppressTopScanClickUntil = ref(0)
 const merchantId = ref(null)
 const merchant = ref({})
 const currentTab = ref('queue')
@@ -506,6 +517,46 @@ const cardSearch = ref({
 
 const goScanVerify = () => {
   router.push('/merchant/scan-verify')
+}
+
+const onTopScanClick = () => {
+  if (Date.now() < suppressTopScanClickUntil.value) return
+  goScanVerify()
+}
+
+const onTopScanTouchStart = (e) => {
+  if (topScanLongPressTimer) {
+    clearTimeout(topScanLongPressTimer)
+    topScanLongPressTimer = null
+  }
+  topScanStart = null
+  topScanLongPressTimer = setTimeout(() => {
+    suppressTopScanClickUntil.value = Date.now() + 900
+    router.push('/merchant/scan-card')
+  }, 820)
+}
+
+const onTopScanTouchMove = (e) => {
+  if (!topScanLongPressTimer) return
+  const t = e?.touches?.[0]
+  if (!t) return
+  if (!topScanStart) {
+    topScanStart = { x: t.clientX, y: t.clientY }
+    return
+  }
+  const dx = t.clientX - topScanStart.x
+  const dy = t.clientY - topScanStart.y
+  if (dx * dx + dy * dy > 12 * 12) {
+    clearTimeout(topScanLongPressTimer)
+    topScanLongPressTimer = null
+  }
+}
+
+const onTopScanTouchEnd = () => {
+  if (topScanLongPressTimer) {
+    clearTimeout(topScanLongPressTimer)
+    topScanLongPressTimer = null
+  }
 }
 
 const goToDirectPurchaseOrders = () => {
