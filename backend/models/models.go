@@ -26,6 +26,10 @@ type Merchant struct {
 	Password           string     `json:"-" gorm:"size:255;comment:登录密码（bcrypt加密）"`
 	Type               string     `json:"type" gorm:"size:50;comment:商户类型（如：理发、美容等）"`
 	SupportAppointment bool       `json:"support_appointment" gorm:"default:false;comment:是否支持预约（0-不支持，1-支持）"`
+	SupportQueue       bool       `json:"support_queue" gorm:"default:false;comment:是否支持叫号/排队（0-不支持，1-支持）"`
+	QueuePrefix        string     `json:"queue_prefix" gorm:"size:20;default:'';comment:叫号前缀（如A、B）"`
+	QueueStartNo       int        `json:"queue_start_no" gorm:"default:1;comment:叫号起始号码"`
+	SupportDirectSale  bool       `json:"support_direct_sale" gorm:"default:false;comment:是否支持直购售卡（0-不支持，1-支持）"`
 	AvgServiceMinutes  int        `json:"avg_service_minutes" gorm:"default:30;comment:平均服务时长（分钟）"`
 	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 }

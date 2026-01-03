@@ -282,10 +282,12 @@
 
 <script setup>
 import { ref, onMounted, computed, onBeforeUnmount } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { merchantApi } from '../../api'
 import { shopApi } from '../../api/index.js'
 
 const route = useRoute()
+const router = useRouter()
 
 const activeTab = ref('templates')
 const loading = ref(false)
@@ -340,6 +342,16 @@ const qrcodeUrl = computed(() => {
 })
 
 onMounted(() => {
+  merchantApi.getCurrentMerchant().then((res) => {
+    const m = res?.data?.data || {}
+    if (!m.support_direct_sale) {
+      alert('商户未开启直购售卡服务')
+      router.replace('/merchant')
+    }
+  }).catch(() => {
+    // ignore
+  })
+
   const tabParam = route.query.tab
   if (tabParam && ['templates', 'payment', 'qrcode', 'orders'].includes(tabParam)) {
     activeTab.value = tabParam

@@ -23,6 +23,7 @@
         </div>
         <div class="flex gap-2">
           <router-link
+            v-if="merchant.support_direct_sale"
             to="/merchant/shop-manage"
             class="px-3 py-2 bg-slate-600 text-white rounded-lg text-sm font-medium hover:bg-slate-700 transition-colors"
           >
@@ -72,6 +73,7 @@
     <!-- Tab 切换 -->
     <div class="px-4 flex gap-2 border-b bg-white">
       <button
+        v-if="merchant.support_appointment"
         @click="currentTab = 'queue'"
         :class="[
           'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
@@ -533,6 +535,10 @@ const fetchQueueStatus = async () => {
 }
 
 const fetchPendingDirectPurchases = async () => {
+  if (!merchant.value.support_direct_sale) {
+    pendingDirectPurchases.value = 0
+    return
+  }
   try {
     const res = await shopApi.getMerchantDirectPurchases()
     const list = res.data.data || []
@@ -543,6 +549,10 @@ const fetchPendingDirectPurchases = async () => {
 }
 
 const fetchAppointments = async () => {
+  if (!merchant.value.support_appointment) {
+    appointments.value = []
+    return
+  }
   try {
     const res = await appointmentApi.getMerchantAppointments(merchantId.value)
     appointments.value = (res.data.data || []).filter(a => a.status !== 'finished' && a.status !== 'canceled')
@@ -973,11 +983,17 @@ onMounted(() => {
 
   console.log('Valid merchantId:', parsedMerchantId, 'loading data...')
   merchantId.value = parsedMerchantId
-  fetchMerchant()
-  fetchQueueStatus()
-  fetchPendingDirectPurchases()
-  fetchAppointments()
-  startCountdownTimer()
+  fetchMerchant().then(() => {
+    if (!merchant.value.support_appointment && currentTab.value === 'queue') {
+      currentTab.value = 'verify'
+    }
+    fetchQueueStatus()
+    fetchPendingDirectPurchases()
+    fetchAppointments()
+    if (merchant.value.support_appointment) {
+      startCountdownTimer()
+    }
+  })
 })
 
 onUnmounted(() => {

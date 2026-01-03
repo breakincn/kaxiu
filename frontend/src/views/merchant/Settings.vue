@@ -15,6 +15,21 @@
       <!-- 账户相关 -->
       <div class="bg-white rounded-xl shadow-sm overflow-hidden">
         <button
+          @click="goToServices"
+          class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6 2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+            </svg>
+            <span class="text-gray-800 font-medium">开启服务</span>
+          </div>
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+
+        <button
           @click="goToBindPhone"
           class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
         >
@@ -59,6 +74,10 @@ const goBack = () => {
 
 const goToBindPhone = () => {
   router.push('/merchant/bind-phone')
+}
+
+const goToServices = () => {
+  router.push('/merchant/services')
 }
 
 const handleLogout = () => {

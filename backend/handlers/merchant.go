@@ -169,6 +169,79 @@ func GetMerchant(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": merchant})
 }
 
+func UpdateCurrentMerchantServices(c *gin.Context) {
+	merchantIDAny, exists := c.Get("merchant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+
+	var input struct {
+		SupportAppointment *bool   `json:"support_appointment"`
+		SupportQueue       *bool   `json:"support_queue"`
+		QueuePrefix        *string `json:"queue_prefix"`
+		QueueStartNo       *int    `json:"queue_start_no"`
+		SupportDirectSale  *bool   `json:"support_direct_sale"`
+		AvgServiceMinutes  *int    `json:"avg_service_minutes"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	updates := make(map[string]interface{})
+	if input.SupportAppointment != nil {
+		updates["support_appointment"] = *input.SupportAppointment
+	}
+	if input.SupportQueue != nil {
+		updates["support_queue"] = *input.SupportQueue
+	}
+	if input.QueuePrefix != nil {
+		updates["queue_prefix"] = strings.TrimSpace(*input.QueuePrefix)
+	}
+	if input.QueueStartNo != nil {
+		if *input.QueueStartNo < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "叫号起始号码必须大于等于1"})
+			return
+		}
+		updates["queue_start_no"] = *input.QueueStartNo
+	}
+	if input.SupportDirectSale != nil {
+		updates["support_direct_sale"] = *input.SupportDirectSale
+	}
+	if input.AvgServiceMinutes != nil {
+		if *input.AvgServiceMinutes < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "平均服务时长必须大于等于1"})
+			return
+		}
+		updates["avg_service_minutes"] = *input.AvgServiceMinutes
+	}
+
+	if len(updates) == 0 {
+		config.DB.First(&merchant, merchantID)
+		c.JSON(http.StatusOK, gin.H{"data": merchant})
+		return
+	}
+
+	if err := config.DB.Model(&merchant).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	config.DB.First(&merchant, merchantID)
+	c.JSON(http.StatusOK, gin.H{"data": merchant})
+}
+
 func CreateMerchant(c *gin.Context) {
 	var merchant models.Merchant
 	if err := c.ShouldBindJSON(&merchant); err != nil {

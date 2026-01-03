@@ -15,12 +15,28 @@ import (
 	"gorm.io/gorm"
 )
 
+func requireDirectSaleEnabledByMerchantID(c *gin.Context, merchantID uint) bool {
+	var m models.Merchant
+	if err := config.DB.First(&m, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return false
+	}
+	if !m.SupportDirectSale {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "商户未开启直购售卡服务"})
+		return false
+	}
+	return true
+}
+
 // ==================== 商户收款配置 ====================
 
 // GetPaymentConfig 获取商户收款配置
 func GetPaymentConfig(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
+		return
+	}
+	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
 		return
 	}
 
@@ -40,6 +56,9 @@ func GetPaymentConfig(c *gin.Context) {
 func SavePaymentConfig(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
+		return
+	}
+	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
 		return
 	}
 
@@ -126,6 +145,9 @@ func GetCardTemplates(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
+		return
+	}
 
 	var templates []models.CardTemplate
 	config.DB.Where("merchant_id = ?", merchantID).Order("sort_order asc, id desc").Find(&templates)
@@ -136,6 +158,9 @@ func GetCardTemplates(c *gin.Context) {
 func CreateCardTemplate(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
+		return
+	}
+	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
 		return
 	}
 
@@ -200,6 +225,9 @@ func CreateCardTemplate(c *gin.Context) {
 func UpdateCardTemplate(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
+		return
+	}
+	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
 		return
 	}
 
@@ -275,6 +303,9 @@ func DeleteCardTemplate(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
+		return
+	}
 
 	id := c.Param("id")
 	result := config.DB.Where("id = ? AND merchant_id = ?", id, merchantID).Delete(&models.CardTemplate{})
@@ -291,6 +322,9 @@ func DeleteCardTemplate(c *gin.Context) {
 func GetShopSlug(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
+		return
+	}
+	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
 		return
 	}
 
@@ -310,6 +344,9 @@ func GetShopSlug(c *gin.Context) {
 func SaveShopSlug(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
+		return
+	}
+	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
 		return
 	}
 
@@ -390,10 +427,12 @@ func GetShopInfo(c *gin.Context) {
 	var paymentConfig models.PaymentConfig
 	config.DB.Where("merchant_id = ?", merchant.ID).First(&paymentConfig)
 
-	// 获取在售卡片模板
+	// 获取在售卡片模板（仅当商户开启直购售卡服务）
 	var templates []models.CardTemplate
-	config.DB.Where("merchant_id = ? AND is_active = ?", merchant.ID, true).
-		Order("sort_order asc, id desc").Find(&templates)
+	if merchant.SupportDirectSale {
+		config.DB.Where("merchant_id = ? AND is_active = ?", merchant.ID, true).
+			Order("sort_order asc, id desc").Find(&templates)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
@@ -429,10 +468,12 @@ func GetShopInfoByID(c *gin.Context) {
 	var paymentConfig models.PaymentConfig
 	config.DB.Where("merchant_id = ?", merchant.ID).First(&paymentConfig)
 
-	// 获取在售卡片模板
+	// 获取在售卡片模板（仅当商户开启直购售卡服务）
 	var templates []models.CardTemplate
-	config.DB.Where("merchant_id = ? AND is_active = ?", merchant.ID, true).
-		Order("sort_order asc, id desc").Find(&templates)
+	if merchant.SupportDirectSale {
+		config.DB.Where("merchant_id = ? AND is_active = ?", merchant.ID, true).
+			Order("sort_order asc, id desc").Find(&templates)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
@@ -481,6 +522,9 @@ func CreateDirectPurchase(c *gin.Context) {
 	var template models.CardTemplate
 	if err := config.DB.First(&template, input.CardTemplateID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "卡片不存在"})
+		return
+	}
+	if !requireDirectSaleEnabledByMerchantID(c, template.MerchantID) {
 		return
 	}
 
@@ -583,6 +627,9 @@ func ConfirmDirectPurchase(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "卡片不存在"})
 		return
 	}
+	if !requireDirectSaleEnabledByMerchantID(c, template.MerchantID) {
+		return
+	}
 	if !template.IsActive {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该卡片已下架"})
 		return
@@ -614,6 +661,9 @@ func ConfirmDirectPurchase(c *gin.Context) {
 func MerchantConfirmDirectPurchase(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
+		return
+	}
+	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
 		return
 	}
 
@@ -721,6 +771,9 @@ func GetDirectPurchases(c *gin.Context) {
 func GetMerchantDirectPurchases(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
+		return
+	}
+	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
 		return
 	}
 
