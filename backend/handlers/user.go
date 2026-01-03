@@ -320,3 +320,45 @@ func GetCurrentUser(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"data": user})
 }
+
+// 更新用户昵称
+func UpdateUserNickname(c *gin.Context) {
+	userIDAny, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var input struct {
+		Nickname string `json:"nickname" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供昵称"})
+		return
+	}
+
+	input.Nickname = strings.TrimSpace(input.Nickname)
+	if input.Nickname == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "昵称不能为空"})
+		return
+	}
+
+	userID, _ := userIDAny.(uint)
+	var user models.User
+	if err := config.DB.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
+
+	if err := config.DB.Model(&models.User{}).Where("id = ?", userID).Update("nickname", input.Nickname).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新昵称失败"})
+		return
+	}
+
+	var updated models.User
+	if err := config.DB.First(&updated, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": updated})
+}

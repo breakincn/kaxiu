@@ -41,6 +41,11 @@ const routes = [
     component: () => import('../views/user/UserCode.vue')
   },
   {
+    path: '/user/nickname',
+    name: 'UserNickname',
+    component: () => import('../views/user/Nickname.vue')
+  },
+  {
     path: '/user/scan-pay',
     name: 'UserScanPay',
     component: () => import('../views/user/ScanShopPay.vue')

@@ -32,6 +32,7 @@ func SetupRoutes(r *gin.Engine) {
 	auth.GET("/users/:id", handlers.GetUser)
 	auth.GET("/me", handlers.GetCurrentUser)
 	auth.POST("/user/bind-phone", handlers.BindUserPhone)
+	auth.PUT("/user/nickname", handlers.UpdateUserNickname)
 	auth.GET("/user/code", handlers.GetUserCode)
 	auth.GET("/merchant/users/search", handlers.MerchantSearchUsers)
 
