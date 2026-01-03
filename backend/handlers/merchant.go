@@ -6,6 +6,7 @@ import (
 	"kabao/models"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,11 +18,11 @@ import (
 // MerchantRegister 商户注册
 func MerchantRegister(c *gin.Context) {
 	var input struct {
-		Phone    string `json:"phone" binding:"required"`
-		Password string `json:"password" binding:"required,min=6"`
-		Name     string `json:"name" binding:"required"`
-		Type     string `json:"type"`
-		Code     string `json:"code" binding:"required"`
+		Phone      string `json:"phone" binding:"required"`
+		Password   string `json:"password" binding:"required,min=6"`
+		Name       string `json:"name" binding:"required"`
+		Type       string `json:"type"`
+		Code       string `json:"code" binding:"required"`
 		InviteCode string `json:"invite_code" binding:"required"`
 	}
 
@@ -214,4 +215,77 @@ func UpdateMerchant(c *gin.Context) {
 	config.DB.Model(&merchant).Updates(updates)
 	config.DB.First(&merchant, id)
 	c.JSON(http.StatusOK, gin.H{"data": merchant})
+}
+
+func GetCurrentUserMerchant(c *gin.Context) {
+	merchantID, exists := c.Get("merchant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": merchant})
+}
+
+func BindMerchantPhone(c *gin.Context) {
+	merchantIDAny, exists := c.Get("merchant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var input struct {
+		Phone string `json:"phone" binding:"required"`
+		Code  string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	input.Phone = strings.TrimSpace(input.Phone)
+	input.Code = strings.TrimSpace(input.Code)
+	if input.Phone == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供手机号"})
+		return
+	}
+	if input.Code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入验证码"})
+		return
+	}
+
+	merchantID, _ := merchantIDAny.(uint)
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+
+	// 检查新手机号是否已被其他商户使用
+	var existingByPhone models.Merchant
+	if err := config.DB.Where("phone = ? AND id != ?", input.Phone, merchantID).First(&existingByPhone).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该手机号已被其他商户绑定"})
+		return
+	}
+
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := consumeSMSCode(tx, input.Phone, "merchant_bind_phone", input.Code); err != nil {
+			return err
+		}
+		return tx.Model(&models.Merchant{}).Where("id = ?", merchantID).Update("phone", input.Phone).Error
+	}); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var updated models.Merchant
+	if err := config.DB.First(&updated, merchantID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "绑定失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": updated})
 }

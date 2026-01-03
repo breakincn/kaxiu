@@ -11,17 +11,33 @@
     </header>
 
     <!-- 设置列表 -->
-    <div class="px-4 py-4">
+    <div class="px-4 py-4 space-y-4">
+      <!-- 账户相关 -->
       <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+        <button
+          @click="goToBindPhone"
+          class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+            </svg>
+            <span class="text-gray-800 font-medium">绑定手机号</span>
+          </div>
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+        
         <button
           @click="handleLogout"
           class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
         >
           <div class="flex items-center gap-3">
-            <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
             </svg>
-            <span class="text-gray-800 font-medium">退出登录</span>
+            <span class="text-red-500 font-medium">退出登录</span>
           </div>
           <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
@@ -39,6 +55,10 @@ const router = useRouter()
 
 const goBack = () => {
   router.back()
+}
+
+const goToBindPhone = () => {
+  router.push('/merchant/bind-phone')
 }
 
 const handleLogout = () => {

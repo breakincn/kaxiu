@@ -56,6 +56,11 @@ const routes = [
     component: () => import('../views/merchant/Settings.vue')
   },
   {
+    path: '/merchant/bind-phone',
+    name: 'MerchantBindPhone',
+    component: () => import('../views/merchant/BindPhone.vue')
+  },
+  {
     path: '/merchant/issue-card',
     name: 'MerchantIssueCard',
     component: () => import('../views/merchant/IssueCard.vue')
