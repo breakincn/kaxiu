@@ -46,7 +46,7 @@
         @click="goToDirectPurchaseOrders"
       >
         <div class="text-gray-600 text-sm mb-1">待确认订单</div>
-        <div class="text-3xl font-bold text-red-500">{{ pendingDirectPurchases }}</div>
+        <div class="text-3xl font-bold" :class="pendingDirectPurchases > 0 ? 'text-red-500' : 'text-gray-400'">{{ pendingDirectPurchases }}</div>
         <div class="text-gray-500 text-sm">单</div>
       </button>
       <button
@@ -55,7 +55,7 @@
         @click="currentTab = 'queue'"
       >
         <div class="text-gray-600 text-sm mb-1">待处理预约</div>
-        <div class="text-3xl font-bold text-orange-500">{{ pendingAppointments }}</div>
+        <div class="text-3xl font-bold" :class="pendingAppointments > 0 ? 'text-orange-500' : 'text-gray-400'">{{ pendingAppointments }}</div>
         <div class="text-gray-500 text-sm">人</div>
       </button>
       <button
@@ -64,7 +64,7 @@
         @click="currentTab = 'verify'"
       >
         <div class="text-gray-600 text-sm mb-1">今日核销</div>
-        <div class="text-3xl font-bold text-secondary">{{ todayVerifyCount }}</div>
+        <div class="text-3xl font-bold" :class="todayVerifyCount > 0 ? 'text-secondary' : 'text-gray-400'">{{ todayVerifyCount }}</div>
         <div class="text-gray-500 text-sm">次</div>
       </button>
     </div>
