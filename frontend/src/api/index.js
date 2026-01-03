@@ -94,6 +94,7 @@ export const cardApi = {
   getCard: (id) => api.get(`/cards/${id}`),
   getUserCards: (userId, status) => api.get(`/users/${userId}/cards`, { params: { status } }),
   getMerchantCards: (merchantId, params) => api.get(`/merchants/${merchantId}/cards`, { params }),
+  getMerchantCard: (id) => api.get(`/merchant/cards/${id}`),
   createCard: (data) => api.post('/cards', data),
   updateCard: (id, data) => api.put(`/cards/${id}`, data),
   generateVerifyCode: (cardId) => api.post(`/cards/${cardId}/verify-code`),

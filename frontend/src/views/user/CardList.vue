@@ -72,7 +72,10 @@
       >
         <template v-if="item._type === 'card'">
           <div
-            @click="goToDetail(item.id)"
+            @click="onCardClick(item.id)"
+            @touchstart="onCardTouchStart(item)"
+            @touchend="onCardTouchEnd"
+            @touchcancel="onCardTouchEnd"
             :class="[
               'rounded-2xl p-4 cursor-pointer transition-transform active:scale-[0.98]',
               'kb-card'
@@ -155,6 +158,42 @@
         暂无{{ currentStatus === 'active' ? '有效' : '失效' }}卡片
       </div>
     </div>
+
+    <div v-if="showCardQrModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 select-none" @click.self="closeCardQrModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-lg overflow-hidden">
+        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
+          <h3 class="font-medium text-lg">卡片二维码</h3>
+          <button @click="closeCardQrModal" class="text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="px-5 py-5">
+          <div class="text-center">
+            <div class="text-gray-800 font-medium">{{ selectedCard?.merchant?.name || '商户' }}</div>
+            <div class="text-gray-500 text-sm mt-1">{{ selectedCard?.card_type || '' }}</div>
+          </div>
+
+          <div v-if="cardQrDataUrl" class="mt-4 flex justify-center">
+            <img
+              :src="cardQrDataUrl"
+              alt="卡片二维码"
+              class="w-56 h-56"
+              draggable="false"
+              @contextmenu.prevent
+              @dragstart.prevent
+              @touchstart.prevent
+            />
+          </div>
+
+          <div class="mt-4 text-center text-gray-400 text-xs">
+            请向商户出示此二维码用于查询卡片
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -163,6 +202,7 @@ import { ref, onMounted, watch, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { cardApi, noticeApi, shopApi } from '../../api'
 import { formatDate } from '../../utils/dateFormat'
+import QRCode from 'qrcode'
 
 const router = useRouter()
 const userName = ref('')
@@ -170,6 +210,13 @@ const currentStatus = ref('active')
 const cards = ref([])
 const pendingPaidOrders = ref([])
 const userId = ref(null)
+
+const showCardQrModal = ref(false)
+const selectedCard = ref(null)
+const cardQrDataUrl = ref('')
+
+let longPressTimer = null
+const suppressClickUntil = ref(0)
 
 const nowTick = ref(Date.now())
 let nowTimer = null
@@ -262,6 +309,52 @@ const goToDetail = (id) => {
   router.push(`/user/cards/${id}`)
 }
 
+const onCardClick = (id) => {
+  if (Date.now() < suppressClickUntil.value) return
+  goToDetail(id)
+}
+
+const onCardTouchStart = (card) => {
+  if (!card || !card.id) return
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+  longPressTimer = setTimeout(async () => {
+    suppressClickUntil.value = Date.now() + 800
+    await openCardQrModal(card)
+  }, 520)
+}
+
+const onCardTouchEnd = () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
+
+const openCardQrModal = async (card) => {
+  selectedCard.value = card
+  showCardQrModal.value = true
+  cardQrDataUrl.value = ''
+  try {
+    const content = `kabao-card:${card.id}`
+    cardQrDataUrl.value = await QRCode.toDataURL(content, {
+      margin: 1,
+      scale: 8,
+      errorCorrectionLevel: 'M'
+    })
+  } catch (e) {
+    cardQrDataUrl.value = ''
+  }
+}
+
+const closeCardQrModal = () => {
+  showCardQrModal.value = false
+  selectedCard.value = null
+  cardQrDataUrl.value = ''
+}
+
 const getStatusColor = (card) => {
   const now = new Date()
   const endDate = new Date(card.end_date)
@@ -342,6 +435,11 @@ onUnmounted(() => {
   if (pollTimer) {
     clearInterval(pollTimer)
     pollTimer = null
+  }
+
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
   }
 })
 </script>

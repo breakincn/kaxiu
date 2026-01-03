@@ -114,6 +114,33 @@ func GetMerchantCards(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": cards})
 }
 
+func GetMerchantCard(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可查看"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	cardID := c.Param("id")
+	var card models.Card
+	if err := config.DB.Preload("User").Preload("Merchant").First(&card, cardID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "卡片不存在"})
+		return
+	}
+
+	if card.MerchantID != merchantID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权查看此卡"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": card})
+}
+
 func CreateCard(c *gin.Context) {
 	merchantIDAny, ok := c.Get("merchant_id")
 	if !ok {

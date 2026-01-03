@@ -76,6 +76,16 @@ const routes = [
     component: () => import('../views/merchant/ScanVerify.vue')
   },
   {
+    path: '/merchant/scan-card',
+    name: 'MerchantScanCard',
+    component: () => import('../views/merchant/ScanCard.vue')
+  },
+  {
+    path: '/merchant/cards/:id',
+    name: 'MerchantCardDetail',
+    component: () => import('../views/merchant/CardDetail.vue')
+  },
+  {
     path: '/merchant/shop-manage',
     name: 'MerchantShopManage',
     component: () => import('../views/merchant/ShopManage.vue')
