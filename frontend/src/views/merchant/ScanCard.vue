@@ -258,7 +258,8 @@ const onDecoded = async (decodedText) => {
       path: '/merchant',
       query: {
         tab: 'cards',
-        user_code: userCode
+        user_code: userCode,
+        from_scan: '1'
       }
     })
   } catch (err) {

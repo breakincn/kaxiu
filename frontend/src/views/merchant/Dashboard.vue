@@ -353,7 +353,7 @@
         {{ cardsError }}
       </div>
 
-      <div v-if="routeUserCode" class="bg-white rounded-xl p-4 shadow-sm mb-4 flex items-center justify-between">
+      <div v-if="routeUserCode" ref="userCodeAnchor" class="bg-white rounded-xl p-4 shadow-sm mb-4 flex items-center justify-between">
         <div class="text-sm text-gray-700">当前仅显示该用户的卡片</div>
         <button type="button" class="text-sm text-primary" @click="clearUserCodeFilter">清除筛选</button>
       </div>
@@ -466,8 +466,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi, shopApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 
@@ -485,6 +485,8 @@ const merchantId = ref(null)
 const merchant = ref({})
 const currentTab = ref('queue')
 const routeUserCode = ref('')
+const userCodeAnchor = ref(null)
+const scanUserCodeActive = ref(false)
 
 const todayVerifyCount = ref(0)
 const pendingAppointments = ref(0)
@@ -606,8 +608,28 @@ const resetCardSearch = async () => {
 
 const clearUserCodeFilter = async () => {
   routeUserCode.value = ''
+  scanUserCodeActive.value = false
   await router.replace({ path: '/merchant', query: { tab: 'cards' } })
   await fetchIssuedCards()
+}
+
+const scrollToUserCodeHint = async () => {
+  await nextTick()
+  const el = userCodeAnchor.value
+  if (!el) return
+  try {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  } catch (_) {
+    // ignore
+  }
+}
+
+const cleanupScanQuery = async () => {
+  try {
+    await router.replace({ path: '/merchant', query: { tab: 'cards' } })
+  } catch (_) {
+    // ignore
+  }
 }
 
 const fetchQueueStatus = async () => {
@@ -1019,6 +1041,10 @@ const stopCountdownTimer = () => {
 }
 
 watch(currentTab, (tab) => {
+  if (tab !== 'cards' && scanUserCodeActive.value) {
+    scanUserCodeActive.value = false
+    routeUserCode.value = ''
+  }
   if (tab === 'queue') {
     fetchAppointments()
     startCountdownTimer()
@@ -1041,9 +1067,24 @@ watch(currentTab, (tab) => {
 watch(
   () => route.query.user_code,
   async (v) => {
-    routeUserCode.value = v ? String(v) : ''
-    if (currentTab.value === 'cards') {
-      await fetchIssuedCards()
+    if (v) {
+      routeUserCode.value = String(v)
+      scanUserCodeActive.value = String(route.query.from_scan || '') === '1'
+      if (currentTab.value === 'cards') {
+        await fetchIssuedCards()
+        if (scanUserCodeActive.value) {
+          await scrollToUserCodeHint()
+          await cleanupScanQuery()
+        }
+      }
+      return
+    }
+
+    if (!scanUserCodeActive.value) {
+      routeUserCode.value = ''
+      if (currentTab.value === 'cards') {
+        await fetchIssuedCards()
+      }
     }
   }
 )
@@ -1060,6 +1101,7 @@ onMounted(() => {
 
   const userCodeParam = route.query.user_code
   routeUserCode.value = userCodeParam ? String(userCodeParam) : ''
+  scanUserCodeActive.value = !!userCodeParam && String(route.query.from_scan || '') === '1'
   
   const storedMerchantId = localStorage.getItem('merchantId')
   if (!storedMerchantId) {
@@ -1087,10 +1129,24 @@ onMounted(() => {
     if (merchant.value.support_appointment) {
       startCountdownTimer()
     }
+
+    if (currentTab.value === 'cards' && scanUserCodeActive.value && routeUserCode.value) {
+      fetchIssuedCards().then(async () => {
+        await scrollToUserCodeHint()
+        await cleanupScanQuery()
+      })
+    }
   })
+})
+
+onBeforeRouteLeave(() => {
+  scanUserCodeActive.value = false
+  routeUserCode.value = ''
 })
 
 onUnmounted(() => {
   stopCountdownTimer()
+  scanUserCodeActive.value = false
+  routeUserCode.value = ''
 })
 </script>
