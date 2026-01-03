@@ -145,9 +145,6 @@ func GetCardTemplates(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
-		return
-	}
 
 	var templates []models.CardTemplate
 	config.DB.Where("merchant_id = ?", merchantID).Order("sort_order asc, id desc").Find(&templates)
@@ -158,9 +155,6 @@ func GetCardTemplates(c *gin.Context) {
 func CreateCardTemplate(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
-		return
-	}
-	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
 		return
 	}
 
@@ -225,9 +219,6 @@ func CreateCardTemplate(c *gin.Context) {
 func UpdateCardTemplate(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
-		return
-	}
-	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
 		return
 	}
 
@@ -301,9 +292,6 @@ func UpdateCardTemplate(c *gin.Context) {
 func DeleteCardTemplate(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
-		return
-	}
-	if !requireDirectSaleEnabledByMerchantID(c, merchantID) {
 		return
 	}
 
