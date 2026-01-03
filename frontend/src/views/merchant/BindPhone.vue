@@ -42,7 +42,7 @@
           <svg class="w-4 h-4 inline-block mr-1" fill="currentColor" viewBox="0 0 20 20">
             <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
           </svg>
-          更换手机号需要验证新手机号，请确保新手机号可以正常接收验证码
+          更换手机号需要验证商户密码和新手机号验证码，请确保新手机号可以正常接收验证码
         </p>
       </div>
     </div>
@@ -51,6 +51,17 @@
     <div v-else class="px-4 py-6">
       <div class="bg-white rounded-xl shadow-sm p-6">
         <form @submit.prevent="handleSubmit" class="space-y-4">
+          <!-- 换绑时需要验证密码 -->
+          <div v-if="currentPhone">
+            <label class="block text-sm font-medium text-gray-700 mb-2">商户密码</label>
+            <input
+              v-model="password"
+              type="password"
+              placeholder="请输入商户密码"
+              class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
           <!-- 手机号输入 -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">手机号</label>
@@ -129,6 +140,7 @@ const currentPhone = ref('')
 const isChanging = ref(false)
 const phone = ref('')
 const code = ref('')
+const password = ref('')
 const countdown = ref(0)
 let timer = null
 
@@ -156,12 +168,14 @@ const startChanging = () => {
   isChanging.value = true
   phone.value = ''
   code.value = ''
+  password.value = ''
 }
 
 const cancelChanging = () => {
   isChanging.value = false
   phone.value = ''
   code.value = ''
+  password.value = ''
   if (countdown.value > 0) {
     clearInterval(timer)
     countdown.value = 0
@@ -220,9 +234,15 @@ const handleSubmit = async () => {
     alert('请输入验证码')
     return
   }
+  
+  // 换绑时需要验证密码
+  if (currentPhone.value && !password.value) {
+    alert('请输入商户密码')
+    return
+  }
 
   try {
-    await merchantApi.bindPhone(phone.value, code.value)
+    await merchantApi.bindPhone(phone.value, code.value, password.value)
     
     alert(currentPhone.value ? '更换成功！' : '绑定成功！')
     // 更新当前手机号
@@ -230,6 +250,7 @@ const handleSubmit = async () => {
     isChanging.value = false
     phone.value = ''
     code.value = ''
+    password.value = ''
     
     // 更新localStorage中的手机号
     localStorage.setItem('merchantPhone', phone.value)

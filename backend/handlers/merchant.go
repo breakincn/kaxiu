@@ -240,8 +240,9 @@ func BindMerchantPhone(c *gin.Context) {
 	}
 
 	var input struct {
-		Phone string `json:"phone" binding:"required"`
-		Code  string `json:"code" binding:"required"`
+		Phone    string `json:"phone" binding:"required"`
+		Code     string `json:"code" binding:"required"`
+		Password string `json:"password"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -249,6 +250,7 @@ func BindMerchantPhone(c *gin.Context) {
 	}
 	input.Phone = strings.TrimSpace(input.Phone)
 	input.Code = strings.TrimSpace(input.Code)
+	input.Password = strings.TrimSpace(input.Password)
 	if input.Phone == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供手机号"})
 		return
@@ -263,6 +265,20 @@ func BindMerchantPhone(c *gin.Context) {
 	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
 		return
+	}
+
+	// 如果商户已有手机号（换绑场景），需要验证密码
+	if merchant.Phone != "" && merchant.Phone != input.Phone {
+		if input.Password == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "换绑手机号需要输入商户密码"})
+			return
+		}
+
+		// 验证密码
+		if err := bcrypt.CompareHashAndPassword([]byte(merchant.Password), []byte(input.Password)); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "密码错误"})
+			return
+		}
 	}
 
 	// 检查新手机号是否已被其他商户使用
