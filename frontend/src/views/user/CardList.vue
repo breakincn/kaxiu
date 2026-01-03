@@ -79,8 +79,10 @@
             @touchcancel="onCardTouchEnd"
             :class="[
               'rounded-2xl p-4 cursor-pointer transition-transform active:scale-[0.98]',
+              'select-none',
               'kb-card'
             ]"
+            style="-webkit-touch-callout: none;"
           >
             <!-- 顶部：商户名称和版本标签 -->
             <div class="flex justify-between items-start mb-1">
@@ -216,6 +218,12 @@ const userId = ref(null)
 const showCardQrModal = ref(false)
 const selectedCard = ref(null)
 const cardQrCanvas = ref(null)
+
+const prevBodyStyle = {
+  userSelect: '',
+  webkitUserSelect: '',
+  webkitTouchCallout: ''
+}
 
 let longPressTimer = null
 let longPressStart = null
@@ -360,6 +368,18 @@ const openCardQrModal = async (card) => {
   selectedCard.value = card
   showCardQrModal.value = true
   try {
+    prevBodyStyle.userSelect = document.body.style.userSelect
+    prevBodyStyle.webkitUserSelect = document.body.style.webkitUserSelect
+    prevBodyStyle.webkitTouchCallout = document.body.style.webkitTouchCallout
+    document.documentElement.classList.add('kb-no-select')
+    document.body.classList.add('kb-no-select')
+    document.body.style.userSelect = 'none'
+    document.body.style.webkitUserSelect = 'none'
+    document.body.style.webkitTouchCallout = 'none'
+  } catch (_) {
+    // ignore
+  }
+  try {
     const content = `kabao-card:${card.id}`
     await nextTick()
     if (cardQrCanvas.value) {
@@ -377,6 +397,15 @@ const openCardQrModal = async (card) => {
 const closeCardQrModal = () => {
   showCardQrModal.value = false
   selectedCard.value = null
+  try {
+    document.documentElement.classList.remove('kb-no-select')
+    document.body.classList.remove('kb-no-select')
+    document.body.style.userSelect = prevBodyStyle.userSelect
+    document.body.style.webkitUserSelect = prevBodyStyle.webkitUserSelect
+    document.body.style.webkitTouchCallout = prevBodyStyle.webkitTouchCallout
+  } catch (_) {
+    // ignore
+  }
 }
 
 const getStatusColor = (card) => {
@@ -467,3 +496,12 @@ onUnmounted(() => {
   }
 })
 </script>
+
+<style>
+.kb-no-select, .kb-no-select * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0) !important;
+}
+</style>
