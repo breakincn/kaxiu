@@ -72,6 +72,7 @@ export const userApi = {
   getUser: (id) => api.get(`/users/${id}`),
   createUser: (data) => api.post('/users', data),
   bindPhone: (phone, code) => api.post('/user/bind-phone', { phone, code }),
+  getUserCode: () => api.get('/user/code'),
   getCurrentUser: () => api.get('/me')
 }
 

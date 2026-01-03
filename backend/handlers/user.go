@@ -1,10 +1,14 @@
 package handlers
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"kabao/config"
 	"kabao/models"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,6 +113,36 @@ func MerchantSearchUsers(c *gin.Context) {
 		Find(&users)
 
 	c.JSON(http.StatusOK, gin.H{"data": users})
+}
+
+func GetUserCode(c *gin.Context) {
+	userIDAny, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	userID, ok := userIDAny.(uint)
+	if !ok || userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	exp := time.Now().Add(5 * time.Minute).Unix()
+	uidStr := strconv.FormatUint(uint64(userID), 10)
+	expStr := strconv.FormatInt(exp, 10)
+	msg := uidStr + ":" + expStr
+
+	mac := hmac.New(sha256.New, []byte("your-secret-key"))
+	mac.Write([]byte(msg))
+	sig := hex.EncodeToString(mac.Sum(nil))
+
+	code := fmt.Sprintf("kabao-user:%s:%s:%s", uidStr, expStr, sig)
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"code":      code,
+			"expires_at": exp,
+		},
+	})
 }
 
 func CreateUser(c *gin.Context) {

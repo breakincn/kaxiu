@@ -353,6 +353,11 @@
         {{ cardsError }}
       </div>
 
+      <div v-if="routeUserCode" class="bg-white rounded-xl p-4 shadow-sm mb-4 flex items-center justify-between">
+        <div class="text-sm text-gray-700">当前仅显示该用户的卡片</div>
+        <button type="button" class="text-sm text-primary" @click="clearUserCodeFilter">清除筛选</button>
+      </div>
+
       <div class="bg-white rounded-xl p-4 shadow-sm mb-4">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <input
@@ -479,6 +484,7 @@ const prevTopScanBodyStyle = {
 const merchantId = ref(null)
 const merchant = ref({})
 const currentTab = ref('queue')
+const routeUserCode = ref('')
 
 const todayVerifyCount = ref(0)
 const pendingAppointments = ref(0)
@@ -598,6 +604,12 @@ const resetCardSearch = async () => {
   await fetchIssuedCards()
 }
 
+const clearUserCodeFilter = async () => {
+  routeUserCode.value = ''
+  await router.replace({ path: '/merchant', query: { tab: 'cards' } })
+  await fetchIssuedCards()
+}
+
 const fetchQueueStatus = async () => {
   try {
     const res = await merchantApi.getQueueStatus(merchantId.value)
@@ -664,6 +676,7 @@ const fetchIssuedCards = async () => {
     const params = {}
     if (cardSearch.value.card_no) params.card_no = cardSearch.value.card_no
     if (cardSearch.value.card_type) params.card_type = cardSearch.value.card_type
+    if (routeUserCode.value) params.user_code = routeUserCode.value
 
     const res = await cardApi.getMerchantCards(merchantId.value, params)
     let cardsList = res.data.data || []
@@ -1025,12 +1038,18 @@ watch(currentTab, (tab) => {
   }
 })
 
+watch(
+  () => route.query.user_code,
+  async (v) => {
+    routeUserCode.value = v ? String(v) : ''
+    if (currentTab.value === 'cards') {
+      await fetchIssuedCards()
+    }
+  }
+)
+
 onMounted(() => {
-  // 在页面最顶部打印一个标记，确保能看到
-  document.title = 'Dashboard Loaded'
-  console.error('=== Dashboard MOUNTED ===')
-  console.log('Dashboard mounted, checking localStorage...')
-  console.log('localStorage merchantToken:', localStorage.getItem('merchantToken'))
+  console.log('Merchant Dashboard mounted')
   console.log('localStorage merchantId:', localStorage.getItem('merchantId'))
   
   // 检查查询参数，自动切换到指定Tab
@@ -1038,6 +1057,9 @@ onMounted(() => {
   if (tabParam && ['queue', 'verify', 'notice', 'cards'].includes(tabParam)) {
     currentTab.value = tabParam
   }
+
+  const userCodeParam = route.query.user_code
+  routeUserCode.value = userCodeParam ? String(userCodeParam) : ''
   
   const storedMerchantId = localStorage.getItem('merchantId')
   if (!storedMerchantId) {

@@ -158,6 +158,15 @@ const parseCardIdFromQr = (text) => {
   return null
 }
 
+const parseUserCodeFromQr = (text) => {
+  const v = (text || '').trim()
+  if (!v) return null
+  if (v.startsWith('kabao-user:')) {
+    return v
+  }
+  return null
+}
+
 const start = async () => {
   if (starting.value || hasStarted.value) return
 
@@ -229,7 +238,8 @@ const onDecoded = async (decodedText) => {
   if (searching.value) return
 
   const cardId = parseCardIdFromQr(decodedText)
-  if (!cardId) {
+  const userCode = parseUserCodeFromQr(decodedText)
+  if (!cardId && !userCode) {
     showAlert.value = true
     alertText.value = '二维码格式不正确'
     return
@@ -238,8 +248,19 @@ const onDecoded = async (decodedText) => {
   searching.value = true
   try {
     await stop()
-    await cardApi.getMerchantCard(cardId)
-    router.replace(`/merchant/cards/${cardId}`)
+    if (cardId) {
+      await cardApi.getMerchantCard(cardId)
+      router.replace(`/merchant/cards/${cardId}`)
+      return
+    }
+
+    router.replace({
+      path: '/merchant',
+      query: {
+        tab: 'cards',
+        user_code: userCode
+      }
+    })
   } catch (err) {
     const status = err.response?.status
     if (status === 403) {

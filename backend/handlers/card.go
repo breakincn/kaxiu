@@ -1,10 +1,15 @@
 package handlers
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"kabao/config"
 	"kabao/models"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -86,12 +91,30 @@ func GetMerchantCards(c *gin.Context) {
 	nickname := c.Query("nickname")
 	cardNo := c.Query("card_no")
 	cardType := c.Query("card_type")
+	userIDStr := strings.TrimSpace(c.Query("user_id"))
+	userCode := strings.TrimSpace(c.Query("user_code"))
 
 	var cards []models.Card
 	query := config.DB.
 		Model(&models.Card{}).
 		Joins("LEFT JOIN users ON users.id = cards.user_id").
 		Where("cards.merchant_id = ?", merchantID)
+
+	if userIDStr != "" {
+		uid, err := strconv.ParseUint(userIDStr, 10, 32)
+		if err != nil || uid == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "user_id 参数错误"})
+			return
+		}
+		query = query.Where("cards.user_id = ?", uint(uid))
+	} else if userCode != "" {
+		uid, err := parseUserCodeToUserID(userCode)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		query = query.Where("cards.user_id = ?", uid)
+	}
 
 	if phone != "" {
 		query = query.Where("users.phone LIKE ?", "%"+phone+"%")
@@ -112,6 +135,43 @@ func GetMerchantCards(c *gin.Context) {
 		Order("cards.id desc").
 		Find(&cards)
 	c.JSON(http.StatusOK, gin.H{"data": cards})
+}
+
+func parseUserCodeToUserID(code string) (uint, error) {
+	v := strings.TrimSpace(code)
+	if v == "" {
+		return 0, errors.New("用户码无效")
+	}
+	if !strings.HasPrefix(v, "kabao-user:") {
+		return 0, errors.New("用户码格式不正确")
+	}
+	parts := strings.Split(v, ":")
+	if len(parts) != 4 {
+		return 0, errors.New("用户码格式不正确")
+	}
+	uidStr := strings.TrimSpace(parts[1])
+	expStr := strings.TrimSpace(parts[2])
+	sig := strings.TrimSpace(parts[3])
+	uid64, err := strconv.ParseUint(uidStr, 10, 32)
+	if err != nil || uid64 == 0 {
+		return 0, errors.New("用户码无效")
+	}
+	exp, err := strconv.ParseInt(expStr, 10, 64)
+	if err != nil || exp <= 0 {
+		return 0, errors.New("用户码无效")
+	}
+	if time.Now().Unix() > exp {
+		return 0, errors.New("用户码已过期，请用户刷新后重试")
+	}
+
+	msg := uidStr + ":" + expStr
+	mac := hmac.New(sha256.New, []byte("your-secret-key"))
+	mac.Write([]byte(msg))
+	expected := hex.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(strings.ToLower(expected)), []byte(strings.ToLower(sig))) {
+		return 0, errors.New("用户码无效")
+	}
+	return uint(uid64), nil
 }
 
 func GetMerchantCard(c *gin.Context) {

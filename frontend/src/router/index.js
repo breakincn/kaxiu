@@ -36,6 +36,11 @@ const routes = [
     component: () => import('../views/user/BindPhone.vue')
   },
   {
+    path: '/user/code',
+    name: 'UserCode',
+    component: () => import('../views/user/UserCode.vue')
+  },
+  {
     path: '/user/scan-pay',
     name: 'UserScanPay',
     component: () => import('../views/user/ScanShopPay.vue')
