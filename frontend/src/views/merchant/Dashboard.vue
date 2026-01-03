@@ -49,16 +49,24 @@
         <div class="text-3xl font-bold text-red-500">{{ pendingDirectPurchases }}</div>
         <div class="text-gray-500 text-sm">单</div>
       </button>
-      <div class="bg-white rounded-xl p-4 border border-gray-100">
+      <button
+        type="button"
+        class="bg-white rounded-xl p-4 text-left border border-gray-100"
+        @click="currentTab = 'queue'"
+      >
         <div class="text-gray-600 text-sm mb-1">待处理预约</div>
         <div class="text-3xl font-bold text-orange-500">{{ pendingAppointments }}</div>
         <div class="text-gray-500 text-sm">人</div>
-      </div>
-      <div class="bg-white rounded-xl p-4 border border-gray-100">
+      </button>
+      <button
+        type="button"
+        class="bg-white rounded-xl p-4 text-left border border-gray-100"
+        @click="currentTab = 'verify'"
+      >
         <div class="text-gray-600 text-sm mb-1">今日核销</div>
         <div class="text-3xl font-bold text-secondary">{{ todayVerifyCount }}</div>
         <div class="text-gray-500 text-sm">次</div>
-      </div>
+      </button>
     </div>
 
     <!-- Tab 切换 -->
