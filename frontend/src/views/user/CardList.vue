@@ -79,6 +79,7 @@
             @touchcancel="onCardTouchEnd"
             :class="[
               'rounded-2xl p-4 cursor-pointer transition-transform active:scale-[0.98]',
+              pressingCardId === item.id ? 'scale-[0.985] opacity-90' : '',
               'select-none',
               'kb-card'
             ]"
@@ -218,6 +219,7 @@ const userId = ref(null)
 const showCardQrModal = ref(false)
 const selectedCard = ref(null)
 const cardQrCanvas = ref(null)
+const pressingCardId = ref(null)
 
 const prevBodyStyle = {
   userSelect: '',
@@ -228,6 +230,16 @@ const prevBodyStyle = {
 let longPressTimer = null
 let longPressStart = null
 const suppressClickUntil = ref(0)
+
+const triggerHaptic = () => {
+  try {
+    if ('vibrate' in navigator && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(35)
+    }
+  } catch (_) {
+    // ignore
+  }
+}
 
 const nowTick = ref(Date.now())
 let nowTimer = null
@@ -332,9 +344,12 @@ const onCardTouchStart = (card) => {
     longPressTimer = null
   }
 
+  pressingCardId.value = card.id
+
   longPressStart = null
   longPressTimer = setTimeout(async () => {
     suppressClickUntil.value = Date.now() + 900
+    triggerHaptic()
     await openCardQrModal(card)
   }, 820)
 }
@@ -354,6 +369,7 @@ const onCardTouchMove = (e) => {
   if (dx * dx + dy * dy > 12 * 12) {
     clearTimeout(longPressTimer)
     longPressTimer = null
+    pressingCardId.value = null
   }
 }
 
@@ -362,6 +378,7 @@ const onCardTouchEnd = () => {
     clearTimeout(longPressTimer)
     longPressTimer = null
   }
+  pressingCardId.value = null
 }
 
 const openCardQrModal = async (card) => {

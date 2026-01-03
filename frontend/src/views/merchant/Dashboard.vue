@@ -15,6 +15,7 @@
           @touchmove="onTopScanTouchMove"
           @touchend="onTopScanTouchEnd"
           @touchcancel="onTopScanTouchEnd"
+          style="-webkit-touch-callout: none; -webkit-user-select: none; user-select: none;"
         >
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4h-1a2 2 0 00-2 2v1m0 10v1a2 2 0 002 2h1m10-16h1a2 2 0 012 2v1m0 10v1a2 2 0 01-2 2h-1"/>
@@ -470,6 +471,11 @@ const route = useRoute()
 let topScanLongPressTimer = null
 let topScanStart = null
 const suppressTopScanClickUntil = ref(0)
+const prevTopScanBodyStyle = {
+  userSelect: '',
+  webkitUserSelect: '',
+  webkitTouchCallout: ''
+}
 const merchantId = ref(null)
 const merchant = ref({})
 const currentTab = ref('queue')
@@ -518,6 +524,18 @@ const onTopScanTouchStart = (e) => {
     topScanLongPressTimer = null
   }
   topScanStart = null
+  try {
+    prevTopScanBodyStyle.userSelect = document.body.style.userSelect
+    prevTopScanBodyStyle.webkitUserSelect = document.body.style.webkitUserSelect
+    prevTopScanBodyStyle.webkitTouchCallout = document.body.style.webkitTouchCallout
+    document.documentElement.classList.add('kb-no-select')
+    document.body.classList.add('kb-no-select')
+    document.body.style.userSelect = 'none'
+    document.body.style.webkitUserSelect = 'none'
+    document.body.style.webkitTouchCallout = 'none'
+  } catch (_) {
+    // ignore
+  }
   topScanLongPressTimer = setTimeout(() => {
     suppressTopScanClickUntil.value = Date.now() + 900
     router.push('/merchant/scan-card')
@@ -544,6 +562,15 @@ const onTopScanTouchEnd = () => {
   if (topScanLongPressTimer) {
     clearTimeout(topScanLongPressTimer)
     topScanLongPressTimer = null
+  }
+  try {
+    document.documentElement.classList.remove('kb-no-select')
+    document.body.classList.remove('kb-no-select')
+    document.body.style.userSelect = prevTopScanBodyStyle.userSelect
+    document.body.style.webkitUserSelect = prevTopScanBodyStyle.webkitUserSelect
+    document.body.style.webkitTouchCallout = prevTopScanBodyStyle.webkitTouchCallout
+  } catch (_) {
+    // ignore
   }
 }
 
