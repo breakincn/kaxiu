@@ -355,16 +355,6 @@
       <div class="bg-white rounded-xl p-4 shadow-sm mb-4">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <input
-            v-model="cardSearch.phone"
-            class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            placeholder="按手机号搜索"
-          />
-          <input
-            v-model="cardSearch.nickname"
-            class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            placeholder="按用户名(昵称)搜索"
-          />
-          <input
             v-model="cardSearch.card_no"
             class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
             placeholder="按卡号搜索"
@@ -509,8 +499,6 @@ const cardsError = ref('')
 const expandedCardId = ref(null)
 
 const cardSearch = ref({
-  phone: '',
-  nickname: '',
   card_no: '',
   card_type: ''
 })
@@ -578,7 +566,7 @@ const searchCards = async () => {
 }
 
 const resetCardSearch = async () => {
-  cardSearch.value = { phone: '', nickname: '', card_no: '', card_type: '' }
+  cardSearch.value = { card_no: '', card_type: '' }
   expandedCardId.value = null
   await fetchIssuedCards()
 }
@@ -647,8 +635,6 @@ const fetchIssuedCards = async () => {
   cardsError.value = ''
   try {
     const params = {}
-    if (cardSearch.value.phone) params.phone = cardSearch.value.phone
-    if (cardSearch.value.nickname) params.nickname = cardSearch.value.nickname
     if (cardSearch.value.card_no) params.card_no = cardSearch.value.card_no
     if (cardSearch.value.card_type) params.card_type = cardSearch.value.card_type
 
