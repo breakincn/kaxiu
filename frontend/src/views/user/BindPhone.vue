@@ -17,20 +17,6 @@
 
     <!-- 已绑定手机号 -->
     <div v-else-if="currentPhone && !isChanging" class="px-4 py-6">
-      <button
-        type="button"
-        class="w-full mb-4 bg-white rounded-xl shadow-sm px-4 py-4 flex items-center justify-between"
-        @click="goUserCode"
-      >
-        <div class="text-left">
-          <div class="text-gray-800 font-medium">我的用户码</div>
-          <div class="text-gray-500 text-sm mt-1">给商户扫码查询我的卡片</div>
-        </div>
-        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-        </svg>
-      </button>
-
       <div class="bg-white rounded-xl shadow-sm p-6">
         <div class="text-center">
           <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -63,20 +49,6 @@
 
     <!-- 绑定/换绑表单 -->
     <div v-else class="px-4 py-6">
-      <button
-        type="button"
-        class="w-full mb-4 bg-white rounded-xl shadow-sm px-4 py-4 flex items-center justify-between"
-        @click="goUserCode"
-      >
-        <div class="text-left">
-          <div class="text-gray-800 font-medium">我的用户码</div>
-          <div class="text-gray-500 text-sm mt-1">给商户扫码查询我的卡片</div>
-        </div>
-        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-        </svg>
-      </button>
-
       <div class="bg-white rounded-xl shadow-sm p-6">
         <form @submit.prevent="handleSubmit" class="space-y-4">
           <!-- 手机号输入 -->
@@ -180,9 +152,6 @@ const goBack = () => {
   router.back()
 }
 
-const goUserCode = () => {
-  router.push('/user/code')
-}
 
 const startChanging = () => {
   isChanging.value = true

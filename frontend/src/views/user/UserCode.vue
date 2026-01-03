@@ -47,7 +47,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import QRCode from 'qrcode'
 import { userApi } from '../../api'
@@ -59,6 +59,7 @@ const loading = ref(false)
 const code = ref('')
 const expiresAt = ref(0)
 const nowTick = ref(Date.now())
+const isVisible = ref(true)
 let tickTimer = null
 
 const remainSeconds = computed(() => {
@@ -66,6 +67,14 @@ const remainSeconds = computed(() => {
   if (!expMs) return 0
   const diff = Math.floor((expMs - nowTick.value) / 1000)
   return diff > 0 ? diff : 0
+})
+
+// 监听剩余时间，当过期时自动刷新
+watch(remainSeconds, async (newValue) => {
+  if (newValue === 0 && isVisible.value && !loading.value) {
+    // 用户码过期且页面可见时自动刷新
+    await refresh()
+  }
 })
 
 const goBack = () => {
@@ -102,15 +111,28 @@ const refresh = async () => {
   }
 }
 
+// 页面可见性变化处理
+const handleVisibilityChange = () => {
+  isVisible.value = !document.hidden
+  if (isVisible.value && remainSeconds.value === 0 && !loading.value) {
+    // 页面重新可见且用户码已过期时刷新
+    refresh()
+  }
+}
+
 onMounted(async () => {
   tickTimer = setInterval(() => {
     nowTick.value = Date.now()
   }, 500)
+
+  // 监听页面可见性变化
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 
   await refresh()
 })
 
 onUnmounted(() => {
   if (tickTimer) clearInterval(tickTimer)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
