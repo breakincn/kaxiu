@@ -270,7 +270,7 @@ func CreateCard(c *gin.Context) {
 		UserID         uint   `json:"user_id" binding:"required"`
 		CardNo         string `json:"card_no"`
 		CardType       string `json:"card_type" binding:"required"`
-		TotalTimes     int    `json:"total_times" binding:"required"`
+		TotalTimes     int    `json:"total_times"`
 		RechargeAmount int    `json:"recharge_amount"`
 		StartDate      string `json:"start_date"`
 		EndDate        string `json:"end_date" binding:"required"`
@@ -281,8 +281,8 @@ func CreateCard(c *gin.Context) {
 		return
 	}
 
-	if input.TotalTimes <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "总次数必须大于0"})
+	if input.TotalTimes <= 0 && input.RechargeAmount <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "总次数与充值金额不能同时为空"})
 		return
 	}
 
@@ -319,13 +319,18 @@ func CreateCard(c *gin.Context) {
 			cardNo = v
 		}
 
+		remain := 0
+		if input.TotalTimes > 0 {
+			remain = input.TotalTimes
+		}
+
 		card = models.Card{
 			UserID:         input.UserID,
 			MerchantID:     merchantID,
 			CardNo:         cardNo,
 			CardType:       input.CardType,
 			TotalTimes:     input.TotalTimes,
-			RemainTimes:    input.TotalTimes,
+			RemainTimes:    remain,
 			UsedTimes:      0,
 			RechargeAmount: input.RechargeAmount,
 			RechargeAt:     dateOnlyPtr(now),

@@ -469,7 +469,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, watch, nextTick } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi, shopApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
@@ -1165,5 +1165,10 @@ onUnmounted(() => {
   stopCountdownTimer()
   scanUserCodeActive.value = false
   routeUserCode.value = ''
+})
+
+onActivated(() => {
+  if (!merchantId.value) return
+  fetchMerchant()
 })
 </script>

@@ -138,7 +138,7 @@ const save = async () => {
       avg_service_minutes: form.value.avg_service_minutes
     })
     alert('保存成功')
-    router.back()
+    router.replace('/merchant')
   } catch (e) {
     alert(e.response?.data?.error || '保存失败')
   } finally {

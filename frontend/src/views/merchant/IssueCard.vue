@@ -291,10 +291,20 @@ const submit = async () => {
     const payload = {
       user_id: selectedUser.value.id,
       card_type: tpl.name,
-      total_times: Number(tpl.total_times) || 0,
-      recharge_amount: Math.round((Number(tpl.recharge_amount) || 0) / 100),
+      total_times: tpl.card_type === 'balance' ? 0 : (Number(tpl.total_times) || 0),
+      recharge_amount: tpl.card_type === 'balance' ? Math.round((Number(tpl.recharge_amount) || 0) / 100) : 0,
       start_date: startDate,
       end_date: endDate
+    }
+
+    if (tpl.card_type === 'balance' && (!payload.recharge_amount || payload.recharge_amount <= 0)) {
+      submitError.value = '充值卡充值金额必须大于0'
+      return
+    }
+
+    if (tpl.card_type !== 'balance' && (!payload.total_times || payload.total_times <= 0)) {
+      submitError.value = '总次数必须大于0'
+      return
     }
 
     const res = await cardApi.createCard(payload)
