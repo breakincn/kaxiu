@@ -457,6 +457,9 @@
           </div>
         </div>
 
+        <!-- 动态占位元素：当卡片数量少时增加底部高度，确保可以滚动到锚点 -->
+        <div v-if="issuedCards.length > 0 && issuedCards.length <= 2" :style="{ height: getBottomSpacerHeight() }"></div>
+
         <div v-if="issuedCards.length === 0" class="text-center py-12 text-gray-400">
           暂无已发卡
         </div>
@@ -614,7 +617,11 @@ const clearUserCodeFilter = async () => {
 }
 
 const scrollToUserCodeHint = async () => {
+  // 等待DOM更新，包括动态占位元素的渲染
   await nextTick()
+  // 再次等待，确保占位元素高度计算完成
+  await new Promise(resolve => setTimeout(resolve, 100))
+  
   const el = userCodeAnchor.value
   if (!el) return
   try {
@@ -622,6 +629,15 @@ const scrollToUserCodeHint = async () => {
   } catch (_) {
     // ignore
   }
+}
+
+const getBottomSpacerHeight = () => {
+  // 当卡片数量少时，添加底部占位高度，确保可以滚动到锚点
+  // 计算逻辑：窗口高度 - 已有内容的估算高度
+  const windowHeight = window.innerHeight || 800
+  const estimatedContentHeight = 600 // 头部 + Tab + 搜索框 + 提示框 + 1-2张卡片
+  const minSpacerHeight = Math.max(windowHeight - estimatedContentHeight, 200)
+  return `${minSpacerHeight}px`
 }
 
 const cleanupScanQuery = async () => {
