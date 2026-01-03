@@ -1,16 +1,20 @@
 {
   "name": "卡包",
   "short_name": "卡包",
-  "start_url": "/",
+  "id": "/?pwa=1",
+  "start_url": "/?pwa=1",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
   "icons": [
     {
       "src": "/favicon.svg",
       "sizes": "any",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }

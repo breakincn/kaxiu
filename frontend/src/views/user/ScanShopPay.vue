@@ -10,6 +10,8 @@
       <div class="w-8"></div>
     </header>
 
+    <PwaInstallGuide pageKey="user_scan_shop_pay" />
+
     <div class="px-4 py-4">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-center justify-between mb-3">
@@ -64,6 +66,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Html5Qrcode } from 'html5-qrcode'
+import PwaInstallGuide from '../../components/PwaInstallGuide.vue'
 
 const router = useRouter()
 
