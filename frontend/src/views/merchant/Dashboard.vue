@@ -72,7 +72,7 @@
             : 'border-transparent text-gray-500'
         ]"
       >
-        排队管理
+        排队
       </button>
       <button
         @click="currentTab = 'verify'"
@@ -94,7 +94,7 @@
             : 'border-transparent text-gray-500'
         ]"
       >
-        通知管理
+        通知
       </button>
       <button
         @click="currentTab = 'cards'"
@@ -105,7 +105,7 @@
             : 'border-transparent text-gray-500'
         ]"
       >
-        卡片管理
+        卡片
       </button>
     </div>
 
