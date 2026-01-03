@@ -87,7 +87,8 @@ export const merchantApi = {
   searchUsersByPhone: (phone) => api.get('/merchant/users/search', { params: { phone } }),
   bindPhone: (phone, code, password) => api.post('/merchant/bind-phone', { phone, code, password }),
   getCurrentMerchant: () => api.get('/merchant/me'),
-  updateCurrentMerchantServices: (data) => api.put('/merchant/services', data)
+  updateCurrentMerchantServices: (data) => api.put('/merchant/services', data),
+  getNextCardNo: () => api.get('/merchant/next-card-no')
 }
 
 export const cardApi = {

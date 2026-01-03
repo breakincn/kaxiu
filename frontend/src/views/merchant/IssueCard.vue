@@ -75,45 +75,29 @@
 
         <div class="space-y-3">
           <div>
-            <label class="block text-gray-700 text-sm font-medium mb-2">卡类型</label>
-            <input
-              v-model="cardForm.card_type"
-              type="text"
-              placeholder="如：洗剪吹10次卡"
+            <label class="block text-gray-700 text-sm font-medium mb-2">选择卡片</label>
+            <select
+              v-model.number="cardForm.template_id"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-            />
-          </div>
-
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-gray-700 text-sm font-medium mb-2">总次数</label>
-              <input
-                v-model.number="cardForm.total_times"
-                type="number"
-                min="1"
-                placeholder="如：10"
-                class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-              />
-            </div>
-            <div>
-              <label class="block text-gray-700 text-sm font-medium mb-2">充值金额（元）</label>
-              <input
-                v-model.number="cardForm.recharge_amount"
-                type="number"
-                min="0"
-                placeholder="可选"
-                class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-              />
-            </div>
+            >
+              <option :value="0">请选择售卡模板</option>
+              <option
+                v-for="tpl in templates"
+                :key="tpl.id"
+                :value="tpl.id"
+              >
+                {{ tpl.name }}（¥{{ (tpl.price / 100).toFixed(2) }}）
+              </option>
+            </select>
           </div>
 
           <div>
-            <label class="block text-gray-700 text-sm font-medium mb-2">卡号（可选）</label>
+            <label class="block text-gray-700 text-sm font-medium mb-2">卡号</label>
             <input
               v-model="cardForm.card_no"
               type="text"
-              placeholder="不填则自动生成"
-              class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+              disabled
+              class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary bg-gray-50 text-gray-500"
             />
           </div>
 
@@ -131,7 +115,8 @@
               <input
                 v-model="cardForm.end_date"
                 type="date"
-                class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                disabled
+                class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary bg-gray-50 text-gray-500"
               />
             </div>
           </div>
@@ -159,7 +144,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { cardApi, merchantApi } from '../../api'
+import { cardApi, merchantApi, shopApi } from '../../api'
 
 const router = useRouter()
 
@@ -175,31 +160,66 @@ const submitError = ref('')
 const submitSuccess = ref('')
 
 const cardForm = ref({
-  card_type: '',
-  total_times: 10,
-  recharge_amount: 0,
+  template_id: 0,
   card_no: '',
   start_date: '',
   end_date: ''
 })
 
-// 监听开始日期变化，自动设置结束日期为两年后
-watch(() => cardForm.value.start_date, (newStartDate) => {
-  if (newStartDate) {
-    const startDate = new Date(newStartDate)
-    const endDate = new Date(startDate)
-    endDate.setFullYear(endDate.getFullYear() + 2)
-    cardForm.value.end_date = endDate.toISOString().split('T')[0]
-  }
+const templates = ref([])
+const selectedTemplate = computed(() => {
+  const id = Number(cardForm.value.template_id || 0)
+  if (!id) return null
+  return (templates.value || []).find(t => Number(t.id) === id) || null
 })
+
+const loadTemplates = async () => {
+  try {
+    const res = await shopApi.getCardTemplates()
+    const list = res.data.data || []
+    templates.value = list.filter(t => t && (t.card_type === 'times' || t.card_type === 'lesson'))
+  } catch (e) {
+    templates.value = []
+  }
+}
+
+const loadNextCardNo = async () => {
+  try {
+    const res = await merchantApi.getNextCardNo()
+    cardForm.value.card_no = res?.data?.data?.card_no || ''
+  } catch (_) {
+    cardForm.value.card_no = ''
+  }
+}
+
+const calcEndDate = (startDateStr, validDays) => {
+  const base = startDateStr ? new Date(startDateStr) : new Date()
+  const end = new Date(base)
+  const days = Number(validDays || 0)
+  if (days > 0) {
+    end.setDate(end.getDate() + days)
+  } else {
+    end.setFullYear(end.getFullYear() + 100)
+  }
+  return end.toISOString().split('T')[0]
+}
+
+watch(
+  [() => cardForm.value.start_date, () => selectedTemplate.value],
+  ([newStartDate, tpl]) => {
+    if (!tpl) {
+      cardForm.value.end_date = ''
+      return
+    }
+    cardForm.value.end_date = calcEndDate(newStartDate, tpl.valid_days)
+  }
+)
 
 const canSubmit = computed(() => {
   return Boolean(
     selectedUser.value &&
       selectedUser.value.id &&
-      cardForm.value.card_type &&
-      cardForm.value.total_times &&
-      Number(cardForm.value.total_times) > 0 &&
+      selectedTemplate.value &&
       cardForm.value.end_date
   )
 })
@@ -268,19 +288,28 @@ const submit = async () => {
   submitSuccess.value = ''
 
   try {
+    const tpl = selectedTemplate.value
+    if (!tpl) {
+      submitError.value = '请选择卡片模板'
+      return
+    }
+
+    const startDate = cardForm.value.start_date || new Date().toISOString().split('T')[0]
+    const endDate = calcEndDate(startDate, tpl.valid_days)
+
     const payload = {
       user_id: selectedUser.value.id,
-      card_type: cardForm.value.card_type,
-      total_times: Number(cardForm.value.total_times),
-      recharge_amount: Number(cardForm.value.recharge_amount) || 0,
-      card_no: cardForm.value.card_no || undefined,
-      start_date: cardForm.value.start_date || undefined,
-      end_date: cardForm.value.end_date
+      card_type: tpl.name,
+      total_times: Number(tpl.total_times) || 0,
+      recharge_amount: Math.round((Number(tpl.recharge_amount) || 0) / 100),
+      start_date: startDate,
+      end_date: endDate
     }
 
     const res = await cardApi.createCard(payload)
     const card = res.data.data
     alert(`发卡成功：卡号 ${card?.card_no || ''}`)
+    await loadNextCardNo()
     // 跳转到卡片管理页
     router.push('/merchant?tab=cards')
   } catch (err) {
@@ -292,9 +321,10 @@ const submit = async () => {
 
 onMounted(() => {
   ensureMerchantLogin()
+  loadTemplates()
+  loadNextCardNo()
   // 设置默认开始日期为今天
   const today = new Date().toISOString().split('T')[0]
   cardForm.value.start_date = today
-  // 结束日期会通过watch自动设置为两年后
 })
 </script>

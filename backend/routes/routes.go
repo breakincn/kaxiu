@@ -50,6 +50,7 @@ func SetupRoutes(r *gin.Engine) {
 	auth.GET("/users/:id/cards", handlers.GetUserCards)
 	auth.GET("/merchants/:id/cards", handlers.GetMerchantCards)
 	auth.GET("/merchant/cards/:id", handlers.GetMerchantCard)
+	auth.GET("/merchant/next-card-no", handlers.GetNextMerchantCardNo)
 	auth.POST("/cards", handlers.CreateCard)
 	auth.PUT("/cards/:id", handlers.UpdateCard)
 

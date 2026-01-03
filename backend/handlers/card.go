@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"kabao/config"
 	"kabao/models"
 	"net/http"
@@ -41,6 +42,30 @@ func dateOnlyPtr(t time.Time) *time.Time {
 	return &d
 }
 
+func nextMerchantCardNo(tx *gorm.DB, merchantID uint) (string, error) {
+	var last string
+	err := tx.Raw(
+		"SELECT card_no FROM cards WHERE merchant_id = ? AND card_no REGEXP '^[0-9]{5}$' ORDER BY card_no DESC LIMIT 1 FOR UPDATE",
+		merchantID,
+	).Scan(&last).Error
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(last) == "" {
+		return fmt.Sprintf("%05d", 1), nil
+	}
+	seq, err := strconv.Atoi(last)
+	if err != nil {
+		// 如果历史数据不符合预期，退化到1
+		return fmt.Sprintf("%05d", 1), nil
+	}
+	seq++
+	if seq < 1 {
+		seq = 1
+	}
+	return fmt.Sprintf("%05d", seq), nil
+}
+
 func GetCards(c *gin.Context) {
 	var cards []models.Card
 	config.DB.Preload("User").Preload("Merchant").Find(&cards)
@@ -55,6 +80,34 @@ func GetCard(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": card})
+}
+
+func GetNextMerchantCardNo(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var next string
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		v, err := nextMerchantCardNo(tx, merchantID)
+		if err != nil {
+			return err
+		}
+		next = v
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"card_no": next}})
 }
 
 func GetUserCards(c *gin.Context) {
@@ -255,28 +308,36 @@ func CreateCard(c *gin.Context) {
 	}
 
 	now := time.Now()
-	cardNo := input.CardNo
-	if cardNo == "" {
-		cardNo = uuid.New().String()[:8]
-	}
-	card := models.Card{
-		UserID:         input.UserID,
-		MerchantID:     merchantID,
-		CardNo:         cardNo,
-		CardType:       input.CardType,
-		TotalTimes:     input.TotalTimes,
-		RemainTimes:    input.TotalTimes,
-		UsedTimes:      0,
-		RechargeAmount: input.RechargeAmount,
-		RechargeAt:     dateOnlyPtr(now),
-		StartDate:      startDate,
-		EndDate:        endDate,
-	}
-	if card.StartDate == nil {
-		card.StartDate = dateOnlyPtr(now)
-	}
+	var card models.Card
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		cardNo := strings.TrimSpace(input.CardNo)
+		if cardNo == "" {
+			v, err := nextMerchantCardNo(tx, merchantID)
+			if err != nil {
+				return err
+			}
+			cardNo = v
+		}
 
-	if err := config.DB.Create(&card).Error; err != nil {
+		card = models.Card{
+			UserID:         input.UserID,
+			MerchantID:     merchantID,
+			CardNo:         cardNo,
+			CardType:       input.CardType,
+			TotalTimes:     input.TotalTimes,
+			RemainTimes:    input.TotalTimes,
+			UsedTimes:      0,
+			RechargeAmount: input.RechargeAmount,
+			RechargeAt:     dateOnlyPtr(now),
+			StartDate:      startDate,
+			EndDate:        endDate,
+		}
+		if card.StartDate == nil {
+			card.StartDate = dateOnlyPtr(now)
+		}
+
+		return tx.Create(&card).Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
