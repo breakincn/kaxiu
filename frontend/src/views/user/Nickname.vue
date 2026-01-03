@@ -106,6 +106,8 @@ const handleSave = async () => {
     })
 
     if (response.data.data) {
+      // 更新localStorage中的用户昵称
+      localStorage.setItem('userName', trimmedNickname)
       alert('昵称保存成功')
       router.back()
     }
