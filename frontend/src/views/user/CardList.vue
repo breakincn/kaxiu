@@ -97,7 +97,7 @@
             </div>
 
             <!-- 底部：剩余次数和有效期 -->
-            <div class="flex justify-between items-end mt-6">
+            <div class="flex justify-between items-end" :class="item.pinnedNotice ? 'mb-2' : 'mb-6'">
               <div>
                 <div class="text-gray-500 text-xs mb-0.5">剩余次数</div>
                 <div class="text-5xl font-bold leading-none">{{ item.remain_times }}</div>
@@ -107,22 +107,22 @@
                 <div class="text-sm font-medium">{{ formatDate(item.end_date) }}</div>
               </div>
             </div>
-          </div>
 
-          <!-- 置顶通知（仅卡片显示） -->
-          <div 
-            v-if="item.pinnedNotice" 
-            class="mt-2 bg-red-50 border border-red-200 rounded-lg p-3 cursor-pointer"
-            @click="goToDetail(item.id)"
-          >
-            <div class="flex items-center gap-2 mb-1">
-              <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-              </svg>
-              <span class="text-red-800 font-medium text-sm">{{ item.pinnedNotice.title }}</span>
-              <span class="px-1.5 py-0.5 bg-red-500 text-white text-xs rounded">置顶</span>
+            <!-- 置顶通知（在卡片内部底部） -->
+            <div 
+              v-if="item.pinnedNotice" 
+              class="pt-2 border-t border-gray-100"
+              @click.stop="goToDetail(item.id)"
+            >
+              <div class="flex items-center gap-2 mb-1">
+                <svg class="w-3 h-3 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                </svg>
+                <span class="text-red-600 font-medium text-xs truncate flex-1">{{ item.pinnedNotice.title }}</span>
+                <span class="px-1.5 py-0.5 bg-red-500 text-white text-xs rounded flex-shrink-0">置顶</span>
+              </div>
+              <div class="text-red-500 text-xs line-clamp-2 pl-5">{{ item.pinnedNotice.content }}</div>
             </div>
-            <div class="text-red-700 text-xs line-clamp-1">{{ item.pinnedNotice.content }}</div>
           </div>
         </template>
 
