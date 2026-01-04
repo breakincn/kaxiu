@@ -422,19 +422,19 @@
           <button
             v-if="canSellCards()"
             type="button"
-            @click="toggleView"
+            @click="loadSellTemplates"
             class="px-4 py-2 bg-slate-600 text-white text-sm rounded-lg"
           >
-            {{ currentView === 'sellTemplates' ? '查询卡片' : '售卡' }}
+            售卡
           </button>
         </div>
       </div>
 
-      <div v-if="currentView === 'cards' && cardsLoading" class="text-center py-12 text-gray-400">
+      <div v-if="currentDisplay === 'cards' && cardsLoading" class="text-center py-12 text-gray-400">
         加载中...
       </div>
 
-      <div v-else-if="currentView === 'cards'">
+      <div v-else-if="currentDisplay === 'cards'">
         <div v-for="(card, index) in issuedCards" :key="card.id" class="mb-6">
           <div
             @click="toggleCardExpand(card.id)"
@@ -508,7 +508,7 @@
       </div>
 
       <!-- 售卡模板列表 -->
-      <div v-if="currentView === 'sellTemplates'">
+      <div v-if="currentDisplay === 'sellTemplates'">
         <div v-if="sellTemplates.length === 0" class="text-center py-12 text-gray-400">
           暂无在售卡片模板
         </div>
@@ -694,6 +694,7 @@ const noticeForm = ref({
 const currentView = ref('cards') // 'cards' | 'sellTemplates'
 const issuedCards = ref([])
 const sellTemplates = ref([])
+const currentDisplay = ref('cards') // 'cards' | 'sellTemplates' - 默认显示会员卡片
 const cardsLoading = ref(false)
 const cardsError = ref('')
 const expandedCardId = ref(null)
@@ -802,16 +803,13 @@ const loadCardTemplates = async () => {
   }
 }
 
-const toggleView = () => {
-  if (currentView.value === 'cards') {
-    currentView.value = 'sellTemplates'
-    loadSellTemplates()
-  } else {
-    currentView.value = 'cards'
-  }
+const searchCards = async () => {
+  currentDisplay.value = 'cards'
+  await fetchIssuedCards()
 }
 
 const loadSellTemplates = async () => {
+  currentDisplay.value = 'sellTemplates'
   try {
     const res = await shopApi.getCardTemplates()
     sellTemplates.value = (res.data.data || []).filter(t => t && t.is_active)
@@ -862,6 +860,7 @@ const closeSellQrModal = () => {
 const resetCardSearch = async () => {
   cardSearch.value = { card_no: '', card_type: '' }
   expandedCardId.value = null
+  currentDisplay.value = 'cards'
   await fetchIssuedCards()
 }
 
