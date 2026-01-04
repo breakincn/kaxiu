@@ -20,34 +20,35 @@ func (User) TableComment() string {
 }
 
 type Merchant struct {
-	ID                 uint       `json:"id" gorm:"primaryKey;comment:商户ID"`
-	Name               string     `json:"name" gorm:"size:100;comment:商户名称"`
-	Phone              string     `json:"phone" gorm:"size:20;uniqueIndex;comment:手机号"`
-	Password           string     `json:"-" gorm:"size:255;comment:登录密码（bcrypt加密）"`
-	Type               string     `json:"type" gorm:"size:50;comment:商户类型（如：理发、美容等）"`
-	SupportAppointment bool       `json:"support_appointment" gorm:"default:false;comment:是否支持预约（0-不支持，1-支持）"`
-	SupportQueue       bool       `json:"support_queue" gorm:"default:false;comment:是否支持叫号/排队（0-不支持，1-支持）"`
-	QueuePrefix        string     `json:"queue_prefix" gorm:"size:20;default:'';comment:叫号前缀（如A、B）"`
-	QueueStartNo       int        `json:"queue_start_no" gorm:"default:1;comment:叫号起始号码"`
-	SupportDirectSale  bool       `json:"support_direct_sale" gorm:"default:false;comment:是否支持直购售卡（0-不支持，1-支持）"`
-	AvgServiceMinutes  int        `json:"avg_service_minutes" gorm:"default:30;comment:平均服务时长（分钟）"`
+	ID                     uint   `json:"id" gorm:"primaryKey;comment:商户ID"`
+	Name                   string `json:"name" gorm:"size:100;comment:商户名称"`
+	Phone                  string `json:"phone" gorm:"size:20;uniqueIndex;comment:手机号"`
+	Password               string `json:"-" gorm:"size:255;comment:登录密码（bcrypt加密）"`
+	Type                   string `json:"type" gorm:"size:50;comment:商户类型（如：理发、美容等）"`
+	SupportAppointment     bool   `json:"support_appointment" gorm:"default:false;comment:是否支持预约（0-不支持，1-支持）"`
+	SupportQueue           bool   `json:"support_queue" gorm:"default:false;comment:是否支持叫号/排队（0-不支持，1-支持）"`
+	QueuePrefix            string `json:"queue_prefix" gorm:"size:20;default:'';comment:叫号前缀（如A、B）"`
+	QueueStartNo           int    `json:"queue_start_no" gorm:"default:1;comment:叫号起始号码"`
+	SupportDirectSale      bool   `json:"support_direct_sale" gorm:"default:false;comment:是否支持直购售卡（0-不支持，1-支持）"`
+	SupportCustomerService bool   `json:"support_customer_service" gorm:"default:false;comment:是否开启设置客服/技师账号（0-不支持，1-支持）"`
+	AvgServiceMinutes      int    `json:"avg_service_minutes" gorm:"default:30;comment:平均服务时长（分钟）"`
 	// 营业时间
-	MorningStart       string     `json:"morning_start" gorm:"size:10;default:'';comment:上午营业开始时间（格式：HH:MM）"`
-	MorningEnd         string     `json:"morning_end" gorm:"size:10;default:'';comment:上午营业结束时间（格式：HH:MM）"`
-	AfternoonStart     string     `json:"afternoon_start" gorm:"size:10;default:'';comment:下午营业开始时间（格式：HH:MM）"`
-	AfternoonEnd       string     `json:"afternoon_end" gorm:"size:10;default:'';comment:下午营业结束时间（格式：HH:MM）"`
-	EveningStart       string     `json:"evening_start" gorm:"size:10;default:'';comment:晚上营业开始时间（格式：HH:MM）"`
-	EveningEnd         string     `json:"evening_end" gorm:"size:10;default:'';comment:晚上营业结束时间（格式：HH:MM）"`
-	AllDayStart        string     `json:"all_day_start" gorm:"size:10;default:'';comment:全天营业开始时间（格式：HH:MM）"`
-	AllDayEnd          string     `json:"all_day_end" gorm:"size:10;default:'';comment:全天营业结束时间（格式：HH:MM）"`
+	MorningStart   string `json:"morning_start" gorm:"size:10;default:'';comment:上午营业开始时间（格式：HH:MM）"`
+	MorningEnd     string `json:"morning_end" gorm:"size:10;default:'';comment:上午营业结束时间（格式：HH:MM）"`
+	AfternoonStart string `json:"afternoon_start" gorm:"size:10;default:'';comment:下午营业开始时间（格式：HH:MM）"`
+	AfternoonEnd   string `json:"afternoon_end" gorm:"size:10;default:'';comment:下午营业结束时间（格式：HH:MM）"`
+	EveningStart   string `json:"evening_start" gorm:"size:10;default:'';comment:晚上营业开始时间（格式：HH:MM）"`
+	EveningEnd     string `json:"evening_end" gorm:"size:10;default:'';comment:晚上营业结束时间（格式：HH:MM）"`
+	AllDayStart    string `json:"all_day_start" gorm:"size:10;default:'';comment:全天营业开始时间（格式：HH:MM）"`
+	AllDayEnd      string `json:"all_day_end" gorm:"size:10;default:'';comment:全天营业结束时间（格式：HH:MM）"`
 	// 地址信息
-	Province           string     `json:"province" gorm:"size:50;default:'';comment:省份"`
-	City               string     `json:"city" gorm:"size:50;default:'';comment:城市"`
-	District           string     `json:"district" gorm:"size:50;default:'';comment:区县"`
-	Address            string     `json:"address" gorm:"size:200;default:'';comment:详细地址（街道门牌号）"`
+	Province string `json:"province" gorm:"size:50;default:'';comment:省份"`
+	City     string `json:"city" gorm:"size:50;default:'';comment:城市"`
+	District string `json:"district" gorm:"size:50;default:'';comment:区县"`
+	Address  string `json:"address" gorm:"size:200;default:'';comment:详细地址（街道门牌号）"`
 	// 营业状态
-	IsOpen             bool       `json:"is_open" gorm:"default:true;comment:营业状态（0-打烊，1-营业中）"`
-	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	IsOpen    bool       `json:"is_open" gorm:"default:true;comment:营业状态（0-打烊，1-营业中）"`
+	CreatedAt *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 }
 
 func (Merchant) TableName() string {
@@ -130,13 +131,15 @@ type Appointment struct {
 	ID              uint       `json:"id" gorm:"primaryKey;comment:预约ID"`
 	MerchantID      uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
 	UserID          uint       `json:"user_id" gorm:"index;comment:用户ID（外键关联users表）"`
+	TechnicianID    *uint      `json:"technician_id" gorm:"index;comment:技师ID（technicians表主键，可为空）"`
 	AppointmentTime *time.Time `json:"appointment_time" gorm:"type:datetime(3);comment:预约时间"`
 	Status          string     `json:"status" gorm:"size:20;default:pending;comment:预约状态（pending-待确认，confirmed-已确认/排队中，finished-已完成，canceled-已取消）"`
 	CanceledAt      *time.Time `json:"canceled_at" gorm:"type:datetime(3);comment:取消时间"`
 	CreatedAt       *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
-	User     User     `json:"user" gorm:"foreignKey:UserID"`
-	Merchant Merchant `json:"merchant" gorm:"foreignKey:MerchantID"`
+	User       User        `json:"user" gorm:"foreignKey:UserID"`
+	Merchant   Merchant    `json:"merchant" gorm:"foreignKey:MerchantID"`
+	Technician *Technician `json:"technician" gorm:"foreignKey:TechnicianID"`
 }
 
 func (Appointment) TableName() string {

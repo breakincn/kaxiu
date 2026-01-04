@@ -329,6 +329,22 @@ const currentOrder = ref(null)
 const purchasing = ref(false)
 const confirming = ref(false)
 
+const sellerTechnicianId = ref(null)
+
+function parseSellerTechnicianId() {
+  const raw = route.query?.tech_id
+  if (!raw) return null
+  const n = parseInt(String(raw), 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function parsePresetCardTemplateId() {
+  const raw = route.query?.card_template_id
+  if (!raw) return null
+  const n = parseInt(String(raw), 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 const showPaymentGuide = ref(true)
 const showPaymentActions = ref(false)
 const saveButtonDisabled = ref(false)
@@ -483,6 +499,15 @@ async function loadShopInfo() {
     }
     
     shopInfo.value = res.data.data
+
+    sellerTechnicianId.value = parseSellerTechnicianId()
+    const presetTplId = parsePresetCardTemplateId()
+    if (presetTplId) {
+      const tpl = (shopInfo.value?.card_templates || []).find(t => t && t.id === presetTplId)
+      if (tpl) {
+        selectCard(tpl)
+      }
+    }
   } catch (e) {
     console.error('加载店铺信息失败', e)
     shopInfo.value = null
@@ -542,6 +567,7 @@ async function createPurchase() {
   try {
     const res = await shopApi.createDirectPurchase({
       card_template_id: selectedCard.value.id,
+      seller_technician_id: sellerTechnicianId.value,
       payment_method: paymentMethod.value
     })
     
@@ -685,6 +711,7 @@ async function confirmPayment() {
   try {
     await shopApi.confirmDirectPurchase(currentOrder.value.order_no, {
       card_template_id: currentOrder.value.card_template_id,
+      seller_technician_id: currentOrder.value.seller_technician_id,
       payment_method: currentOrder.value.payment_method
     })
     showPaymentModal.value = false

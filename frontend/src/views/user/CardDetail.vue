@@ -230,6 +230,46 @@
           </button>
         </div>
 
+        <div class="px-5 py-3 border-b">
+          <div class="flex gap-2">
+            <button
+              type="button"
+              @click="appointmentMode = 'time'"
+              :class="appointmentMode === 'time' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'"
+              class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors"
+            >
+              按时间段
+            </button>
+            <button
+              type="button"
+              @click="appointmentMode = 'technician'"
+              :disabled="technicians.length === 0"
+              :class="appointmentMode === 'technician' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'"
+              class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors disabled:opacity-50"
+            >
+              选技师
+            </button>
+          </div>
+
+          <div v-if="appointmentMode === 'technician'" class="mt-3">
+            <div class="text-sm font-medium text-gray-700 mb-2">选择技师</div>
+            <div v-if="loadingTechnicians" class="text-gray-400 text-sm">加载中...</div>
+            <div v-else-if="technicians.length === 0" class="text-gray-400 text-sm">暂无技师</div>
+            <div v-else class="grid grid-cols-2 gap-2">
+              <button
+                v-for="t in technicians"
+                :key="t.id"
+                type="button"
+                @click="selectedTechnicianId = t.id"
+                :class="selectedTechnicianId === t.id ? 'bg-primary text-white' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary'"
+                class="py-2 px-3 rounded-lg font-medium transition-all text-sm"
+              >
+                {{ t.name }}
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- 日期选择 -->
         <div class="px-5 py-3 border-b">
           <div class="flex gap-2">
@@ -281,7 +321,7 @@
         <div class="px-5 py-4 border-t">
           <button
             @click="confirmAppointment"
-            :disabled="!selectedTimeSlot || appointing"
+            :disabled="!selectedTimeSlot || appointing || (appointmentMode === 'technician' && !selectedTechnicianId)"
             class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {{ appointing ? '预纤中...' : '确认预约' }}
@@ -326,10 +366,15 @@ const shouldShowBottomSpacer = ref(false)
 
 // 预约弹窗相关
 const showModal = ref(false)
+const appointmentMode = ref('time')
 const selectedDate = ref('')
 const selectedTimeSlot = ref('')
 const timeSlots = ref([])
 const loadingSlots = ref(false)
+
+const technicians = ref([])
+const loadingTechnicians = ref(false)
+const selectedTechnicianId = ref(null)
 
 const goBack = () => {
   router.push('/user/cards')
@@ -483,17 +528,34 @@ const showAppointmentModal = async () => {
   }
   
   showModal.value = true
+  appointmentMode.value = 'time'
+  selectedTechnicianId.value = null
   selectedDate.value = getTodayDate()
   selectedTimeSlot.value = ''
+  await loadTechnicians(card.value.merchant_id)
   await loadTimeSlots(selectedDate.value)
 }
 
 // 关闭弹窗
 const closeModal = () => {
   showModal.value = false
+  appointmentMode.value = 'time'
+  selectedTechnicianId.value = null
   selectedDate.value = ''
   selectedTimeSlot.value = ''
   timeSlots.value = []
+}
+
+const loadTechnicians = async (merchantId) => {
+  loadingTechnicians.value = true
+  try {
+    const res = await appointmentApi.getMerchantTechnicians(merchantId)
+    technicians.value = res.data.data || []
+  } catch (_) {
+    technicians.value = []
+  } finally {
+    loadingTechnicians.value = false
+  }
 }
 
 // 获取今天日期
@@ -528,6 +590,11 @@ const loadTimeSlots = async (date) => {
     const res = await appointmentApi.getAvailableTimeSlots(card.value.merchant_id, date)
     console.log('获取时间段响应:', res.data)
     timeSlots.value = res.data.data.time_slots || []
+
+    if (appointmentMode.value === 'technician' && !selectedTimeSlot.value) {
+      const first = (timeSlots.value || []).find(s => s && s.available)
+      if (first) selectedTimeSlot.value = first.time
+    }
   } catch (err) {
     console.error('获取可用时间段失败:', err)
     console.error('错误详情:', err.response?.data)
@@ -555,6 +622,11 @@ const formatTime = (timeStr) => {
 // 确认预约
 const confirmAppointment = async () => {
   if (!selectedTimeSlot.value || appointing.value) return
+
+  if (appointmentMode.value === 'technician' && !selectedTechnicianId.value) {
+    alert('请选择技师')
+    return
+  }
   
   appointing.value = true
   try {
@@ -568,6 +640,7 @@ const confirmAppointment = async () => {
     await appointmentApi.createAppointment({
       merchant_id: card.value.merchant_id,
       user_id: parseInt(userId),
+      technician_id: appointmentMode.value === 'technician' ? selectedTechnicianId.value : null,
       appointment_time: selectedTimeSlot.value
     })
     

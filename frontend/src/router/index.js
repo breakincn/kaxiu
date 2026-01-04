@@ -105,6 +105,11 @@ const routes = [
     name: 'MerchantShopManage',
     component: () => import('../views/merchant/ShopManage.vue')
   },
+  {
+    path: '/merchant/customer-service',
+    name: 'MerchantCustomerService',
+    component: () => import('../views/merchant/CustomerService.vue')
+  },
   // Shop 模块：用户扫码售卡页面
   {
     path: '/shop/:slug',

@@ -15,17 +15,15 @@ import (
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader("Authorization")
-		
+
 		if token == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
 			c.Abort()
 			return
 		}
-		
+
 		// 移除 "Bearer " 前缀
-		if strings.HasPrefix(token, "Bearer ") {
-			token = token[7:]
-		}
+		token = strings.TrimPrefix(token, "Bearer ")
 
 		// 兼容旧版用户 token: user_{userID}_{timestamp}
 		if strings.HasPrefix(token, "user_") {
@@ -77,7 +75,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		typeVal, _ := claims["type"].(string)
-		if typeVal != "merchant" {
+		if typeVal != "merchant" && typeVal != "technician" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
 			c.Abort()
 			return
@@ -98,8 +96,28 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		c.Set("auth_type", typeVal)
 		c.Set("merchant_id", merchantID)
 		c.Set("merchant", merchant)
+
+		if typeVal == "technician" {
+			technicianIDFloat, ok := claims["technician_id"].(float64)
+			if !ok {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
+				c.Abort()
+				return
+			}
+			technicianID := uint(technicianIDFloat)
+			var tech models.Technician
+			if err := config.DB.Where("id = ? AND merchant_id = ?", technicianID, merchantID).First(&tech).Error; err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "技师不存在"})
+				c.Abort()
+				return
+			}
+			c.Set("technician_id", technicianID)
+			c.Set("technician", tech)
+		}
+
 		c.Next()
 	}
 }

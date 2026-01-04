@@ -35,6 +35,7 @@ func InitDB() {
 	err = DB.AutoMigrate(
 		&models.User{},
 		&models.Merchant{},
+		&models.Technician{},
 		&models.Card{},
 		&models.Usage{},
 		&models.Notice{},
@@ -58,6 +59,7 @@ func InitDB() {
 	// 添加表注释
 	DB.Exec("ALTER TABLE `users` COMMENT = '用户表'")
 	DB.Exec("ALTER TABLE `merchants` COMMENT = '商户表'")
+	DB.Exec("ALTER TABLE `technicians` COMMENT = '商户技师账号表'")
 	DB.Exec("ALTER TABLE `cards` COMMENT = '用户会员卡表'")
 	DB.Exec("ALTER TABLE `usages` COMMENT = '卡片使用记录表'")
 	DB.Exec("ALTER TABLE `notices` COMMENT = '商户通知表'")

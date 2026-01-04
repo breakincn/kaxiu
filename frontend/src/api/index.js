@@ -90,7 +90,11 @@ export const merchantApi = {
   updateCurrentMerchantServices: (data) => api.put('/merchant/services', data),
   updateMerchantInfo: (data) => api.put('/merchant/info', data),
   getNextCardNo: () => api.get('/merchant/next-card-no'),
-  toggleBusinessStatus: (data) => api.put('/merchant/business-status', data)
+  toggleBusinessStatus: (data) => api.put('/merchant/business-status', data),
+
+  // 技师账号管理
+  getTechnicians: () => api.get('/merchant/technicians'),
+  createTechnician: (data) => api.post('/merchant/technicians', data)
 }
 
 export const cardApi = {
@@ -120,6 +124,7 @@ export const noticeApi = {
 
 export const appointmentApi = {
   getMerchantAppointments: (merchantId, status) => api.get(`/merchants/${merchantId}/appointments`, { params: { status } }),
+  getMerchantTechnicians: (merchantId) => api.get(`/merchants/${merchantId}/technicians`),
   getUserAppointments: (userId) => api.get(`/users/${userId}/appointments`),
   getCardAppointment: (cardId) => api.get(`/cards/${cardId}/appointment`),
   getAvailableTimeSlots: (merchantId, date) => api.get(`/merchants/${merchantId}/available-slots`, { params: { date } }),

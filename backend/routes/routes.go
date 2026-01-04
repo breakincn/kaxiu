@@ -47,6 +47,10 @@ func SetupRoutes(r *gin.Engine) {
 	auth.PUT("/merchant/info", handlers.UpdateMerchantInfo)
 	auth.PUT("/merchant/business-status", handlers.ToggleMerchantBusinessStatus)
 
+	// 技师账号管理
+	auth.GET("/merchant/technicians", handlers.GetMerchantTechnicians)
+	auth.POST("/merchant/technicians", handlers.CreateMerchantTechnician)
+
 	// 卡片相关
 	auth.GET("/cards", handlers.GetCards)
 	auth.GET("/cards/:id", handlers.GetCard)
@@ -74,6 +78,7 @@ func SetupRoutes(r *gin.Engine) {
 
 	// 预约相关
 	auth.GET("/merchants/:id/appointments", handlers.GetMerchantAppointments)
+	auth.GET("/merchants/:id/technicians", handlers.GetTechniciansByMerchantID)
 	auth.GET("/users/:id/appointments", handlers.GetUserAppointments)
 	auth.GET("/cards/:id/appointment", handlers.GetCardAppointment)
 	auth.POST("/appointments", handlers.CreateAppointment)

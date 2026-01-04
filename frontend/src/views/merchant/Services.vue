@@ -49,6 +49,11 @@
             <div class="text-gray-800 font-medium">开启直购售卡</div>
             <input type="checkbox" v-model="form.support_direct_sale" />
           </div>
+
+		  <div v-if="form.support_direct_sale" class="px-4 py-4 flex items-center justify-between border-t border-gray-100">
+			<div class="text-gray-800 font-medium">设置客服</div>
+			<input type="checkbox" v-model="form.support_customer_service" />
+		  </div>
         </div>
 
         <div class="bg-white rounded-xl shadow-sm p-4">
@@ -89,6 +94,7 @@ const form = ref({
   queue_prefix: '',
   queue_start_no: 1,
   support_direct_sale: false,
+  support_customer_service: false,
   avg_service_minutes: 30
 })
 
@@ -116,6 +122,7 @@ const load = async () => {
       queue_prefix: m.queue_prefix || '',
       queue_start_no: m.queue_start_no || 1,
       support_direct_sale: !!m.support_direct_sale,
+      support_customer_service: !!m.support_customer_service,
       avg_service_minutes: m.avg_service_minutes || 30
     }
   } catch (e) {
@@ -145,6 +152,7 @@ const save = async () => {
       queue_prefix: form.value.queue_prefix,
       queue_start_no: form.value.queue_start_no,
       support_direct_sale: form.value.support_direct_sale,
+      support_customer_service: form.value.support_customer_service,
       avg_service_minutes: form.value.avg_service_minutes
     })
     alert('保存成功')

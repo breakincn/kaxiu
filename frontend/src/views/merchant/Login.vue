@@ -14,11 +14,11 @@
         
         <form @submit.prevent="handleLogin">
           <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">手机号</label>
+            <label class="block text-gray-700 text-sm font-medium mb-2">账号/手机号</label>
             <input
               v-model="phone"
-              type="tel"
-              placeholder="请输入手机号"
+              type="text"
+              placeholder="请输入账号/手机号"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
               required
             />
@@ -249,6 +249,20 @@ const handleLogin = async () => {
     localStorage.setItem('merchantId', res.data.merchant.id)
     localStorage.setItem('merchantName', res.data.merchant.name)
     localStorage.setItem('merchantPhone', res.data.merchant.phone)
+
+    if (res.data.technician && res.data.technician.id) {
+      localStorage.setItem('merchantAuthType', 'technician')
+      localStorage.setItem('technicianId', res.data.technician.id)
+      localStorage.setItem('technicianName', res.data.technician.name || '')
+      localStorage.setItem('technicianCode', res.data.technician.code || '')
+      localStorage.setItem('technicianAccount', res.data.technician.account || '')
+    } else {
+      localStorage.setItem('merchantAuthType', 'merchant')
+      localStorage.removeItem('technicianId')
+      localStorage.removeItem('technicianName')
+      localStorage.removeItem('technicianCode')
+      localStorage.removeItem('technicianAccount')
+    }
     
     console.log('登录信息已保存，准备跳转...')
     console.log('merchantToken:', localStorage.getItem('merchantToken'))

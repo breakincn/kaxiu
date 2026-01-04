@@ -68,6 +68,15 @@
       >
         {{ merchant.is_open ? '营业中' : '打烊' }}
       </button>
+
+	  <button
+		v-if="merchant.support_customer_service && localStorage.getItem('merchantAuthType') !== 'technician'"
+		type="button"
+		@click="router.push('/merchant/customer-service')"
+		class="w-full mt-3 py-3 rounded-lg font-medium text-base transition-colors bg-slate-600 text-white hover:bg-slate-700"
+	  >
+		设置客服
+	  </button>
     </div>
 
     <!-- 数据统计卡片 -->
@@ -395,7 +404,7 @@
           </select>
         </div>
 
-        <div class="flex gap-2 mt-3">
+        <div class="flex gap-2 mt-3 items-center">
           <button
             @click="searchCards"
             class="px-4 py-2 bg-primary text-white text-sm rounded-lg"
@@ -407,6 +416,16 @@
             class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg"
           >
             重置
+          </button>
+
+          <div class="flex-1"></div>
+          <button
+            v-if="canSellCards()"
+            type="button"
+            @click="openSellModal"
+            class="px-4 py-2 bg-slate-600 text-white text-sm rounded-lg"
+          >
+            售卡
           </button>
         </div>
       </div>
@@ -524,6 +543,72 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showSellModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeSellModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-sm overflow-hidden">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+          <h3 class="font-medium text-lg text-gray-800">选择在售卡片</h3>
+          <button type="button" class="text-gray-400" @click="closeSellModal">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="px-5 py-4 max-h-[70vh] overflow-y-auto">
+          <div v-if="cardTemplates.filter(t => t && t.is_active).length === 0" class="text-center text-gray-400 py-10">
+            暂无在售卡片
+          </div>
+
+          <div v-else class="space-y-3">
+            <button
+              v-for="tpl in cardTemplates.filter(t => t && t.is_active)"
+              :key="tpl.id"
+              type="button"
+              class="w-full text-left border border-gray-100 rounded-xl p-4 active:scale-[0.99] transition-transform"
+              @click="openSellQr(tpl)"
+            >
+              <div class="flex items-center justify-between">
+                <div class="text-gray-800 font-medium">{{ tpl.name }}</div>
+                <div class="text-red-500 font-bold">¥{{ (tpl.price / 100).toFixed(2) }}</div>
+              </div>
+              <div class="text-gray-500 text-sm mt-1">
+                {{ getCardTypeLabel(tpl.card_type) }}
+                <span v-if="tpl.card_type !== 'balance'"> · {{ tpl.total_times }}次</span>
+                <span v-else> · 充{{ (tpl.recharge_amount / 100).toFixed(0) }}元</span>
+                <span v-if="tpl.valid_days > 0"> · {{ tpl.valid_days }}天有效</span>
+                <span v-else> · 永久有效</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showSellQrModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeSellQrModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-sm overflow-hidden">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+          <h3 class="font-medium text-lg text-gray-800">售卡二维码</h3>
+          <button type="button" class="text-gray-400" @click="closeSellQrModal">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="px-5 py-6">
+          <div class="text-center text-gray-700 font-medium">
+            {{ sellSelectedTemplate?.name }}
+          </div>
+          <div class="text-center text-gray-500 text-sm mt-1">请客户扫码购买</div>
+
+          <div class="mt-5 flex justify-center">
+            <img v-if="sellQrDataUrl" :src="sellQrDataUrl" alt="售卡二维码" class="w-56 h-56" />
+            <div v-else class="w-56 h-56 flex items-center justify-center text-gray-400">生成中...</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -532,6 +617,7 @@ import { ref, onMounted, onUnmounted, onActivated, watch, nextTick } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi, shopApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
+import QRCode from 'qrcode'
 
 const router = useRouter()
 const route = useRoute()
@@ -548,6 +634,26 @@ const merchant = ref({})
 const currentTab = ref('queue')
 const routeUserCode = ref('')
 const userCodeAnchor = ref(null)
+
+const showSellModal = ref(false)
+const showSellQrModal = ref(false)
+const sellSelectedTemplate = ref(null)
+const sellQrDataUrl = ref('')
+
+const isTechnicianAuth = () => {
+  return localStorage.getItem('merchantAuthType') === 'technician'
+}
+
+const getTechnicianId = () => {
+  const raw = localStorage.getItem('technicianId')
+  if (!raw) return null
+  const n = parseInt(String(raw), 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+const canSellCards = () => {
+  return !!merchant.value.support_direct_sale && isTechnicianAuth() && !!getTechnicianId()
+}
 const scanUserCodeActive = ref(false)
 
 const todayVerifyCount = ref(0)
@@ -675,6 +781,46 @@ const loadCardTemplates = async () => {
   } catch (e) {
     cardTemplates.value = []
   }
+}
+
+const openSellModal = async () => {
+  if (!canSellCards()) {
+    alert('仅技师账号可售卡')
+    return
+  }
+  showSellModal.value = true
+}
+
+const closeSellModal = () => {
+  showSellModal.value = false
+}
+
+const openSellQr = async (tpl) => {
+  if (!tpl || !tpl.id) return
+  const techId = getTechnicianId()
+  if (!techId) {
+    alert('技师信息缺失，请重新登录')
+    return
+  }
+  sellSelectedTemplate.value = tpl
+  showSellModal.value = false
+  showSellQrModal.value = true
+  try {
+    const url = `${window.location.origin}/shop/id/${merchantId.value}?card_template_id=${encodeURIComponent(tpl.id)}&tech_id=${encodeURIComponent(techId)}`
+    sellQrDataUrl.value = await QRCode.toDataURL(url, {
+      margin: 1,
+      scale: 8,
+      errorCorrectionLevel: 'M'
+    })
+  } catch (_) {
+    sellQrDataUrl.value = ''
+  }
+}
+
+const closeSellQrModal = () => {
+  showSellQrModal.value = false
+  sellSelectedTemplate.value = null
+  sellQrDataUrl.value = ''
 }
 
 const searchCards = async () => {

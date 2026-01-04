@@ -497,8 +497,9 @@ func CreateDirectPurchase(c *gin.Context) {
 	}
 
 	var input struct {
-		CardTemplateID uint   `json:"card_template_id" binding:"required"`
-		PaymentMethod  string `json:"payment_method" binding:"required"`
+		CardTemplateID     uint   `json:"card_template_id" binding:"required"`
+		SellerTechnicianID *uint  `json:"seller_technician_id"`
+		PaymentMethod      string `json:"payment_method" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -519,6 +520,14 @@ func CreateDirectPurchase(c *gin.Context) {
 	}
 	if !requireDirectSaleEnabledByMerchantID(c, template.MerchantID) {
 		return
+	}
+
+	if input.SellerTechnicianID != nil {
+		var tech models.Technician
+		if err := config.DB.Where("id = ? AND merchant_id = ?", *input.SellerTechnicianID, template.MerchantID).First(&tech).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的技师"})
+			return
+		}
 	}
 
 	if !template.IsActive {
@@ -557,11 +566,12 @@ func CreateDirectPurchase(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"order_no":         orderNo,
-			"card_template_id": template.ID,
-			"price":            template.Price,
-			"payment_url":      paymentURL,
-			"payment_method":   input.PaymentMethod,
+			"order_no":             orderNo,
+			"card_template_id":     template.ID,
+			"seller_technician_id": input.SellerTechnicianID,
+			"price":                template.Price,
+			"payment_url":          paymentURL,
+			"payment_method":       input.PaymentMethod,
 		},
 	})
 }
@@ -576,8 +586,9 @@ func ConfirmDirectPurchase(c *gin.Context) {
 	orderNo := c.Param("order_no")
 
 	var input struct {
-		CardTemplateID uint   `json:"card_template_id" binding:"required"`
-		PaymentMethod  string `json:"payment_method" binding:"required"`
+		CardTemplateID     uint   `json:"card_template_id" binding:"required"`
+		SellerTechnicianID *uint  `json:"seller_technician_id"`
+		PaymentMethod      string `json:"payment_method" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		if err == io.EOF {
@@ -609,7 +620,7 @@ func ConfirmDirectPurchase(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "订单状态无效"})
 		return
 	}
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if err != gorm.ErrRecordNotFound {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
 		return
 	}
@@ -628,16 +639,25 @@ func ConfirmDirectPurchase(c *gin.Context) {
 		return
 	}
 
+	if input.SellerTechnicianID != nil {
+		var tech models.Technician
+		if err := config.DB.Where("id = ? AND merchant_id = ?", *input.SellerTechnicianID, template.MerchantID).First(&tech).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的技师"})
+			return
+		}
+	}
+
 	now := time.Now()
 	purchase = models.DirectPurchase{
-		OrderNo:        orderNo,
-		MerchantID:     template.MerchantID,
-		UserID:         userID,
-		CardTemplateID: template.ID,
-		Price:          template.Price,
-		PaymentMethod:  input.PaymentMethod,
-		Status:         "paid",
-		PaidAt:         &now,
+		OrderNo:            orderNo,
+		MerchantID:         template.MerchantID,
+		SellerTechnicianID: input.SellerTechnicianID,
+		UserID:             userID,
+		CardTemplateID:     template.ID,
+		Price:              template.Price,
+		PaymentMethod:      input.PaymentMethod,
+		Status:             "paid",
+		PaidAt:             &now,
 	}
 	if err := config.DB.Create(&purchase).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交失败"})
@@ -669,7 +689,7 @@ func MerchantConfirmDirectPurchase(c *gin.Context) {
 	}
 
 	if purchase.Status == "confirmed" {
-		config.DB.Preload("Card").Preload("CardTemplate").Preload("User").First(&purchase, purchase.ID)
+		config.DB.Preload("Card").Preload("CardTemplate").Preload("User").Preload("SellerTechnician").First(&purchase, purchase.ID)
 		c.JSON(http.StatusOK, gin.H{
 			"message": "订单已确认",
 			"data":    purchase,
@@ -737,7 +757,7 @@ func MerchantConfirmDirectPurchase(c *gin.Context) {
 		return
 	}
 
-	config.DB.Preload("Card").Preload("CardTemplate").Preload("User").First(&purchase, purchase.ID)
+	config.DB.Preload("Card").Preload("CardTemplate").Preload("User").Preload("SellerTechnician").First(&purchase, purchase.ID)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "开卡成功",
 		"data":    purchase,
@@ -752,7 +772,7 @@ func GetDirectPurchases(c *gin.Context) {
 	}
 
 	var purchases []models.DirectPurchase
-	config.DB.Preload("Merchant").Preload("CardTemplate").Preload("Card").
+	config.DB.Preload("Merchant").Preload("CardTemplate").Preload("Card").Preload("SellerTechnician").
 		Where("user_id = ?", userID).
 		Order("CASE WHEN status = 'paid' THEN 0 ELSE 1 END, CASE WHEN status = 'paid' THEN created_at END ASC, created_at DESC").
 		Find(&purchases)
@@ -771,7 +791,7 @@ func GetMerchantDirectPurchases(c *gin.Context) {
 	}
 
 	var purchases []models.DirectPurchase
-	config.DB.Preload("User").Preload("CardTemplate").Preload("Card").
+	config.DB.Preload("User").Preload("CardTemplate").Preload("Card").Preload("SellerTechnician").
 		Where("merchant_id = ?", merchantID).
 		Order("CASE WHEN status = 'paid' THEN 0 ELSE 1 END, CASE WHEN status = 'paid' THEN created_at END ASC, created_at DESC").
 		Find(&purchases)
