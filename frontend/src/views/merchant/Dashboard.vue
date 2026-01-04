@@ -70,7 +70,7 @@
       </button>
 
 	  <button
-		v-if="merchant.support_customer_service && localStorage.getItem('merchantAuthType') !== 'technician'"
+		v-if="merchant.support_customer_service && !isTechnicianAuth()"
 		type="button"
 		@click="router.push('/merchant/customer-service')"
 		class="w-full mt-3 py-3 rounded-lg font-medium text-base transition-colors bg-slate-600 text-white hover:bg-slate-700"
@@ -556,13 +556,13 @@
         </div>
 
         <div class="px-5 py-4 max-h-[70vh] overflow-y-auto">
-          <div v-if="cardTemplates.filter(t => t && t.is_active).length === 0" class="text-center text-gray-400 py-10">
+          <div v-if="activeSellTemplates.length === 0" class="text-center text-gray-400 py-10">
             暂无在售卡片
           </div>
 
           <div v-else class="space-y-3">
             <button
-              v-for="tpl in cardTemplates.filter(t => t && t.is_active)"
+              v-for="tpl in activeSellTemplates"
               :key="tpl.id"
               type="button"
               class="w-full text-left border border-gray-100 rounded-xl p-4 active:scale-[0.99] transition-transform"
@@ -598,7 +598,7 @@
 
         <div class="px-5 py-6">
           <div class="text-center text-gray-700 font-medium">
-            {{ sellSelectedTemplate?.name }}
+            {{ sellSelectedTemplateName }}
           </div>
           <div class="text-center text-gray-500 text-sm mt-1">请客户扫码购买</div>
 
@@ -613,7 +613,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, onActivated, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, watch, nextTick, computed } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi, shopApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
@@ -639,6 +639,14 @@ const showSellModal = ref(false)
 const showSellQrModal = ref(false)
 const sellSelectedTemplate = ref(null)
 const sellQrDataUrl = ref('')
+
+const activeSellTemplates = computed(() => {
+  return (cardTemplates.value || []).filter(t => t && t.is_active)
+})
+
+const sellSelectedTemplateName = computed(() => {
+  return sellSelectedTemplate.value && sellSelectedTemplate.value.name ? sellSelectedTemplate.value.name : ''
+})
 
 const isTechnicianAuth = () => {
   return localStorage.getItem('merchantAuthType') === 'technician'
