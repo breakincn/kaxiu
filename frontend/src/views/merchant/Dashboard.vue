@@ -582,7 +582,7 @@
     <div v-if="showSellQrModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 select-none" @click.self="closeSellQrModal">
       <div class="bg-white rounded-2xl w-11/12 max-w-lg overflow-hidden">
         <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
-          <h3 class="font-medium text-lg">售卡二维码</h3>
+          <h3 class="font-medium text-lg">{{ getTechnicianName() }}的售卡二维码</h3>
           <button @click="closeSellQrModal" class="text-white">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -665,6 +665,14 @@ const getTechnicianId = () => {
   if (!raw) return null
   const n = parseInt(String(raw), 10)
   return Number.isFinite(n) && n > 0 ? n : null
+}
+
+const getTechnicianName = () => {
+  const name = localStorage.getItem('technicianName')
+  const code = localStorage.getItem('technicianCode')
+  if (name) return name
+  if (code) return `技师${code}`
+  return '技师'
 }
 
 const canSellCards = () => {
