@@ -721,9 +721,23 @@ const scrollToNotice = async () => {
   const el = noticeAnchor.value
   if (!el) return
   try {
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // 获取元素的位置信息
+    const rect = el.getBoundingClientRect()
+    // 计算目标滚动位置：元素顶部 + 当前滚动位置 - 4px偏移
+    const targetScrollTop = rect.top + window.scrollY - 4
+
+    // 平滑滚动到目标位置
+    window.scrollTo({
+      top: targetScrollTop,
+      behavior: 'smooth'
+    })
   } catch (_) {
-    // ignore
+    // 降级方案：使用 scrollIntoView
+    try {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } catch (_) {
+      // ignore
+    }
   }
 }
 
