@@ -194,8 +194,8 @@
       </div>
     </div>
 
-    <!-- 动态占位元素：确保页面可以滚动到通知区域 -->
-    <div v-if="notices.length > 0" :style="{ height: getBottomSpacerHeight() }"></div>
+    <!-- 动态占位元素：仅在需要滚动到通知区域时显示，确保页面可以滚动到通知区域 -->
+    <div v-if="shouldShowBottomSpacer" :style="{ height: getBottomSpacerHeight() }"></div>
 
     <!-- 预约时间选择弹窗 -->
     <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeModal">
@@ -302,6 +302,7 @@ const appointing = ref(false)
 const canceling = ref(false)
 
 const noticeAnchor = ref(null)
+const shouldShowBottomSpacer = ref(false)
 
 // 预约弹窗相关
 const showModal = ref(false)
@@ -346,6 +347,7 @@ const fetchNotices = async (merchantId) => {
     
     // 如果需要滚动到通知区域
     if (route.query.scrollToNotice === '1' && notices.value.length > 0) {
+      shouldShowBottomSpacer.value = true
       await scrollToNotice()
     }
   } catch (err) {
@@ -751,9 +753,11 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopCountdownTimer()
-	if (verifyExpireTimer) {
-		clearTimeout(verifyExpireTimer)
-		verifyExpireTimer = null
-	}
+  if (verifyExpireTimer) {
+    clearTimeout(verifyExpireTimer)
+    verifyExpireTimer = null
+  }
+  // 重置底部占位状态
+  shouldShowBottomSpacer.value = false
 })
 </script>
