@@ -48,7 +48,24 @@
             <span class="text-gray-500">有效期</span>
             <span class="text-gray-800">{{ formatDate(card.start_date) }} 至 {{ formatDate(card.end_date) }}</span>
           </div>
+          <div v-if="getMerchantAddress()" class="flex justify-between">
+            <span class="text-gray-500">地址</span>
+            <span class="text-gray-800 text-right max-w-[70%]">{{ getMerchantAddress() }}</span>
+          </div>
         </div>
+      </div>
+    </div>
+
+    <!-- 营业时间 -->
+    <div v-if="getMerchantBusinessHours()" class="px-4 mt-4">
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+        <div class="flex items-center gap-2 mb-3">
+          <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <span class="font-medium text-gray-800">营业时间</span>
+        </div>
+        <div class="text-gray-700 text-sm leading-relaxed" v-html="getMerchantBusinessHours()"></div>
       </div>
     </div>
 
@@ -704,6 +721,47 @@ const shouldShowVerifyCode = () => {
   
   // 其他状态（pending, finished, canceled）不显示核销码
   return false
+}
+
+// 获取商家地址
+const getMerchantAddress = () => {
+  if (!card.value || !card.value.merchant) return ''
+  
+  const m = card.value.merchant
+  const parts = []
+  
+  if (m.province) parts.push(m.province)
+  if (m.city) parts.push(m.city)
+  if (m.district) parts.push(m.district)
+  if (m.address) parts.push(m.address)
+  
+  return parts.join('')
+}
+
+// 获取商家营业时间
+const getMerchantBusinessHours = () => {
+  if (!card.value || !card.value.merchant) return ''
+  
+  const m = card.value.merchant
+  const hours = []
+  
+  // 全天营业
+  if (m.all_day_start && m.all_day_end) {
+    return `全天营业: ${m.all_day_start} - ${m.all_day_end}`
+  }
+  
+  // 分时段营业
+  if (m.morning_start && m.morning_end) {
+    hours.push(`上午: ${m.morning_start} - ${m.morning_end}`)
+  }
+  if (m.afternoon_start && m.afternoon_end) {
+    hours.push(`下午: ${m.afternoon_start} - ${m.afternoon_end}`)
+  }
+  if (m.evening_start && m.evening_end) {
+    hours.push(`晚上: ${m.evening_start} - ${m.evening_end}`)
+  }
+  
+  return hours.length > 0 ? hours.join('<br>') : ''
 }
 
 const getBottomSpacerHeight = () => {
