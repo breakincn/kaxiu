@@ -88,6 +88,7 @@ export const merchantApi = {
   bindPhone: (phone, code, password) => api.post('/merchant/bind-phone', { phone, code, password }),
   getCurrentMerchant: () => api.get('/merchant/me'),
   updateCurrentMerchantServices: (data) => api.put('/merchant/services', data),
+  updateMerchantInfo: (data) => api.put('/merchant/info', data),
   getNextCardNo: () => api.get('/merchant/next-card-no')
 }
 

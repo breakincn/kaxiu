@@ -31,6 +31,20 @@ type Merchant struct {
 	QueueStartNo       int        `json:"queue_start_no" gorm:"default:1;comment:叫号起始号码"`
 	SupportDirectSale  bool       `json:"support_direct_sale" gorm:"default:false;comment:是否支持直购售卡（0-不支持，1-支持）"`
 	AvgServiceMinutes  int        `json:"avg_service_minutes" gorm:"default:30;comment:平均服务时长（分钟）"`
+	// 营业时间
+	MorningStart       string     `json:"morning_start" gorm:"size:10;default:'';comment:上午营业开始时间（格式：HH:MM）"`
+	MorningEnd         string     `json:"morning_end" gorm:"size:10;default:'';comment:上午营业结束时间（格式：HH:MM）"`
+	AfternoonStart     string     `json:"afternoon_start" gorm:"size:10;default:'';comment:下午营业开始时间（格式：HH:MM）"`
+	AfternoonEnd       string     `json:"afternoon_end" gorm:"size:10;default:'';comment:下午营业结束时间（格式：HH:MM）"`
+	EveningStart       string     `json:"evening_start" gorm:"size:10;default:'';comment:晚上营业开始时间（格式：HH:MM）"`
+	EveningEnd         string     `json:"evening_end" gorm:"size:10;default:'';comment:晚上营业结束时间（格式：HH:MM）"`
+	AllDayStart        string     `json:"all_day_start" gorm:"size:10;default:'';comment:全天营业开始时间（格式：HH:MM）"`
+	AllDayEnd          string     `json:"all_day_end" gorm:"size:10;default:'';comment:全天营业结束时间（格式：HH:MM）"`
+	// 地址信息
+	Province           string     `json:"province" gorm:"size:50;default:'';comment:省份"`
+	City               string     `json:"city" gorm:"size:50;default:'';comment:城市"`
+	District           string     `json:"district" gorm:"size:50;default:'';comment:区县"`
+	Address            string     `json:"address" gorm:"size:200;default:'';comment:详细地址（街道门牌号）"`
 	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 }
 

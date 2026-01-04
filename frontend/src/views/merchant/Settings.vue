@@ -30,6 +30,21 @@
         </button>
 
         <button
+          @click="goToMerchantInfo"
+          class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span class="text-gray-800 font-medium">商家信息设置</span>
+          </div>
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+
+        <button
           @click="goToBindPhone"
           class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
         >
@@ -78,6 +93,10 @@ const goToBindPhone = () => {
 
 const goToServices = () => {
   router.push('/merchant/services')
+}
+
+const goToMerchantInfo = () => {
+  router.push('/merchant/merchant-info')
 }
 
 const handleLogout = () => {

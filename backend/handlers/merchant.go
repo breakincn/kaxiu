@@ -378,3 +378,93 @@ func BindMerchantPhone(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"data": updated})
 }
+
+// UpdateMerchantInfo 更新商户信息（营业时间和地址）
+func UpdateMerchantInfo(c *gin.Context) {
+	merchantIDAny, exists := c.Get("merchant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+
+	var input struct {
+		MorningStart   *string `json:"morning_start"`
+		MorningEnd     *string `json:"morning_end"`
+		AfternoonStart *string `json:"afternoon_start"`
+		AfternoonEnd   *string `json:"afternoon_end"`
+		EveningStart   *string `json:"evening_start"`
+		EveningEnd     *string `json:"evening_end"`
+		AllDayStart    *string `json:"all_day_start"`
+		AllDayEnd      *string `json:"all_day_end"`
+		Province       *string `json:"province"`
+		City           *string `json:"city"`
+		District       *string `json:"district"`
+		Address        *string `json:"address"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	updates := make(map[string]interface{})
+	if input.MorningStart != nil {
+		updates["morning_start"] = strings.TrimSpace(*input.MorningStart)
+	}
+	if input.MorningEnd != nil {
+		updates["morning_end"] = strings.TrimSpace(*input.MorningEnd)
+	}
+	if input.AfternoonStart != nil {
+		updates["afternoon_start"] = strings.TrimSpace(*input.AfternoonStart)
+	}
+	if input.AfternoonEnd != nil {
+		updates["afternoon_end"] = strings.TrimSpace(*input.AfternoonEnd)
+	}
+	if input.EveningStart != nil {
+		updates["evening_start"] = strings.TrimSpace(*input.EveningStart)
+	}
+	if input.EveningEnd != nil {
+		updates["evening_end"] = strings.TrimSpace(*input.EveningEnd)
+	}
+	if input.AllDayStart != nil {
+		updates["all_day_start"] = strings.TrimSpace(*input.AllDayStart)
+	}
+	if input.AllDayEnd != nil {
+		updates["all_day_end"] = strings.TrimSpace(*input.AllDayEnd)
+	}
+	if input.Province != nil {
+		updates["province"] = strings.TrimSpace(*input.Province)
+	}
+	if input.City != nil {
+		updates["city"] = strings.TrimSpace(*input.City)
+	}
+	if input.District != nil {
+		updates["district"] = strings.TrimSpace(*input.District)
+	}
+	if input.Address != nil {
+		updates["address"] = strings.TrimSpace(*input.Address)
+	}
+
+	if len(updates) == 0 {
+		config.DB.First(&merchant, merchantID)
+		c.JSON(http.StatusOK, gin.H{"data": merchant})
+		return
+	}
+
+	if err := config.DB.Model(&merchant).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	config.DB.First(&merchant, merchantID)
+	c.JSON(http.StatusOK, gin.H{"data": merchant})
+}
