@@ -56,7 +56,7 @@
     </div>
 
     <!-- 数据统计卡片 -->
-    <div class="px-4 py-4 grid grid-cols-3 gap-3">
+    <div class="px-4 py-4 grid gap-3" :class="merchant.support_direct_sale ? 'grid-cols-3' : 'grid-cols-2'">
       <button
         v-if="merchant.support_direct_sale"
         type="button"
