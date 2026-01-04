@@ -129,6 +129,10 @@ func SavePaymentConfig(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
 			return
 		}
+		if err := config.DB.Where("merchant_id = ?", merchantID).First(&paymentConfig).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+			return
+		}
 	} else {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
 		return
@@ -383,6 +387,7 @@ func SaveShopSlug(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
 			return
 		}
+		shopSlug.Slug = slug
 	} else {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
 		return

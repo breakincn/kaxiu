@@ -93,7 +93,16 @@ const form = ref({
 })
 
 const goBack = () => {
-  router.back()
+  if (window.history.length > 1) {
+    router.back()
+    setTimeout(() => {
+      if (router.currentRoute.value.path === '/merchant/services') {
+        router.push('/merchant/settings')
+      }
+    }, 80)
+    return
+  }
+  router.push('/merchant/settings')
 }
 
 const load = async () => {
@@ -111,6 +120,7 @@ const load = async () => {
     }
   } catch (e) {
     console.error('加载商户服务配置失败', e)
+    alert(e.response?.data?.error || '加载失败')
   } finally {
     loading.value = false
   }
@@ -138,7 +148,7 @@ const save = async () => {
       avg_service_minutes: form.value.avg_service_minutes
     })
     alert('保存成功')
-    router.replace('/merchant')
+    await load()
   } catch (e) {
     alert(e.response?.data?.error || '保存失败')
   } finally {

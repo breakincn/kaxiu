@@ -2,7 +2,7 @@
   <div class="shop-manage">
     <!-- 顶部导航 -->
     <div class="header">
-      <button class="back-btn" @click="$router.push('/merchant')">
+      <button class="back-btn" @click="goBack">
         <span class="icon">←</span>
       </button>
       <h1>售卡管理</h1>
@@ -346,24 +346,27 @@ const qrcodeUrl = computed(() => {
   return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(shopFullUrl.value)}`
 })
 
-onMounted(() => {
-  merchantApi.getCurrentMerchant().then((res) => {
-    merchant.value = res?.data?.data || { support_direct_sale: false }
-    if (!merchant.value.support_direct_sale && ['payment', 'qrcode', 'orders'].includes(activeTab.value)) {
-      activeTab.value = 'templates'
-    }
-  }).catch(() => {
-    merchant.value = { support_direct_sale: false }
-    if (['payment', 'qrcode', 'orders'].includes(activeTab.value)) {
-      activeTab.value = 'templates'
-    }
-  })
-
+onMounted(async () => {
   const tabParam = route.query.tab
   if (tabParam && ['templates', 'payment', 'qrcode', 'orders'].includes(tabParam)) {
     activeTab.value = tabParam
   }
 
+  // 先加载商户信息
+  try {
+    const res = await merchantApi.getCurrentMerchant()
+    merchant.value = res?.data?.data || { support_direct_sale: false }
+    if (!merchant.value.support_direct_sale && ['payment', 'qrcode', 'orders'].includes(activeTab.value)) {
+      activeTab.value = 'templates'
+    }
+  } catch (e) {
+    merchant.value = { support_direct_sale: false }
+    if (['payment', 'qrcode', 'orders'].includes(activeTab.value)) {
+      activeTab.value = 'templates'
+    }
+  }
+
+  // 加载所有必要的数据
   loadTemplates()
   if (merchant.value.support_direct_sale) {
     loadPaymentConfig()
@@ -391,6 +394,19 @@ onBeforeUnmount(() => {
   }
 })
 
+function goBack() {
+  if (window.history.length > 1) {
+    router.back()
+    setTimeout(() => {
+      if (router.currentRoute.value.path === route.path) {
+        router.push('/merchant')
+      }
+    }, 80)
+    return
+  }
+  router.push('/merchant')
+}
+
 async function loadTemplates() {
   try {
     const res = await shopApi.getCardTemplates()
@@ -409,9 +425,18 @@ async function loadPaymentConfig() {
         wechat_qr_code: res.data.data.wechat_qr_code || '',
         default_method: res.data.data.default_method || ''
       }
+    } else {
+      paymentConfig.value = {
+        alipay_qr_code: '',
+        wechat_qr_code: '',
+        default_method: ''
+      }
     }
   } catch (e) {
     console.error('加载收款配置失败', e)
+    if (activeTab.value === 'payment') {
+      alert(e.response?.data?.error || '加载收款配置失败')
+    }
   }
 }
 
@@ -447,9 +472,16 @@ async function loadShopSlug() {
     const res = await shopApi.getShopSlug()
     if (res.data.data) {
       shopSlug.value = res.data.data.slug
+      slugChanged.value = false
+    } else {
+      shopSlug.value = ''
+      slugChanged.value = false
     }
   } catch (e) {
     console.error('加载店铺短链接失败', e)
+    if (activeTab.value === 'qrcode') {
+      alert(e.response?.data?.error || '加载店铺短链接失败')
+    }
   }
 }
 
@@ -459,6 +491,9 @@ async function loadOrders() {
     orders.value = res.data.data || []
   } catch (e) {
     console.error('加载直购订单失败', e)
+    if (activeTab.value === 'orders') {
+      alert(e.response?.data?.error || '加载直购订单失败')
+    }
   }
 }
 
@@ -583,7 +618,15 @@ async function savePaymentConfig() {
   
   saving.value = true
   try {
-    await shopApi.savePaymentConfig(config)
+    const res = await shopApi.savePaymentConfig(config)
+    const saved = res?.data?.data
+    if (saved) {
+      paymentConfig.value = {
+        alipay_qr_code: saved.alipay_qr_code || '',
+        wechat_qr_code: saved.wechat_qr_code || '',
+        default_method: saved.default_method || ''
+      }
+    }
     alert('保存成功')
   } catch (e) {
     alert(e.response?.data?.error || '保存失败')
@@ -600,7 +643,11 @@ async function saveShopSlug() {
   
   saving.value = true
   try {
-    await shopApi.saveShopSlug(shopSlug.value)
+    const res = await shopApi.saveShopSlug(shopSlug.value)
+    const saved = res?.data?.data
+    if (saved?.slug) {
+      shopSlug.value = saved.slug
+    }
     slugChanged.value = false
     alert('保存成功')
   } catch (e) {
@@ -837,6 +884,20 @@ function downloadQrcode() {
   box-sizing: border-box;
   background: var(--kb-surface);
   color: var(--kb-text);
+}
+
+.qr-preview {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--kb-border);
+  border-radius: 8px;
+  background: var(--kb-surface-muted);
+}
+
+.qr-preview img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
 }
 
 .form-tip {
