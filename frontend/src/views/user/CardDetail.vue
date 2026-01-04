@@ -7,7 +7,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
         </svg>
       </button>
-      <span class="font-medium text-gray-800">卡片详情</span>
+      <span class="font-medium text-gray-800">{{ card.merchant?.name || '卡片详情' }}</span>
     </header>
 
     <!-- 卡片详情 -->
@@ -173,7 +173,7 @@
     </div>
 
     <!-- 商户通知 -->
-    <div v-if="notices.length > 0" class="px-4 mt-4">
+    <div v-if="notices.length > 0" ref="noticeAnchor" class="px-4 mt-4">
       <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center gap-2 mb-4">
           <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -193,6 +193,9 @@
         </div>
       </div>
     </div>
+
+    <!-- 动态占位元素：确保页面可以滚动到通知区域 -->
+    <div v-if="notices.length > 0" :style="{ height: getBottomSpacerHeight() }"></div>
 
     <!-- 预约时间选择弹窗 -->
     <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeModal">
@@ -270,7 +273,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { cardApi, usageApi, noticeApi, appointmentApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
@@ -297,6 +300,8 @@ const verifyQrDataUrl = ref('')
 let verifyExpireTimer = null
 const appointing = ref(false)
 const canceling = ref(false)
+
+const noticeAnchor = ref(null)
 
 // 预约弹窗相关
 const showModal = ref(false)
@@ -338,6 +343,11 @@ const fetchNotices = async (merchantId) => {
   try {
     const res = await noticeApi.getMerchantNotices(merchantId, 5)
     notices.value = res.data.data || []
+    
+    // 如果需要滚动到通知区域
+    if (route.query.scrollToNotice === '1' && notices.value.length > 0) {
+      await scrollToNotice()
+    }
   } catch (err) {
     console.error('获取通知失败:', err)
   }
@@ -694,8 +704,31 @@ const shouldShowVerifyCode = () => {
   return false
 }
 
-onMounted(() => {
-  fetchCard()
+const getBottomSpacerHeight = () => {
+  // 当有通知时，添加底部占位高度，确保可以滚动到通知区域
+  const windowHeight = window.innerHeight || 800
+  const estimatedContentHeight = 700 // 估算页面内容高度
+  const minSpacerHeight = Math.max(windowHeight - estimatedContentHeight, 300)
+  return `${minSpacerHeight}px`
+}
+
+const scrollToNotice = async () => {
+  // 等待DOM更新，包括动态占位元素的渲染
+  await nextTick()
+  // 再次等待，确保占位元素高度计算完成
+  await new Promise(resolve => setTimeout(resolve, 100))
+  
+  const el = noticeAnchor.value
+  if (!el) return
+  try {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  } catch (_) {
+    // ignore
+  }
+}
+
+onMounted(async () => {
+  await fetchCard()
   // 如果有预约，启动倒计时
   if (appointment.value) {
     startCountdownTimer()

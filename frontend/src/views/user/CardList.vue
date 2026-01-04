@@ -112,7 +112,7 @@
             <div 
               v-if="item.pinnedNotice" 
               class="pt-2 border-t border-gray-100"
-              @click.stop="goToDetail(item.id)"
+              @click.stop="goToDetailWithNotice(item.id)"
             >
               <div class="flex items-center gap-2 mb-1">
                 <svg class="w-3 h-3 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -330,6 +330,10 @@ const fetchCards = async () => {
 
 const goToDetail = (id) => {
   router.push(`/user/cards/${id}`)
+}
+
+const goToDetailWithNotice = (id) => {
+  router.push(`/user/cards/${id}?scrollToNotice=1`)
 }
 
 const onCardClick = (id) => {
