@@ -365,11 +365,19 @@
             class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
             placeholder="按卡号搜索"
           />
-          <input
+          <select
             v-model="cardSearch.card_type"
             class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            placeholder="按卡片类型搜索"
-          />
+          >
+            <option value="">全部卡片类型</option>
+            <option
+              v-for="tpl in cardTemplates"
+              :key="tpl.id"
+              :value="tpl.name"
+            >
+              {{ tpl.name }}（{{ getCardTypeLabel(tpl.card_type) }}）
+            </option>
+          </select>
         </div>
 
         <div class="flex gap-2 mt-3">
@@ -520,6 +528,13 @@ const cardSearch = ref({
   card_type: ''
 })
 
+const cardTemplates = ref([])
+
+const getCardTypeLabel = (type) => {
+  const labels = { times: '次数卡', lesson: '课时卡', balance: '充值卡' }
+  return labels[type] || type
+}
+
 const goScanVerify = () => {
   router.push('/merchant/scan-verify')
 }
@@ -596,6 +611,16 @@ const fetchMerchant = async () => {
     merchant.value = res.data.data
   } catch (err) {
     console.error('获取商户信息失败:', err)
+  }
+}
+
+const loadCardTemplates = async () => {
+  try {
+    const res = await shopApi.getCardTemplates()
+    const list = res.data.data || []
+    cardTemplates.value = list.filter(t => t && (t.card_type === 'times' || t.card_type === 'lesson' || t.card_type === 'balance'))
+  } catch (e) {
+    cardTemplates.value = []
   }
 }
 
@@ -1143,6 +1168,7 @@ onMounted(() => {
     fetchQueueStatus()
     fetchPendingDirectPurchases()
     fetchAppointments()
+    loadCardTemplates() // 加载卡片模板
     if (merchant.value.support_appointment) {
       startCountdownTimer()
     }
