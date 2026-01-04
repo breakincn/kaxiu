@@ -6,19 +6,19 @@
           <span class="text-primary font-bold text-3xl">卡包</span>
           <span class="text-gray-400 text-sm">kabao.me</span>
         </div>
-        <p class="text-gray-500">商户端登录</p>
+        <p class="text-gray-500">{{ isTechnicianLogin ? '技师端登录' : '商户端登录' }}</p>
       </div>
 
       <div class="bg-white rounded-2xl p-6 shadow-lg">
-        <h2 class="text-xl font-bold text-gray-800 mb-6">商户管理后台</h2>
+        <h2 class="text-xl font-bold text-gray-800 mb-6">{{ isTechnicianLogin ? '技师登录' : '商户管理后台' }}</h2>
         
         <form @submit.prevent="handleLogin">
           <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">账号/手机号</label>
+            <label class="block text-gray-700 text-sm font-medium mb-2">{{ isTechnicianLogin ? '技师账号' : '账号/手机号' }}</label>
             <input
               v-model="phone"
               type="text"
-              placeholder="请输入账号/手机号"
+              :placeholder="isTechnicianLogin ? '请输入技师账号（如js0001）' : '请输入账号/手机号'"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
               required
             />
@@ -162,10 +162,17 @@
 
 <script setup>
 import { onBeforeUnmount, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { merchantApi, smsApi } from '../../api'
+import { useRoute, useRouter } from 'vue-router'
+import { merchantApi, shopApi, smsApi } from '../../api'
 
 const router = useRouter()
+const route = useRoute()
+
+const isTechnicianLogin = ref(false)
+const shopSlug = ref('')
+
+isTechnicianLogin.value = typeof route.params?.slug === 'string' && route.path.startsWith('/shop/')
+shopSlug.value = isTechnicianLogin.value ? String(route.params.slug) : ''
 const phone = ref('')
 const password = ref('')
 const loading = ref(false)
@@ -231,8 +238,9 @@ const handleLogin = async () => {
   loading.value = true
   
   try {
-    console.log('正在登录，手机号:', phone.value)
-    const res = await merchantApi.login(phone.value, password.value)
+    const res = isTechnicianLogin.value
+      ? await shopApi.technicianLogin(shopSlug.value, phone.value, password.value)
+      : await merchantApi.login(phone.value, password.value)
     console.log('登录响应:', res.data)
     console.log('完整响应对象:', res)
     

@@ -56,6 +56,11 @@ const routes = [
     component: () => import('../views/merchant/Login.vue')
   },
   {
+    path: '/shop/:slug/login',
+    name: 'TechnicianLogin',
+    component: () => import('../views/merchant/Login.vue')
+  },
+  {
     path: '/merchant',
     name: 'MerchantDashboard',
     component: () => import('../views/merchant/Dashboard.vue')

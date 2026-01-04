@@ -56,6 +56,11 @@ func InitDB() {
 	// 兼容历史数据：为旧用户补充默认 username，避免新增唯一索引导致异常
 	DB.Exec("UPDATE users SET username = CONCAT('u', id) WHERE username IS NULL OR username = ''")
 
+	// 技师账号唯一性调整：从 account 全局唯一改为 (merchant_id, account) 商户内唯一
+	// 尝试删除旧的 account 唯一索引（不同环境下索引名可能不同，忽略错误即可）
+	DB.Exec("ALTER TABLE `technicians` DROP INDEX `idx_technicians_account`")
+	DB.Exec("ALTER TABLE `technicians` DROP INDEX `account`")
+
 	// 添加表注释
 	DB.Exec("ALTER TABLE `users` COMMENT = '用户表'")
 	DB.Exec("ALTER TABLE `merchants` COMMENT = '商户表'")

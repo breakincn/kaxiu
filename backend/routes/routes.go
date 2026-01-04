@@ -92,6 +92,7 @@ func SetupRoutes(r *gin.Engine) {
 	// 公开接口（无需登录）
 	api.GET("/shop/:slug", handlers.GetShopInfo)
 	api.GET("/shop/id/:id", handlers.GetShopInfoByID)
+	api.POST("/shop/:slug/login", handlers.TechnicianLogin)
 
 	// 商户端：收款配置
 	auth.GET("/merchant/payment-config", handlers.GetPaymentConfig)

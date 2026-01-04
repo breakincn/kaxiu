@@ -116,55 +116,7 @@ func MerchantLogin(c *gin.Context) {
 	account := strings.TrimSpace(input.Phone)
 	password := strings.TrimSpace(input.Password)
 	if strings.HasPrefix(strings.ToLower(account), "js") {
-		var tech models.Technician
-		if err := config.DB.Where("account = ?", account).First(&tech).Error; err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "账号或密码错误"})
-			return
-		}
-
-		if err := bcrypt.CompareHashAndPassword([]byte(tech.Password), []byte(password)); err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "账号或密码错误"})
-			return
-		}
-
-		var merchant models.Merchant
-		if err := config.DB.First(&merchant, tech.MerchantID).Error; err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "商户不存在"})
-			return
-		}
-
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-			"merchant_id":   merchant.ID,
-			"technician_id": tech.ID,
-			"account":       tech.Account,
-			"type":          "technician",
-			"exp":           time.Now().Add(time.Hour * 24 * 7).Unix(),
-		})
-
-		tokenString, err := token.SignedString([]byte("your-secret-key"))
-		if err != nil {
-			log.Printf("生成token失败: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "登录失败"})
-			return
-		}
-
-		log.Printf("技师登录成功: ID=%d, 账号=%s, merchant_id=%d", tech.ID, tech.Account, merchant.ID)
-
-		c.JSON(http.StatusOK, gin.H{
-			"token": tokenString,
-			"merchant": gin.H{
-				"id":    merchant.ID,
-				"phone": merchant.Phone,
-				"name":  merchant.Name,
-				"type":  merchant.Type,
-			},
-			"technician": gin.H{
-				"id":      tech.ID,
-				"name":    tech.Name,
-				"code":    tech.Code,
-				"account": tech.Account,
-			},
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "技师账号请使用店铺登录地址 /shop/:slug/login"})
 		return
 	}
 

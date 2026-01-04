@@ -5,11 +5,15 @@ const api = axios.create({
   timeout: 10000
 })
 
+const isTechnicianLoginPath = (pathname) => /^\/shop\/[^/]+\/login$/.test(pathname)
+
+const isMerchantContextPath = (pathname) => pathname.startsWith('/merchant') || isTechnicianLoginPath(pathname)
+
 // 请求拦截器 - 添加 token
 api.interceptors.request.use(
   (config) => {
     // 根据当前路径判断是用户还是商户
-    const isMerchant = window.location.pathname.startsWith('/merchant')
+    const isMerchant = isMerchantContextPath(window.location.pathname)
     const token = isMerchant 
       ? localStorage.getItem('merchantToken')
       : localStorage.getItem('userToken')
@@ -32,7 +36,8 @@ api.interceptors.response.use(
     if (error.response && error.response.status === 401) {
       console.log('收到401错误，清除localStorage并跳转登录页')
       // 根据当前路径判断跳转到哪个登录页
-      const isMerchant = window.location.pathname.startsWith('/merchant')
+      const pathname = window.location.pathname
+      const isMerchant = isMerchantContextPath(pathname)
       
       if (isMerchant) {
         // 商户端，清空商户登录信息
@@ -41,7 +46,11 @@ api.interceptors.response.use(
         localStorage.removeItem('merchantName')
         localStorage.removeItem('merchantPhone')
         import('../router').then(({ default: router }) => {
-          router.replace('/merchant/login')
+          if (isTechnicianLoginPath(pathname)) {
+            router.replace(pathname)
+          } else {
+            router.replace('/merchant/login')
+          }
         })
       } else {
         // 用户端，清空用户登录信息
@@ -158,6 +167,9 @@ export const shopApi = {
   // 公开接口：店铺信息
   getShopInfo: (slug) => api.get(`/shop/${slug}`),
   getShopInfoByID: (id) => api.get(`/shop/id/${id}`),
+
+  // 技师端：通过店铺短链接登录
+  technicianLogin: (slug, account, password) => api.post(`/shop/${slug}/login`, { account, password }),
   
   // 用户端：直购流程
   createDirectPurchase: (data) => api.post('/direct-purchase', data),
