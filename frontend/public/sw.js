@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kabao-static-v1'
+const CACHE_NAME = 'kabao-static-v2'
 
 self.addEventListener('install', (event) => {
   self.skipWaiting()
@@ -28,6 +28,13 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request
   if (req.method !== 'GET') return
+
+  const url = new URL(req.url)
+  if (url.origin === self.location.origin && url.pathname.startsWith('/api/')) {
+    const noStoreReq = new Request(req, { cache: 'no-store' })
+    event.respondWith(fetch(noStoreReq))
+    return
+  }
 
   event.respondWith(
     caches.match(req).then((cached) => {
