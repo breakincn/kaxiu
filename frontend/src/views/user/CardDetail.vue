@@ -66,7 +66,7 @@
             </svg>
             <span class="font-medium" :class="getBusinessStatusColor()">营业时间</span>
           </div>
-          <span v-if="!isMerchantOpen()" class="text-red-500 text-sm font-medium">打烊</span>
+          <span v-if="!isMerchantOpen()" class="bg-red-500 text-white text-sm font-medium px-3 py-1 rounded">打烊</span>
         </div>
         <div class="text-sm leading-relaxed" :class="getBusinessStatusColor()" v-html="getMerchantBusinessHours()"></div>
       </div>
