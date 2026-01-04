@@ -156,7 +156,10 @@ export const shopApi = {
   // 用户端：直购流程
   createDirectPurchase: (data) => api.post('/direct-purchase', data),
   confirmDirectPurchase: (orderNo, data) => api.post(`/direct-purchase/${orderNo}/confirm`, data),
-  getDirectPurchases: () => api.get('/direct-purchases')
+  getDirectPurchases: () => api.get('/direct-purchases'),
+  
+  // 商户营业状态
+  toggleBusinessStatus: (data) => api.put('/merchant/business-status', data)
 }
 
 export default api

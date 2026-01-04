@@ -55,6 +55,21 @@
       </div>
     </div>
 
+    <!-- 营业状态按钮 -->
+    <div class="px-4 pt-4">
+      <button
+        @click="showBusinessStatusModal = true"
+        :class="[
+          'w-full py-3.5 rounded-lg font-medium text-base transition-colors',
+          merchant.is_open
+            ? 'bg-green-500 text-white hover:bg-green-600'
+            : 'bg-red-500 text-white hover:bg-red-600'
+        ]"
+      >
+        {{ merchant.is_open ? '营业中' : '打烊' }}
+      </button>
+    </div>
+
     <!-- 数据统计卡片 -->
     <div class="px-4 py-4 grid gap-3" :class="merchant.support_direct_sale ? 'grid-cols-3' : 'grid-cols-2'">
       <button
@@ -473,6 +488,42 @@
         </div>
       </div>
     </div>
+
+    <!-- 营业状态切换弹窗 -->
+    <div v-if="showBusinessStatusModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showBusinessStatusModal = false">
+      <div class="bg-white rounded-2xl w-11/12 max-w-sm overflow-hidden">
+        <!-- 弹窗头部 -->
+        <div class="px-5 py-4 border-b">
+          <h3 class="font-medium text-lg text-gray-800">切换营业状态</h3>
+        </div>
+
+        <!-- 弹窗内容 -->
+        <div class="px-5 py-6">
+          <p class="text-gray-600 mb-6">
+            {{ merchant.is_open ? '确定要切换为打烊状态吗？' : '确定要切换为营业中状态吗？' }}
+          </p>
+          <div class="flex gap-3">
+            <button
+              @click="showBusinessStatusModal = false"
+              class="flex-1 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+            >
+              取消
+            </button>
+            <button
+              @click="confirmToggleBusinessStatus"
+              :class="[
+                'flex-1 py-2.5 rounded-lg font-medium transition-colors',
+                merchant.is_open
+                  ? 'bg-red-500 text-white hover:bg-red-600'
+                  : 'bg-green-500 text-white hover:bg-green-600'
+              ]"
+            >
+              {{ merchant.is_open ? '确认打烊' : '确认营业' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -529,6 +580,8 @@ const cardSearch = ref({
 })
 
 const cardTemplates = ref([])
+
+const showBusinessStatusModal = ref(false)
 
 const getCardTypeLabel = (type) => {
   const labels = { times: '次数卡', lesson: '课时卡', balance: '充值卡' }
@@ -870,6 +923,18 @@ const togglePin = async (id) => {
   try {
     await noticeApi.togglePinNotice(id)
     fetchNotices()
+  } catch (err) {
+    alert(err.response?.data?.error || '操作失败')
+  }
+}
+
+const confirmToggleBusinessStatus = async () => {
+  try {
+    const newStatus = !merchant.value.is_open
+    await merchantApi.toggleBusinessStatus({ is_open: newStatus })
+    merchant.value.is_open = newStatus
+    showBusinessStatusModal.value = false
+    alert(newStatus ? '已切换为营业中' : '已切换为打烊')
   } catch (err) {
     alert(err.response?.data?.error || '操作失败')
   }

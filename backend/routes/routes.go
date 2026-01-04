@@ -45,6 +45,7 @@ func SetupRoutes(r *gin.Engine) {
 	auth.POST("/merchant/bind-phone", handlers.BindMerchantPhone)
 	auth.PUT("/merchant/services", handlers.UpdateCurrentMerchantServices)
 	auth.PUT("/merchant/info", handlers.UpdateMerchantInfo)
+	auth.PUT("/merchant/business-status", handlers.ToggleMerchantBusinessStatus)
 
 	// 卡片相关
 	auth.GET("/cards", handlers.GetCards)

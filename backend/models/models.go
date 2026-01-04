@@ -45,6 +45,8 @@ type Merchant struct {
 	City               string     `json:"city" gorm:"size:50;default:'';comment:城市"`
 	District           string     `json:"district" gorm:"size:50;default:'';comment:区县"`
 	Address            string     `json:"address" gorm:"size:200;default:'';comment:详细地址（街道门牌号）"`
+	// 营业状态
+	IsOpen             bool       `json:"is_open" gorm:"default:true;comment:营业状态（0-打烊，1-营业中）"`
 	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 }
 

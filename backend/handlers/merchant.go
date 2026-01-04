@@ -305,6 +305,42 @@ func GetCurrentUserMerchant(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": merchant})
 }
 
+// ToggleMerchantBusinessStatus 切换商户营业状态
+func ToggleMerchantBusinessStatus(c *gin.Context) {
+	merchantIDAny, exists := c.Get("merchant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+
+	var input struct {
+		IsOpen bool `json:"is_open"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 使用 Select 方法确保布尔值 false 也能被更新
+	if err := config.DB.Model(&merchant).Select("is_open").Updates(map[string]interface{}{"is_open": input.IsOpen}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	config.DB.First(&merchant, merchantID)
+	c.JSON(http.StatusOK, gin.H{"data": merchant})
+}
+
 func BindMerchantPhone(c *gin.Context) {
 	merchantIDAny, exists := c.Get("merchant_id")
 	if !exists {

@@ -59,13 +59,16 @@
     <!-- 营业时间 -->
     <div v-if="getMerchantBusinessHours()" class="px-4 mt-4">
       <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
-        <div class="flex items-center gap-2 mb-3">
-          <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-          <span class="font-medium text-gray-800">营业时间</span>
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <svg :class="getBusinessStatusColor()" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span class="font-medium" :class="getBusinessStatusColor()">营业时间</span>
+          </div>
+          <span v-if="!isMerchantOpen()" class="text-red-500 text-sm font-medium">打烊</span>
         </div>
-        <div class="text-gray-700 text-sm leading-relaxed" v-html="getMerchantBusinessHours()"></div>
+        <div class="text-sm leading-relaxed" :class="getBusinessStatusColor()" v-html="getMerchantBusinessHours()"></div>
       </div>
     </div>
 
@@ -762,6 +765,18 @@ const getMerchantBusinessHours = () => {
   }
   
   return hours.length > 0 ? hours.join('<br>') : ''
+}
+
+// 判断商户是否营业中
+const isMerchantOpen = () => {
+  if (!card.value || !card.value.merchant) return true
+  // 默认为true，如果明确为false才显示打烊
+  return card.value.merchant.is_open !== false
+}
+
+// 获取营业状态颜色
+const getBusinessStatusColor = () => {
+  return isMerchantOpen() ? 'text-green-500' : 'text-red-500'
 }
 
 const getBottomSpacerHeight = () => {
