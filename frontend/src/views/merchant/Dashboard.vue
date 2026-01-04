@@ -422,19 +422,19 @@
           <button
             v-if="canSellCards()"
             type="button"
-            @click="openSellModal"
+            @click="toggleView"
             class="px-4 py-2 bg-slate-600 text-white text-sm rounded-lg"
           >
-            售卡
+            {{ currentView === 'sellTemplates' ? '查询卡片' : '售卡' }}
           </button>
         </div>
       </div>
 
-      <div v-if="cardsLoading" class="text-center py-12 text-gray-400">
+      <div v-if="currentView === 'cards' && cardsLoading" class="text-center py-12 text-gray-400">
         加载中...
       </div>
 
-      <div v-else>
+      <div v-else-if="currentView === 'cards'">
         <div v-for="(card, index) in issuedCards" :key="card.id" class="mb-6">
           <div
             @click="toggleCardExpand(card.id)"
@@ -506,6 +506,40 @@
           暂无已发卡
         </div>
       </div>
+
+      <!-- 售卡模板列表 -->
+      <div v-if="currentView === 'sellTemplates'">
+        <div v-if="sellTemplates.length === 0" class="text-center py-12 text-gray-400">
+          暂无在售卡片模板
+        </div>
+        
+        <div v-else class="template-list">
+          <div 
+            v-for="tpl in sellTemplates" 
+            :key="tpl.id" 
+            class="template-item"
+          >
+            <div
+              class="template-card"
+              @click="openSellQrModal(tpl)"
+            >
+              <div class="template-info">
+                <div class="template-name">{{ tpl.name }}</div>
+                <div class="template-meta">
+                  <span class="type-tag">{{ getCardTypeLabel(tpl.card_type) }}</span>
+                  <span class="price">¥{{ (tpl.price / 100).toFixed(2) }}</span>
+                </div>
+                <div class="template-detail">
+                  <span v-if="tpl.card_type !== 'balance'">{{ tpl.total_times }}次</span>
+                  <span v-else>充值{{ (tpl.recharge_amount / 100).toFixed(0) }}元</span>
+                  <span v-if="tpl.valid_days > 0">· {{ tpl.valid_days }}天有效</span>
+                  <span v-else>· 永久有效</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 营业状态切换弹窗 -->
@@ -544,67 +578,39 @@
       </div>
     </div>
 
-    <div v-if="showSellModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeSellModal">
-      <div class="bg-white rounded-2xl w-11/12 max-w-sm overflow-hidden">
-        <div class="px-5 py-4 border-b flex items-center justify-between">
-          <h3 class="font-medium text-lg text-gray-800">选择在售卡片</h3>
-          <button type="button" class="text-gray-400" @click="closeSellModal">
+    <!-- 售卡二维码弹窗 -->
+    <div v-if="showSellQrModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 select-none" @click.self="closeSellQrModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-lg overflow-hidden">
+        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
+          <h3 class="font-medium text-lg">售卡二维码</h3>
+          <button @click="closeSellQrModal" class="text-white">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
           </button>
         </div>
 
-        <div class="px-5 py-4 max-h-[70vh] overflow-y-auto">
-          <div v-if="activeSellTemplates.length === 0" class="text-center text-gray-400 py-10">
-            暂无在售卡片
+        <div class="px-5 py-5">
+          <div class="text-center">
+            <div class="text-gray-800 font-medium">{{ sellSelectedTemplateName }}</div>
+            <div class="text-gray-500 text-sm mt-1">请客户扫码购买</div>
           </div>
 
-          <div v-else class="space-y-3">
-            <button
-              v-for="tpl in activeSellTemplates"
-              :key="tpl.id"
-              type="button"
-              class="w-full text-left border border-gray-100 rounded-xl p-4 active:scale-[0.99] transition-transform"
-              @click="openSellQr(tpl)"
+          <div class="mt-4 flex justify-center">
+            <div
+              class="select-none"
+              style="-webkit-touch-callout: none; -webkit-user-select: none; user-select: none; pointer-events: none; touch-action: none;"
+              @touchstart.prevent
+              @touchmove.prevent
+              @touchend.prevent
+              @contextmenu.prevent
             >
-              <div class="flex items-center justify-between">
-                <div class="text-gray-800 font-medium">{{ tpl.name }}</div>
-                <div class="text-red-500 font-bold">¥{{ (tpl.price / 100).toFixed(2) }}</div>
-              </div>
-              <div class="text-gray-500 text-sm mt-1">
-                {{ getCardTypeLabel(tpl.card_type) }}
-                <span v-if="tpl.card_type !== 'balance'"> · {{ tpl.total_times }}次</span>
-                <span v-else> · 充{{ (tpl.recharge_amount / 100).toFixed(0) }}元</span>
-                <span v-if="tpl.valid_days > 0"> · {{ tpl.valid_days }}天有效</span>
-                <span v-else> · 永久有效</span>
-              </div>
-            </button>
+              <canvas ref="sellQrCanvas" class="w-56 h-56" style="-webkit-touch-callout: none;"></canvas>
+            </div>
           </div>
-        </div>
-      </div>
-    </div>
 
-    <div v-if="showSellQrModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeSellQrModal">
-      <div class="bg-white rounded-2xl w-11/12 max-w-sm overflow-hidden">
-        <div class="px-5 py-4 border-b flex items-center justify-between">
-          <h3 class="font-medium text-lg text-gray-800">售卡二维码</h3>
-          <button type="button" class="text-gray-400" @click="closeSellQrModal">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-
-        <div class="px-5 py-6">
-          <div class="text-center text-gray-700 font-medium">
-            {{ sellSelectedTemplateName }}
-          </div>
-          <div class="text-center text-gray-500 text-sm mt-1">请客户扫码购买</div>
-
-          <div class="mt-5 flex justify-center">
-            <img v-if="sellQrDataUrl" :src="sellQrDataUrl" alt="售卡二维码" class="w-56 h-56" />
-            <div v-else class="w-56 h-56 flex items-center justify-center text-gray-400">生成中...</div>
+          <div class="mt-4 text-center text-gray-400 text-xs">
+            请向客户出示此二维码用于购买卡片
           </div>
         </div>
       </div>
@@ -635,10 +641,12 @@ const currentTab = ref('queue')
 const routeUserCode = ref('')
 const userCodeAnchor = ref(null)
 
-const showSellModal = ref(false)
+const showSellView = ref(false)
+const showSellQrView = ref(false)
 const showSellQrModal = ref(false)
 const sellSelectedTemplate = ref(null)
 const sellQrDataUrl = ref('')
+const sellQrCanvas = ref(null)
 
 const activeSellTemplates = computed(() => {
   return (cardTemplates.value || []).filter(t => t && t.is_active)
@@ -683,7 +691,9 @@ const noticeForm = ref({
   content: ''
 })
 
+const currentView = ref('cards') // 'cards' | 'sellTemplates'
 const issuedCards = ref([])
+const sellTemplates = ref([])
 const cardsLoading = ref(false)
 const cardsError = ref('')
 const expandedCardId = ref(null)
@@ -786,54 +796,67 @@ const loadCardTemplates = async () => {
     const res = await shopApi.getCardTemplates()
     const list = res.data.data || []
     cardTemplates.value = list.filter(t => t && (t.card_type === 'times' || t.card_type === 'lesson' || t.card_type === 'balance'))
+    sellQrDataUrl.value = ''
   } catch (e) {
-    cardTemplates.value = []
+    console.error('加载卡片模板失败', e)
   }
 }
 
-const openSellModal = async () => {
-  if (!canSellCards()) {
-    alert('仅技师账号可售卡')
-    return
+const toggleView = () => {
+  if (currentView.value === 'cards') {
+    currentView.value = 'sellTemplates'
+    loadSellTemplates()
+  } else {
+    currentView.value = 'cards'
   }
-  showSellModal.value = true
 }
 
-const closeSellModal = () => {
-  showSellModal.value = false
+const loadSellTemplates = async () => {
+  try {
+    const res = await shopApi.getCardTemplates()
+    sellTemplates.value = (res.data.data || []).filter(t => t && t.is_active)
+  } catch (e) {
+    console.error('加载售卡模板失败', e)
+    sellTemplates.value = []
+  }
 }
 
-const openSellQr = async (tpl) => {
+const openSellQrModal = async (tpl) => {
   if (!tpl || !tpl.id) return
   const techId = getTechnicianId()
   if (!techId) {
-    alert('技师信息缺失，请重新登录')
+    alert('技师信息丢失')
     return
   }
+  
   sellSelectedTemplate.value = tpl
-  showSellModal.value = false
   showSellQrModal.value = true
+  
+  // 等待DOM更新
+  await nextTick()
+  
   try {
-    const url = `${window.location.origin}/shop/id/${merchantId.value}?card_template_id=${encodeURIComponent(tpl.id)}&tech_id=${encodeURIComponent(techId)}`
-    sellQrDataUrl.value = await QRCode.toDataURL(url, {
-      margin: 1,
-      scale: 8,
-      errorCorrectionLevel: 'M'
-    })
-  } catch (_) {
-    sellQrDataUrl.value = ''
+    const url = `${window.location.origin}/shop?card_template_id=${tpl.id}&tech_id=${techId}`
+    const canvas = sellQrCanvas.value
+    if (canvas) {
+      await QRCode.toCanvas(canvas, url, {
+        width: 224,
+        margin: 1,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF'
+        }
+      })
+    }
+  } catch (e) {
+    console.error('生成售卡二维码失败', e)
+    alert('生成二维码失败')
   }
 }
 
 const closeSellQrModal = () => {
   showSellQrModal.value = false
   sellSelectedTemplate.value = null
-  sellQrDataUrl.value = ''
-}
-
-const searchCards = async () => {
-  expandedCardId.value = null
-  await fetchIssuedCards()
 }
 
 const resetCardSearch = async () => {
@@ -1417,3 +1440,75 @@ onActivated(() => {
   fetchMerchant()
 })
 </script>
+
+<style scoped>
+/* 售卡模板样式 */
+.template-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.template-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.template-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: var(--kb-surface);
+  border-radius: 12px;
+  box-shadow: var(--kb-shadow);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.template-card:hover {
+  transform: translateY(-2px);
+}
+
+.template-card:active {
+  transform: scale(0.98);
+}
+
+.template-info {
+  flex: 1;
+}
+
+.template-name {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--kb-text);
+}
+
+.template-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.type-tag {
+  padding: 2px 8px;
+  background: var(--kb-primary-soft);
+  color: var(--kb-primary-dark);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.price {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--kb-text);
+}
+
+.template-detail {
+  font-size: 12px;
+  color: var(--kb-text-muted);
+}
+</style>
