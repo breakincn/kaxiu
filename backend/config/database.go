@@ -261,8 +261,10 @@ func initPermissions() {
 		{Key: "merchant.tech.manage", Name: "管理技师账号", Group: "客服管理", Description: "新增/编辑/禁用/删除技师账号", Sort: 10},
 		{Key: "merchant.card.issue", Name: "发卡/开卡", Group: "卡片", Description: "创建卡片、发卡", Sort: 20},
 		{Key: "merchant.card.verify", Name: "核销", Group: "卡片", Description: "核销会员卡", Sort: 30},
+		{Key: "merchant.direct_sale.manage", Name: "售卡管理", Group: "售卡", Description: "管理直购售卡配置、模板、订单等", Sort: 35},
 		{Key: "merchant.merchant.update", Name: "修改商户信息", Group: "商户", Description: "更新商户基本信息", Sort: 40},
 		{Key: "merchant.service.update", Name: "修改商户服务设置", Group: "商户", Description: "更新商户服务能力开关", Sort: 50},
+		{Key: "merchant.business_status.update", Name: "切换营业状态", Group: "商户", Description: "操作营业中/打烊", Sort: 60},
 	}
 
 	for _, p := range defaults {

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"kabao/config"
+	"kabao/middleware"
 	"kabao/models"
 	"net/http"
 	"strings"
@@ -9,6 +10,39 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+func GetMyPermissions(c *gin.Context) {
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+	if authType == "merchant" {
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{"permission_keys": []string{"*"}}})
+		return
+	}
+	if authType != "technician" {
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{"permission_keys": []string{}}})
+		return
+	}
+
+	var perms []models.Permission
+	config.DB.Order("`group` asc, sort asc, id asc").Find(&perms)
+
+	keys := make([]string, 0, len(perms))
+	for _, p := range perms {
+		if strings.TrimSpace(p.Key) == "" {
+			continue
+		}
+		ok, err := middleware.HasPermission(c, p.Key)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "权限读取失败"})
+			return
+		}
+		if ok {
+			keys = append(keys, p.Key)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"permission_keys": keys}})
+}
 
 func GetMerchantRolePermissionOverrides(c *gin.Context) {
 	authType, _ := c.Get("auth_type")

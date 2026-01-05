@@ -163,7 +163,7 @@
 <script setup>
 import { onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { merchantApi, shopApi, smsApi } from '../../api'
+import { ensureMerchantPermissionsLoaded, merchantApi, shopApi, smsApi } from '../../api'
 
 import { setMerchantActiveAuth, setTechnicianShopSlug } from '../../utils/auth'
 
@@ -284,6 +284,8 @@ const handleLogin = async () => {
       sessionStorage.removeItem('technicianCode')
       sessionStorage.removeItem('technicianAccount')
     }
+
+    await ensureMerchantPermissionsLoaded()
     
     console.log('登录信息已保存，准备跳转...')
     console.log('merchantToken:', localStorage.getItem('merchantToken'))

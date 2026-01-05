@@ -57,3 +57,31 @@ export const clearMerchantAuth = () => {
   localStorage.removeItem('merchantPhone')
   sessionStorage.removeItem('merchantActiveAuth')
 }
+
+export const getMerchantPermissionKeys = () => {
+  try {
+    const raw = sessionStorage.getItem('merchantPermissionKeys')
+    if (!raw) return []
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? arr : []
+  } catch (e) {
+    return []
+  }
+}
+
+export const setMerchantPermissionKeys = (keys) => {
+  const arr = Array.isArray(keys) ? keys : []
+  sessionStorage.setItem('merchantPermissionKeys', JSON.stringify(arr))
+}
+
+export const clearMerchantPermissionKeys = () => {
+  sessionStorage.removeItem('merchantPermissionKeys')
+}
+
+export const hasMerchantPermission = (key) => {
+  const k = String(key || '').trim()
+  if (!k) return false
+  const keys = getMerchantPermissionKeys()
+  if (keys.includes('*')) return true
+  return keys.includes(k)
+}

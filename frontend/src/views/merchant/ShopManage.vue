@@ -289,6 +289,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
 import { shopApi } from '../../api/index.js'
 
+import { hasMerchantPermission } from '../../utils/auth'
+
 const route = useRoute()
 const router = useRouter()
 
@@ -347,6 +349,12 @@ const qrcodeUrl = computed(() => {
 })
 
 onMounted(async () => {
+  if (!hasMerchantPermission('merchant.direct_sale.manage')) {
+    alert('无权限')
+    goBack()
+    return
+  }
+
   const tabParam = route.query.tab
   if (tabParam && ['templates', 'payment', 'qrcode', 'orders'].includes(tabParam)) {
     activeTab.value = tabParam

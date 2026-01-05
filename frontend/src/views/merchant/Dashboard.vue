@@ -40,6 +40,7 @@
         </div>
         <div class="flex gap-2">
           <router-link
+            v-if="canDirectSaleManage"
             to="/merchant/shop-manage"
             class="px-3 py-2 bg-slate-600 text-white rounded-lg text-sm font-medium hover:bg-slate-700 transition-colors"
           >
@@ -58,6 +59,7 @@
     <!-- 营业状态按钮 -->
     <div class="px-4 pt-4">
       <button
+        v-if="canBusinessStatusUpdate"
         @click="showBusinessStatusModal = true"
         :class="[
           'w-full py-3.5 rounded-lg font-medium text-base transition-colors',
@@ -621,11 +623,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted, onActivated, watch, nextTick, computed } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
-import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi, shopApi } from '../../api'
+import { ensureMerchantPermissionsLoaded, merchantApi, cardApi, appointmentApi, noticeApi, usageApi, shopApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
 
-import { getMerchantId } from '../../utils/auth'
+import { getMerchantId, hasMerchantPermission } from '../../utils/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -639,6 +641,9 @@ const prevTopScanBodyStyle = {
 }
 const merchantId = ref(null)
 const merchant = ref({})
+
+const canBusinessStatusUpdate = computed(() => hasMerchantPermission('merchant.business_status.update'))
+const canDirectSaleManage = computed(() => hasMerchantPermission('merchant.direct_sale.manage'))
 const currentTab = ref('queue')
 const routeUserCode = ref('')
 const userCodeAnchor = ref(null)
@@ -1399,6 +1404,8 @@ watch(
 onMounted(() => {
   console.log('Merchant Dashboard mounted')
   console.log('localStorage merchantId:', localStorage.getItem('merchantId'))
+
+  ensureMerchantPermissionsLoaded()
   
   // 检查查询参数，自动切换到指定Tab
   const tabParam = route.query.tab

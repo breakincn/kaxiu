@@ -37,7 +37,7 @@
       </div>
       
       <!-- 温馨提示 -->
-      <div class="mt-4 px-4 py-3 bg-yellow-50 rounded-lg">
+      <div v-if="!isTechnician()" class="mt-4 px-4 py-3 bg-yellow-50 rounded-lg">
         <p class="text-sm text-yellow-600">
           <svg class="w-4 h-4 inline-block mr-1" fill="currentColor" viewBox="0 0 20 20">
             <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
@@ -52,7 +52,7 @@
       <div class="bg-white rounded-xl shadow-sm p-6">
         <form @submit.prevent="handleSubmit" class="space-y-4">
           <!-- 换绑时需要验证密码 -->
-          <div v-if="currentPhone">
+          <div v-if="currentPhone && !isTechnician()">
             <label class="block text-sm font-medium text-gray-700 mb-2">商户密码</label>
             <input
               v-model="password"
@@ -122,7 +122,7 @@
           <svg class="w-4 h-4 inline-block mr-1" fill="currentColor" viewBox="0 0 20 20">
             <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
           </svg>
-          绑定手机号后，可以使用手机号登录商户管理后台
+          {{ isTechnician() ? '绑定手机号后，将用于该账号的联系方式' : '绑定手机号后，可以使用手机号登录商户管理后台' }}
         </p>
       </div>
     </div>
@@ -134,6 +134,8 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
 
+import { getMerchantActiveAuth } from '../../utils/auth'
+
 const router = useRouter()
 const loading = ref(true)
 const currentPhone = ref('')
@@ -144,14 +146,20 @@ const password = ref('')
 const countdown = ref(0)
 let timer = null
 
-// 获取当前商户信息
+const isTechnician = () => getMerchantActiveAuth() === 'technician'
+
+// 获取当前账号信息
 const fetchMerchantInfo = async () => {
   loading.value = true
   try {
-    const response = await merchantApi.getCurrentMerchant()
-    const merchant = response.data.data
-    if (merchant.phone) {
-      currentPhone.value = merchant.phone
+    if (isTechnician()) {
+      const response = await merchantApi.getCurrentTechnician()
+      const tech = response.data.data
+      if (tech.phone) currentPhone.value = tech.phone
+    } else {
+      const response = await merchantApi.getCurrentMerchant()
+      const merchant = response.data.data
+      if (merchant.phone) currentPhone.value = merchant.phone
     }
   } catch (error) {
     console.error('获取商户信息失败:', error)
@@ -197,7 +205,7 @@ const sendCode = async () => {
     const response = await import('../../api').then(({ default: api }) => 
       api.post('/sms/send', {
         phone: phone.value,
-        purpose: 'merchant_bind_phone'
+        purpose: isTechnician() ? 'technician_bind_phone' : 'merchant_bind_phone'
       })
     )
     
@@ -235,14 +243,18 @@ const handleSubmit = async () => {
     return
   }
   
-  // 换绑时需要验证密码
-  if (currentPhone.value && !password.value) {
+  // 换绑时需要验证密码（仅商户账号）
+  if (!isTechnician() && currentPhone.value && !password.value) {
     alert('请输入商户密码')
     return
   }
 
   try {
-    await merchantApi.bindPhone(phone.value, code.value, password.value)
+    if (isTechnician()) {
+      await merchantApi.bindTechnicianPhone(phone.value, code.value)
+    } else {
+      await merchantApi.bindPhone(phone.value, code.value, password.value)
+    }
     
     alert(currentPhone.value ? '更换成功！' : '绑定成功！')
     // 更新当前手机号
@@ -252,8 +264,10 @@ const handleSubmit = async () => {
     code.value = ''
     password.value = ''
     
-    // 更新localStorage中的手机号
-    localStorage.setItem('merchantPhone', phone.value)
+    // 更新localStorage中的手机号（仅商户账号）
+    if (!isTechnician()) {
+      localStorage.setItem('merchantPhone', phone.value)
+    }
   } catch (error) {
     alert(error.response?.data?.error || (currentPhone.value ? '更换失败' : '绑定失败'))
   }

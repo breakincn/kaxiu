@@ -52,6 +52,7 @@ func SetupRoutes(r *gin.Engine) {
 	auth.PUT("/user/nickname", handlers.UpdateUserNickname)
 	auth.GET("/user/code", handlers.GetUserCode)
 	auth.GET("/merchant/users/search", handlers.MerchantSearchUsers)
+	auth.GET("/merchant/permissions", handlers.GetMyPermissions)
 
 	// 商户相关
 	auth.GET("/merchants", handlers.GetMerchants)
@@ -62,7 +63,7 @@ func SetupRoutes(r *gin.Engine) {
 	auth.POST("/merchant/bind-phone", handlers.BindMerchantPhone)
 	auth.PUT("/merchant/services", middleware.RequirePermission("merchant.service.update"), handlers.UpdateCurrentMerchantServices)
 	auth.PUT("/merchant/info", middleware.RequirePermission("merchant.merchant.update"), handlers.UpdateMerchantInfo)
-	auth.PUT("/merchant/business-status", handlers.ToggleMerchantBusinessStatus)
+	auth.PUT("/merchant/business-status", middleware.RequirePermission("merchant.business_status.update"), handlers.ToggleMerchantBusinessStatus)
 
 	// 商户端：角色权限微调（仅商户可操作，且 role.allow_permission_adjust=true）
 	auth.GET("/merchant/role-permissions/:roleKey", handlers.GetMerchantRolePermissionOverrides)
@@ -117,24 +118,28 @@ func SetupRoutes(r *gin.Engine) {
 	api.GET("/shop/id/:id", handlers.GetShopInfoByID)
 	api.POST("/shop/:slug/login", handlers.TechnicianLogin)
 
+	// 技师（客服类型账号）自身账号
+	auth.GET("/technician/me", handlers.GetCurrentTechnician)
+	auth.POST("/technician/bind-phone", handlers.BindTechnicianPhone)
+
 	// 商户端：收款配置
-	auth.GET("/merchant/payment-config", handlers.GetPaymentConfig)
-	auth.POST("/merchant/payment-config", handlers.SavePaymentConfig)
-	auth.POST("/merchant/payment-qrcode/upload", handlers.UploadPaymentQRCode)
+	auth.GET("/merchant/payment-config", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.GetPaymentConfig)
+	auth.POST("/merchant/payment-config", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.SavePaymentConfig)
+	auth.POST("/merchant/payment-qrcode/upload", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.UploadPaymentQRCode)
 
 	// 商户端：卡片模板管理
-	auth.GET("/merchant/card-templates", handlers.GetCardTemplates)
-	auth.POST("/merchant/card-templates", handlers.CreateCardTemplate)
-	auth.PUT("/merchant/card-templates/:id", handlers.UpdateCardTemplate)
-	auth.DELETE("/merchant/card-templates/:id", handlers.DeleteCardTemplate)
+	auth.GET("/merchant/card-templates", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.GetCardTemplates)
+	auth.POST("/merchant/card-templates", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.CreateCardTemplate)
+	auth.PUT("/merchant/card-templates/:id", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.UpdateCardTemplate)
+	auth.DELETE("/merchant/card-templates/:id", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.DeleteCardTemplate)
 
 	// 商户端：店铺短链接
-	auth.GET("/merchant/shop-slug", handlers.GetShopSlug)
-	auth.POST("/merchant/shop-slug", handlers.SaveShopSlug)
+	auth.GET("/merchant/shop-slug", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.GetShopSlug)
+	auth.POST("/merchant/shop-slug", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.SaveShopSlug)
 
 	// 商户端：直购订单
-	auth.GET("/merchant/direct-purchases", handlers.GetMerchantDirectPurchases)
-	auth.POST("/merchant/direct-purchases/:order_no/confirm", handlers.MerchantConfirmDirectPurchase)
+	auth.GET("/merchant/direct-purchases", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.GetMerchantDirectPurchases)
+	auth.POST("/merchant/direct-purchases/:order_no/confirm", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.MerchantConfirmDirectPurchase)
 
 	// 用户端：直购流程
 	auth.POST("/direct-purchase", handlers.CreateDirectPurchase)

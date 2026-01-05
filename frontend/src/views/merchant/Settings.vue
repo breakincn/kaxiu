@@ -15,6 +15,7 @@
       <!-- 账户相关 -->
       <div class="bg-white rounded-xl shadow-sm overflow-hidden">
         <button
+          v-if="canServiceUpdate"
           @click="goToServices"
           class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
         >
@@ -30,6 +31,7 @@
         </button>
 
         <button
+          v-if="canMerchantInfoUpdate"
           @click="goToMerchantInfo"
           class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
         >
@@ -79,11 +81,20 @@
 </template>
 
 <script setup>
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { clearMerchantAuth } from '../../utils/auth'
+import { ensureMerchantPermissionsLoaded } from '../../api'
+import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission } from '../../utils/auth'
 
 const router = useRouter()
+
+const canServiceUpdate = computed(() => hasMerchantPermission('merchant.service.update'))
+const canMerchantInfoUpdate = computed(() => hasMerchantPermission('merchant.merchant.update'))
+
+onMounted(() => {
+  ensureMerchantPermissionsLoaded()
+})
 
 const goBack = () => {
   router.back()
@@ -103,6 +114,7 @@ const goToMerchantInfo = () => {
 
 const handleLogout = () => {
   if (confirm('确定要退出登录吗？')) {
+    clearMerchantPermissionKeys()
     clearMerchantAuth()
     
     // 跳转到商户登录页

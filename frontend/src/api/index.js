@@ -1,6 +1,13 @@
 import axios from 'axios'
 
-import { clearMerchantAuth, getMerchantActiveAuth, getMerchantToken, getTechnicianShopSlug } from '../utils/auth'
+import {
+  clearMerchantAuth,
+  clearMerchantPermissionKeys,
+  getMerchantActiveAuth,
+  getMerchantToken,
+  getTechnicianShopSlug,
+  setMerchantPermissionKeys
+} from '../utils/auth'
 
 const api = axios.create({
   baseURL: '/api',
@@ -53,6 +60,7 @@ api.interceptors.response.use(
       if (isMerchant) {
         // 商户端：仅清空“当前激活身份”的登录信息，避免覆盖其它账号
         const active = getMerchantActiveAuth()
+        clearMerchantPermissionKeys()
         clearMerchantAuth()
         import('../router').then(({ default: router }) => {
           if (isTechnicianLoginPath(pathname)) {
@@ -138,6 +146,13 @@ export const merchantApi = {
   getNextCardNo: () => api.get('/merchant/next-card-no'),
   toggleBusinessStatus: (data) => api.put('/merchant/business-status', data),
 
+  // 当前账号权限
+  getMyPermissions: () => api.get('/merchant/permissions'),
+
+  // 技师（客服类型账号）自身
+  getCurrentTechnician: () => api.get('/technician/me'),
+  bindTechnicianPhone: (phone, code) => api.post('/technician/bind-phone', { phone, code }),
+
   // 技师账号管理
   getTechnicians: (roleKey) => api.get('/merchant/technicians', { params: { role: roleKey } }),
   createTechnician: (data) => api.post('/merchant/technicians', data),
@@ -147,6 +162,17 @@ export const merchantApi = {
   // 角色权限微调
   getRolePermissions: (roleKey) => api.get(`/merchant/role-permissions/${roleKey}`),
   setRolePermissions: (roleKey, data) => api.post(`/merchant/role-permissions/${roleKey}`, data)
+}
+
+export const ensureMerchantPermissionsLoaded = async () => {
+  try {
+    const res = await merchantApi.getMyPermissions()
+    const keys = res.data?.data?.permission_keys || []
+    setMerchantPermissionKeys(keys)
+    return keys
+  } catch (e) {
+    return []
+  }
 }
 
 export const cardApi = {

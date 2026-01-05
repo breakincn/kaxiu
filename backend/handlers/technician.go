@@ -6,10 +6,120 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
+
+func GetCurrentTechnician(c *gin.Context) {
+	authType, _ := c.Get("auth_type")
+	if authType != "technician" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅技师账号可操作"})
+		return
+	}
+
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+
+	technicianIDAny, ok := c.Get("technician_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	technicianID, ok := technicianIDAny.(uint)
+	if !ok || technicianID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var tech models.Technician
+	if err := config.DB.Where("id = ? AND merchant_id = ?", technicianID, merchantID).First(&tech).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "技师不存在"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": tech})
+}
+
+func BindTechnicianPhone(c *gin.Context) {
+	authType, _ := c.Get("auth_type")
+	if authType != "technician" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅技师账号可操作"})
+		return
+	}
+
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+
+	technicianIDAny, ok := c.Get("technician_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	technicianID, ok := technicianIDAny.(uint)
+	if !ok || technicianID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var input struct {
+		Phone string `json:"phone" binding:"required"`
+		Code  string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	input.Phone = strings.TrimSpace(input.Phone)
+	input.Code = strings.TrimSpace(input.Code)
+	if input.Phone == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供手机号"})
+		return
+	}
+	if input.Code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入验证码"})
+		return
+	}
+
+	var tech models.Technician
+	if err := config.DB.Where("id = ? AND merchant_id = ?", technicianID, merchantID).First(&tech).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "技师不存在"})
+		return
+	}
+
+	// 检查手机号是否已被其他技师绑定（同一商户下唯一即可）
+	var existing models.Technician
+	if err := config.DB.Where("merchant_id = ? AND phone = ? AND id != ?", merchantID, input.Phone, technicianID).First(&existing).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该手机号已被其他账号绑定"})
+		return
+	}
+
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := consumeSMSCode(tx, input.Phone, "technician_bind_phone", input.Code); err != nil {
+			return err
+		}
+		return tx.Model(&models.Technician{}).Where("id = ? AND merchant_id = ?", technicianID, merchantID).Updates(map[string]interface{}{
+			"phone":      input.Phone,
+			"updated_at": func() *time.Time { t := time.Now(); return &t }(),
+		}).Error
+	}); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var updated models.Technician
+	if err := config.DB.Where("id = ? AND merchant_id = ?", technicianID, merchantID).First(&updated).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "绑定失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": updated})
+}
 
 func GetMerchantTechnicians(c *gin.Context) {
 	authType, _ := c.Get("auth_type")

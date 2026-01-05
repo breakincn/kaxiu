@@ -17,7 +17,7 @@ func RequirePermission(permissionKey string) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		ok, err := hasPermission(c, key)
+		ok, err := HasPermission(c, key)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "权限校验失败"})
 			c.Abort()
@@ -32,7 +32,7 @@ func RequirePermission(permissionKey string) gin.HandlerFunc {
 	}
 }
 
-func hasPermission(c *gin.Context, permissionKey string) (bool, error) {
+func HasPermission(c *gin.Context, permissionKey string) (bool, error) {
 	authTypeAny, _ := c.Get("auth_type")
 	authType, _ := authTypeAny.(string)
 	if authType == "merchant" {
