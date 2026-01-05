@@ -6,7 +6,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
         </svg>
       </button>
-      <span class="font-medium text-gray-800">扫码核销</span>
+      <span class="font-medium text-gray-800">{{ pageTitle }}</span>
       <div class="w-8"></div>
     </header>
 
@@ -64,7 +64,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { Html5Qrcode } from 'html5-qrcode'
 import { cardApi } from '../../api'
 import PwaInstallGuide from '../../components/PwaInstallGuide.vue'
@@ -72,6 +72,13 @@ import PwaInstallGuide from '../../components/PwaInstallGuide.vue'
 import { getMerchantId, getMerchantToken } from '../../utils/auth'
 
 const router = useRouter()
+const route = useRoute()
+
+const isFinishMode = () => {
+  return String(route.query.mode || '').trim() === 'finish'
+}
+
+const pageTitle = ref('扫码核销')
 
 const starting = ref(false)
 const verifying = ref(false)
@@ -204,9 +211,15 @@ const onDecoded = async (decodedText) => {
 
   verifying.value = true
   try {
-    const res = await cardApi.verifyCard(code)
-    resultSuccess.value = true
-    resultText.value = `核销成功！剩余次数: ${res.data.data.remain_times}`
+    if (isFinishMode()) {
+      await cardApi.finishVerify(code)
+      resultSuccess.value = true
+      resultText.value = '结单成功！'
+    } else {
+      const res = await cardApi.verifyCard(code)
+      resultSuccess.value = true
+      resultText.value = `核销成功！剩余次数: ${res.data.data.remain_times}`
+    }
 
     // 刷新商户后台数据：回到 dashboard 并切到 verify tab
     setTimeout(() => {
@@ -221,6 +234,8 @@ const onDecoded = async (decodedText) => {
 }
 
 onMounted(() => {
+  pageTitle.value = isFinishMode() ? '扫码结单' : '扫码核销'
+
   const token = getMerchantToken()
   const id = getMerchantId()
   if (!token || !id) {

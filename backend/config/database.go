@@ -261,6 +261,7 @@ func initPermissions() {
 		{Key: "merchant.tech.manage", Name: "管理技师账号", Group: "客服管理", Description: "新增/编辑/禁用/删除技师账号", Sort: 10},
 		{Key: "merchant.card.issue", Name: "发卡/开卡", Group: "卡片", Description: "创建卡片、发卡", Sort: 20},
 		{Key: "merchant.card.verify", Name: "核销", Group: "卡片", Description: "核销会员卡", Sort: 30},
+		{Key: "merchant.card.finish", Name: "结单", Group: "卡片", Description: "技师扫码结单，将进行中核销置为完成", Sort: 31},
 		{Key: "merchant.direct_sale.manage", Name: "售卡管理", Group: "售卡", Description: "管理直购售卡配置、模板、订单等", Sort: 35},
 		{Key: "merchant.merchant.update", Name: "修改商户信息", Group: "商户", Description: "更新商户基本信息", Sort: 40},
 		{Key: "merchant.service.update", Name: "修改商户服务设置", Group: "商户", Description: "更新商户服务能力开关", Sort: 50},
@@ -303,11 +304,16 @@ func initRolePermissions() {
 	if err := DB.Where("`key` = ?", "merchant.card.verify").First(&permVerify).Error; err != nil {
 		return
 	}
-
-	var existing models.RolePermission
-	if err := DB.Where("service_role_id = ? AND permission_id = ?", technicianRole.ID, permVerify.ID).First(&existing).Error; err == nil {
+	var permFinish models.Permission
+	if err := DB.Where("`key` = ?", "merchant.card.finish").First(&permFinish).Error; err != nil {
 		return
 	}
 
-	DB.Create(&models.RolePermission{ServiceRoleID: technicianRole.ID, PermissionID: permVerify.ID, Allowed: true})
+	var existing models.RolePermission
+	if err := DB.Where("service_role_id = ? AND permission_id = ?", technicianRole.ID, permVerify.ID).First(&existing).Error; err != nil {
+		DB.Create(&models.RolePermission{ServiceRoleID: technicianRole.ID, PermissionID: permVerify.ID, Allowed: true})
+	}
+	if err := DB.Where("service_role_id = ? AND permission_id = ?", technicianRole.ID, permFinish.ID).First(&existing).Error; err != nil {
+		DB.Create(&models.RolePermission{ServiceRoleID: technicianRole.ID, PermissionID: permFinish.ID, Allowed: true})
+	}
 }

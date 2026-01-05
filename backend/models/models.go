@@ -93,11 +93,16 @@ type Usage struct {
 	MerchantID uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
 	UsedTimes  int        `json:"used_times" gorm:"comment:本次核销次数"`
 	UsedAt     *time.Time `json:"used_at" gorm:"type:datetime(3);comment:使用时间"`
-	Status     string     `json:"status" gorm:"size:20;default:success;comment:状态（success-成功，failed-失败）"`
+	VerifyCode         string     `json:"verify_code" gorm:"size:50;index;default:'';comment:核销码（用于结单/追溯）"`
+	VerifyCodeExpireAt int64      `json:"verify_code_expire_at" gorm:"index;comment:核销码过期时间（Unix时间戳）"`
+	TechnicianID       *uint      `json:"technician_id" gorm:"index;comment:服务人员技师ID（technicians表主键，可为空）"`
+	FinishedAt         *time.Time `json:"finished_at" gorm:"type:datetime(3);comment:服务完成/结单时间"`
+	Status             string     `json:"status" gorm:"size:20;default:success;comment:状态（in_progress-进行中，success-完成，failed-失败）"`
 	CreatedAt  *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	Card     Card     `json:"card" gorm:"foreignKey:CardID"`
 	Merchant Merchant `json:"merchant" gorm:"foreignKey:MerchantID"`
+	Technician *Technician `json:"technician" gorm:"foreignKey:TechnicianID"`
 }
 
 func (Usage) TableName() string {
@@ -156,6 +161,7 @@ type VerifyCode struct {
 	Code      string     `json:"code" gorm:"size:50;uniqueIndex;comment:核销码"`
 	ExpireAt  int64      `json:"expire_at" gorm:"comment:过期时间（Unix时间戳）"`
 	Used      bool       `json:"used" gorm:"default:false;comment:是否已使用（0-未使用，1-已使用）"`
+	UsedAt    *time.Time `json:"used_at" gorm:"type:datetime(3);comment:使用时间"`
 	CreatedAt *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 }
 

@@ -231,12 +231,21 @@
     <div v-if="currentTab === 'verify'" class="px-4 py-4">
       <!-- 默认显示大按钮 -->
       <div v-if="!showVerifyInput" class="bg-white rounded-xl p-4 shadow-sm">
-        <button
-          @click="goScanVerify"
-          class="w-full py-3 bg-primary text-white rounded-lg font-medium"
-        >
-          扫码核销
-        </button>
+        <div class="space-y-3">
+          <button
+            @click="goScanVerify"
+            class="w-full py-3 bg-primary text-white rounded-lg font-medium"
+          >
+            扫码核销
+          </button>
+          <button
+            v-if="canFinishVerify"
+            @click="goScanFinish"
+            class="w-full py-3 bg-gray-100 text-gray-700 rounded-lg font-medium"
+          >
+            扫码结单
+          </button>
+        </div>
       </div>
 
       <!-- 输入核销码区域 -->
@@ -644,6 +653,7 @@ const merchant = ref({})
 
 const canBusinessStatusUpdate = computed(() => hasMerchantPermission('merchant.business_status.update'))
 const canDirectSaleManage = computed(() => hasMerchantPermission('merchant.direct_sale.manage'))
+const canFinishVerify = computed(() => hasMerchantPermission('merchant.card.finish'))
 const currentTab = ref('queue')
 const routeUserCode = ref('')
 const userCodeAnchor = ref(null)
@@ -744,6 +754,10 @@ const getCardTypeLabel = (type) => {
 
 const goScanVerify = () => {
   router.push('/merchant/scan-verify')
+}
+
+const goScanFinish = () => {
+  router.push({ path: '/merchant/scan-verify', query: { mode: 'finish' } })
 }
 
 const onTopScanClick = () => {

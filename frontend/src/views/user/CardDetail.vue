@@ -173,21 +173,60 @@
           </span>
         </div>
         <div v-if="usages.length > 0" class="space-y-2">
-          <div v-for="usage in usages" :key="usage.id" class="flex justify-between items-center p-3 bg-white rounded-lg shadow-sm">
+          <div
+            v-for="usage in usages"
+            :key="usage.id"
+            class="flex justify-between items-center p-3 bg-white rounded-lg shadow-sm"
+            @touchstart="(e) => onUsageTouchStart(e, usage)"
+            @touchmove="onUsageTouchMove"
+            @touchend="onUsageTouchEnd"
+            @touchcancel="onUsageTouchEnd"
+          >
             <div>
               <div class="text-gray-800">核销次数: {{ usage.used_times }}</div>
               <div class="flex items-center gap-2">
                 <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
                 <span class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</span>
               </div>
+              <div v-if="usage.technician?.code" class="text-gray-400 text-sm mt-0.5">
+                服务人员：{{ usage.technician.code }}
+              </div>
             </div>
-            <span :class="usage.status === 'success' ? 'text-primary' : 'text-red-500'" class="text-sm font-medium">
-              {{ usage.status === 'success' ? '成功' : '失败' }}
+            <span :class="getUsageStatusClass(usage)" class="text-sm font-medium">
+              {{ getUsageStatusText(usage) }}
             </span>
           </div>
         </div>
         <div v-else class="text-center text-gray-400 py-4">
           暂无使用记录
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showUsageQrModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeUsageQrModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-lg overflow-hidden">
+        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
+          <h3 class="font-medium text-lg">核销二维码</h3>
+          <button @click="closeUsageQrModal" class="text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="px-5 py-5">
+          <div class="text-center">
+            <div class="text-gray-800 font-medium">{{ card?.merchant?.name || '商户' }}</div>
+            <div class="text-gray-500 text-sm mt-1">{{ card?.card_type || '' }}</div>
+          </div>
+
+          <div v-if="usageQrDataUrl" class="mt-4 flex justify-center">
+            <img :src="usageQrDataUrl" alt="核销二维码" class="w-56 h-56" />
+          </div>
+
+          <div v-if="selectedUsage?.verify_code_expire_at" class="mt-4 text-center text-gray-400 text-xs">
+            有效期至 {{ formatExpireTime(selectedUsage.verify_code_expire_at) }}
+          </div>
         </div>
       </div>
     </div>
@@ -360,6 +399,105 @@ const verifyQrDataUrl = ref('')
 let verifyExpireTimer = null
 const appointing = ref(false)
 const canceling = ref(false)
+
+const showUsageQrModal = ref(false)
+const selectedUsage = ref(null)
+const usageQrDataUrl = ref('')
+
+let usageLongPressTimer = null
+let usageTouchStartX = 0
+let usageTouchStartY = 0
+let usageTouchMoved = false
+
+const getUsageStatusText = (usage) => {
+  const s = String(usage?.status || '').trim()
+  if (s === 'in_progress') return '进行中'
+  if (s === 'success') return '完成'
+  if (s === 'failed') return '失败'
+  return s || ''
+}
+
+const getUsageStatusClass = (usage) => {
+  const s = String(usage?.status || '').trim()
+  if (s === 'in_progress') return 'text-blue-500'
+  if (s === 'success') return 'text-primary'
+  return 'text-red-500'
+}
+
+const formatExpireTime = (expireAtUnix) => {
+  const ts = Number(expireAtUnix || 0)
+  if (!ts) return ''
+  const d = new Date(ts * 1000)
+  return d.toLocaleString()
+}
+
+const canShowUsageQr = (usage) => {
+  if (!usage) return false
+  const status = String(usage.status || '').trim()
+  if (status === 'success') return false
+  const code = String(usage.verify_code || '').trim()
+  if (!code) return false
+  const expireAt = Number(usage.verify_code_expire_at || 0)
+  if (!expireAt) return false
+  return Math.floor(Date.now() / 1000) <= expireAt
+}
+
+const openUsageQrModal = async (usage) => {
+  if (!canShowUsageQr(usage)) return
+  selectedUsage.value = usage
+  showUsageQrModal.value = true
+  usageQrDataUrl.value = ''
+  try {
+    usageQrDataUrl.value = await QRCode.toDataURL(String(usage.verify_code).trim(), {
+      margin: 1,
+      scale: 8,
+      errorCorrectionLevel: 'M'
+    })
+  } catch (_) {
+    // ignore
+  }
+}
+
+const closeUsageQrModal = () => {
+  showUsageQrModal.value = false
+  selectedUsage.value = null
+  usageQrDataUrl.value = ''
+}
+
+const clearUsageLongPress = () => {
+  if (usageLongPressTimer) {
+    clearTimeout(usageLongPressTimer)
+    usageLongPressTimer = null
+  }
+}
+
+const onUsageTouchStart = (e, usage) => {
+  clearUsageLongPress()
+  usageTouchMoved = false
+  const t = e?.touches?.[0]
+  usageTouchStartX = t?.clientX || 0
+  usageTouchStartY = t?.clientY || 0
+
+  usageLongPressTimer = setTimeout(() => {
+    usageLongPressTimer = null
+    if (usageTouchMoved) return
+    openUsageQrModal(usage)
+  }, 550)
+}
+
+const onUsageTouchMove = (e) => {
+  const t = e?.touches?.[0]
+  const x = t?.clientX || 0
+  const y = t?.clientY || 0
+  if (Math.abs(x - usageTouchStartX) > 10 || Math.abs(y - usageTouchStartY) > 10) {
+    usageTouchMoved = true
+    clearUsageLongPress()
+  }
+}
+
+const onUsageTouchEnd = () => {
+  clearUsageLongPress()
+}
 
 const noticeAnchor = ref(null)
 const shouldShowBottomSpacer = ref(false)

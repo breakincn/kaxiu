@@ -403,6 +403,16 @@ func GenerateVerifyCode(c *gin.Context) {
 		return
 	}
 
+	// 用户端仅允许生成自己的卡片核销码
+	if userIDAny, ok := c.Get("user_id"); ok {
+		if userID, ok2 := userIDAny.(uint); ok2 && userID > 0 {
+			if card.UserID != userID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此卡"})
+				return
+			}
+		}
+	}
+
 	// 检查卡片是否有效
 	now := time.Now()
 	if card.EndDate != nil && now.After(*card.EndDate) {
@@ -415,16 +425,26 @@ func GenerateVerifyCode(c *gin.Context) {
 		return
 	}
 
-	// 生成核销码（5分钟有效）
-	code := uuid.New().String()[:8]
-	expireAt := now.Add(5 * time.Minute).Unix()
-
-	verifyCode := models.VerifyCode{
-		CardID:   card.ID,
-		Code:     code,
-		ExpireAt: expireAt,
-		Used:     false,
+	// 优先复用未过期且未使用的核销码（12小时有效）
+	var existing models.VerifyCode
+	if err := config.DB.
+		Where("card_id = ? AND used = ? AND expire_at > ?", card.ID, false, now.Unix()).
+		Order("id desc").
+		First(&existing).Error; err == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"code":      existing.Code,
+				"expire_at": existing.ExpireAt,
+				"card_id":   card.ID,
+			},
+		})
+		return
 	}
+
+	code := uuid.New().String()[:8]
+	expireAt := now.Add(12 * time.Hour).Unix()
+
+	verifyCode := models.VerifyCode{CardID: card.ID, Code: code, ExpireAt: expireAt, Used: false}
 	config.DB.Create(&verifyCode)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -459,11 +479,21 @@ func VerifyCard(c *gin.Context) {
 
 	var verifyCode models.VerifyCode
 	var card models.Card
+	var merchant models.Merchant
 	var usedAt time.Time
 	var remainTimes int
+	usageStatus := "success"
 
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
+
+		if err := tx.First(&merchant, merchantID).Error; err != nil {
+			return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
+		}
+		if merchant.SupportCustomerService {
+			usageStatus = "in_progress"
+		}
+
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", input.Code).First(&verifyCode).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return apiErr{status: http.StatusNotFound, msg: "核销码不存在"}
@@ -499,7 +529,7 @@ func VerifyCard(c *gin.Context) {
 
 		res := tx.Model(&models.VerifyCode{}).
 			Where("id = ? AND used = ?", verifyCode.ID, false).
-			Update("used", true)
+			Updates(map[string]interface{}{"used": true, "used_at": now})
 		if res.Error != nil {
 			return res.Error
 		}
@@ -528,11 +558,13 @@ func VerifyCard(c *gin.Context) {
 		remainTimes = card.RemainTimes
 
 		usage := models.Usage{
-			CardID:     card.ID,
-			MerchantID: card.MerchantID,
-			UsedTimes:  1,
-			UsedAt:     &usedAt,
-			Status:     "success",
+			CardID:             card.ID,
+			MerchantID:         card.MerchantID,
+			UsedTimes:          1,
+			UsedAt:             &usedAt,
+			VerifyCode:         verifyCode.Code,
+			VerifyCodeExpireAt: verifyCode.ExpireAt,
+			Status:             usageStatus,
 		}
 		if err := tx.Create(&usage).Error; err != nil {
 			return err
@@ -556,6 +588,110 @@ func VerifyCard(c *gin.Context) {
 			"card_id":      card.ID,
 			"remain_times": remainTimes,
 			"used_at":      usedAt.Format("2006-01-02 15:04:05"),
+		},
+	})
+}
+
+func FinishVerifyCard(c *gin.Context) {
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+	if authType != "technician" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅技师账号可结单"})
+		return
+	}
+
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	techIDAny, ok := c.Get("technician_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	techID, ok := techIDAny.(uint)
+	if !ok || techID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var input struct {
+		Code string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var usage models.Usage
+	var verifyCode models.VerifyCode
+	var finishedAt time.Time
+
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", input.Code).First(&verifyCode).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apiErr{status: http.StatusNotFound, msg: "核销码不存在"}
+			}
+			return err
+		}
+		if verifyCode.ExpireAt > 0 && now.Unix() > verifyCode.ExpireAt {
+			return apiErr{status: http.StatusBadRequest, msg: "核销码已过期"}
+		}
+		if !verifyCode.Used {
+			return apiErr{status: http.StatusBadRequest, msg: "该核销码尚未核销"}
+		}
+
+		// 找到对应使用记录（同卡同码，取最新）
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("merchant_id = ? AND card_id = ? AND verify_code = ?", merchantID, verifyCode.CardID, verifyCode.Code).
+			Order("id desc").
+			First(&usage).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apiErr{status: http.StatusNotFound, msg: "找不到核销记录"}
+			}
+			return err
+		}
+
+		if usage.Status == "success" {
+			return apiErr{status: http.StatusBadRequest, msg: "该记录已结单"}
+		}
+		if usage.Status != "in_progress" {
+			return apiErr{status: http.StatusBadRequest, msg: "该记录不可结单"}
+		}
+
+		finishedAt = now
+		return tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
+			"technician_id": techID,
+			"finished_at":   finishedAt,
+			"status":        "success",
+		}).Error
+	})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	config.DB.Preload("Technician").First(&usage, usage.ID)
+	c.JSON(http.StatusOK, gin.H{
+		"message": "结单成功",
+		"data": gin.H{
+			"usage_id":      usage.ID,
+			"card_id":       usage.CardID,
+			"finished_at":   finishedAt.Format("2006-01-02 15:04:05"),
+			"technician_id": usage.TechnicianID,
 		},
 	})
 }
