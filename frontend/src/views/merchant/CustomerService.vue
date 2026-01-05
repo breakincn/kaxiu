@@ -77,7 +77,7 @@
                         {{ t.is_active ? '启用' : '禁用' }}
                       </span>
                     </div>
-                    <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：{{ t.account }}</div>
+                    <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：技师: {{ t.account }}</div>
                   </div>
                   <div class="text-gray-400 text-xs">ID: {{ t.id }}</div>
                 </div>

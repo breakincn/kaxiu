@@ -662,9 +662,9 @@ const currentAccountName = computed(() => {
   // 如果是技师登录，显示技师账号
   if (isTechnicianAuth()) {
     const technicianAccount = sessionStorage.getItem('technicianAccount')
-    if (technicianAccount) return technicianAccount
+    if (technicianAccount) return `技师: ${technicianAccount}`
     const technicianCode = sessionStorage.getItem('technicianCode')
-    if (technicianCode) return `技师${technicianCode}`
+    if (technicianCode) return `技师: ${technicianCode}`
     return '技师'
   }
   // 如果是商户登录，显示商户手机号
