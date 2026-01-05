@@ -139,7 +139,7 @@ export const merchantApi = {
   toggleBusinessStatus: (data) => api.put('/merchant/business-status', data),
 
   // 技师账号管理
-  getTechnicians: () => api.get('/merchant/technicians'),
+  getTechnicians: (roleKey) => api.get('/merchant/technicians', { params: { role: roleKey } }),
   createTechnician: (data) => api.post('/merchant/technicians', data),
   updateTechnician: (id, data) => api.put(`/merchant/technicians/${id}`, data),
   deleteTechnician: (id) => api.delete(`/merchant/technicians/${id}`),

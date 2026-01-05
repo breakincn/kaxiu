@@ -23,8 +23,22 @@ func GetMerchantTechnicians(c *gin.Context) {
 		return
 	}
 
+	// 获取角色参数
+	roleKey := c.Query("role")
+	if roleKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少角色参数"})
+		return
+	}
+
+	// 查询角色ID
+	var role models.ServiceRole
+	if err := config.DB.Where("`key` = ?", roleKey).First(&role).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "角色不存在"})
+		return
+	}
+
 	var list []models.Technician
-	config.DB.Where("merchant_id = ?", merchantID).Order("id desc").Find(&list)
+	config.DB.Where("merchant_id = ? AND service_role_id = ?", merchantID, role.ID).Order("id desc").Find(&list)
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
 
@@ -138,18 +152,20 @@ func CreateMerchantTechnician(c *gin.Context) {
 		return
 	}
 
-	var role models.ServiceRole
-	if err := config.DB.Where("`key` = ?", "technician").First(&role).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "平台未配置技师角色"})
-		return
-	}
-
 	var input struct {
 		Name string `json:"name" binding:"required"`
 		Code string `json:"code" binding:"required"`
+		Role string `json:"role" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 查询角色
+	var role models.ServiceRole
+	if err := config.DB.Where("`key` = ?", input.Role).First(&role).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "角色不存在"})
 		return
 	}
 

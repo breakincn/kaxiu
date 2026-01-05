@@ -117,7 +117,7 @@
     <div v-if="showAdd" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-4 z-50" @click.self="closeAdd">
       <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden">
         <div class="px-5 py-4 border-b flex items-center justify-between">
-          <div class="font-medium text-gray-800">{{ isEdit ? '编辑技师' : '添加技师' }}</div>
+          <div class="font-medium text-gray-800">{{ isEdit ? `编辑${activeRoleObj?.name}` : `添加${activeRoleObj?.name}` }}</div>
           <button type="button" class="text-gray-400" @click="closeAdd">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -127,17 +127,17 @@
 
         <div class="px-5 py-5">
           <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">技师姓名</label>
+            <label class="block text-gray-700 text-sm font-medium mb-2">{{ activeRoleObj?.name }}姓名</label>
             <input
               v-model="form.name"
               type="text"
-              placeholder="如：技师1"
+              placeholder="如：老师1"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
             />
           </div>
 
           <div v-if="!isEdit" class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">技师编号</label>
+            <label class="block text-gray-700 text-sm font-medium mb-2">{{ activeRoleObj?.name }}编号</label>
             <input
               v-model="form.code"
               type="text"
@@ -167,7 +167,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi, platformApi } from '../../api'
 
@@ -205,9 +205,10 @@ const openPermissionAdjust = () => {
 }
 
 const load = async () => {
+  if (!activeRole.value) return
   loading.value = true
   try {
-    const res = await merchantApi.getTechnicians()
+    const res = await merchantApi.getTechnicians(activeRole.value)
     techs.value = res.data.data || []
   } catch (e) {
     techs.value = []
@@ -259,7 +260,8 @@ const submit = async () => {
     } else {
       const res = await merchantApi.createTechnician({
         name: form.value.name,
-        code: form.value.code
+        code: form.value.code,
+        role: activeRole.value
       })
       const pwd = res?.data?.data?.default_password
       if (pwd) {
@@ -332,5 +334,11 @@ onMounted(async () => {
 
   const first = roles.value.find((r) => r && r.key)
   activeRole.value = first ? String(first.key) : ''
+  await load()
+})
+
+// 监听角色切换
+watch(activeRole, () => {
+  load()
 })
 </script>
