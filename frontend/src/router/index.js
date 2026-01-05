@@ -115,6 +115,21 @@ const routes = [
     name: 'MerchantCustomerService',
     component: () => import('../views/merchant/CustomerService.vue')
   },
+  {
+    path: '/merchant/role-permissions/:roleKey',
+    name: 'MerchantRolePermissionAdjust',
+    component: () => import('../views/merchant/RolePermissionAdjust.vue')
+  },
+  {
+    path: '/platform-admin/login',
+    name: 'PlatformAdminLogin',
+    component: () => import('../views/platformAdmin/Login.vue')
+  },
+  {
+    path: '/platform-admin',
+    name: 'PlatformAdminDashboard',
+    component: () => import('../views/platformAdmin/Dashboard.vue')
+  },
   // Shop 模块：用户扫码售卡页面
   {
     path: '/shop/:slug',

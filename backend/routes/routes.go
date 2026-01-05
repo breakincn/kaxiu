@@ -15,6 +15,9 @@ func SetupRoutes(r *gin.Engine) {
 
 	api := r.Group("/api")
 
+	// 平台公开接口（不需要登录）
+	api.GET("/platform/service-roles", handlers.GetPlatformServiceRoles)
+
 	// 公开接口（不需要登录）
 	api.POST("/sms/send", handlers.SendSMSCode)
 	api.POST("/login", handlers.UserLogin)
@@ -26,6 +29,20 @@ func SetupRoutes(r *gin.Engine) {
 	// 需要认证的接口
 	auth := api.Group("")
 	auth.Use(middleware.AuthMiddleware())
+
+	// 平台后台管理接口（简单 Token 鉴权）
+	admin := api.Group("/admin")
+	admin.Use(middleware.PlatformAdminMiddleware())
+	admin.GET("/service-roles", handlers.AdminListServiceRoles)
+	admin.POST("/service-roles", handlers.AdminCreateServiceRole)
+	admin.PUT("/service-roles/:id", handlers.AdminUpdateServiceRole)
+	admin.DELETE("/service-roles/:id", handlers.AdminDeleteServiceRole)
+	admin.GET("/permissions", handlers.AdminListPermissions)
+	admin.POST("/permissions", handlers.AdminCreatePermission)
+	admin.PUT("/permissions/:id", handlers.AdminUpdatePermission)
+	admin.DELETE("/permissions/:id", handlers.AdminDeletePermission)
+	admin.GET("/service-roles/:roleId/permissions", handlers.AdminGetRolePermissions)
+	admin.POST("/service-roles/:roleId/permissions", handlers.AdminSetRolePermissions)
 
 	// 用户相关
 	auth.GET("/users", handlers.GetUsers)
@@ -43,13 +60,19 @@ func SetupRoutes(r *gin.Engine) {
 	auth.PUT("/merchants/:id", handlers.UpdateMerchant)
 	auth.GET("/merchant/me", handlers.GetCurrentUserMerchant)
 	auth.POST("/merchant/bind-phone", handlers.BindMerchantPhone)
-	auth.PUT("/merchant/services", handlers.UpdateCurrentMerchantServices)
-	auth.PUT("/merchant/info", handlers.UpdateMerchantInfo)
+	auth.PUT("/merchant/services", middleware.RequirePermission("merchant.service.update"), handlers.UpdateCurrentMerchantServices)
+	auth.PUT("/merchant/info", middleware.RequirePermission("merchant.merchant.update"), handlers.UpdateMerchantInfo)
 	auth.PUT("/merchant/business-status", handlers.ToggleMerchantBusinessStatus)
 
+	// 商户端：角色权限微调（仅商户可操作，且 role.allow_permission_adjust=true）
+	auth.GET("/merchant/role-permissions/:roleKey", handlers.GetMerchantRolePermissionOverrides)
+	auth.POST("/merchant/role-permissions/:roleKey", handlers.SetMerchantRolePermissionOverrides)
+
 	// 技师账号管理
-	auth.GET("/merchant/technicians", handlers.GetMerchantTechnicians)
-	auth.POST("/merchant/technicians", handlers.CreateMerchantTechnician)
+	auth.GET("/merchant/technicians", middleware.RequirePermission("merchant.tech.manage"), handlers.GetMerchantTechnicians)
+	auth.POST("/merchant/technicians", middleware.RequirePermission("merchant.tech.manage"), handlers.CreateMerchantTechnician)
+	auth.PUT("/merchant/technicians/:id", middleware.RequirePermission("merchant.tech.manage"), handlers.UpdateMerchantTechnician)
+	auth.DELETE("/merchant/technicians/:id", middleware.RequirePermission("merchant.tech.manage"), handlers.DeleteMerchantTechnician)
 
 	// 卡片相关
 	auth.GET("/cards", handlers.GetCards)
@@ -58,12 +81,12 @@ func SetupRoutes(r *gin.Engine) {
 	auth.GET("/merchants/:id/cards", handlers.GetMerchantCards)
 	auth.GET("/merchant/cards/:id", handlers.GetMerchantCard)
 	auth.GET("/merchant/next-card-no", handlers.GetNextMerchantCardNo)
-	auth.POST("/cards", handlers.CreateCard)
+	auth.POST("/cards", middleware.RequirePermission("merchant.card.issue"), handlers.CreateCard)
 	auth.PUT("/cards/:id", handlers.UpdateCard)
 
 	// 核销相关
 	auth.POST("/cards/:id/verify-code", handlers.GenerateVerifyCode)
-	auth.POST("/verify", handlers.VerifyCard)
+	auth.POST("/verify", middleware.RequirePermission("merchant.card.verify"), handlers.VerifyCard)
 	auth.GET("/merchants/:id/today-verify", handlers.GetTodayVerify)
 
 	// 使用记录

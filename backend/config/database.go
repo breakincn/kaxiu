@@ -36,6 +36,10 @@ func InitDB() {
 		&models.User{},
 		&models.Merchant{},
 		&models.Technician{},
+		&models.ServiceRole{},
+		&models.Permission{},
+		&models.RolePermission{},
+		&models.MerchantRolePermissionOverride{},
 		&models.Card{},
 		&models.Usage{},
 		&models.Notice{},
@@ -65,6 +69,10 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `users` COMMENT = '用户表'")
 	DB.Exec("ALTER TABLE `merchants` COMMENT = '商户表'")
 	DB.Exec("ALTER TABLE `technicians` COMMENT = '商户技师账号表'")
+	DB.Exec("ALTER TABLE `service_roles` COMMENT = '平台客服类型表'")
+	DB.Exec("ALTER TABLE `permissions` COMMENT = '权限枚举表'")
+	DB.Exec("ALTER TABLE `role_permissions` COMMENT = '平台角色默认权限表'")
+	DB.Exec("ALTER TABLE `merchant_role_permission_overrides` COMMENT = '商户角色权限微调表'")
 	DB.Exec("ALTER TABLE `cards` COMMENT = '用户会员卡表'")
 	DB.Exec("ALTER TABLE `usages` COMMENT = '卡片使用记录表'")
 	DB.Exec("ALTER TABLE `notices` COMMENT = '商户通知表'")
@@ -82,9 +90,42 @@ func InitDB() {
 
 	// 初始化商户注册邀请码（幂等）
 	initInviteCodes()
+	initServiceRoles()
+	initPermissions()
+	initRolePermissions()
 
 	// 初始化测试数据
 	initTestData()
+}
+
+func initServiceRoles() {
+	defaults := []models.ServiceRole{
+		{Key: "technician", Name: "技师", Description: "技师账号", IsActive: true, AllowPermissionAdjust: true, Sort: 10},
+		{Key: "teacher", Name: "老师", Description: "老师", IsActive: true, AllowPermissionAdjust: false, Sort: 20},
+		{Key: "coach", Name: "教练", Description: "教练", IsActive: true, AllowPermissionAdjust: false, Sort: 30},
+		{Key: "pet_doctor", Name: "宠物医生", Description: "宠物医生", IsActive: true, AllowPermissionAdjust: false, Sort: 40},
+	}
+
+	for _, r := range defaults {
+		var existing models.ServiceRole
+		if err := DB.Where("`key` = ?", r.Key).First(&existing).Error; err == nil {
+			updates := map[string]interface{}{}
+			if existing.Name == "" {
+				updates["name"] = r.Name
+			}
+			if existing.Description == "" {
+				updates["description"] = r.Description
+			}
+			if existing.Sort == 0 {
+				updates["sort"] = r.Sort
+			}
+			if len(updates) > 0 {
+				DB.Model(&models.ServiceRole{}).Where("id = ?", existing.ID).Updates(updates)
+			}
+			continue
+		}
+		DB.Create(&r)
+	}
 }
 
 func initInviteCodes() {
@@ -213,4 +254,58 @@ func initTestData() {
 	DB.Create(&appointments)
 
 	log.Println("测试数据初始化完成")
+}
+
+func initPermissions() {
+	defaults := []models.Permission{
+		{Key: "merchant.tech.manage", Name: "管理技师账号", Group: "客服管理", Description: "新增/编辑/禁用/删除技师账号", Sort: 10},
+		{Key: "merchant.card.issue", Name: "发卡/开卡", Group: "卡片", Description: "创建卡片、发卡", Sort: 20},
+		{Key: "merchant.card.verify", Name: "核销", Group: "卡片", Description: "核销会员卡", Sort: 30},
+		{Key: "merchant.merchant.update", Name: "修改商户信息", Group: "商户", Description: "更新商户基本信息", Sort: 40},
+		{Key: "merchant.service.update", Name: "修改商户服务设置", Group: "商户", Description: "更新商户服务能力开关", Sort: 50},
+	}
+
+	for _, p := range defaults {
+		var existing models.Permission
+		if err := DB.Where("`key` = ?", p.Key).First(&existing).Error; err == nil {
+			updates := map[string]interface{}{}
+			if existing.Name == "" {
+				updates["name"] = p.Name
+			}
+			if existing.Group == "" {
+				updates["group"] = p.Group
+			}
+			if existing.Description == "" {
+				updates["description"] = p.Description
+			}
+			if existing.Sort == 0 {
+				updates["sort"] = p.Sort
+			}
+			if len(updates) > 0 {
+				DB.Model(&models.Permission{}).Where("id = ?", existing.ID).Updates(updates)
+			}
+			continue
+		}
+		DB.Create(&p)
+	}
+}
+
+func initRolePermissions() {
+	// 默认策略：技师仅允许核销；其它角色默认无权限（后续可在平台后台配置）
+	var technicianRole models.ServiceRole
+	if err := DB.Where("`key` = ?", "technician").First(&technicianRole).Error; err != nil {
+		return
+	}
+
+	var permVerify models.Permission
+	if err := DB.Where("`key` = ?", "merchant.card.verify").First(&permVerify).Error; err != nil {
+		return
+	}
+
+	var existing models.RolePermission
+	if err := DB.Where("service_role_id = ? AND permission_id = ?", technicianRole.ID, permVerify.ID).First(&existing).Error; err == nil {
+		return
+	}
+
+	DB.Create(&models.RolePermission{ServiceRoleID: technicianRole.ID, PermissionID: permVerify.ID, Allowed: true})
 }

@@ -11,15 +11,24 @@ const isTechnicianLoginPath = (pathname) => /^\/shop\/[^/]+\/login$/.test(pathna
 
 const isMerchantContextPath = (pathname) => pathname.startsWith('/merchant') || isTechnicianLoginPath(pathname)
 
+const isPlatformAdminPath = (pathname) => pathname.startsWith('/platform-admin')
+
 // 请求拦截器 - 添加 token
 api.interceptors.request.use(
   (config) => {
     // 根据当前路径判断是用户还是商户
     const isMerchant = isMerchantContextPath(window.location.pathname)
-    const token = isMerchant
-      ? getMerchantToken()
-      : localStorage.getItem('userToken')
-    
+
+    if (isPlatformAdminPath(window.location.pathname)) {
+      const t = localStorage.getItem('platformAdminToken')
+      if (t) {
+        config.headers['X-Platform-Admin-Token'] = t
+      }
+      return config
+    }
+
+    const token = isMerchant ? getMerchantToken() : localStorage.getItem('userToken')
+
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -82,7 +91,26 @@ export const authApi = {
 }
 
 export const smsApi = {
-  send: (phone, purpose) => api.post('/sms/send', { phone, purpose })
+  sendCode: (phone, type) => api.post('/sms/send', { phone, type }),
+}
+
+export const platformApi = {
+  getServiceRoles: () => api.get('/platform/service-roles')
+}
+
+export const platformAdminApi = {
+  listServiceRoles: () => api.get('/admin/service-roles'),
+  createServiceRole: (data) => api.post('/admin/service-roles', data),
+  updateServiceRole: (id, data) => api.put(`/admin/service-roles/${id}`, data),
+  deleteServiceRole: (id) => api.delete(`/admin/service-roles/${id}`),
+
+  listPermissions: () => api.get('/admin/permissions'),
+  createPermission: (data) => api.post('/admin/permissions', data),
+  updatePermission: (id, data) => api.put(`/admin/permissions/${id}`, data),
+  deletePermission: (id) => api.delete(`/admin/permissions/${id}`),
+
+  getRolePermissions: (roleId) => api.get(`/admin/service-roles/${roleId}/permissions`),
+  setRolePermissions: (roleId, data) => api.post(`/admin/service-roles/${roleId}/permissions`, data)
 }
 
 export const userApi = {
@@ -112,7 +140,13 @@ export const merchantApi = {
 
   // 技师账号管理
   getTechnicians: () => api.get('/merchant/technicians'),
-  createTechnician: (data) => api.post('/merchant/technicians', data)
+  createTechnician: (data) => api.post('/merchant/technicians', data),
+  updateTechnician: (id, data) => api.put(`/merchant/technicians/${id}`, data),
+  deleteTechnician: (id) => api.delete(`/merchant/technicians/${id}`),
+
+  // 角色权限微调
+  getRolePermissions: (roleKey) => api.get(`/merchant/role-permissions/${roleKey}`),
+  setRolePermissions: (roleKey, data) => api.post(`/merchant/role-permissions/${roleKey}`, data)
 }
 
 export const cardApi = {

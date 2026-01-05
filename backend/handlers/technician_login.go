@@ -51,6 +51,11 @@ func TechnicianLogin(c *gin.Context) {
 		return
 	}
 
+	if !tech.IsActive {
+		c.JSON(http.StatusForbidden, gin.H{"error": "账号已禁用"})
+		return
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(tech.Password), []byte(password)); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "账号或密码错误"})
 		return
