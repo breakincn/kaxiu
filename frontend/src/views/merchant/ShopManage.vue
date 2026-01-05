@@ -145,7 +145,7 @@
         <div class="form-group">
           <label>店铺短链接</label>
           <div class="slug-input">
-            <span class="prefix">kabao.me/shop/</span>
+            <span class="prefix">kabao.site/shop/</span>
             <input 
               v-model="shopSlug" 
               type="text" 

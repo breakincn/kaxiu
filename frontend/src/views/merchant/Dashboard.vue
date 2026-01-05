@@ -4,7 +4,7 @@
     <header class="bg-white px-4 py-3 flex items-center justify-between border-b">
       <div class="flex items-center gap-2">
         <span class="text-primary font-bold text-xl">卡包</span>
-        <span class="text-gray-400 text-xs">kabao.me</span>
+        <span class="text-gray-400 text-xs">kabao.site</span>
       </div>
       <div class="flex items-center gap-3">
         <button
@@ -36,7 +36,7 @@
       <div class="flex items-start justify-between gap-3">
         <div>
           <h1 class="text-xl font-bold text-gray-800">{{ merchant.name }}</h1>
-          <p class="text-gray-500 text-sm mt-1">管理后台</p>
+          <p class="text-gray-500 text-sm mt-1">{{ currentAccountName }}</p>
         </div>
         <div class="flex gap-2">
           <router-link
@@ -656,6 +656,20 @@ const activeSellTemplates = computed(() => {
 
 const sellSelectedTemplateName = computed(() => {
   return sellSelectedTemplate.value && sellSelectedTemplate.value.name ? sellSelectedTemplate.value.name : ''
+})
+
+const currentAccountName = computed(() => {
+  // 如果是技师登录，显示技师账号
+  if (isTechnicianAuth()) {
+    const technicianAccount = sessionStorage.getItem('technicianAccount')
+    if (technicianAccount) return technicianAccount
+    const technicianCode = sessionStorage.getItem('technicianCode')
+    if (technicianCode) return `技师${technicianCode}`
+    return '技师'
+  }
+  // 如果是商户登录，显示商户手机号
+  const merchantPhone = localStorage.getItem('merchantPhone')
+  return merchantPhone || '商户'
 })
 
 const isTechnicianAuth = () => {
