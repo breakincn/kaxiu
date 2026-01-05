@@ -181,6 +181,8 @@
             @touchmove="onUsageTouchMove"
             @touchend="onUsageTouchEnd"
             @touchcancel="onUsageTouchEnd"
+            @contextmenu.prevent
+            style="-webkit-touch-callout: none;"
           >
             <div>
               <div class="text-gray-800">核销次数: {{ usage.used_times }}</div>
@@ -203,10 +205,10 @@
       </div>
     </div>
 
-    <div v-if="showUsageQrModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeUsageQrModal">
+    <div v-if="showUsageQrModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 select-none" @click.self="closeUsageQrModal" @contextmenu.prevent>
       <div class="bg-white rounded-2xl w-11/12 max-w-lg overflow-hidden">
         <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
-          <h3 class="font-medium text-lg">核销二维码</h3>
+          <h3 class="font-medium text-lg">结单二维码</h3>
           <button @click="closeUsageQrModal" class="text-white">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -221,11 +223,20 @@
           </div>
 
           <div v-if="usageQrDataUrl" class="mt-4 flex justify-center">
-            <img :src="usageQrDataUrl" alt="核销二维码" class="w-56 h-56" />
+            <div
+              class="select-none"
+              style="-webkit-touch-callout: none; -webkit-user-select: none; user-select: none; pointer-events: none; touch-action: none;"
+              @touchstart.prevent
+              @touchmove.prevent
+              @touchend.prevent
+              @contextmenu.prevent
+            >
+              <img :src="usageQrDataUrl" alt="结单二维码" class="w-56 h-56" style="-webkit-touch-callout: none;" />
+            </div>
           </div>
 
-          <div v-if="selectedUsage?.verify_code_expire_at" class="mt-4 text-center text-gray-400 text-xs">
-            有效期至 {{ formatExpireTime(selectedUsage.verify_code_expire_at) }}
+          <div v-if="selectedUsage" class="mt-4 text-center text-xs" :class="getFinishExpireTextClass(selectedUsage)">
+            有效期至 {{ formatFinishExpireTime(selectedUsage) }}
           </div>
         </div>
       </div>
@@ -431,15 +442,67 @@ const formatExpireTime = (expireAtUnix) => {
   return d.toLocaleString()
 }
 
+const getUsageUsedAtMs = (usage) => {
+  const v = usage?.used_at
+  if (!v) return 0
+  const ms = new Date(v).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
+const getFinishExpireAtUnix = (usage) => {
+  const usedAtMs = getUsageUsedAtMs(usage)
+  if (!usedAtMs) return 0
+  return Math.floor(usedAtMs / 1000) + 12 * 60 * 60
+}
+
+const formatFinishExpireTime = (usage) => {
+  const ts = getFinishExpireAtUnix(usage)
+  return ts ? formatExpireTime(ts) : ''
+}
+
+const getFinishAvailableAtMs = (usage) => {
+  const usedAtMs = getUsageUsedAtMs(usage)
+  if (!usedAtMs) return 0
+  let avg = Number(card.value?.merchant?.avg_service_minutes || 0)
+  if (!avg || avg <= 0) avg = 15
+  return usedAtMs + avg * 60 * 1000
+}
+
+const nowForFinish = ref(Date.now())
+let finishNowTimer = null
+
+const startFinishNowTimer = () => {
+  if (finishNowTimer) return
+  finishNowTimer = setInterval(() => {
+    nowForFinish.value = Date.now()
+  }, 1000)
+}
+
+const stopFinishNowTimer = () => {
+  if (finishNowTimer) {
+    clearInterval(finishNowTimer)
+    finishNowTimer = null
+  }
+}
+
+const getFinishExpireTextClass = (usage) => {
+  const availableAt = getFinishAvailableAtMs(usage)
+  if (!availableAt) return 'text-gray-400'
+  const now = nowForFinish.value
+  if (now >= availableAt + 60 * 60 * 1000) return 'text-red-500'
+  if (now >= availableAt) return 'text-green-500'
+  return 'text-gray-400'
+}
+
 const canShowUsageQr = (usage) => {
   if (!usage) return false
   const status = String(usage.status || '').trim()
-  if (status === 'success') return false
+  if (status !== 'in_progress') return false
   const code = String(usage.verify_code || '').trim()
   if (!code) return false
-  const expireAt = Number(usage.verify_code_expire_at || 0)
-  if (!expireAt) return false
-  return Math.floor(Date.now() / 1000) <= expireAt
+  const finishExpireAt = getFinishExpireAtUnix(usage)
+  if (!finishExpireAt) return false
+  return Math.floor(Date.now() / 1000) <= finishExpireAt
 }
 
 const openUsageQrModal = async (usage) => {
@@ -447,6 +510,8 @@ const openUsageQrModal = async (usage) => {
   selectedUsage.value = usage
   showUsageQrModal.value = true
   usageQrDataUrl.value = ''
+  nowForFinish.value = Date.now()
+  startFinishNowTimer()
   try {
     usageQrDataUrl.value = await QRCode.toDataURL(String(usage.verify_code).trim(), {
       margin: 1,
@@ -462,6 +527,7 @@ const closeUsageQrModal = () => {
   showUsageQrModal.value = false
   selectedUsage.value = null
   usageQrDataUrl.value = ''
+  stopFinishNowTimer()
 }
 
 const clearUsageLongPress = () => {
@@ -1041,6 +1107,7 @@ onUnmounted(() => {
     clearTimeout(verifyExpireTimer)
     verifyExpireTimer = null
   }
+  stopFinishNowTimer()
   // 重置底部占位状态
   shouldShowBottomSpacer.value = false
 })
