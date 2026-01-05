@@ -10,6 +10,37 @@ import (
 	"gorm.io/gorm"
 )
 
+func RequireAnyPermission(permissionKeys ...string) gin.HandlerFunc {
+	keys := make([]string, 0, len(permissionKeys))
+	for _, k := range permissionKeys {
+		k = strings.TrimSpace(k)
+		if k != "" {
+			keys = append(keys, k)
+		}
+	}
+
+	return func(c *gin.Context) {
+		if len(keys) == 0 {
+			c.Next()
+			return
+		}
+		for _, k := range keys {
+			ok, err := HasPermission(c, k)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "权限校验失败"})
+				c.Abort()
+				return
+			}
+			if ok {
+				c.Next()
+				return
+			}
+		}
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权限"})
+		c.Abort()
+	}
+}
+
 func RequirePermission(permissionKey string) gin.HandlerFunc {
 	key := strings.TrimSpace(permissionKey)
 	return func(c *gin.Context) {

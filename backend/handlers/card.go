@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"kabao/config"
+	"kabao/middleware"
 	"kabao/models"
 	"net/http"
 	"strconv"
@@ -425,24 +426,13 @@ func GenerateVerifyCode(c *gin.Context) {
 		return
 	}
 
-	// 优先复用未过期且未使用的核销码（12小时有效）
-	var existing models.VerifyCode
-	if err := config.DB.
+	// 恢复为默认短有效期核销码：每次生成都强制生成新码，并使旧未使用码立即失效
+	config.DB.Model(&models.VerifyCode{}).
 		Where("card_id = ? AND used = ? AND expire_at > ?", card.ID, false, now.Unix()).
-		Order("id desc").
-		First(&existing).Error; err == nil {
-		c.JSON(http.StatusOK, gin.H{
-			"data": gin.H{
-				"code":      existing.Code,
-				"expire_at": existing.ExpireAt,
-				"card_id":   card.ID,
-			},
-		})
-		return
-	}
+		Update("expire_at", now.Unix())
 
 	code := uuid.New().String()[:8]
-	expireAt := now.Add(12 * time.Hour).Unix()
+	expireAt := now.Add(5 * time.Minute).Unix()
 
 	verifyCode := models.VerifyCode{CardID: card.ID, Code: code, ExpireAt: expireAt, Used: false}
 	config.DB.Create(&verifyCode)
@@ -632,6 +622,7 @@ func FinishVerifyCard(c *gin.Context) {
 
 	var usage models.Usage
 	var verifyCode models.VerifyCode
+	var merchant models.Merchant
 	var finishedAt time.Time
 
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
@@ -642,11 +633,24 @@ func FinishVerifyCard(c *gin.Context) {
 			}
 			return err
 		}
-		if verifyCode.ExpireAt > 0 && now.Unix() > verifyCode.ExpireAt {
-			return apiErr{status: http.StatusBadRequest, msg: "核销码已过期"}
-		}
 		if !verifyCode.Used {
 			return apiErr{status: http.StatusBadRequest, msg: "该核销码尚未核销"}
+		}
+		if verifyCode.UsedAt == nil {
+			return apiErr{status: http.StatusBadRequest, msg: "核销记录异常"}
+		}
+		if now.Sub(*verifyCode.UsedAt) > 12*time.Hour {
+			return apiErr{status: http.StatusBadRequest, msg: "该核销记录已超过可结单时间"}
+		}
+		if err := tx.First(&merchant, merchantID).Error; err != nil {
+			return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
+		}
+		if !merchant.SupportCustomerService {
+			return apiErr{status: http.StatusBadRequest, msg: "该商户无需结单"}
+		}
+		avgMinutes := merchant.AvgServiceMinutes
+		if avgMinutes <= 0 {
+			avgMinutes = 15
 		}
 
 		// 找到对应使用记录（同卡同码，取最新）
@@ -665,6 +669,15 @@ func FinishVerifyCard(c *gin.Context) {
 		}
 		if usage.Status != "in_progress" {
 			return apiErr{status: http.StatusBadRequest, msg: "该记录不可结单"}
+		}
+		if usage.UsedAt == nil {
+			return apiErr{status: http.StatusBadRequest, msg: "核销记录异常"}
+		}
+		if now.Sub(*usage.UsedAt) < time.Duration(avgMinutes)*time.Minute {
+			return apiErr{status: http.StatusBadRequest, msg: "未到结单时间"}
+		}
+		if now.Sub(*usage.UsedAt) > 12*time.Hour {
+			return apiErr{status: http.StatusBadRequest, msg: "该核销记录已超过可结单时间"}
 		}
 
 		finishedAt = now
@@ -694,6 +707,226 @@ func FinishVerifyCard(c *gin.Context) {
 			"technician_id": usage.TechnicianID,
 		},
 	})
+}
+
+func ScanVerifyCard(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+
+	var input struct {
+		Code string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	code := strings.TrimSpace(input.Code)
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "code 不能为空"})
+		return
+	}
+
+	var verifyCode models.VerifyCode
+	var card models.Card
+	var merchant models.Merchant
+	var usage models.Usage
+	var usedAt time.Time
+	var finishedAt time.Time
+	var remainTimes int
+	usageStatus := "success"
+	action := "verify"
+
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		if err := tx.First(&merchant, merchantID).Error; err != nil {
+			return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
+		}
+		if merchant.SupportCustomerService {
+			usageStatus = "in_progress"
+		}
+
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", code).First(&verifyCode).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apiErr{status: http.StatusNotFound, msg: "核销码不存在"}
+			}
+			return err
+		}
+
+		// 未核销：按核销逻辑处理（需在核销码有效期内）
+		if !verifyCode.Used {
+			if now.Unix() > verifyCode.ExpireAt {
+				return apiErr{status: http.StatusBadRequest, msg: "核销码已过期"}
+			}
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&card, verifyCode.CardID).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return apiErr{status: http.StatusNotFound, msg: "卡片不存在"}
+				}
+				return err
+			}
+			if card.MerchantID != merchantID {
+				return apiErr{status: http.StatusForbidden, msg: "无权核销此卡"}
+			}
+			if card.EndDate != nil && now.After(*card.EndDate) {
+				return apiErr{status: http.StatusBadRequest, msg: "卡片已过期"}
+			}
+			if card.RemainTimes <= 0 {
+				return apiErr{status: http.StatusBadRequest, msg: "剩余次数不足"}
+			}
+
+			res := tx.Model(&models.VerifyCode{}).
+				Where("id = ? AND used = ?", verifyCode.ID, false).
+				Updates(map[string]interface{}{"used": true, "used_at": now})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return apiErr{status: http.StatusBadRequest, msg: "核销码已使用"}
+			}
+			usedAt = now
+
+			res = tx.Model(&models.Card{}).
+				Where("id = ? AND remain_times > 0", card.ID).
+				Updates(map[string]interface{}{
+					"remain_times": gorm.Expr("remain_times - ?", 1),
+					"used_times":   gorm.Expr("used_times + ?", 1),
+					"last_used_at": usedAt,
+				})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return apiErr{status: http.StatusBadRequest, msg: "剩余次数不足"}
+			}
+
+			if err := tx.First(&card, card.ID).Error; err != nil {
+				return err
+			}
+			remainTimes = card.RemainTimes
+
+			usage = models.Usage{
+				CardID:             card.ID,
+				MerchantID:         card.MerchantID,
+				UsedTimes:          1,
+				UsedAt:             &usedAt,
+				VerifyCode:         verifyCode.Code,
+				VerifyCodeExpireAt: verifyCode.ExpireAt,
+				Status:             usageStatus,
+			}
+			if err := tx.Create(&usage).Error; err != nil {
+				return err
+			}
+			action = "verify"
+			return nil
+		}
+
+		// 已核销：尝试结单（技师账号且有结单权限）
+		if authType != "technician" {
+			return apiErr{status: http.StatusBadRequest, msg: "该二维码已核销，请使用技师账号结单"}
+		}
+		okFinish, err := middleware.HasPermission(c, "merchant.card.finish")
+		if err != nil {
+			return err
+		}
+		if !okFinish {
+			return apiErr{status: http.StatusForbidden, msg: "无结单权限"}
+		}
+		if !merchant.SupportCustomerService {
+			return apiErr{status: http.StatusBadRequest, msg: "该商户无需结单"}
+		}
+		if verifyCode.UsedAt == nil {
+			return apiErr{status: http.StatusBadRequest, msg: "核销记录异常"}
+		}
+		if now.Sub(*verifyCode.UsedAt) > 12*time.Hour {
+			return apiErr{status: http.StatusBadRequest, msg: "该核销记录已超过可结单时间"}
+		}
+		avgMinutes := merchant.AvgServiceMinutes
+		if avgMinutes <= 0 {
+			avgMinutes = 15
+		}
+
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("merchant_id = ? AND card_id = ? AND verify_code = ?", merchantID, verifyCode.CardID, verifyCode.Code).
+			Order("id desc").
+			First(&usage).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apiErr{status: http.StatusNotFound, msg: "找不到核销记录"}
+			}
+			return err
+		}
+		if usage.Status == "success" {
+			return apiErr{status: http.StatusBadRequest, msg: "该记录已结单"}
+		}
+		if usage.Status != "in_progress" {
+			return apiErr{status: http.StatusBadRequest, msg: "该记录不可结单"}
+		}
+		if usage.UsedAt == nil {
+			return apiErr{status: http.StatusBadRequest, msg: "核销记录异常"}
+		}
+		if now.Sub(*usage.UsedAt) < time.Duration(avgMinutes)*time.Minute {
+			return apiErr{status: http.StatusBadRequest, msg: "未到结单时间"}
+		}
+		if now.Sub(*usage.UsedAt) > 12*time.Hour {
+			return apiErr{status: http.StatusBadRequest, msg: "该核销记录已超过可结单时间"}
+		}
+
+		techIDAny, ok := c.Get("technician_id")
+		if !ok {
+			return apiErr{status: http.StatusUnauthorized, msg: "未登录"}
+		}
+		techID, ok := techIDAny.(uint)
+		if !ok || techID == 0 {
+			return apiErr{status: http.StatusUnauthorized, msg: "未登录"}
+		}
+
+		finishedAt = now
+		action = "finish"
+		return tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
+			"technician_id": techID,
+			"finished_at":   finishedAt,
+			"status":        "success",
+		}).Error
+	})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp := gin.H{
+		"action": action,
+	}
+	if action == "verify" {
+		resp["card_id"] = card.ID
+		resp["remain_times"] = remainTimes
+		resp["used_at"] = usedAt.Format("2006-01-02 15:04:05")
+		c.JSON(http.StatusOK, gin.H{"message": "核销成功", "data": resp})
+		return
+	}
+
+	config.DB.Preload("Technician").First(&usage, usage.ID)
+	resp["usage_id"] = usage.ID
+	resp["card_id"] = usage.CardID
+	resp["finished_at"] = finishedAt.Format("2006-01-02 15:04:05")
+	resp["technician_id"] = usage.TechnicianID
+	resp["technician_code"] = usage.Technician.Code
+	resp["used_at"] = usage.UsedAt
+	resp["avg_service_minutes"] = merchant.AvgServiceMinutes
+	c.JSON(http.StatusOK, gin.H{"message": "结单成功", "data": resp})
 }
 
 func GetTodayVerify(c *gin.Context) {

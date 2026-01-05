@@ -185,6 +185,7 @@ export const cardApi = {
   updateCard: (id, data) => api.put(`/cards/${id}`, data),
   generateVerifyCode: (cardId) => api.post(`/cards/${cardId}/verify-code`),
   verifyCard: (code) => api.post('/verify', { code }),
+  scanVerify: (code) => api.post('/verify/scan', { code }),
   finishVerify: (code) => api.post('/verify/finish', { code }),
   getTodayVerify: (merchantId) => api.get(`/merchants/${merchantId}/today-verify`)
 }

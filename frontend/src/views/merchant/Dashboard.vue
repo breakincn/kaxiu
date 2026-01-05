@@ -757,7 +757,7 @@ const goScanVerify = () => {
 }
 
 const goScanFinish = () => {
-  router.push({ path: '/merchant/scan-verify', query: { mode: 'finish' } })
+  router.push('/merchant/scan-verify')
 }
 
 const onTopScanClick = () => {

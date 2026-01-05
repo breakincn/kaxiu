@@ -88,6 +88,7 @@ func SetupRoutes(r *gin.Engine) {
 	// 核销相关
 	auth.POST("/cards/:id/verify-code", handlers.GenerateVerifyCode)
 	auth.POST("/verify", middleware.RequirePermission("merchant.card.verify"), handlers.VerifyCard)
+	auth.POST("/verify/scan", middleware.RequireAnyPermission("merchant.card.verify", "merchant.card.finish"), handlers.ScanVerifyCard)
 	auth.POST("/verify/finish", middleware.RequirePermission("merchant.card.finish"), handlers.FinishVerifyCard)
 	auth.GET("/merchants/:id/today-verify", handlers.GetTodayVerify)
 
