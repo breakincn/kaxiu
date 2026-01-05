@@ -32,8 +32,8 @@
         </div>
 
         <div class="mt-4 border-t border-gray-100 pt-4">
-          <div v-if="activeRole === 'technician'" class="flex items-center justify-between">
-            <div class="text-gray-800 font-medium">技师账号</div>
+          <div v-if="activeRole" class="flex items-center justify-between">
+            <div class="text-gray-800 font-medium">{{ activeRoleObj.name }}账号</div>
             <div class="flex items-center gap-2">
               <button
                 v-if="activeRoleObj && activeRoleObj.allow_permission_adjust"
@@ -48,29 +48,17 @@
                 class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
                 @click="openCreate"
               >
-                添加技师
+                添加{{ activeRoleObj.name }}
               </button>
             </div>
           </div>
-
-          <div v-else class="flex items-center justify-between">
-            <div class="text-gray-500 text-sm">该客服类型功能开发中</div>
-            <button
-              v-if="activeRoleObj && activeRoleObj.allow_permission_adjust"
-              type="button"
-              class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
-              @click="openPermissionAdjust"
-            >
-              权限微调
-            </button>
-          </div>
         </div>
 
-        <div v-if="activeRole === 'technician'">
+        <div v-if="activeRole">
           <div v-if="loading" class="text-center text-gray-400 py-10">加载中...</div>
 
           <div v-else>
-            <div v-if="techs.length === 0" class="text-center text-gray-400 py-10">暂无技师</div>
+            <div v-if="techs.length === 0" class="text-center text-gray-400 py-10">暂无{{ activeRoleObj.name }}</div>
 
             <div v-else class="mt-4 space-y-3">
               <div
