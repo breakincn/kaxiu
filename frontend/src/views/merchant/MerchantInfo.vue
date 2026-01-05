@@ -195,6 +195,8 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
 
+import { getMerchantId } from '../../utils/auth'
+
 const router = useRouter()
 const saving = ref(false)
 const useAllDay = ref(false)
@@ -236,7 +238,7 @@ const handleAllDayToggle = () => {
 
 const fetchMerchantInfo = async () => {
   try {
-    const merchantId = localStorage.getItem('merchantId')
+    const merchantId = getMerchantId()
     if (!merchantId) {
       router.push('/merchant/login')
       return

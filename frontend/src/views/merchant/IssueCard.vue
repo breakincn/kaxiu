@@ -142,6 +142,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { cardApi, merchantApi, shopApi } from '../../api'
 
+import { getMerchantId, getMerchantToken } from '../../utils/auth'
+
 const router = useRouter()
 
 const phoneQuery = ref('')
@@ -220,8 +222,8 @@ const goBack = () => {
 }
 
 const ensureMerchantLogin = () => {
-  const storedMerchantId = localStorage.getItem('merchantId')
-  const storedToken = localStorage.getItem('merchantToken')
+  const storedMerchantId = getMerchantId()
+  const storedToken = getMerchantToken()
 
   if (!storedMerchantId || !storedToken) {
     router.replace('/merchant/login')

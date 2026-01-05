@@ -1,5 +1,7 @@
 import axios from 'axios'
 
+import { clearMerchantAuth, getMerchantActiveAuth, getMerchantToken, getTechnicianShopSlug } from '../utils/auth'
+
 const api = axios.create({
   baseURL: '/api',
   timeout: 10000
@@ -14,8 +16,8 @@ api.interceptors.request.use(
   (config) => {
     // 根据当前路径判断是用户还是商户
     const isMerchant = isMerchantContextPath(window.location.pathname)
-    const token = isMerchant 
-      ? localStorage.getItem('merchantToken')
+    const token = isMerchant
+      ? getMerchantToken()
       : localStorage.getItem('userToken')
     
     if (token) {
@@ -40,16 +42,23 @@ api.interceptors.response.use(
       const isMerchant = isMerchantContextPath(pathname)
       
       if (isMerchant) {
-        // 商户端，清空商户登录信息
-        localStorage.removeItem('merchantToken')
-        localStorage.removeItem('merchantId')
-        localStorage.removeItem('merchantName')
-        localStorage.removeItem('merchantPhone')
+        // 商户端：仅清空“当前激活身份”的登录信息，避免覆盖其它账号
+        const active = getMerchantActiveAuth()
+        clearMerchantAuth()
         import('../router').then(({ default: router }) => {
           if (isTechnicianLoginPath(pathname)) {
             router.replace(pathname)
           } else {
-            router.replace('/merchant/login')
+            if (active === 'technician') {
+              const slug = getTechnicianShopSlug()
+              if (slug) {
+                router.replace(`/shop/${slug}/login`)
+              } else {
+                router.replace('/merchant/login')
+              }
+            } else {
+              router.replace('/merchant/login')
+            }
           }
         })
       } else {

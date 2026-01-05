@@ -165,6 +165,8 @@ import { onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { merchantApi, shopApi, smsApi } from '../../api'
 
+import { setMerchantActiveAuth, setTechnicianShopSlug } from '../../utils/auth'
+
 const router = useRouter()
 const route = useRoute()
 
@@ -252,29 +254,42 @@ const handleLogin = async () => {
     
     console.log('商户信息:', res.data.merchant)
     
-    // 保存登录状态
-    localStorage.setItem('merchantToken', res.data.token)
-    localStorage.setItem('merchantId', res.data.merchant.id)
-    localStorage.setItem('merchantName', res.data.merchant.name)
-    localStorage.setItem('merchantPhone', res.data.merchant.phone)
-
+    // 保存登录状态：商户与技师分离，避免互相覆盖
     if (res.data.technician && res.data.technician.id) {
-      localStorage.setItem('merchantAuthType', 'technician')
-      localStorage.setItem('technicianId', res.data.technician.id)
-      localStorage.setItem('technicianName', res.data.technician.name || '')
-      localStorage.setItem('technicianCode', res.data.technician.code || '')
-      localStorage.setItem('technicianAccount', res.data.technician.account || '')
+      // 技师登录（来自 /shop/:slug/login）
+      setMerchantActiveAuth('technician')
+      setTechnicianShopSlug(shopSlug.value)
+
+      localStorage.setItem('technicianToken', res.data.token)
+      localStorage.setItem('technicianMerchantId', res.data.merchant.id)
+      localStorage.setItem('technicianMerchantName', res.data.merchant.name)
+      localStorage.setItem('technicianMerchantPhone', res.data.merchant.phone)
+
+      sessionStorage.setItem('technicianId', res.data.technician.id)
+      sessionStorage.setItem('technicianName', res.data.technician.name || '')
+      sessionStorage.setItem('technicianCode', res.data.technician.code || '')
+      sessionStorage.setItem('technicianAccount', res.data.technician.account || '')
     } else {
-      localStorage.setItem('merchantAuthType', 'merchant')
-      localStorage.removeItem('technicianId')
-      localStorage.removeItem('technicianName')
-      localStorage.removeItem('technicianCode')
-      localStorage.removeItem('technicianAccount')
+      // 商户登录（来自 /merchant/login）
+      setMerchantActiveAuth('merchant')
+      setTechnicianShopSlug('')
+
+      localStorage.setItem('merchantToken', res.data.token)
+      localStorage.setItem('merchantId', res.data.merchant.id)
+      localStorage.setItem('merchantName', res.data.merchant.name)
+      localStorage.setItem('merchantPhone', res.data.merchant.phone)
+
+      sessionStorage.removeItem('technicianId')
+      sessionStorage.removeItem('technicianName')
+      sessionStorage.removeItem('technicianCode')
+      sessionStorage.removeItem('technicianAccount')
     }
     
     console.log('登录信息已保存，准备跳转...')
     console.log('merchantToken:', localStorage.getItem('merchantToken'))
     console.log('merchantId:', localStorage.getItem('merchantId'))
+    console.log('technicianToken:', localStorage.getItem('technicianToken'))
+    console.log('technicianMerchantId:', localStorage.getItem('technicianMerchantId'))
     
     console.log('即将执行 router.push("/merchant")')
     router.push('/merchant').then(() => {

@@ -625,6 +625,8 @@ import { merchantApi, cardApi, appointmentApi, noticeApi, usageApi, shopApi } fr
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
 
+import { getMerchantId } from '../../utils/auth'
+
 const router = useRouter()
 const route = useRoute()
 let topScanLongPressTimer = null
@@ -657,19 +659,19 @@ const sellSelectedTemplateName = computed(() => {
 })
 
 const isTechnicianAuth = () => {
-  return localStorage.getItem('merchantAuthType') === 'technician'
+  return sessionStorage.getItem('merchantActiveAuth') === 'technician'
 }
 
 const getTechnicianId = () => {
-  const raw = localStorage.getItem('technicianId')
+  const raw = sessionStorage.getItem('technicianId')
   if (!raw) return null
   const n = parseInt(String(raw), 10)
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
 const getTechnicianName = () => {
-  const name = localStorage.getItem('technicianName')
-  const code = localStorage.getItem('technicianCode')
+  const name = sessionStorage.getItem('technicianName')
+  const code = sessionStorage.getItem('technicianCode')
   if (name) return name
   if (code) return `技师${code}`
   return '技师'
@@ -1394,7 +1396,7 @@ onMounted(() => {
   routeUserCode.value = userCodeParam ? String(userCodeParam) : ''
   scanUserCodeActive.value = !!userCodeParam && String(route.query.from_scan || '') === '1'
   
-  const storedMerchantId = localStorage.getItem('merchantId')
+  const storedMerchantId = getMerchantId()
   if (!storedMerchantId) {
     console.log('No merchantId found, redirecting to login')
     router.replace('/merchant/login')

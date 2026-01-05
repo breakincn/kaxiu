@@ -94,6 +94,8 @@ import { useRouter, useRoute } from 'vue-router'
 import { cardApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 
+import { getMerchantId, getMerchantToken } from '../../utils/auth'
+
 const router = useRouter()
 const route = useRoute()
 
@@ -121,8 +123,8 @@ const goScanVerify = () => {
 }
 
 onMounted(() => {
-  const token = localStorage.getItem('merchantToken')
-  const id = localStorage.getItem('merchantId')
+  const token = getMerchantToken()
+  const id = getMerchantId()
   if (!token || !id) {
     router.replace('/merchant/login')
     return

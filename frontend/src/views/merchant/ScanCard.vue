@@ -89,6 +89,8 @@ import { Html5Qrcode } from 'html5-qrcode'
 import { cardApi } from '../../api'
 import PwaInstallGuide from '../../components/PwaInstallGuide.vue'
 
+import { getMerchantId, getMerchantToken } from '../../utils/auth'
+
 const router = useRouter()
 
 const starting = ref(false)
@@ -282,8 +284,8 @@ const closeAlert = () => {
 }
 
 onMounted(() => {
-  const token = localStorage.getItem('merchantToken')
-  const id = localStorage.getItem('merchantId')
+  const token = getMerchantToken()
+  const id = getMerchantId()
   if (!token || !id) {
     router.replace('/merchant/login')
     return
