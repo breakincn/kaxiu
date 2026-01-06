@@ -127,22 +127,44 @@ check_status() {
     
     # 检查开发环境
     echo "开发环境："
-    if pgrep -f "vite.*VITE_APP_TARGET=user" > /dev/null; then
+    if pgrep -f "VITE_APP_TARGET=user" > /dev/null; then
         echo "  ✅ 用户端前端运行中 (端口: 3000)"
     else
         echo "  ❌ 用户端前端未运行"
     fi
     
-    if pgrep -f "vite.*VITE_APP_TARGET=merchant" > /dev/null; then
+    if pgrep -f "VITE_APP_TARGET=merchant" > /dev/null; then
         echo "  ✅ 商户端前端运行中 (端口: 3001)"
     else
         echo "  ❌ 商户端前端未运行"
     fi
     
-    if pgrep -f "vite.*VITE_APP_TARGET=admin" > /dev/null; then
+    if pgrep -f "VITE_APP_TARGET=admin" > /dev/null; then
         echo "  ✅ 平台端前端运行中 (端口: 3002)"
     else
         echo "  ❌ 平台端前端未运行"
+    fi
+    
+    echo ""
+    
+    # 检查端口占用
+    echo "端口占用："
+    if netstat -tlnp 2>/dev/null | grep :3000 > /dev/null; then
+        echo "  ✅ 端口 3000 已占用"
+    else
+        echo "  ❌ 端口 3000 未占用"
+    fi
+    
+    if netstat -tlnp 2>/dev/null | grep :3001 > /dev/null; then
+        echo "  ✅ 端口 3001 已占用"
+    else
+        echo "  ❌ 端口 3001 未占用"
+    fi
+    
+    if netstat -tlnp 2>/dev/null | grep :3002 > /dev/null; then
+        echo "  ✅ 端口 3002 已占用"
+    else
+        echo "  ❌ 端口 3002 未占用"
     fi
     
     echo ""
