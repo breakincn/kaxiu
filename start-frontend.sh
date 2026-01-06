@@ -35,8 +35,45 @@ start_dev() {
     # 停止现有服务
     stop_frontend
     
-    # 启动用户端前端（默认端口 3000）
     cd /opt/kabao/frontend
+    
+    # 检查并构建缺失的 dist 文件
+    echo "检查构建文件..."
+    
+    if [ ! -d "dist-user" ]; then
+        echo "用户端构建文件不存在，开始构建..."
+        npm run build:user
+        if [ $? -ne 0 ]; then
+            echo "❌ 用户端构建失败"
+            cd ..
+            exit 1
+        fi
+        echo "✅ 用户端构建完成"
+    fi
+    
+    if [ ! -d "dist-merchant" ]; then
+        echo "商户端构建文件不存在，开始构建..."
+        npm run build:merchant
+        if [ $? -ne 0 ]; then
+            echo "❌ 商户端构建失败"
+            cd ..
+            exit 1
+        fi
+        echo "✅ 商户端构建完成"
+    fi
+    
+    if [ ! -d "dist-admin" ]; then
+        echo "平台端构建文件不存在，开始构建..."
+        npm run build:admin
+        if [ $? -ne 0 ]; then
+            echo "❌ 平台端构建失败"
+            cd ..
+            exit 1
+        fi
+        echo "✅ 平台端构建完成"
+    fi
+    
+    # 启动用户端前端（默认端口 3000）
     echo "启动用户端前端 (端口: 3000)..."
     nohup npm run dev:user > ../logs/user-frontend.log 2>&1 &
     echo "用户端前端已启动 (PID: $!)"
