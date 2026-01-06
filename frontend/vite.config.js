@@ -23,7 +23,7 @@ export default defineConfig(({ mode }) => {
       {
         name: 'disable-pwa-in-dev',
         transformIndexHtml(html, { server }) {
-          if (server && !process.env.NODE_ENV?.includes('prod')) {
+          if (server && process.env.NODE_ENV === 'development') {
             // 移除manifest引用以禁用PWA
             const removed = html.replace('<link rel="manifest" href="/manifest.webmanifest" />', '')
             return removed.replace(/<title>[\s\S]*?<\/title>/, `<title>${title}</title>`)

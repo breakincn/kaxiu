@@ -9,5 +9,9 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('fetch', (event) => {
+  // 不拦截API请求，让浏览器直接处理
+  if (event.request.url.includes('/api/')) {
+    return
+  }
   event.respondWith(fetch(event.request))
 })
