@@ -238,6 +238,9 @@
           <div v-if="selectedUsage" class="mt-4 text-center text-xs" :class="getFinishExpireTextClass(selectedUsage)">
             有效期至 {{ formatFinishExpireTime(selectedUsage) }}
           </div>
+          <div v-if="selectedUsage && getFinishExpireTextClass(selectedUsage) === 'text-red-500' && getFinishCountdownText(selectedUsage)" class="mt-1 text-center text-xs text-red-500">
+            离失效还有 {{ getFinishCountdownText(selectedUsage) }}
+          </div>
         </div>
       </div>
     </div>
@@ -431,7 +434,7 @@ const getUsageStatusText = (usage) => {
 const getUsageStatusClass = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s === 'in_progress') return 'text-blue-500'
-  if (s === 'success') return 'text-primary'
+  if (s === 'success') return ''
   return 'text-red-500'
 }
 
@@ -492,6 +495,25 @@ const getFinishExpireTextClass = (usage) => {
   if (now >= availableAt + 60 * 60 * 1000) return 'text-red-500'
   if (now >= availableAt) return 'text-green-500'
   return 'text-gray-400'
+}
+
+const getFinishCountdownText = (usage) => {
+  const finishExpireAt = getFinishExpireAtUnix(usage) * 1000
+  if (!finishExpireAt) return ''
+  const now = nowForFinish.value
+  const diff = finishExpireAt - now
+  if (diff <= 0) return ''
+  const totalSeconds = Math.floor(diff / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) {
+    return `${hours}小时${minutes}分${seconds}秒`
+  } else if (minutes > 0) {
+    return `${minutes}分${seconds}秒`
+  } else {
+    return `${seconds}秒`
+  }
 }
 
 const canShowUsageQr = (usage) => {
