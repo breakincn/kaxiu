@@ -5,7 +5,16 @@ import { resolve } from 'path'
 export default defineConfig(({ mode }) => {
   const appTarget = process.env.VITE_APP_TARGET || 'user'
   const isMerchantApp = appTarget === 'merchant'
-  const title = isMerchantApp ? '卡包 - kabao.shop' : '卡包 - kabao.app'
+  const isAdminApp = appTarget === 'admin'
+  
+  let title
+  if (isMerchantApp) {
+    title = '卡包 - kabao.shop'
+  } else if (isAdminApp) {
+    title = '卡包管理 - admin.kabao.app'
+  } else {
+    title = '卡包 - kabao.app'
+  }
 
   return {
     plugins: [
@@ -30,7 +39,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: '0.0.0.0',
-      port: isMerchantApp ? 3001 : 3000,
+      port: isMerchantApp ? 3001 : (isAdminApp ? 3002 : 3000),
       headers: {
         // 开发环境禁用缓存
         'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -45,7 +54,7 @@ export default defineConfig(({ mode }) => {
       }
     },
     build: {
-      outDir: isMerchantApp ? 'dist-merchant' : 'dist-user',
+      outDir: isMerchantApp ? 'dist-merchant' : (isAdminApp ? 'dist-admin' : 'dist-user'),
       // 生产构建时确保文件名包含hash以破坏缓存
       rollupOptions: {
         output: {
