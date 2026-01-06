@@ -4,7 +4,7 @@
     <header class="bg-white px-4 py-3 flex items-center justify-between border-b">
       <div class="flex items-center gap-2">
         <span class="text-primary font-bold text-xl">卡包</span>
-        <span class="text-gray-400 text-xs">kabao.site</span>
+        <span class="text-gray-400 text-xs">kabao.shop</span>
       </div>
       <div class="flex items-center gap-3">
         <button

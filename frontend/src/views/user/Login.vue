@@ -4,7 +4,7 @@
       <div class="text-center mb-8">
         <div class="flex items-center justify-center gap-2 mb-2">
           <span class="text-primary font-bold text-3xl">卡包</span>
-          <span class="text-gray-400 text-sm">kabao.me</span>
+          <span class="text-gray-400 text-sm">kabao.app</span>
         </div>
         <p class="text-gray-500">用户端登录</p>
       </div>
