@@ -36,7 +36,7 @@ npm run build:merchant
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `VITE_API_BASE_URL` | 开发 `/api`，生产 `https://api.kabao.app/api` | API 基础地址 |
+| `VITE_API_BASE_URL` | 开发 `/api`，生产 `https://api.kabao.app` | API 基础地址 |
 | `VITE_APP_TARGET` | `user` 或 `merchant` | 控制路由集合与构建输出 |
 
 ---

@@ -9,7 +9,7 @@ import {
   setMerchantPermissionKeys
 } from '../utils/auth'
 
-const defaultApiBaseURL = import.meta.env.DEV ? '/api' : 'https://api.kabao.app/api'
+const defaultApiBaseURL = import.meta.env.DEV ? '/api' : 'https://api.kabao.app'
 const apiBaseURL = import.meta.env.VITE_API_BASE_URL || defaultApiBaseURL
 
 const api = axios.create({
