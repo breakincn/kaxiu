@@ -9,8 +9,11 @@ import {
   setMerchantPermissionKeys
 } from '../utils/auth'
 
+const defaultApiBaseURL = import.meta.env.DEV ? '/api' : 'https://api.kabao.app/api'
+const apiBaseURL = import.meta.env.VITE_API_BASE_URL || defaultApiBaseURL
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: apiBaseURL,
   timeout: 10000
 })
 
@@ -99,13 +102,13 @@ api.interceptors.response.use(
 )
 
 export const authApi = {
-  login: (username, password) => api.post('/login', { username, password }),
+  login: (username, password) => api.post('/user/login', { username, password }),
   register: (data) => api.post('/user/register', data),
-  getCurrentUser: () => api.get('/me')
+  getCurrentUser: () => api.get('/user/me')
 }
 
 export const smsApi = {
-  sendCode: (phone, type) => api.post('/sms/send', { phone, type }),
+  sendCode: (phone, type) => api.post('/user/sms/send', { phone, type }),
 }
 
 export const platformApi = {
@@ -128,22 +131,22 @@ export const platformAdminApi = {
 }
 
 export const userApi = {
-  getUsers: () => api.get('/users'),
-  getUser: (id) => api.get(`/users/${id}`),
-  createUser: (data) => api.post('/users', data),
+  getUsers: () => api.get('/user/users'),
+  getUser: (id) => api.get(`/user/users/${id}`),
+  createUser: (data) => api.post('/user/users', data),
   bindPhone: (phone, code) => api.post('/user/bind-phone', { phone, code }),
   getUserCode: () => api.get('/user/code'),
-  getCurrentUser: () => api.get('/me')
+  getCurrentUser: () => api.get('/user/me')
 }
 
 export const merchantApi = {
   register: (data) => api.post('/merchant/register', data),
   login: (phone, password) => api.post('/merchant/login', { phone, password }),
-  getMerchants: () => api.get('/merchants'),
-  getMerchant: (id) => api.get(`/merchants/${id}`),
-  createMerchant: (data) => api.post('/merchants', data),
-  updateMerchant: (id, data) => api.put(`/merchants/${id}`, data),
-  getQueueStatus: (id) => api.get(`/merchants/${id}/queue`),
+  getMerchants: () => api.get('/merchant/merchants'),
+  getMerchant: (id) => api.get(`/merchant/merchants/${id}`),
+  createMerchant: (data) => api.post('/merchant/merchants', data),
+  updateMerchant: (id, data) => api.put(`/merchant/merchants/${id}`, data),
+  getQueueStatus: (id) => api.get(`/merchant/merchants/${id}/queue`),
   searchUsersByPhone: (phone) => api.get('/merchant/users/search', { params: { phone } }),
   bindPhone: (phone, code, password) => api.post('/merchant/bind-phone', { phone, code, password }),
   getCurrentMerchant: () => api.get('/merchant/me'),
@@ -156,8 +159,8 @@ export const merchantApi = {
   getMyPermissions: () => api.get('/merchant/permissions'),
 
   // 技师（客服类型账号）自身
-  getCurrentTechnician: () => api.get('/technician/me'),
-  bindTechnicianPhone: (phone, code) => api.post('/technician/bind-phone', { phone, code }),
+  getCurrentTechnician: () => api.get('/merchant/technician/me'),
+  bindTechnicianPhone: (phone, code) => api.post('/merchant/technician/bind-phone', { phone, code }),
 
   // 技师账号管理
   getTechnicians: (roleKey) => api.get('/merchant/technicians', { params: { role: roleKey } }),
@@ -182,42 +185,42 @@ export const ensureMerchantPermissionsLoaded = async () => {
 }
 
 export const cardApi = {
-  getCards: () => api.get('/cards'),
-  getCard: (id) => api.get(`/cards/${id}`),
-  getUserCards: (userId, status) => api.get(`/users/${userId}/cards`, { params: { status } }),
-  getMerchantCards: (merchantId, params) => api.get(`/merchants/${merchantId}/cards`, { params }),
+  getCards: () => api.get('/user/cards'),
+  getCard: (id) => api.get(`/user/cards/${id}`),
+  getUserCards: (userId, status) => api.get(`/user/users/${userId}/cards`, { params: { status } }),
+  getMerchantCards: (merchantId, params) => api.get(`/merchant/merchants/${merchantId}/cards`, { params }),
   getMerchantCard: (id) => api.get(`/merchant/cards/${id}`),
-  createCard: (data) => api.post('/cards', data),
-  updateCard: (id, data) => api.put(`/cards/${id}`, data),
-  generateVerifyCode: (cardId) => api.post(`/cards/${cardId}/verify-code`),
-  verifyCard: (code) => api.post('/verify', { code }),
-  scanVerify: (code) => api.post('/verify/scan', { code }),
-  finishVerify: (code) => api.post('/verify/finish', { code }),
-  getTodayVerify: (merchantId) => api.get(`/merchants/${merchantId}/today-verify`)
+  createCard: (data) => api.post('/merchant/cards', data),
+  updateCard: (id, data) => api.put(`/merchant/cards/${id}`, data),
+  generateVerifyCode: (cardId) => api.post(`/user/cards/${cardId}/verify-code`),
+  verifyCard: (code) => api.post('/merchant/verify', { code }),
+  scanVerify: (code) => api.post('/merchant/verify/scan', { code }),
+  finishVerify: (code) => api.post('/merchant/verify/finish', { code }),
+  getTodayVerify: (merchantId) => api.get(`/merchant/merchants/${merchantId}/today-verify`)
 }
 
 export const usageApi = {
-  getCardUsages: (cardId) => api.get(`/cards/${cardId}/usages`),
-  getMerchantUsages: (merchantId) => api.get(`/merchants/${merchantId}/usages`)
+  getCardUsages: (cardId) => api.get(`/user/cards/${cardId}/usages`),
+  getMerchantUsages: (merchantId) => api.get(`/merchant/merchants/${merchantId}/usages`)
 }
 
 export const noticeApi = {
-  getMerchantNotices: (merchantId, limit) => api.get(`/merchants/${merchantId}/notices`, { params: { limit } }),
-  createNotice: (data) => api.post('/notices', data),
-  deleteNotice: (id) => api.delete(`/notices/${id}`),
-  togglePinNotice: (id) => api.put(`/notices/${id}/pin`)
+  getMerchantNotices: (merchantId, limit) => api.get(`/merchant/merchants/${merchantId}/notices`, { params: { limit } }),
+  createNotice: (data) => api.post('/merchant/notices', data),
+  deleteNotice: (id) => api.delete(`/merchant/notices/${id}`),
+  togglePinNotice: (id) => api.put(`/merchant/notices/${id}/pin`)
 }
 
 export const appointmentApi = {
-  getMerchantAppointments: (merchantId, status) => api.get(`/merchants/${merchantId}/appointments`, { params: { status } }),
-  getMerchantTechnicians: (merchantId) => api.get(`/merchants/${merchantId}/technicians`),
-  getUserAppointments: (userId) => api.get(`/users/${userId}/appointments`),
-  getCardAppointment: (cardId) => api.get(`/cards/${cardId}/appointment`),
-  getAvailableTimeSlots: (merchantId, date) => api.get(`/merchants/${merchantId}/available-slots`, { params: { date } }),
-  createAppointment: (data) => api.post('/appointments', data),
-  confirmAppointment: (id) => api.put(`/appointments/${id}/confirm`),
-  finishAppointment: (id) => api.put(`/appointments/${id}/finish`),
-  cancelAppointment: (id) => api.put(`/appointments/${id}/cancel`)
+  getMerchantAppointments: (merchantId, status) => api.get(`/merchant/merchants/${merchantId}/appointments`, { params: { status } }),
+  getMerchantTechnicians: (merchantId) => api.get(`/merchant/merchants/${merchantId}/technicians`),
+  getUserAppointments: (userId) => api.get(`/user/users/${userId}/appointments`),
+  getCardAppointment: (cardId) => api.get(`/user/cards/${cardId}/appointment`),
+  getAvailableTimeSlots: (merchantId, date) => api.get(`/merchant/merchants/${merchantId}/available-slots`, { params: { date } }),
+  createAppointment: (data) => api.post('/user/appointments', data),
+  confirmAppointment: (id) => api.put(`/merchant/appointments/${id}/confirm`),
+  finishAppointment: (id) => api.put(`/merchant/appointments/${id}/finish`),
+  cancelAppointment: (id) => api.put(`/user/appointments/${id}/cancel`)
 }
 
 // ==================== Shop 模块（商户收款二维码 + 卡包直购） ====================
@@ -242,16 +245,16 @@ export const shopApi = {
   confirmMerchantDirectPurchase: (orderNo) => api.post(`/merchant/direct-purchases/${orderNo}/confirm`),
   
   // 公开接口：店铺信息
-  getShopInfo: (slug) => api.get(`/shop/${slug}`),
-  getShopInfoByID: (id) => api.get(`/shop/id/${id}`),
+  getShopInfo: (slug) => api.get(`/user/shop/${slug}`),
+  getShopInfoByID: (id) => api.get(`/user/shop/id/${id}`),
 
   // 技师端：通过店铺短链接登录
-  technicianLogin: (slug, account, password) => api.post(`/shop/${slug}/login`, { account, password }),
+  technicianLogin: (slug, account, password) => api.post(`/merchant/shop/${slug}/login`, { account, password }),
   
   // 用户端：直购流程
-  createDirectPurchase: (data) => api.post('/direct-purchase', data),
-  confirmDirectPurchase: (orderNo, data) => api.post(`/direct-purchase/${orderNo}/confirm`, data),
-  getDirectPurchases: () => api.get('/direct-purchases'),
+  createDirectPurchase: (data) => api.post('/user/direct-purchase', data),
+  confirmDirectPurchase: (orderNo, data) => api.post(`/user/direct-purchase/${orderNo}/confirm`, data),
+  getDirectPurchases: () => api.get('/user/direct-purchases'),
   
   // 商户营业状态
   toggleBusinessStatus: (data) => api.put('/merchant/business-status', data)

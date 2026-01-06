@@ -3,6 +3,7 @@ package config
 import (
 	"kabao/models"
 	"log"
+	"os"
 	"time"
 
 	"gorm.io/driver/mysql"
@@ -12,8 +13,11 @@ import (
 var DB *gorm.DB
 
 func InitDB() {
-	dbConfig := GetDatabaseConfig()
-	dsn := dbConfig.GetDSN()
+	dsn := os.Getenv("KABAO_DSN")
+	if dsn == "" {
+		dbConfig := GetDatabaseConfig()
+		dsn = dbConfig.GetDSN()
+	}
 	var err error
 	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
@@ -40,6 +44,7 @@ func InitDB() {
 		&models.Permission{},
 		&models.RolePermission{},
 		&models.MerchantRolePermissionOverride{},
+		&models.SystemConfig{},
 		&models.Card{},
 		&models.Usage{},
 		&models.Notice{},
