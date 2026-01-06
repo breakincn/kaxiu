@@ -1,6 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-const routes = [
+const appTarget = import.meta.env.VITE_APP_TARGET || 'user'
+const isMerchantApp = appTarget === 'merchant'
+
+const userRoutes = [
   {
     path: '/',
     redirect: '/user/login'
@@ -49,6 +52,24 @@ const routes = [
     path: '/user/scan-pay',
     name: 'UserScanPay',
     component: () => import('../views/user/ScanShopPay.vue')
+  },
+  // Shop 模块：用户扫码售卡页面
+  {
+    path: '/shop/:slug',
+    name: 'Shop',
+    component: () => import('../views/user/Shop.vue')
+  },
+  {
+    path: '/shop/id/:id',
+    name: 'ShopById',
+    component: () => import('../views/user/Shop.vue')
+  }
+]
+
+const merchantRoutes = [
+  {
+    path: '/',
+    redirect: '/merchant/login'
   },
   {
     path: '/merchant/login',
@@ -129,19 +150,10 @@ const routes = [
     path: '/platform-admin',
     name: 'PlatformAdminDashboard',
     component: () => import('../views/platformAdmin/Dashboard.vue')
-  },
-  // Shop 模块：用户扫码售卡页面
-  {
-    path: '/shop/:slug',
-    name: 'Shop',
-    component: () => import('../views/user/Shop.vue')
-  },
-  {
-    path: '/shop/id/:id',
-    name: 'ShopById',
-    component: () => import('../views/user/Shop.vue')
   }
 ]
+
+const routes = isMerchantApp ? merchantRoutes : userRoutes
 
 const router = createRouter({
   history: createWebHistory(),

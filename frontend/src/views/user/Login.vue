@@ -51,9 +51,6 @@
               立即注册
             </router-link>
           </div>
-          <router-link to="/merchant/login" class="text-sm text-primary hover:underline">
-            切换到商户端登录
-          </router-link>
         </div>
       </div>
     </div>

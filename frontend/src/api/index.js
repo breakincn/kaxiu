@@ -14,9 +14,15 @@ const api = axios.create({
   timeout: 10000
 })
 
+const appTarget = import.meta.env.VITE_APP_TARGET || 'user'
+const isMerchantApp = appTarget === 'merchant'
+
 const isTechnicianLoginPath = (pathname) => /^\/shop\/[^/]+\/login$/.test(pathname)
 
-const isMerchantContextPath = (pathname) => pathname.startsWith('/merchant') || isTechnicianLoginPath(pathname)
+const isMerchantContextPath = (pathname) => {
+  if (isMerchantApp) return true
+  return pathname.startsWith('/merchant') || isTechnicianLoginPath(pathname)
+}
 
 const isPlatformAdminPath = (pathname) => pathname.startsWith('/platform-admin')
 

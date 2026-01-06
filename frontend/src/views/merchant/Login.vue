@@ -51,9 +51,6 @@
               立即注册
             </button>
           </div>
-          <router-link to="/user/login" class="block text-sm text-primary hover:underline">
-            切换到用户端登录
-          </router-link>
         </div>
       </div>
     </div>
