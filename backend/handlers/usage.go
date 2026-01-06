@@ -36,14 +36,33 @@ func autoFixUsages(usages *[]models.Usage) {
 		// 超过12小时，自动置为完成并清空技师ID
 		if now.Sub(*u.UsedAt) > 12*time.Hour {
 			if u.Status != "success" || u.TechnicianID != nil {
-				config.DB.Model(u).Updates(map[string]interface{}{
-					"status":        "success",
-					"technician_id": nil,
-					"finished_at":   now,
-				})
-				u.Status = "success"
-				u.TechnicianID = nil
-				u.FinishedAt = &now
+				// 计算结单时间 = 核销时间 + 商户服务时间 + 5分钟
+				var merchant models.Merchant
+				if err := config.DB.First(&merchant, u.MerchantID).Error; err == nil {
+					serviceMinutes := merchant.AvgServiceMinutes
+					if serviceMinutes <= 0 {
+						serviceMinutes = 15 // 默认15分钟
+					}
+					finishedAt := u.UsedAt.Add(time.Duration(serviceMinutes+5) * time.Minute)
+					config.DB.Model(u).Updates(map[string]interface{}{
+						"status":        "success",
+						"technician_id": nil,
+						"finished_at":   finishedAt,
+					})
+					u.Status = "success"
+					u.TechnicianID = nil
+					u.FinishedAt = &finishedAt
+				} else {
+					// 如果商户信息获取失败，使用当前时间作为兜底
+					config.DB.Model(u).Updates(map[string]interface{}{
+						"status":        "success",
+						"technician_id": nil,
+						"finished_at":   now,
+					})
+					u.Status = "success"
+					u.TechnicianID = nil
+					u.FinishedAt = &now
+				}
 			}
 		}
 	}
