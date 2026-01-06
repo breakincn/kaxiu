@@ -108,16 +108,51 @@ go run main.go
 
 ## 3) Nginx 反向代理配置
 
-### 3.1 域名：`api.kabao.app`
+### 3.1 域名：`kabao.app`、`api.kabao.app`
 
 ```nginx
+##
+# kabao.app 站点 HTTPS
+##
+server {
+    listen 443 ssl http2;
+    server_name kabao.app www.kabao.app;
+
+    ssl_certificate     /etc/nginx/ssl/kabao.app.crt;
+    ssl_certificate_key /etc/nginx/ssl/kabao.app.key;
+
+    root /opt/kabao/frontend/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    add_header Strict-Transport-Security "max-age=63072000" always;
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+}
+
+##
+# api.kabao.app API 反向代理
+##
 server {
     listen 443 ssl;
     server_name api.kabao.app;
 
-    # SSL 证书配置（略）
-    # ssl_certificate /path/to/cert.pem;
-    # ssl_certificate_key /path/to/key.pem;
+    # SSL 证书配置
+    ssl_certificate     /etc/nginx/ssl/kabao.app.crt;
+    ssl_certificate_key /etc/nginx/ssl/kabao.app.key;
 
     # 用户端 API
     location /api/user/ {
