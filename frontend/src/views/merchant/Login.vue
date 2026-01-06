@@ -6,7 +6,7 @@
           <span class="text-primary font-bold text-3xl">卡包</span>
           <span class="text-gray-400 text-sm">kabao.shop</span>
         </div>
-        <p class="text-gray-500">{{ isTechnicianLogin ? '技师端登录' : '商户端登录' }}</p>
+        <p class="text-gray-500">{{ isTechnicianLogin ? '技师端登录' : '商户登录' }}</p>
       </div>
 
       <div class="bg-white rounded-2xl p-6 shadow-lg">
