@@ -7,12 +7,15 @@
     "dev": "vite",
     "dev:user": "VITE_APP_TARGET=user vite",
     "dev:merchant": "VITE_APP_TARGET=merchant vite",
+    "dev:admin": "VITE_APP_TARGET=admin vite",
     "build": "vite build",
     "build:user": "VITE_APP_TARGET=user vite build",
     "build:merchant": "VITE_APP_TARGET=merchant vite build",
+    "build:admin": "VITE_APP_TARGET=admin vite build",
     "preview": "vite preview",
     "preview:user": "VITE_APP_TARGET=user vite preview --port 4173",
-    "preview:merchant": "VITE_APP_TARGET=merchant vite preview --port 4174"
+    "preview:merchant": "VITE_APP_TARGET=merchant vite preview --port 4174",
+    "preview:admin": "VITE_APP_TARGET=admin vite preview --port 4175"
   },
   "dependencies": {
     "vue": "^3.5.13",
