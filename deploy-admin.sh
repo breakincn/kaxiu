@@ -4,25 +4,51 @@
 # 卡包系统 - Admin服务单独部署脚本
 # =============================================================================
 # 使用说明：
-# 1. 开发环境部署：./deploy-admin.sh dev
-# 2. 生产环境部署：./deploy-admin.sh prod
-# 3. 默认为生产环境：./deploy-admin.sh
+# 1. 默认为生产环境部署admin服务(不构建前端):
+# ./deploy-admin.sh
+
+# 2. 指定生产环境部署admin服务(不构建前端)：
+# ./deploy-admin.sh prod
+# 3. 指定生产环境部署admin服务并构建前端:
+#./deploy-admin.sh prod build
+
+# 4. 开发环境部署(不构建前端)：
+# ./deploy-admin.sh dev
+# 5. 开发环境部署并构建前端：
+# ./deploy-admin.sh dev build
 # 
 # 功能说明：
 # - 只部署平台端Admin服务（端口8083）
 # - 不影响其他已运行的服务（user-service:8081, merchant-service:8082）
+# - 可选择是否重新构建前端文件
 # - 适合单独重启或修复admin服务时使用
 # =============================================================================
 
 set -e
 
 # 获取部署模式参数，默认为prod
+# 第二个参数决定是否构建前端：build 或不传
 MODE=${1:-prod}
+BUILD_FRONTEND=${2:-""}
 
-echo "开始部署Admin服务 (模式: $MODE)..."
+echo "开始部署Admin服务 (模式: $MODE, 前端构建: ${BUILD_FRONTEND:-"不构建"})..."
 
 # 创建必要目录
 mkdir -p bin logs
+
+# 可选：构建前端
+if [ "$BUILD_FRONTEND" = "build" ]; then
+    echo "构建前端文件..."
+    if [ -d "frontend" ]; then
+        cd frontend
+        echo "执行 npm run build:admin..."
+        npm run build:admin
+        cd ..
+        echo "✅ 前端构建完成"
+    else
+        echo "❌ 未找到frontend目录，跳过前端构建"
+    fi
+fi
 
 # 设置环境变量
 if [ "$MODE" = "dev" ]; then
@@ -99,16 +125,19 @@ echo $ADMIN_PID > logs/admin-service.pid
 echo ""
 echo "Admin服务部署完成！"
 echo ""
-echo "服务信息："
+echo "部署信息："
 echo "  - 服务名称：Admin Service"
 echo "  - 监听端口：8083"
 echo "  - 进程ID：$ADMIN_PID"
+echo "  - 部署模式：$MODE"
+echo "  - 前端构建：${BUILD_FRONTEND:-"未构建"}"
 echo "  - 日志文件：logs/admin-service.log"
 echo ""
 echo "常用命令："
 echo "  - 查看实时日志：tail -f logs/admin-service.log"
 echo "  - 停止服务：pkill -f admin-service"
 echo "  - 重启服务：./deploy-admin.sh"
+echo "  - 重启并构建前端：./deploy-admin.sh prod build"
 echo ""
 echo "测试命令："
 echo "  - 直接测试：curl -H \"X-Platform-Admin-Token: \$PLATFORM_ADMIN_TOKEN\" http://localhost:8083/admin/service-roles"
