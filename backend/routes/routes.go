@@ -15,14 +15,12 @@ func SetupRoutes(r *gin.Engine) {
 }
 
 func SetupStaticRoutes(r *gin.Engine) {
-	// 线上常见仅反代 /api，因此静态资源挂到 /api/uploads
-	// 同时保留 /uploads 兼容旧数据
-	r.Static("/api/uploads", "./uploads")
+	// 静态资源挂载
 	r.Static("/uploads", "./uploads")
 }
 
 func SetupUserRoutes(r *gin.Engine) {
-	user := r.Group("/api/user")
+	user := r.Group("/user")
 
 	// 公开接口（用户端）
 	user.POST("/sms/send", handlers.SendSMSCode)
@@ -63,12 +61,12 @@ func SetupUserRoutes(r *gin.Engine) {
 	user.POST("/users", handlers.CreateUser)
 
 	// 平台公开接口（不需要登录）
-	platform := r.Group("/api/platform")
+	platform := r.Group("/platform")
 	platform.GET("/service-roles", handlers.GetPlatformServiceRoles)
 }
 
 func SetupMerchantRoutes(r *gin.Engine) {
-	merchant := r.Group("/api/merchant")
+	merchant := r.Group("/merchant")
 
 	// 公开接口（商户端）
 	merchant.POST("/register", handlers.MerchantRegister)
@@ -161,7 +159,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 }
 
 func SetupAdminRoutes(r *gin.Engine) {
-	admin := r.Group("/api/admin")
+	admin := r.Group("/admin")
 
 	admin.Use(middleware.PlatformAdminMiddleware())
 	admin.GET("/service-roles", handlers.AdminListServiceRoles)
