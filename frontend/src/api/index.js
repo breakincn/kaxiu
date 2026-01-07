@@ -85,6 +85,7 @@ api.interceptors.response.use(
       if (isMerchant) {
         // 商户端：仅清空“当前激活身份”的登录信息，避免覆盖其它账号
         const active = getMerchantActiveAuth()
+        const staffSlug = getTechnicianShopSlug()
         clearMerchantPermissionKeys()
         clearMerchantAuth()
         import('../router').then(({ default: router }) => {
@@ -92,9 +93,8 @@ api.interceptors.response.use(
             router.replace(pathname)
           } else {
             if (active === 'staff') {
-              const slug = getTechnicianShopSlug()
-              if (slug) {
-                router.replace(`/s/${slug}/login`)
+              if (staffSlug) {
+                router.replace(`/s/${staffSlug}/login`)
               } else {
                 router.replace('/login')
               }
