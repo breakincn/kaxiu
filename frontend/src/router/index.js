@@ -225,7 +225,7 @@ router.beforeEach((to) => {
   if (hasMerchantToken || hasTechnicianToken) return true
 
   const m = to.path.match(/^\/s\/([^/]+)(?:\/.*)?$/)
-  if (m && m[1]) return `/s/${m[1]}/login`
+  if (m && m[1] && !to.path.endsWith('/login')) return `/s/${m[1]}/login`
   return '/login'
 })
 
