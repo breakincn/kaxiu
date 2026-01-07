@@ -858,7 +858,13 @@ const loadSellTemplates = async () => {
     sellTemplates.value = (res.data.data || []).filter(t => t && t.is_active)
   } catch (e) {
     console.error('加载售卡模板失败', e)
+    if (e.response?.status === 403) {
+      alert('您没有售卡权限，请联系管理员开通')
+    } else {
+      alert('加载售卡模板失败，请稍后重试')
+    }
     sellTemplates.value = []
+    currentDisplay.value = 'cards'
   }
 }
 
