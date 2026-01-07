@@ -61,7 +61,23 @@ api.interceptors.response.use(
   (error) => {
     console.log('API响应错误:', error.response?.status, error.config?.url)
     if (error.response && error.response.status === 401) {
-      console.log('收到401错误，清除localStorage并跳转登录页')
+      console.log('收到401错误，检查错误类型和请求上下文')
+      
+      // 检查是否是主动登录请求的失败
+      const isLoginRequest = error.config?.url?.includes('/login')
+      const isPostMethod = error.config?.method?.toLowerCase() === 'post'
+      
+      // 如果是主动登录请求失败，不清空现有登录态，但清除临时状态
+      if (isLoginRequest && isPostMethod) {
+        console.log('主动登录请求失败，不清空现有登录态')
+        // 清除可能的临时状态，避免状态污染
+        sessionStorage.removeItem('merchantActiveAuth')
+        sessionStorage.removeItem('technicianShopSlug')
+        return Promise.reject(error)
+      }
+      
+      // 其他 401 错误（如 token 过期、无效 token 等）需要清空登录态
+      console.log('会话过期或无效token，清除登录态并跳转登录页')
       // 根据当前路径判断跳转到哪个登录页
       const pathname = window.location.pathname
       const isMerchant = isMerchantContextPath(pathname)
