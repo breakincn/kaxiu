@@ -85,7 +85,7 @@ import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { ensureMerchantPermissionsLoaded } from '../../api'
-import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission } from '../../utils/auth'
+import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission, getMerchantActiveAuth, getTechnicianShopSlug } from '../../utils/auth'
 
 const router = useRouter()
 
@@ -114,11 +114,21 @@ const goToMerchantInfo = () => {
 
 const handleLogout = () => {
   if (confirm('确定要退出登录吗？')) {
+    // 检查当前是否是技师登录
+    const isActiveTechnician = getMerchantActiveAuth() === 'technician'
+    const technicianShopSlug = getTechnicianShopSlug()
+    
     clearMerchantPermissionKeys()
     clearMerchantAuth()
     
-    // 跳转到商户登录页
-    router.push('/login')
+    // 根据登录类型跳转到对应页面
+    if (isActiveTechnician && technicianShopSlug) {
+      // 技师退出后跳转到技师登录页面
+      router.push(`/s/${technicianShopSlug}/login`)
+    } else {
+      // 商户退出后跳转到商户登录页面
+      router.push('/login')
+    }
   }
 }
 </script>
