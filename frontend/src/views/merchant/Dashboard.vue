@@ -47,6 +47,7 @@
             售卡管理
           </router-link>
           <router-link
+            v-if="canCardIssue"
             to="/merchant/issue-card"
             class="px-3 py-2 bg-slate-600 text-white rounded-lg text-sm font-medium hover:bg-slate-700 transition-colors"
           >
@@ -653,6 +654,7 @@ const merchant = ref({})
 
 const canBusinessStatusUpdate = computed(() => hasMerchantPermission('merchant.business_status.update'))
 const canDirectSaleManage = computed(() => hasMerchantPermission('merchant.direct_sale.manage'))
+const canCardIssue = computed(() => hasMerchantPermission('merchant.card.issue'))
 const canFinishVerify = computed(() => hasMerchantPermission('merchant.card.finish'))
 const currentTab = ref('queue')
 const routeUserCode = ref('')
@@ -688,7 +690,7 @@ const currentAccountName = computed(() => {
 })
 
 const isTechnicianAuth = () => {
-  return sessionStorage.getItem('merchantActiveAuth') === 'technician'
+  return sessionStorage.getItem('merchantActiveAuth') === 'staff'
 }
 
 const getTechnicianId = () => {

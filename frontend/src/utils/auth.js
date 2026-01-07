@@ -1,22 +1,22 @@
 export const getMerchantActiveAuth = () => {
   const v = sessionStorage.getItem('merchantActiveAuth')
-  return v === 'technician' ? 'technician' : 'merchant'
+  return v === 'staff' ? 'staff' : 'merchant'
 }
 
 export const setMerchantActiveAuth = (type) => {
-  sessionStorage.setItem('merchantActiveAuth', type === 'technician' ? 'technician' : 'merchant')
+  sessionStorage.setItem('merchantActiveAuth', type === 'staff' ? 'staff' : 'merchant')
 }
 
 export const getMerchantToken = () => {
   const active = getMerchantActiveAuth()
-  return active === 'technician'
+  return active === 'staff'
     ? localStorage.getItem('technicianToken')
     : localStorage.getItem('merchantToken')
 }
 
 export const getMerchantId = () => {
   const active = getMerchantActiveAuth()
-  return active === 'technician'
+  return active === 'staff'
     ? localStorage.getItem('technicianMerchantId')
     : localStorage.getItem('merchantId')
 }
@@ -36,7 +36,7 @@ export const setTechnicianShopSlug = (slug) => {
 export const clearMerchantAuth = () => {
   const active = getMerchantActiveAuth()
 
-  if (active === 'technician') {
+  if (active === 'staff') {
     localStorage.removeItem('technicianToken')
     localStorage.removeItem('technicianMerchantId')
     localStorage.removeItem('technicianMerchantName')

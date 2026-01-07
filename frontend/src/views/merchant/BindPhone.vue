@@ -146,7 +146,7 @@ const password = ref('')
 const countdown = ref(0)
 let timer = null
 
-const isTechnician = () => getMerchantActiveAuth() === 'technician'
+const isTechnician = () => getMerchantActiveAuth() === 'staff'
 
 // 获取当前账号信息
 const fetchMerchantInfo = async () => {

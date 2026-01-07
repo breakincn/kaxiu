@@ -90,8 +90,8 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	// 商户资源
 	auth.GET("/merchants", handlers.GetMerchants)
 	auth.GET("/merchants/:id", handlers.GetMerchant)
-	auth.POST("/merchants", handlers.CreateMerchant)
-	auth.PUT("/merchants/:id", handlers.UpdateMerchant)
+	auth.POST("/merchants", middleware.RequirePermission("merchant.merchant.create"), handlers.CreateMerchant)
+	auth.PUT("/merchants/:id", middleware.RequirePermission("merchant.merchant.update"), handlers.UpdateMerchant)
 	auth.GET("/merchants/:id/queue", handlers.GetQueueStatus)
 
 	// 卡片（商户视角）
@@ -99,7 +99,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.GET("/cards/:id", handlers.GetMerchantCard)
 	auth.GET("/next-card-no", handlers.GetNextMerchantCardNo)
 	auth.POST("/cards", middleware.RequirePermission("merchant.card.issue"), handlers.CreateCard)
-	auth.PUT("/cards/:id", handlers.UpdateCard)
+	auth.PUT("/cards/:id", middleware.RequirePermission("merchant.card.issue"), handlers.UpdateCard)
 
 	// 核销（商户/技师）
 	auth.POST("/verify", middleware.RequirePermission("merchant.card.verify"), handlers.VerifyCard)
@@ -112,16 +112,16 @@ func SetupMerchantRoutes(r *gin.Engine) {
 
 	// 通知
 	auth.GET("/merchants/:id/notices", handlers.GetMerchantNotices)
-	auth.POST("/notices", handlers.CreateNotice)
-	auth.DELETE("/notices/:id", handlers.DeleteNotice)
-	auth.PUT("/notices/:id/pin", handlers.TogglePinNotice)
+	auth.POST("/notices", middleware.RequirePermission("merchant.notice.create"), handlers.CreateNotice)
+	auth.DELETE("/notices/:id", middleware.RequirePermission("merchant.notice.delete"), handlers.DeleteNotice)
+	auth.PUT("/notices/:id/pin", middleware.RequirePermission("merchant.notice.manage"), handlers.TogglePinNotice)
 
 	// 预约（商户侧）
 	auth.GET("/merchants/:id/appointments", handlers.GetMerchantAppointments)
 	auth.GET("/merchants/:id/technicians", handlers.GetTechniciansByMerchantID)
 	auth.GET("/merchants/:id/available-slots", handlers.GetAvailableTimeSlots)
-	auth.PUT("/appointments/:id/confirm", handlers.ConfirmAppointment)
-	auth.PUT("/appointments/:id/finish", handlers.FinishAppointment)
+	auth.PUT("/appointments/:id/confirm", middleware.RequirePermission("merchant.appointment.manage"), handlers.ConfirmAppointment)
+	auth.PUT("/appointments/:id/finish", middleware.RequirePermission("merchant.appointment.manage"), handlers.FinishAppointment)
 
 	// 技师自身
 	auth.GET("/technician/me", handlers.GetCurrentTechnician)
@@ -135,7 +135,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 
 	// 商户端：角色权限微调
 	auth.GET("/role-permissions/:roleKey", handlers.GetMerchantRolePermissionOverrides)
-	auth.POST("/role-permissions/:roleKey", handlers.SetMerchantRolePermissionOverrides)
+	auth.POST("/role-permissions/:roleKey", middleware.RequirePermission("merchant.permission.adjust"), handlers.SetMerchantRolePermissionOverrides)
 
 	// ==================== Shop 模块（商户收款二维码 + 卡包直购） ====================
 	// 商户端：收款配置

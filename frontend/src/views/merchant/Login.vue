@@ -254,7 +254,7 @@ const handleLogin = async () => {
     // 保存登录状态：商户与技师分离，避免互相覆盖
     if (res.data.technician && res.data.technician.id) {
       // 技师登录（来自 /s/:slug/login）
-      setMerchantActiveAuth('technician')
+      setMerchantActiveAuth('staff')
       setTechnicianShopSlug(shopSlug.value)
 
       localStorage.setItem('technicianToken', res.data.token)

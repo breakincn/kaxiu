@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 func RequireAnyPermission(permissionKeys ...string) gin.HandlerFunc {
@@ -69,7 +68,7 @@ func HasPermission(c *gin.Context, permissionKey string) (bool, error) {
 	if authType == "merchant" {
 		return true, nil
 	}
-	if authType != "technician" {
+	if authType != "staff" {
 		return false, nil
 	}
 
@@ -82,43 +81,41 @@ func HasPermission(c *gin.Context, permissionKey string) (bool, error) {
 		return false, nil
 	}
 
-	techAny, ok := c.Get("technician")
+	serviceRoleIDAny, ok := c.Get("service_role_id")
 	if !ok {
 		return false, nil
 	}
-	tech, ok := techAny.(models.Technician)
-	if !ok {
-		return false, nil
-	}
-	if tech.ServiceRoleID == 0 {
+	serviceRoleID, ok := serviceRoleIDAny.(uint)
+	if !ok || serviceRoleID == 0 {
 		return false, nil
 	}
 
+	// 兼容技师逻辑（如果技师信息存在，优先使用）
+	if techAny, ok := c.Get("technician"); ok {
+		if tech, ok := techAny.(models.Technician); ok {
+			serviceRoleID = tech.ServiceRoleID
+		}
+	}
+
+	// 查找权限
 	var perm models.Permission
 	if err := config.DB.Where("`key` = ?", permissionKey).First(&perm).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return false, nil
-		}
-		return false, err
+		return false, nil
 	}
 
-	// override 优先
+	// 优先检查商户级别的权限覆盖
 	var override models.MerchantRolePermissionOverride
-	err := config.DB.Where("merchant_id = ? AND service_role_id = ? AND permission_id = ?", merchantID, tech.ServiceRoleID, perm.ID).First(&override).Error
+	err := config.DB.Where("merchant_id = ? AND service_role_id = ? AND permission_id = ?", merchantID, serviceRoleID, perm.ID).First(&override).Error
 	if err == nil {
 		return override.Allowed, nil
 	}
-	if err != gorm.ErrRecordNotFound {
-		return false, err
-	}
 
-	var rp models.RolePermission
-	err = config.DB.Where("service_role_id = ? AND permission_id = ? AND allowed = ?", tech.ServiceRoleID, perm.ID, true).First(&rp).Error
+	// 检查全局角色权限
+	var rolePerm models.RolePermission
+	err = config.DB.Where("service_role_id = ? AND permission_id = ? AND allowed = ?", serviceRoleID, perm.ID, true).First(&rolePerm).Error
 	if err == nil {
 		return true, nil
 	}
-	if err == gorm.ErrRecordNotFound {
-		return false, nil
-	}
-	return false, err
+
+	return false, nil
 }

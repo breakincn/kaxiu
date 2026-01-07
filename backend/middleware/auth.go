@@ -75,7 +75,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		typeVal, _ := claims["type"].(string)
-		if typeVal != "merchant" && typeVal != "technician" {
+		if typeVal != "merchant" && typeVal != "staff" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
 			c.Abort()
 			return
@@ -100,22 +100,45 @@ func AuthMiddleware() gin.HandlerFunc {
 		c.Set("merchant_id", merchantID)
 		c.Set("merchant", merchant)
 
-		if typeVal == "technician" {
-			technicianIDFloat, ok := claims["technician_id"].(float64)
+		if typeVal == "staff" {
+			staffIDFloat, ok := claims["staff_id"].(float64)
 			if !ok {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
 				c.Abort()
 				return
 			}
-			technicianID := uint(technicianIDFloat)
-			var tech models.Technician
-			if err := config.DB.Where("id = ? AND merchant_id = ?", technicianID, merchantID).First(&tech).Error; err != nil {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "技师不存在"})
+			staffID := uint(staffIDFloat)
+			serviceRoleIDFloat, ok := claims["service_role_id"].(float64)
+			if !ok {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
 				c.Abort()
 				return
 			}
-			c.Set("technician_id", technicianID)
-			c.Set("technician", tech)
+			serviceRoleID := uint(serviceRoleIDFloat)
+
+			// 根据角色类型加载对应的员工信息
+			var staffRole models.ServiceRole
+			if err := config.DB.First(&staffRole, serviceRoleID).Error; err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "员工角色不存在"})
+				c.Abort()
+				return
+			}
+
+			c.Set("staff_id", staffID)
+			c.Set("service_role_id", serviceRoleID)
+			c.Set("service_role", staffRole)
+
+			// 如果是技师，还需要设置技师信息（兼容现有逻辑）
+			if staffRole.Key == "technician" {
+				var tech models.Technician
+				if err := config.DB.Where("id = ? AND merchant_id = ?", staffID, merchantID).First(&tech).Error; err != nil {
+					c.JSON(http.StatusUnauthorized, gin.H{"error": "技师不存在"})
+					c.Abort()
+					return
+				}
+				c.Set("technician_id", staffID)
+				c.Set("technician", tech)
+			}
 		}
 
 		c.Next()

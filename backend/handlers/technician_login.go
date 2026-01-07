@@ -62,11 +62,12 @@ func TechnicianLogin(c *gin.Context) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"merchant_id":   merchant.ID,
-		"technician_id": tech.ID,
-		"account":       tech.Account,
-		"type":          "technician",
-		"exp":           time.Now().Add(time.Hour * 24 * 7).Unix(),
+		"merchant_id":     merchant.ID,
+		"staff_id":        tech.ID,
+		"service_role_id": tech.ServiceRoleID,
+		"account":         tech.Account,
+		"type":            "staff",
+		"exp":             time.Now().Add(time.Hour * 24 * 7).Unix(),
 	})
 
 	tokenString, err := token.SignedString([]byte("your-secret-key"))

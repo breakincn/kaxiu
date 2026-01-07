@@ -142,7 +142,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { cardApi, merchantApi, shopApi } from '../../api'
 
-import { getMerchantId, getMerchantToken } from '../../utils/auth'
+import { getMerchantId, getMerchantToken, hasMerchantPermission } from '../../utils/auth'
 
 const router = useRouter()
 
@@ -323,6 +323,14 @@ const submit = async () => {
 
 onMounted(() => {
   ensureMerchantLogin()
+  
+  // 检查发卡权限
+  if (!hasMerchantPermission('merchant.card.issue')) {
+    alert('您没有发卡权限，请联系管理员开通')
+    goBack()
+    return
+  }
+  
   loadTemplates()
   // 设置默认开始日期为今天
   const today = new Date().toISOString().split('T')[0]

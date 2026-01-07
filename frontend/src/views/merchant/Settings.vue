@@ -114,16 +114,16 @@ const goToMerchantInfo = () => {
 
 const handleLogout = () => {
   if (confirm('确定要退出登录吗？')) {
-    // 检查当前是否是技师登录
-    const isActiveTechnician = getMerchantActiveAuth() === 'technician'
+    // 检查当前是否是员工登录
+    const isActiveStaff = getMerchantActiveAuth() === 'staff'
     const technicianShopSlug = getTechnicianShopSlug()
     
     clearMerchantPermissionKeys()
     clearMerchantAuth()
     
     // 根据登录类型跳转到对应页面
-    if (isActiveTechnician && technicianShopSlug) {
-      // 技师退出后跳转到技师登录页面
+    if (isActiveStaff && technicianShopSlug) {
+      // 员工退出后跳转到员工登录页面
       router.push(`/s/${technicianShopSlug}/login`)
     } else {
       // 商户退出后跳转到商户登录页面

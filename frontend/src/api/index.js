@@ -91,7 +91,7 @@ api.interceptors.response.use(
           if (isTechnicianLoginPath(pathname)) {
             router.replace(pathname)
           } else {
-            if (active === 'technician') {
+            if (active === 'staff') {
               const slug = getTechnicianShopSlug()
               if (slug) {
                 router.replace(`/s/${slug}/login`)
