@@ -84,11 +84,46 @@ const merchantRoutes = [
   {
     path: '/s/:slug',
     beforeEnter: (to) => {
+      const hasUserToken = !!localStorage.getItem('userToken')
       const hasMerchantToken = !!localStorage.getItem('merchantToken')
       const hasTechnicianToken = !!localStorage.getItem('technicianToken')
-      if (hasMerchantToken || hasTechnicianToken) return '/merchant'
+      
+      // 如果有用户登录态，继续访问店铺页面
+      if (hasUserToken) {
+        return true
+      }
+      
+      // 如果有商户或技师登录态，跳转到商户后台
+      if (hasMerchantToken || hasTechnicianToken) {
+        return '/merchant'
+      }
+      
+      // 否则显示技师登录页面
       return `/s/${to.params.slug}/login`
-    }
+    },
+    component: () => import('../views/user/Shop.vue')
+  },
+  {
+    path: '/s/id/:id',
+    beforeEnter: (to) => {
+      const hasUserToken = !!localStorage.getItem('userToken')
+      const hasMerchantToken = !!localStorage.getItem('merchantToken')
+      const hasTechnicianToken = !!localStorage.getItem('technicianToken')
+      
+      // 如果有用户登录态，继续访问店铺页面
+      if (hasUserToken) {
+        return true
+      }
+      
+      // 如果有商户或技师登录态，跳转到商户后台
+      if (hasMerchantToken || hasTechnicianToken) {
+        return '/merchant'
+      }
+      
+      // 否则跳转到技师登录页面（使用默认 slug 或显示错误）
+      return '/login'
+    },
+    component: () => import('../views/user/Shop.vue')
   },
   {
     path: '/merchant',
