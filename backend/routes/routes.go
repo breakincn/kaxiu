@@ -144,7 +144,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.POST("/payment-qrcode/upload", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.UploadPaymentQRCode)
 
 	// 商户端：卡片模板管理
-	auth.GET("/card-templates", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.GetCardTemplates)
+	auth.GET("/card-templates", middleware.RequireAnyPermission("merchant.direct_sale.manage", "merchant.card.sell"), handlers.GetCardTemplates)
 	auth.POST("/card-templates", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.CreateCardTemplate)
 	auth.PUT("/card-templates/:id", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.UpdateCardTemplate)
 	auth.DELETE("/card-templates/:id", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.DeleteCardTemplate)
