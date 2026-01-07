@@ -252,7 +252,7 @@ const initUser = () => {
   
   if (!storedUserId) {
     // 如果没有登录，跳转到登录页
-    router.push('/user/login')
+    router.push('/login')
     return
   }
 
@@ -323,7 +323,7 @@ const fetchCards = async () => {
     console.error('获取卡片失败:', err)
     if (err.response?.status === 401) {
       // token 过期或无效，跳转到登录页
-      router.push('/user/login')
+      router.push('/login')
     }
   }
 }

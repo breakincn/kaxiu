@@ -859,7 +859,7 @@ const confirmAppointment = async () => {
     const userId = localStorage.getItem('userId')
     if (!userId) {
       alert('请先登录')
-      router.push('/user/login')
+      router.push('/login')
       return
     }
     

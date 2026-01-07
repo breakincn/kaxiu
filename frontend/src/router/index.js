@@ -1,15 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-const appTarget = import.meta.env.VITE_APP_TARGET || 'user'
-const isMerchantApp = appTarget === 'merchant'
+const host = typeof window !== 'undefined' ? window.location.host : ''
+const isMerchantApp = host === 'kabao.shop' || host.endsWith('.kabao.shop')
 
 const userRoutes = [
   {
     path: '/',
-    redirect: '/user/login'
+    redirect: '/user/cards'
   },
   {
-    path: '/user/login',
+    path: '/login',
     name: 'UserLogin',
     component: () => import('../views/user/Login.vue')
   },
@@ -69,17 +69,26 @@ const userRoutes = [
 const merchantRoutes = [
   {
     path: '/',
-    redirect: '/merchant/login'
+    redirect: '/merchant'
   },
   {
-    path: '/merchant/login',
+    path: '/login',
     name: 'MerchantLogin',
     component: () => import('../views/merchant/Login.vue')
   },
   {
-    path: '/shop/:slug/login',
+    path: '/s/:slug/login',
     name: 'TechnicianLogin',
     component: () => import('../views/merchant/Login.vue')
+  },
+  {
+    path: '/s/:slug',
+    beforeEnter: (to) => {
+      const hasMerchantToken = !!localStorage.getItem('merchantToken')
+      const hasTechnicianToken = !!localStorage.getItem('technicianToken')
+      if (hasMerchantToken || hasTechnicianToken) return '/merchant'
+      return `/s/${to.params.slug}/login`
+    }
   },
   {
     path: '/merchant',
@@ -158,6 +167,31 @@ const routes = isMerchantApp ? merchantRoutes : userRoutes
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+router.beforeEach((to) => {
+  const isPlatformAdmin = to.path.startsWith('/platform-admin')
+  if (isPlatformAdmin) return true
+
+  const isUserPublic = to.path === '/login' || to.path === '/user/register' || to.path.startsWith('/shop/')
+  const isMerchantPublic = to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
+
+  if (!isMerchantApp) {
+    if (isUserPublic) return true
+    const userId = localStorage.getItem('userId')
+    if (!userId) return '/login'
+    return true
+  }
+
+  if (isMerchantPublic) return true
+
+  const hasMerchantToken = !!localStorage.getItem('merchantToken')
+  const hasTechnicianToken = !!localStorage.getItem('technicianToken')
+  if (hasMerchantToken || hasTechnicianToken) return true
+
+  const m = to.path.match(/^\/s\/([^/]+)(?:\/.*)?$/)
+  if (m && m[1]) return `/s/${m[1]}/login`
+  return '/login'
 })
 
 export default router

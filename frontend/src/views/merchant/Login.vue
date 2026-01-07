@@ -170,7 +170,7 @@ const route = useRoute()
 const isTechnicianLogin = ref(false)
 const shopSlug = ref('')
 
-isTechnicianLogin.value = typeof route.params?.slug === 'string' && route.path.startsWith('/shop/')
+isTechnicianLogin.value = typeof route.params?.slug === 'string' && route.path.startsWith('/s/')
 shopSlug.value = isTechnicianLogin.value ? String(route.params.slug) : ''
 const phone = ref('')
 const password = ref('')
@@ -253,7 +253,7 @@ const handleLogin = async () => {
     
     // 保存登录状态：商户与技师分离，避免互相覆盖
     if (res.data.technician && res.data.technician.id) {
-      // 技师登录（来自 /shop/:slug/login）
+      // 技师登录（来自 /s/:slug/login）
       setMerchantActiveAuth('technician')
       setTechnicianShopSlug(shopSlug.value)
 

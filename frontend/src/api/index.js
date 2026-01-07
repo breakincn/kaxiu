@@ -17,10 +17,10 @@ const api = axios.create({
   timeout: 10000
 })
 
-const appTarget = import.meta.env.VITE_APP_TARGET || 'user'
-const isMerchantApp = appTarget === 'merchant'
+const host = typeof window !== 'undefined' ? window.location.host : ''
+const isMerchantApp = host === 'kabao.shop' || host.endsWith('.kabao.shop')
 
-const isTechnicianLoginPath = (pathname) => /^\/shop\/[^/]+\/login$/.test(pathname)
+const isTechnicianLoginPath = (pathname) => /^\/s\/[^/]+\/login$/.test(pathname)
 
 const isMerchantContextPath = (pathname) => {
   if (isMerchantApp) return true
@@ -78,12 +78,12 @@ api.interceptors.response.use(
             if (active === 'technician') {
               const slug = getTechnicianShopSlug()
               if (slug) {
-                router.replace(`/shop/${slug}/login`)
+                router.replace(`/s/${slug}/login`)
               } else {
-                router.replace('/merchant/login')
+                router.replace('/login')
               }
             } else {
-              router.replace('/merchant/login')
+              router.replace('/login')
             }
           }
         })
@@ -93,7 +93,7 @@ api.interceptors.response.use(
         localStorage.removeItem('userId')
         localStorage.removeItem('userName')
         import('../router').then(({ default: router }) => {
-          router.replace('/user/login')
+          router.replace('/login')
         })
       }
     }

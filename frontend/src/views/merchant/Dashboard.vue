@@ -1434,14 +1434,14 @@ onMounted(() => {
   const storedMerchantId = getMerchantId()
   if (!storedMerchantId) {
     console.log('No merchantId found, redirecting to login')
-    router.replace('/merchant/login')
+    router.replace('/login')
     return
   }
 
   const parsedMerchantId = Number.parseInt(storedMerchantId, 10)
   if (Number.isNaN(parsedMerchantId) || parsedMerchantId <= 0) {
     console.log('Invalid merchantId:', storedMerchantId, 'redirecting to login')
-    router.replace('/merchant/login')
+    router.replace('/login')
     return
   }
 

@@ -226,13 +226,13 @@ const ensureMerchantLogin = () => {
   const storedToken = getMerchantToken()
 
   if (!storedMerchantId || !storedToken) {
-    router.replace('/merchant/login')
+    router.replace('/login')
     return false
   }
 
   const parsedMerchantId = Number.parseInt(storedMerchantId, 10)
   if (Number.isNaN(parsedMerchantId) || parsedMerchantId <= 0) {
-    router.replace('/merchant/login')
+    router.replace('/login')
     return false
   }
 

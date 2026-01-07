@@ -59,7 +59,7 @@ const loadUserInfo = async () => {
   try {
     const token = localStorage.getItem('userToken')
     if (!token) {
-      router.push('/user/login')
+      router.push('/login')
       return
     }
 
@@ -76,7 +76,7 @@ const loadUserInfo = async () => {
     console.error('获取用户信息失败:', error)
     if (error.response?.status === 401) {
       localStorage.removeItem('userToken')
-      router.push('/user/login')
+      router.push('/login')
     }
   }
 }
@@ -93,7 +93,7 @@ const handleSave = async () => {
     const token = localStorage.getItem('userToken')
     if (!token) {
       alert('请先登录')
-      router.push('/user/login')
+      router.push('/login')
       return
     }
 
@@ -116,7 +116,7 @@ const handleSave = async () => {
     if (error.response?.status === 401) {
       alert('登录已过期，请重新登录')
       localStorage.removeItem('userToken')
-      router.push('/user/login')
+      router.push('/login')
     } else {
       alert(error.response?.data?.error || '保存昵称失败，请稍后重试')
     }

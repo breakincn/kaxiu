@@ -248,7 +248,7 @@ onMounted(() => {
   const token = localStorage.getItem('userToken')
   const id = localStorage.getItem('userId')
   if (!token || !id) {
-    router.replace('/user/login')
+    router.replace('/login')
     return
   }
 

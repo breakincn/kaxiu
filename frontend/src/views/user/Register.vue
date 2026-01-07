@@ -87,7 +87,7 @@
         </form>
 
         <div class="mt-6 text-center">
-          <router-link to="/user/login" class="text-sm text-primary hover:underline">
+          <router-link to="/login" class="text-sm text-primary hover:underline">
             返回登录
           </router-link>
         </div>

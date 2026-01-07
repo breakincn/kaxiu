@@ -118,7 +118,7 @@ const handleLogout = () => {
     clearMerchantAuth()
     
     // 跳转到商户登录页
-    router.push('/merchant/login')
+    router.push('/login')
   }
 }
 </script>

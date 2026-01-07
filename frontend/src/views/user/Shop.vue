@@ -545,7 +545,7 @@ function closePurchaseModal() {
 function goLogin() {
   // 保存当前页面用于登录后返回
   localStorage.setItem('redirectAfterLogin', route.fullPath)
-  router.push('/user/login')
+  router.push('/login')
 }
 
 async function createPurchase() {

@@ -106,7 +106,7 @@ const handleLogout = () => {
     localStorage.removeItem('userName')
     
     // 跳转到用户登录页
-    router.push('/user/login')
+    router.push('/login')
   }
 }
 </script>
