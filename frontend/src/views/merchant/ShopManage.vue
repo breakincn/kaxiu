@@ -145,7 +145,7 @@
         <div class="form-group">
           <label>店铺短链接</label>
           <div class="slug-input">
-            <span class="prefix">kabao.shop/shop/</span>
+            <span class="prefix">kabao.shop/s/</span>
             <input 
               v-model="shopSlug" 
               type="text" 
@@ -340,7 +340,7 @@ let ordersPollTimer = null
 // 二维码URL
 const shopFullUrl = computed(() => {
   if (!shopSlug.value) return ''
-  return `${window.location.origin}/shop/${shopSlug.value}`
+  return `${window.location.origin}/s/${shopSlug.value}`
 })
 
 const qrcodeUrl = computed(() => {

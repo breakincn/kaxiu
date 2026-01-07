@@ -231,8 +231,8 @@ const onDecoded = async (decodedText) => {
     statusText.value = '识别成功，进入店铺中...'
 
     const path = target.kind === 'slug'
-      ? `/shop/${encodeURIComponent(target.value)}`
-      : `/shop/id/${encodeURIComponent(target.value)}`
+      ? `/s/${encodeURIComponent(target.value)}`
+      : `/s/id/${encodeURIComponent(target.value)}`
 
     await stop()
     router.replace(path)

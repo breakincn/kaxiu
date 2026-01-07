@@ -86,7 +86,7 @@ func (DirectPurchase) TableComment() string {
 }
 
 // MerchantShopSlug 商户店铺短链接
-// 用于生成友好的二维码地址如 kabao.app/shop/mitao
+// 用于生成友好的二维码地址如 kabao.app/s/mitao
 type MerchantShopSlug struct {
 	ID         uint       `json:"id" gorm:"primaryKey;comment:ID"`
 	MerchantID uint       `json:"merchant_id" gorm:"uniqueIndex;comment:商户ID（外键关联merchants表）"`

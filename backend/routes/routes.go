@@ -28,8 +28,8 @@ func SetupUserRoutes(r *gin.Engine) {
 	user.POST("/register", handlers.UserRegister)
 
 	// 用户端：店铺信息/直购（不需要登录）
-	user.GET("/shop/:slug", handlers.GetShopInfo)
-	user.GET("/shop/id/:id", handlers.GetShopInfoByID)
+	user.GET("/s/:slug", handlers.GetShopInfo)
+	user.GET("/s/id/:id", handlers.GetShopInfoByID)
 
 	// 需要认证的接口（用户端）
 	auth := user.Group("")
@@ -71,7 +71,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	// 公开接口（商户端）
 	merchant.POST("/register", handlers.MerchantRegister)
 	merchant.POST("/login", handlers.MerchantLogin)
-	merchant.POST("/shop/:slug/login", handlers.TechnicianLogin)
+	merchant.POST("/s/:slug/login", handlers.TechnicianLogin)
 
 	// 需要认证的接口（商户端）
 	auth := merchant.Group("")

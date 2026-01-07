@@ -55,12 +55,12 @@ const userRoutes = [
   },
   // Shop 模块：用户扫码售卡页面
   {
-    path: '/shop/:slug',
+    path: '/s/:slug',
     name: 'Shop',
     component: () => import('../views/user/Shop.vue')
   },
   {
-    path: '/shop/id/:id',
+    path: '/s/id/:id',
     name: 'ShopById',
     component: () => import('../views/user/Shop.vue')
   }
@@ -173,7 +173,7 @@ router.beforeEach((to) => {
   const isPlatformAdmin = to.path.startsWith('/platform-admin')
   if (isPlatformAdmin) return true
 
-  const isUserPublic = to.path === '/login' || to.path === '/user/register' || to.path.startsWith('/shop/')
+  const isUserPublic = to.path === '/login' || to.path === '/user/register' || to.path.startsWith('/s/')
   const isMerchantPublic = to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
 
   if (!isMerchantApp) {

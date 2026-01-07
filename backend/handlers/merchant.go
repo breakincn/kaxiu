@@ -116,7 +116,7 @@ func MerchantLogin(c *gin.Context) {
 	account := strings.TrimSpace(input.Phone)
 	password := strings.TrimSpace(input.Password)
 	if strings.HasPrefix(strings.ToLower(account), "js") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "技师账号请使用店铺登录地址 /shop/:slug/login"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "技师账号请使用店铺登录地址 /s/:slug/login"})
 		return
 	}
 

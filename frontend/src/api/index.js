@@ -245,11 +245,11 @@ export const shopApi = {
   confirmMerchantDirectPurchase: (orderNo) => api.post(`/merchant/direct-purchases/${orderNo}/confirm`),
   
   // 公开接口：店铺信息
-  getShopInfo: (slug) => api.get(`/user/shop/${slug}`),
-  getShopInfoByID: (id) => api.get(`/user/shop/id/${id}`),
+  getShopInfo: (slug) => api.get(`/user/s/${slug}`),
+  getShopInfoByID: (id) => api.get(`/user/s/id/${id}`),
 
   // 技师端：通过店铺短链接登录
-  technicianLogin: (slug, account, password) => api.post(`/merchant/shop/${slug}/login`, { account, password }),
+  technicianLogin: (slug, account, password) => api.post(`/merchant/s/${slug}/login`, { account, password }),
   
   // 用户端：直购流程
   createDirectPurchase: (data) => api.post('/user/direct-purchase', data),

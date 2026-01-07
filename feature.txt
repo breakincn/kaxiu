@@ -78,7 +78,7 @@
 
 二维码指向地址示例：
 
-kabao.me/shop/mitao
+kabao.me/s/mitao
 
 用户端流程说明
 用户扫码后流程
