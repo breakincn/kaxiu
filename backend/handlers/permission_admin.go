@@ -12,7 +12,7 @@ import (
 
 func AdminListPermissions(c *gin.Context) {
 	var list []models.Permission
-	config.DB.Order("`group` asc, sort asc, id asc").Find(&list)
+	config.DB.Order("sort asc, id asc").Find(&list)
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
 
