@@ -269,23 +269,23 @@ func initPermissions() {
 		{Key: "merchant.business_status.manage", Name: "营业状态管理", Group: "商户管理", Description: "操作营业中/打烊", Sort: 12},
 
 		// 通知管理 (20-29)
-		{Key: "merchant.notice.manage", Name: "通知管理", Group: "通知管理", Description: "创建、删除、置顶/取消置顶通知", Sort: 70},
+		{Key: "merchant.notice.manage", Name: "通知管理", Group: "通知管理", Description: "创建、删除、置顶/取消置顶通知", Sort: 20},
 
 		// 售卡管理 (30-39)
-		{Key: "merchant.direct_sale.manage", Name: "售卡管理", Group: "售卡管理", Description: "管理直购售卡配置、模板、订单等", Sort: 40},
+		{Key: "merchant.direct_sale.manage", Name: "售卡管理", Group: "售卡管理", Description: "管理直购售卡配置、模板、订单等", Sort: 30},
 
 		// 卡片管理 (40-59)
-		{Key: "merchant.card.issue", Name: "发卡/开卡", Group: "卡片管理", Description: "创建卡片、发卡", Sort: 20},
-		{Key: "merchant.card.verify", Name: "核销", Group: "卡片管理", Description: "核销会员卡", Sort: 21},
-		{Key: "merchant.card.finish", Name: "结单", Group: "卡片管理", Description: "技师扫码结单，将进行中核销置为完成", Sort: 22},
-		{Key: "merchant.card.sell", Name: "售卡", Group: "卡片管理", Description: "技师售卡：查询售卡模板、生成售卡二维码", Sort: 23},
+		{Key: "merchant.card.issue", Name: "发卡/开卡", Group: "卡片管理", Description: "创建卡片、发卡", Sort: 40},
+		{Key: "merchant.card.verify", Name: "核销", Group: "卡片管理", Description: "核销会员卡", Sort: 41},
+		{Key: "merchant.card.finish", Name: "结单", Group: "卡片管理", Description: "技师扫码结单，将进行中核销置为完成", Sort: 42},
+		{Key: "merchant.card.sell", Name: "售卡", Group: "卡片管理", Description: "技师售卡：查询售卡模板、生成售卡二维码", Sort: 43},
 
 		// 客服管理 (60-69)
 		{Key: "merchant.cs.manage", Name: "客服管理", Group: "客服管理", Description: "新增/编辑/禁用/删除客服账号", Sort: 60},
 
 		// 预约管理 (70-89)
-		{Key: "merchant.appointment.view", Name: "预约查看", Group: "预约管理", Description: "可被用户预约、查看和处理预约自己的预约", Sort: 50},
-		{Key: "merchant.appointment.manage", Name: "预约管理", Group: "预约管理", Description: "确认/完成整个店铺的预约", Sort: 51},
+		{Key: "merchant.appointment.view", Name: "预约查看", Group: "预约管理", Description: "可被用户预约、查看和处理预约自己的预约", Sort: 70},
+		{Key: "merchant.appointment.manage", Name: "预约管理", Group: "预约管理", Description: "确认/完成整个店铺的预约", Sort: 71},
 
 		// 权限管理 (90-99)
 		{Key: "merchant.permission.adjust", Name: "权限微调", Group: "权限管理", Description: "调整角色权限覆盖", Sort: 90},
