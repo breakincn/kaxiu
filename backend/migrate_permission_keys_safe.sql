@@ -4,16 +4,16 @@
 -- 1. 先检查并处理重复键问题
 -- 如果新键已存在，先删除或重命名它
 
--- 处理 merchant.worker.manage
+-- 处理 merchant.cs.manage
 DELETE FROM role_permissions WHERE permission_id = (
-    SELECT id FROM permissions WHERE `key` = 'merchant.worker.manage'
+    SELECT id FROM permissions WHERE `key` = 'merchant.cs.manage'
 );
 
 DELETE FROM merchant_role_permission_overrides WHERE permission_id = (
-    SELECT id FROM permissions WHERE `key` = 'merchant.worker.manage'
+    SELECT id FROM permissions WHERE `key` = 'merchant.cs.manage'
 );
 
-DELETE FROM permissions WHERE `key` = 'merchant.worker.manage';
+DELETE FROM permissions WHERE `key` = 'merchant.cs.manage';
 
 -- 处理 merchant.info.manage
 DELETE FROM role_permissions WHERE permission_id = (
@@ -50,7 +50,7 @@ DELETE FROM permissions WHERE `key` = 'merchant.business_status.manage';
 
 -- 2. 现在安全地更新权限键和名称
 UPDATE permissions SET 
-    `key` = 'merchant.worker.manage',
+    `key` = 'merchant.cs.manage',
     name = '客服管理'
 WHERE `key` = 'merchant.tech.manage';
 
@@ -80,7 +80,7 @@ SELECT
     sort
 FROM permissions 
 WHERE `key` IN (
-    'merchant.worker.manage',
+    'merchant.cs.manage',
     'merchant.info.manage', 
     'merchant.service.manage',
     'merchant.business_status.manage'

@@ -263,7 +263,7 @@ func initTestData() {
 
 func initPermissions() {
 	defaults := []models.Permission{
-		{Key: "merchant.worker.manage", Name: "客服管理", Group: "客服管理", Description: "新增/编辑/禁用/删除技师账号", Sort: 10},
+		{Key: "merchant.cs.manage", Name: "客服管理", Group: "客服管理", Description: "新增/编辑/禁用/删除客服账号", Sort: 10},
 		{Key: "merchant.card.issue", Name: "发卡/开卡", Group: "卡片", Description: "创建卡片、发卡", Sort: 20},
 		{Key: "merchant.card.verify", Name: "核销", Group: "卡片", Description: "核销会员卡", Sort: 30},
 		{Key: "merchant.card.finish", Name: "结单", Group: "卡片", Description: "技师扫码结单，将进行中核销置为完成", Sort: 31},

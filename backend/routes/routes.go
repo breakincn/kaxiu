@@ -128,10 +128,10 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.POST("/technician/bind-phone", handlers.BindTechnicianPhone)
 
 	// 技师账号管理
-	auth.GET("/technicians", middleware.RequirePermission("merchant.worker.manage"), handlers.GetMerchantTechnicians)
-	auth.POST("/technicians", middleware.RequirePermission("merchant.worker.manage"), handlers.CreateMerchantTechnician)
-	auth.PUT("/technicians/:id", middleware.RequirePermission("merchant.worker.manage"), handlers.UpdateMerchantTechnician)
-	auth.DELETE("/technicians/:id", middleware.RequirePermission("merchant.worker.manage"), handlers.DeleteMerchantTechnician)
+	auth.GET("/technicians", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantTechnicians)
+	auth.POST("/technicians", middleware.RequirePermission("merchant.cs.manage"), handlers.CreateMerchantTechnician)
+	auth.PUT("/technicians/:id", middleware.RequirePermission("merchant.cs.manage"), handlers.UpdateMerchantTechnician)
+	auth.DELETE("/technicians/:id", middleware.RequirePermission("merchant.cs.manage"), handlers.DeleteMerchantTechnician)
 
 	// 商户端：角色权限微调
 	auth.GET("/role-permissions/:roleKey", handlers.GetMerchantRolePermissionOverrides)
