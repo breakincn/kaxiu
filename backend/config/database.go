@@ -304,7 +304,8 @@ func initPermissions() {
 			if existing.Description == "" {
 				updates["description"] = p.Description
 			}
-			if existing.Sort == 0 {
+			// 强制更新 sort 值以匹配最新定义
+			if existing.Sort != p.Sort {
 				updates["sort"] = p.Sort
 			}
 			if len(updates) > 0 {
