@@ -80,9 +80,9 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	// 商户自身
 	auth.GET("/me", handlers.GetCurrentUserMerchant)
 	auth.POST("/bind-phone", handlers.BindMerchantPhone)
-	auth.PUT("/services", middleware.RequirePermission("merchant.service.update"), handlers.UpdateCurrentMerchantServices)
-	auth.PUT("/info", middleware.RequirePermission("merchant.merchant.update"), handlers.UpdateMerchantInfo)
-	auth.PUT("/business-status", middleware.RequirePermission("merchant.business_status.update"), handlers.ToggleMerchantBusinessStatus)
+	auth.PUT("/services", middleware.RequirePermission("merchant.service.manage"), handlers.UpdateCurrentMerchantServices)
+	auth.PUT("/info", middleware.RequirePermission("merchant.info.manage"), handlers.UpdateMerchantInfo)
+	auth.PUT("/business-status", middleware.RequirePermission("merchant.business_status.manage"), handlers.ToggleMerchantBusinessStatus)
 	auth.GET("/permissions", handlers.GetMyPermissions)
 	// 搜索用户
 	auth.GET("/users/search", handlers.MerchantSearchUsers)
@@ -90,7 +90,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	// 商户资源
 	auth.GET("/merchants", handlers.GetMerchants)
 	auth.GET("/merchants/:id", handlers.GetMerchant)
-	auth.PUT("/merchants/:id", middleware.RequirePermission("merchant.merchant.update"), handlers.UpdateMerchant)
+	auth.PUT("/merchants/:id", middleware.RequirePermission("merchant.info.manage"), handlers.UpdateMerchant)
 	auth.GET("/merchants/:id/queue", handlers.GetQueueStatus)
 
 	// 卡片（商户视角）
@@ -127,10 +127,10 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.POST("/technician/bind-phone", handlers.BindTechnicianPhone)
 
 	// 技师账号管理
-	auth.GET("/technicians", middleware.RequirePermission("merchant.tech.manage"), handlers.GetMerchantTechnicians)
-	auth.POST("/technicians", middleware.RequirePermission("merchant.tech.manage"), handlers.CreateMerchantTechnician)
-	auth.PUT("/technicians/:id", middleware.RequirePermission("merchant.tech.manage"), handlers.UpdateMerchantTechnician)
-	auth.DELETE("/technicians/:id", middleware.RequirePermission("merchant.tech.manage"), handlers.DeleteMerchantTechnician)
+	auth.GET("/technicians", middleware.RequirePermission("merchant.worker.manage"), handlers.GetMerchantTechnicians)
+	auth.POST("/technicians", middleware.RequirePermission("merchant.worker.manage"), handlers.CreateMerchantTechnician)
+	auth.PUT("/technicians/:id", middleware.RequirePermission("merchant.worker.manage"), handlers.UpdateMerchantTechnician)
+	auth.DELETE("/technicians/:id", middleware.RequirePermission("merchant.worker.manage"), handlers.DeleteMerchantTechnician)
 
 	// 商户端：角色权限微调
 	auth.GET("/role-permissions/:roleKey", handlers.GetMerchantRolePermissionOverrides)
