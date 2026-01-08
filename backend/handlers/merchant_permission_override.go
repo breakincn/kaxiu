@@ -24,7 +24,7 @@ func GetMyPermissions(c *gin.Context) {
 	}
 
 	var perms []models.Permission
-	config.DB.Order("`group` asc, sort asc, id asc").Find(&perms)
+	config.DB.Order("sort asc, id asc").Find(&perms)
 
 	keys := make([]string, 0, len(perms))
 	for _, p := range perms {
@@ -69,7 +69,7 @@ func GetMerchantRolePermissionOverrides(c *gin.Context) {
 	}
 
 	var perms []models.Permission
-	config.DB.Order("`group` asc, sort asc, id asc").Find(&perms)
+	config.DB.Order("sort asc, id asc").Find(&perms)
 
 	type item struct {
 		Permission       models.Permission `json:"permission"`
