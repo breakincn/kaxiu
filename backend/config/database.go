@@ -273,10 +273,9 @@ func initPermissions() {
 		{Key: "merchant.merchant.create", Name: "创建商户", Group: "商户", Description: "新增商户账号", Sort: 41},
 		{Key: "merchant.service.update", Name: "修改商户服务设置", Group: "商户", Description: "更新商户服务能力开关", Sort: 50},
 		{Key: "merchant.business_status.update", Name: "切换营业状态", Group: "商户", Description: "操作营业中/打烊", Sort: 60},
-		{Key: "merchant.notice.create", Name: "创建通知", Group: "通知", Description: "发布商户通知", Sort: 70},
-		{Key: "merchant.notice.delete", Name: "删除通知", Group: "通知", Description: "删除商户通知", Sort: 71},
-		{Key: "merchant.notice.manage", Name: "管理通知", Group: "通知", Description: "置顶/取消置顶通知", Sort: 72},
-		{Key: "merchant.appointment.manage", Name: "管理预约", Group: "预约", Description: "确认/完成预约", Sort: 80},
+		{Key: "merchant.notice.manage", Name: "通知", Group: "通知", Description: "创建、删除、置顶/取消置顶通知", Sort: 70},
+		{Key: "merchant.appointment.view", Name: "预约", Group: "预约", Description: "可被用户预约、查看和处理预约自己的预约", Sort: 75},
+		{Key: "merchant.appointment.manage", Name: "管理预约", Group: "预约", Description: "确认/完成整个店铺的预约", Sort: 80},
 		{Key: "merchant.permission.adjust", Name: "权限微调", Group: "权限", Description: "调整角色权限覆盖", Sort: 90},
 	}
 

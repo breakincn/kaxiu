@@ -67,6 +67,48 @@ func GetMerchantAppointments(c *gin.Context) {
 		query = query.Where("status = ?", status)
 	}
 
+	// 如果是技师登录，且只有预约权限（没有管理预约权限），则只显示预约自己的预约
+	authType, _ := c.Get("auth_type")
+	if authType == "technician" {
+		technicianIDAny, ok := c.Get("technician_id")
+		if ok {
+			if technicianID, ok := technicianIDAny.(uint); ok && technicianID > 0 {
+				// 检查是否有管理预约权限
+				hasManagePermission := false
+				if merchantIDAny, ok := c.Get("merchant_id"); ok {
+					if mID, ok := merchantIDAny.(uint); ok {
+						if serviceRoleIDAny, ok := c.Get("service_role_id"); ok {
+							if serviceRoleID, ok := serviceRoleIDAny.(uint); ok {
+								// 查找管理预约权限
+								var managePerm models.Permission
+								if err := config.DB.Where("`key` = ?", "merchant.appointment.manage").First(&managePerm).Error; err == nil {
+									// 检查商户级别的权限覆盖
+									var override models.MerchantRolePermissionOverride
+									err := config.DB.Where("merchant_id = ? AND service_role_id = ? AND permission_id = ?", mID, serviceRoleID, managePerm.ID).First(&override).Error
+									if err == nil {
+										hasManagePermission = override.Allowed
+									} else {
+										// 检查全局角色权限
+										var rolePerm models.RolePermission
+										err = config.DB.Where("service_role_id = ? AND permission_id = ? AND allowed = ?", serviceRoleID, managePerm.ID, true).First(&rolePerm).Error
+										if err == nil {
+											hasManagePermission = true
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// 如果没有管理预约权限，则只显示预约自己的预约
+				if !hasManagePermission {
+					query = query.Where("technician_id = ?", technicianID)
+				}
+			}
+		}
+	}
+
 	query.Order("appointment_time ASC").Find(&appointments)
 	c.JSON(http.StatusOK, gin.H{"data": appointments})
 }

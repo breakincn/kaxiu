@@ -332,7 +332,38 @@ func GetTechniciansByMerchantID(c *gin.Context) {
 		return
 	}
 
+	// 查找预约权限
+	var appointmentViewPerm models.Permission
+	if err := config.DB.Where("`key` = ?", "merchant.appointment.view").First(&appointmentViewPerm).Error; err != nil {
+		c.JSON(http.StatusOK, gin.H{"data": []models.Technician{}})
+		return
+	}
+
+	// 获取所有技师
 	var list []models.Technician
-	config.DB.Where("merchant_id = ?", merchantID).Order("id desc").Find(&list)
-	c.JSON(http.StatusOK, gin.H{"data": list})
+	config.DB.Where("merchant_id = ? AND is_active = ?", merchantID, true).Order("id desc").Find(&list)
+
+	// 过滤出具有预约权限的技师
+	var result []models.Technician
+	merchantIDUint, _ := strconv.ParseUint(merchantID, 10, 32)
+	for _, tech := range list {
+		// 检查商户级别的权限覆盖
+		var override models.MerchantRolePermissionOverride
+		err := config.DB.Where("merchant_id = ? AND service_role_id = ? AND permission_id = ?", uint(merchantIDUint), tech.ServiceRoleID, appointmentViewPerm.ID).First(&override).Error
+		if err == nil {
+			if override.Allowed {
+				result = append(result, tech)
+			}
+			continue
+		}
+
+		// 检查全局角色权限
+		var rolePerm models.RolePermission
+		err = config.DB.Where("service_role_id = ? AND permission_id = ? AND allowed = ?", tech.ServiceRoleID, appointmentViewPerm.ID, true).First(&rolePerm).Error
+		if err == nil {
+			result = append(result, tech)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": result})
 }

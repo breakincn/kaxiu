@@ -112,8 +112,8 @@ func SetupMerchantRoutes(r *gin.Engine) {
 
 	// 通知
 	auth.GET("/merchants/:id/notices", handlers.GetMerchantNotices)
-	auth.POST("/notices", middleware.RequirePermission("merchant.notice.create"), handlers.CreateNotice)
-	auth.DELETE("/notices/:id", middleware.RequirePermission("merchant.notice.delete"), handlers.DeleteNotice)
+	auth.POST("/notices", middleware.RequirePermission("merchant.notice.manage"), handlers.CreateNotice)
+	auth.DELETE("/notices/:id", middleware.RequirePermission("merchant.notice.manage"), handlers.DeleteNotice)
 	auth.PUT("/notices/:id/pin", middleware.RequirePermission("merchant.notice.manage"), handlers.TogglePinNotice)
 
 	// 预约（商户侧）

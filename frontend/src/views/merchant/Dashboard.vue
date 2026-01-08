@@ -83,9 +83,13 @@
     </div>
 
     <!-- 数据统计卡片 -->
-    <div class="px-4 py-4 grid gap-3" :class="merchant.support_direct_sale ? 'grid-cols-3' : 'grid-cols-2'">
+    <div class="px-4 py-4 grid gap-3" :class="{
+      'grid-cols-1': visibleStatsCount === 1,
+      'grid-cols-2': visibleStatsCount === 2,
+      'grid-cols-3': visibleStatsCount === 3
+    }">
       <button
-        v-if="merchant.support_direct_sale"
+        v-if="canDirectSaleManage && merchant.support_direct_sale"
         type="button"
         class="bg-white rounded-xl p-4 text-left border border-gray-100"
         @click="goToDirectPurchaseOrders"
@@ -95,6 +99,7 @@
         <div class="text-gray-500 text-sm">单</div>
       </button>
       <button
+        v-if="showQueueTab"
         type="button"
         class="bg-white rounded-xl p-4 text-left border border-gray-100"
         @click="currentTab = 'queue'"
@@ -104,6 +109,7 @@
         <div class="text-gray-500 text-sm">人</div>
       </button>
       <button
+        v-if="canVerify"
         type="button"
         class="bg-white rounded-xl p-4 text-left border border-gray-100"
         @click="currentTab = 'verify'"
@@ -117,7 +123,7 @@
     <!-- Tab 切换 -->
     <div class="px-4 flex gap-2 border-b bg-white">
       <button
-        v-if="merchant.support_appointment"
+        v-if="showQueueTab"
         @click="currentTab = 'queue'"
         :class="[
           'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
@@ -129,6 +135,7 @@
         排队
       </button>
       <button
+        v-if="showVerifyTab"
         @click="currentTab = 'verify'"
         :class="[
           'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
@@ -140,6 +147,19 @@
         扫码核销
       </button>
       <button
+        v-if="showFinishTab"
+        @click="currentTab = 'finish'"
+        :class="[
+          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          currentTab === 'finish'
+            ? 'border-primary text-primary'
+            : 'border-transparent text-gray-500'
+        ]"
+      >
+        扫码结单
+      </button>
+      <button
+        v-if="showNoticeTab"
         @click="currentTab = 'notice'"
         :class="[
           'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
@@ -232,21 +252,12 @@
     <div v-if="currentTab === 'verify'" class="px-4 py-4">
       <!-- 默认显示大按钮 -->
       <div v-if="!showVerifyInput" class="bg-white rounded-xl p-4 shadow-sm">
-        <div class="space-y-3">
-          <button
-            @click="goScanVerify"
-            class="w-full py-3 bg-primary text-white rounded-lg font-medium"
-          >
-            扫码核销
-          </button>
-          <button
-            v-if="canFinishVerify"
-            @click="goScanFinish"
-            class="w-full py-3 bg-gray-100 text-gray-700 rounded-lg font-medium"
-          >
-            扫码结单
-          </button>
-        </div>
+        <button
+          @click="goScanVerify"
+          class="w-full py-3 bg-primary text-white rounded-lg font-medium"
+        >
+          扫码核销
+        </button>
       </div>
 
       <!-- 输入核销码区域 -->
@@ -311,6 +322,35 @@
         </div>
         <div v-else class="text-center text-gray-400 py-4">
           今日暂无核销
+        </div>
+      </div>
+    </div>
+
+    <!-- 扫码结单 -->
+    <div v-if="currentTab === 'finish'" class="px-4 py-4">
+      <div class="bg-white rounded-xl p-4 shadow-sm">
+        <button
+          @click="goScanFinish"
+          class="w-full py-3 bg-primary text-white rounded-lg font-medium"
+        >
+          扫码结单
+        </button>
+      </div>
+
+      <!-- 今日结单记录 -->
+      <div class="bg-white rounded-xl p-4 shadow-sm mt-4">
+        <h3 class="font-medium text-gray-800 mb-4">今日结单记录</h3>
+        <div v-if="todayUsages.length > 0" class="space-y-3">
+          <div v-for="usage in todayUsages" :key="usage.id" class="flex justify-between items-center py-2 border-b last:border-0">
+            <div>
+              <div class="text-gray-800">{{ usage.card?.user?.nickname || '用户' }}</div>
+              <div class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</div>
+            </div>
+            <span class="text-gray-700 text-sm">结单 {{ usage.used_times }} 次</span>
+          </div>
+        </div>
+        <div v-else class="text-center text-gray-400 py-4">
+          今日暂无结单
         </div>
       </div>
     </div>
@@ -656,6 +696,45 @@ const canBusinessStatusUpdate = computed(() => hasMerchantPermission('merchant.b
 const canDirectSaleManage = computed(() => hasMerchantPermission('merchant.direct_sale.manage'))
 const canCardIssue = computed(() => hasMerchantPermission('merchant.card.issue'))
 const canFinishVerify = computed(() => hasMerchantPermission('merchant.card.finish'))
+const canVerify = computed(() => hasMerchantPermission('merchant.card.verify'))
+const canNoticeManage = computed(() => hasMerchantPermission('merchant.notice.manage'))
+const canAppointmentView = computed(() => hasMerchantPermission('merchant.appointment.view'))
+const canAppointmentManage = computed(() => hasMerchantPermission('merchant.appointment.manage'))
+
+// 统计卡片显示个数
+const visibleStatsCount = computed(() => {
+  let count = 0
+  if (canDirectSaleManage.value && merchant.value.support_direct_sale) count++
+  if (showQueueTab.value) count++
+  if (canVerify.value) count++
+  return count
+})
+
+// Tab 显示控制
+const showQueueTab = computed(() => {
+  // 有预约权限或管理预约权限，并且商户支持预约
+  const hasPermission = canAppointmentView.value || canAppointmentManage.value
+  const merchantSupportsAppointment = merchant.value && merchant.value.support_appointment === true
+  console.log('showQueueTab:', { hasPermission, merchantSupportsAppointment, merchant: merchant.value })
+  return merchantSupportsAppointment && hasPermission
+})
+
+const showVerifyTab = computed(() => {
+  // 有核销权限
+  console.log('showVerifyTab:', canVerify.value)
+  return canVerify.value
+})
+
+const showFinishTab = computed(() => {
+  // 有结单权限
+  console.log('showFinishTab:', canFinishVerify.value)
+  return canFinishVerify.value
+})
+
+const showNoticeTab = computed(() => {
+  // 有通知管理权限
+  return canNoticeManage.value
+})
 const currentTab = ref('queue')
 const routeUserCode = ref('')
 const userCodeAnchor = ref(null)
@@ -1390,6 +1469,9 @@ watch(currentTab, (tab) => {
       verifyCodeInput.value = ''
       verifyResult.value = null
       fetchTodayUsages()
+    } else if (tab === 'finish') {
+      // 结单Tab也显示今日核销记录
+      fetchTodayUsages()
     } else if (tab === 'notice') {
       fetchNotices()
     } else if (tab === 'cards') {
@@ -1423,15 +1505,22 @@ watch(
   }
 )
 
-onMounted(() => {
+onMounted(async () => {
   console.log('Merchant Dashboard mounted')
   console.log('localStorage merchantId:', localStorage.getItem('merchantId'))
 
-  ensureMerchantPermissionsLoaded()
+  // 等待权限加载完成
+  await ensureMerchantPermissionsLoaded()
+  console.log('Permissions loaded, checking permissions:', {
+    canAppointmentView: canAppointmentView.value,
+    canAppointmentManage: canAppointmentManage.value,
+    canVerify: canVerify.value,
+    canFinishVerify: canFinishVerify.value
+  })
   
   // 检查查询参数，自动切换到指定Tab
   const tabParam = route.query.tab
-  if (tabParam && ['queue', 'verify', 'notice', 'cards'].includes(tabParam)) {
+  if (tabParam && ['queue', 'verify', 'finish', 'notice', 'cards'].includes(tabParam)) {
     currentTab.value = tabParam
   }
 
@@ -1455,25 +1544,80 @@ onMounted(() => {
 
   console.log('Valid merchantId:', parsedMerchantId, 'loading data...')
   merchantId.value = parsedMerchantId
-  fetchMerchant().then(() => {
-    if (!merchant.value.support_appointment && currentTab.value === 'queue') {
+  await fetchMerchant()
+  console.log('Merchant loaded:', merchant.value)
+  
+  // 根据权限选择默认Tab
+  if (!tabParam) {
+    if (showQueueTab.value) {
+      currentTab.value = 'queue'
+    } else if (showVerifyTab.value) {
       currentTab.value = 'verify'
+    } else if (showFinishTab.value) {
+      currentTab.value = 'finish'
+    } else if (showNoticeTab.value) {
+      currentTab.value = 'notice'
+    } else {
+      currentTab.value = 'cards'
     }
-    fetchQueueStatus()
-    fetchPendingDirectPurchases()
-    fetchAppointments()
-    loadCardTemplates() // 加载卡片模板
-    if (merchant.value.support_appointment) {
-      startCountdownTimer()
+  } else {
+    // 如果指定了tab但没有权限，则切换到默认tab
+    if (currentTab.value === 'queue' && !showQueueTab.value) {
+      if (showVerifyTab.value) {
+        currentTab.value = 'verify'
+      } else if (showFinishTab.value) {
+        currentTab.value = 'finish'
+      } else if (showNoticeTab.value) {
+        currentTab.value = 'notice'
+      } else {
+        currentTab.value = 'cards'
+      }
+    } else if (currentTab.value === 'verify' && !showVerifyTab.value) {
+      if (showQueueTab.value) {
+        currentTab.value = 'queue'
+      } else if (showFinishTab.value) {
+        currentTab.value = 'finish'
+      } else if (showNoticeTab.value) {
+        currentTab.value = 'notice'
+      } else {
+        currentTab.value = 'cards'
+      }
+    } else if (currentTab.value === 'finish' && !showFinishTab.value) {
+      if (showQueueTab.value) {
+        currentTab.value = 'queue'
+      } else if (showVerifyTab.value) {
+        currentTab.value = 'verify'
+      } else if (showNoticeTab.value) {
+        currentTab.value = 'notice'
+      } else {
+        currentTab.value = 'cards'
+      }
+    } else if (currentTab.value === 'notice' && !showNoticeTab.value) {
+      if (showQueueTab.value) {
+        currentTab.value = 'queue'
+      } else if (showVerifyTab.value) {
+        currentTab.value = 'verify'
+      } else if (showFinishTab.value) {
+        currentTab.value = 'finish'
+      } else {
+        currentTab.value = 'cards'
+      }
     }
+  }
 
-    if (currentTab.value === 'cards' && scanUserCodeActive.value && routeUserCode.value) {
-      fetchIssuedCards().then(async () => {
-        await scrollToUserCodeHint()
-        await cleanupScanQuery()
-      })
-    }
-  })
+  fetchQueueStatus()
+  fetchPendingDirectPurchases()
+  fetchAppointments()
+  loadCardTemplates() // 加载卡片模板
+  if (merchant.value.support_appointment) {
+    startCountdownTimer()
+  }
+
+  if (currentTab.value === 'cards' && scanUserCodeActive.value && routeUserCode.value) {
+    await fetchIssuedCards()
+    await scrollToUserCodeHint()
+    await cleanupScanQuery()
+  }
 })
 
 onBeforeRouteLeave(() => {
