@@ -31,6 +31,7 @@ type Merchant struct {
 	QueueStartNo           int    `json:"queue_start_no" gorm:"default:1;comment:叫号起始号码"`
 	SupportDirectSale      bool   `json:"support_direct_sale" gorm:"default:false;comment:是否支持直购售卡（0-不支持，1-支持）"`
 	SupportCustomerService bool   `json:"support_customer_service" gorm:"default:false;comment:是否开启设置客服/技师账号（0-不支持，1-支持）"`
+	TechnicianAlias        string `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
 	AvgServiceMinutes      int    `json:"avg_service_minutes" gorm:"default:30;comment:平均服务时长（分钟）"`
 	// 营业时间
 	MorningStart   string `json:"morning_start" gorm:"size:10;default:'';comment:上午营业开始时间（格式：HH:MM）"`
@@ -88,20 +89,20 @@ func (Card) TableComment() string {
 }
 
 type Usage struct {
-	ID         uint       `json:"id" gorm:"primaryKey;comment:记录ID"`
-	CardID     uint       `json:"card_id" gorm:"index;comment:卡片ID（外键关联cards表）"`
-	MerchantID uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
-	UsedTimes  int        `json:"used_times" gorm:"comment:本次核销次数"`
-	UsedAt     *time.Time `json:"used_at" gorm:"type:datetime(3);comment:使用时间"`
+	ID                 uint       `json:"id" gorm:"primaryKey;comment:记录ID"`
+	CardID             uint       `json:"card_id" gorm:"index;comment:卡片ID（外键关联cards表）"`
+	MerchantID         uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
+	UsedTimes          int        `json:"used_times" gorm:"comment:本次核销次数"`
+	UsedAt             *time.Time `json:"used_at" gorm:"type:datetime(3);comment:使用时间"`
 	VerifyCode         string     `json:"verify_code" gorm:"size:50;index;default:'';comment:核销码（用于结单/追溯）"`
 	VerifyCodeExpireAt int64      `json:"verify_code_expire_at" gorm:"index;comment:核销码过期时间（Unix时间戳）"`
 	TechnicianID       *uint      `json:"technician_id" gorm:"index;comment:服务人员技师ID（technicians表主键，可为空）"`
 	FinishedAt         *time.Time `json:"finished_at" gorm:"type:datetime(3);comment:服务完成/结单时间"`
 	Status             string     `json:"status" gorm:"size:20;default:success;comment:状态（in_progress-进行中，success-完成，failed-失败）"`
-	CreatedAt  *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
-	Card     Card     `json:"card" gorm:"foreignKey:CardID"`
-	Merchant Merchant `json:"merchant" gorm:"foreignKey:MerchantID"`
+	Card       Card        `json:"card" gorm:"foreignKey:CardID"`
+	Merchant   Merchant    `json:"merchant" gorm:"foreignKey:MerchantID"`
 	Technician *Technician `json:"technician" gorm:"foreignKey:TechnicianID"`
 }
 

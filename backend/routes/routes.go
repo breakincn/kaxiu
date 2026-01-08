@@ -82,6 +82,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.POST("/bind-phone", handlers.BindMerchantPhone)
 	auth.PUT("/services", middleware.RequirePermission("merchant.service.manage"), handlers.UpdateCurrentMerchantServices)
 	auth.PUT("/info", middleware.RequirePermission("merchant.info.manage"), handlers.UpdateMerchantInfo)
+	auth.PUT("/technician-alias", handlers.UpdateTechnicianAlias)
 	auth.PUT("/business-status", middleware.RequirePermission("merchant.business_status.manage"), handlers.ToggleMerchantBusinessStatus)
 	auth.GET("/permissions", handlers.GetMyPermissions)
 	// 搜索用户

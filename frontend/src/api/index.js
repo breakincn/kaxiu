@@ -162,6 +162,7 @@ export const merchantApi = {
   getMerchant: (id) => api.get(`/merchant/merchants/${id}`),
   createMerchant: (data) => api.post('/merchant/merchants', data),
   updateMerchant: (id, data) => api.put(`/merchant/merchants/${id}`, data),
+  updateTechnicianAlias: (data) => api.put('/merchant/technician-alias', data),
   getQueueStatus: (id) => api.get(`/merchant/merchants/${id}/queue`),
   searchUsersByPhone: (phone) => api.get('/merchant/users/search', { params: { phone } }),
   bindPhone: (phone, code, password) => api.post('/merchant/bind-phone', { phone, code, password }),

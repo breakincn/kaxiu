@@ -515,3 +515,41 @@ func UpdateMerchantInfo(c *gin.Context) {
 	config.DB.First(&merchant, merchantID)
 	c.JSON(http.StatusOK, gin.H{"data": merchant})
 }
+
+func UpdateTechnicianAlias(c *gin.Context) {
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+
+	var input struct {
+		TechnicianAlias string `json:"technician_alias" binding:"required,max=20"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 清理输入的称谓
+	alias := strings.TrimSpace(input.TechnicianAlias)
+	if alias == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "技师称谓不能为空"})
+		return
+	}
+
+	// 更新技师称谓
+	if err := config.DB.Model(&merchant).Update("technician_alias", alias).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+
+	// 返回更新后的商户信息
+	config.DB.First(&merchant, merchantID)
+	c.JSON(http.StatusOK, gin.H{"data": merchant})
+}

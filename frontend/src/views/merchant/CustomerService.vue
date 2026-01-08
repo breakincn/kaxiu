@@ -50,6 +50,14 @@
               >
                 添加{{ activeRoleObj.name }}
               </button>
+              <button
+                v-if="activeRoleObj.key === 'technician'"
+                type="button"
+                class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium"
+                @click="openEditAlias"
+              >
+                编辑称谓
+              </button>
             </div>
           </div>
         </div>
@@ -163,6 +171,43 @@
         </div>
       </div>
     </div>
+
+    <!-- 编辑称谓弹窗 -->
+    <div v-if="showEditAlias" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-4 z-50" @click.self="showEditAlias = false">
+      <div class="bg-white rounded-2xl w-full max-w-md p-6">
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="text-xl font-bold text-gray-800">编辑技师称谓</h3>
+          <button @click="showEditAlias = false" class="text-gray-400 hover:text-gray-600">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <form @submit.prevent="saveAlias">
+          <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-medium mb-2">技师称谓</label>
+            <input
+              v-model="aliasForm.technician_alias"
+              type="text"
+              placeholder="如：小二、服务员、店员等"
+              class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+              maxlength="20"
+              required
+            />
+            <div class="text-gray-500 text-xs mt-1">将替代"技师"显示在界面中</div>
+          </div>
+
+          <button
+            type="submit"
+            :disabled="savingAlias"
+            class="w-full py-3 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+          >
+            {{ savingAlias ? '保存中...' : '保存' }}
+          </button>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -184,16 +229,34 @@ const activeRole = ref('')
 const activeRoleObj = computed(() => {
   const k = activeRole.value
   if (!k) return null
-  return roles.value.find((r) => r && r.key === k) || null
+  const role = roles.value.find((r) => r && r.key === k) || null
+  
+  // 如果是技师角色，使用自定义称谓
+  if (role && role.key === 'technician' && currentMerchant.value?.technician_alias) {
+    return {
+      ...role,
+      name: currentMerchant.value.technician_alias
+    }
+  }
+  
+  return role
 })
 
 const showAdd = ref(false)
 const isEdit = ref(false)
+const showEditAlias = ref(false)
+const savingAlias = ref(false)
 const form = ref({
   id: 0,
   name: '',
   code: ''
 })
+
+const aliasForm = ref({
+  technician_alias: ''
+})
+
+const currentMerchant = ref(null)
 
 const goBack = () => {
   router.back()
@@ -239,6 +302,49 @@ const openEdit = (t) => {
     code: t.code || ''
   }
   showAdd.value = true
+}
+
+const openEditAlias = async () => {
+  try {
+    // 获取当前商户信息
+    const res = await merchantApi.getCurrentMerchant()
+    currentMerchant.value = res.data?.data || null
+    
+    // 设置当前称谓
+    aliasForm.value.technician_alias = currentMerchant.value?.technician_alias || '技师'
+    
+    showEditAlias.value = true
+  } catch (e) {
+    alert('获取商户信息失败')
+  }
+}
+
+const saveAlias = async () => {
+  if (savingAlias.value) return
+  
+  if (!aliasForm.value.technician_alias.trim()) {
+    alert('技师称谓不能为空')
+    return
+  }
+
+  savingAlias.value = true
+  try {
+    await merchantApi.updateTechnicianAlias({
+      technician_alias: aliasForm.value.technician_alias.trim()
+    })
+    
+    alert('称谓更新成功')
+    showEditAlias.value = false
+    
+    // 更新当前商户信息
+    if (currentMerchant.value) {
+      currentMerchant.value.technician_alias = aliasForm.value.technician_alias.trim()
+    }
+  } catch (e) {
+    alert(e.response?.data?.error || '更新失败')
+  } finally {
+    savingAlias.value = false
+  }
 }
 
 const submit = async () => {
