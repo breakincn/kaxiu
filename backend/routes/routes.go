@@ -90,7 +90,6 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	// 商户资源
 	auth.GET("/merchants", handlers.GetMerchants)
 	auth.GET("/merchants/:id", handlers.GetMerchant)
-	auth.POST("/merchants", middleware.RequirePermission("merchant.merchant.create"), handlers.CreateMerchant)
 	auth.PUT("/merchants/:id", middleware.RequirePermission("merchant.merchant.update"), handlers.UpdateMerchant)
 	auth.GET("/merchants/:id/queue", handlers.GetQueueStatus)
 
@@ -174,4 +173,8 @@ func SetupAdminRoutes(r *gin.Engine) {
 	admin.DELETE("/permissions/:id", handlers.AdminDeletePermission)
 	admin.GET("/service-roles/:roleId/permissions", handlers.AdminGetRolePermissions)
 	admin.POST("/service-roles/:roleId/permissions", handlers.AdminSetRolePermissions)
+
+	// 平台管理商户
+	admin.POST("/merchants", handlers.CreateMerchant)
+	admin.PUT("/merchants/:id", handlers.UpdateMerchant)
 }
