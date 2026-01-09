@@ -91,6 +91,9 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `direct_purchases` COMMENT = '直购订单记录表'")
 	DB.Exec("ALTER TABLE `merchant_shop_slugs` COMMENT = '商户店铺短链接表'")
 
+	// 添加字段注释
+	addFieldComments()
+
 	log.Println("数据库初始化成功")
 
 	// 初始化商户注册邀请码（幂等）
@@ -347,4 +350,44 @@ func initRolePermissions() {
 	if err := DB.Where("service_role_id = ? AND permission_id = ?", technicianRole.ID, permSell.ID).First(&existing).Error; err != nil {
 		DB.Create(&models.RolePermission{ServiceRoleID: technicianRole.ID, PermissionID: permSell.ID, Allowed: true})
 	}
+}
+
+func addFieldComments() {
+	// service_roles 表字段注释
+	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID'")
+	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `key` varchar(50) NOT NULL COMMENT '客服类型标识（如：technician、teacher）'")
+	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `name` varchar(50) NOT NULL COMMENT '客服类型名称（如：技师、老师）'")
+	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `description` varchar(255) DEFAULT '' COMMENT '客服类型描述'")
+	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否启用（0-禁用，1-启用）'")
+	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `allow_permission_adjust` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否允许权限调整（0-不允许，1-允许）'")
+	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `sort` int NOT NULL DEFAULT 0 COMMENT '排序顺序（越小越靠前）'")
+	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `created_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间'")
+	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `updated_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间'")
+
+	// permissions 表字段注释
+	DB.Exec("ALTER TABLE `permissions` MODIFY COLUMN `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID'")
+	DB.Exec("ALTER TABLE `permissions` MODIFY COLUMN `key` varchar(80) NOT NULL COMMENT '权限标识（如：merchant.card.verify）'")
+	DB.Exec("ALTER TABLE `permissions` MODIFY COLUMN `name` varchar(80) NOT NULL COMMENT '权限名称（如：核销）'")
+	DB.Exec("ALTER TABLE `permissions` MODIFY COLUMN `group` varchar(80) DEFAULT '' COMMENT '权限分组（如：卡片、商户）'")
+	DB.Exec("ALTER TABLE `permissions` MODIFY COLUMN `description` varchar(255) DEFAULT '' COMMENT '权限描述'")
+	DB.Exec("ALTER TABLE `permissions` MODIFY COLUMN `sort` int NOT NULL DEFAULT 0 COMMENT '排序顺序（越小越靠前）'")
+	DB.Exec("ALTER TABLE `permissions` MODIFY COLUMN `created_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间'")
+	DB.Exec("ALTER TABLE `permissions` MODIFY COLUMN `updated_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间'")
+
+	// role_permissions 表字段注释
+	DB.Exec("ALTER TABLE `role_permissions` MODIFY COLUMN `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID'")
+	DB.Exec("ALTER TABLE `role_permissions` MODIFY COLUMN `service_role_id` int unsigned NOT NULL COMMENT '客服类型ID（外键关联service_roles表）'")
+	DB.Exec("ALTER TABLE `role_permissions` MODIFY COLUMN `permission_id` int unsigned NOT NULL COMMENT '权限ID（外键关联permissions表）'")
+	DB.Exec("ALTER TABLE `role_permissions` MODIFY COLUMN `allowed` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否允许权限（0-不允许，1-允许）'")
+	DB.Exec("ALTER TABLE `role_permissions` MODIFY COLUMN `created_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间'")
+	DB.Exec("ALTER TABLE `role_permissions` MODIFY COLUMN `updated_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '更新时间'")
+
+	// merchant_role_permission_overrides 表字段注释
+	DB.Exec("ALTER TABLE `merchant_role_permission_overrides` MODIFY COLUMN `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID'")
+	DB.Exec("ALTER TABLE `merchant_role_permission_overrides` MODIFY COLUMN `merchant_id` int unsigned NOT NULL COMMENT '商户ID（外键关联merchants表）'")
+	DB.Exec("ALTER TABLE `merchant_role_permission_overrides` MODIFY COLUMN `service_role_id` int unsigned NOT NULL COMMENT '客服类型ID（外键关联service_roles表）'")
+	DB.Exec("ALTER TABLE `merchant_role_permission_overrides` MODIFY COLUMN `permission_id` int unsigned NOT NULL COMMENT '权限ID（外键关联permissions表）'")
+	DB.Exec("ALTER TABLE `merchant_role_permission_overrides` MODIFY COLUMN `allowed` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否允许权限（0-不允许，1-允许）'")
+	DB.Exec("ALTER TABLE `merchant_role_permission_overrides` MODIFY COLUMN `created_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间'")
+	DB.Exec("ALTER TABLE `merchant_role_permission_overrides` MODIFY COLUMN `updated_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '更新时间'")
 }
