@@ -18,7 +18,7 @@ func GetMyPermissions(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{"permission_keys": []string{"*"}}})
 		return
 	}
-	if authType != "technician" {
+	if authType != "staff" {
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{"permission_keys": []string{}}})
 		return
 	}
