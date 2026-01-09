@@ -23,7 +23,7 @@ if [ "$MODE" = "dev" ]; then
     # 开发环境配置
     export KABAO_DSN="${KABAO_DSN:-kabao:kabao123456@tcp(127.0.0.1:3306)/kabao?charset=utf8mb4&parseTime=True&loc=Local}"
     export KABAO_CORS_ALLOW_ORIGINS="${KABAO_CORS_ALLOW_ORIGINS:-http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:5173,http://localhost:5174,https://kabao.app,https://kabao.shop}"
-    export PLATFORM_ADMIN_TOKEN="${PLATFORM_ADMIN_TOKEN:-dev-token-123}"
+    export PLATFORM_ADMIN_TOKEN="${PLATFORM_ADMIN_TOKEN:-KabaoAdmin2026!}"
     export GIN_MODE=debug
     export LOG_LEVEL=debug
 else
