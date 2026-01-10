@@ -171,6 +171,7 @@
         通知
       </button>
       <button
+        v-if="showCardsTab"
         @click="currentTab = 'cards'"
         :class="[
           'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
@@ -184,7 +185,7 @@
     </div>
 
     <!-- 排队管理 -->
-    <div v-if="currentTab === 'queue'" class="px-4 py-4 space-y-4">
+    <div v-if="currentTab === 'queue' && showQueueTab" class="px-4 py-4 space-y-4">
       <div v-for="appt in appointments" :key="appt.id" class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex justify-between items-start mb-2">
           <div>
@@ -249,7 +250,7 @@
     </div>
 
     <!-- 扫码核销 -->
-    <div v-if="currentTab === 'verify'" class="px-4 py-4">
+    <div v-if="currentTab === 'verify' && showVerifyTab" class="px-4 py-4">
       <!-- 默认显示大按钮 -->
       <div v-if="!showVerifyInput" class="bg-white rounded-xl p-4 shadow-sm">
         <button
@@ -327,7 +328,7 @@
     </div>
 
     <!-- 扫码结单 -->
-    <div v-if="currentTab === 'finish'" class="px-4 py-4">
+    <div v-if="currentTab === 'finish' && showFinishTab" class="px-4 py-4">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <button
           @click="goScanFinish"
@@ -356,7 +357,7 @@
     </div>
 
     <!-- 通知管理 -->
-    <div v-if="currentTab === 'notice'" class="px-4 py-4">
+    <div v-if="currentTab === 'notice' && showNoticeTab" class="px-4 py-4">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <h3 class="font-medium text-gray-800 mb-4">发布通知</h3>
         <div v-if="notices.length >= 3" class="mb-3 p-3 bg-primary-light border border-gray-100 rounded-lg text-gray-700 text-sm">
@@ -424,7 +425,7 @@
     </div>
 
     <!-- 卡片管理 -->
-    <div v-if="currentTab === 'cards'" class="px-4 py-4">
+    <div v-if="currentTab === 'cards' && showCardsTab" class="px-4 py-4">
       <div v-if="cardsError" class="bg-gray-50 border border-gray-100 text-gray-700 rounded-lg p-3 text-sm mb-4">
         {{ cardsError }}
       </div>
@@ -458,12 +459,14 @@
 
         <div class="flex gap-2 mt-3 items-center">
           <button
+            v-if="canVerify"
             @click="searchCards"
             class="px-4 py-2 bg-primary text-white text-sm rounded-lg"
           >
             查询
           </button>
           <button
+            v-if="canVerify"
             @click="resetCardSearch"
             class="px-4 py-2 bg-gray-100 text-gray-700 text-sm rounded-lg"
           >
@@ -472,7 +475,7 @@
 
           <div class="flex-1"></div>
           <button
-            v-if="canSellCards()"
+            v-if="canSellCards"
             type="button"
             @click="loadSellTemplates"
             class="px-4 py-2 bg-slate-600 text-white text-sm rounded-lg"
@@ -735,6 +738,12 @@ const showNoticeTab = computed(() => {
   // 有通知管理权限
   return canNoticeManage.value
 })
+
+const canCardSell = computed(() => hasMerchantPermission('merchant.card.sell'))
+
+const showCardsTab = computed(() => {
+  return canVerify.value || canCardSell.value
+})
 const currentTab = ref('queue')
 const routeUserCode = ref('')
 const userCodeAnchor = ref(null)
@@ -787,9 +796,14 @@ const getTechnicianName = () => {
   return '技师'
 }
 
-const canSellCards = () => {
-  return !!merchant.value.support_direct_sale && isTechnicianAuth() && !!getTechnicianId()
-}
+const canSellCards = computed(() => {
+  return (
+    canCardSell.value &&
+    !!merchant.value.support_direct_sale &&
+    isTechnicianAuth() &&
+    !!getTechnicianId()
+  )
+})
 const scanUserCodeActive = ref(false)
 
 const todayVerifyCount = ref(0)
@@ -1558,7 +1572,7 @@ onMounted(async () => {
     } else if (showNoticeTab.value) {
       currentTab.value = 'notice'
     } else {
-      currentTab.value = 'cards'
+      currentTab.value = showCardsTab.value ? 'cards' : 'queue'
     }
   } else {
     // 如果指定了tab但没有权限，则切换到默认tab
@@ -1570,7 +1584,7 @@ onMounted(async () => {
       } else if (showNoticeTab.value) {
         currentTab.value = 'notice'
       } else {
-        currentTab.value = 'cards'
+        currentTab.value = showCardsTab.value ? 'cards' : 'queue'
       }
     } else if (currentTab.value === 'verify' && !showVerifyTab.value) {
       if (showQueueTab.value) {
@@ -1580,7 +1594,7 @@ onMounted(async () => {
       } else if (showNoticeTab.value) {
         currentTab.value = 'notice'
       } else {
-        currentTab.value = 'cards'
+        currentTab.value = showCardsTab.value ? 'cards' : 'queue'
       }
     } else if (currentTab.value === 'finish' && !showFinishTab.value) {
       if (showQueueTab.value) {
@@ -1590,7 +1604,7 @@ onMounted(async () => {
       } else if (showNoticeTab.value) {
         currentTab.value = 'notice'
       } else {
-        currentTab.value = 'cards'
+        currentTab.value = showCardsTab.value ? 'cards' : 'queue'
       }
     } else if (currentTab.value === 'notice' && !showNoticeTab.value) {
       if (showQueueTab.value) {
@@ -1600,7 +1614,19 @@ onMounted(async () => {
       } else if (showFinishTab.value) {
         currentTab.value = 'finish'
       } else {
-        currentTab.value = 'cards'
+        currentTab.value = showCardsTab.value ? 'cards' : 'queue'
+      }
+    } else if (currentTab.value === 'cards' && !showCardsTab.value) {
+      if (showQueueTab.value) {
+        currentTab.value = 'queue'
+      } else if (showVerifyTab.value) {
+        currentTab.value = 'verify'
+      } else if (showFinishTab.value) {
+        currentTab.value = 'finish'
+      } else if (showNoticeTab.value) {
+        currentTab.value = 'notice'
+      } else {
+        currentTab.value = 'queue'
       }
     }
   }
