@@ -71,15 +71,6 @@
       >
         {{ merchant.is_open ? '营业中' : '打烊' }}
       </button>
-
-	  <button
-		v-if="merchant.support_customer_service && !isTechnicianAuth()"
-		type="button"
-		@click="router.push('/merchant/customer-service')"
-		class="w-full mt-3 py-3 rounded-lg font-medium text-base transition-colors bg-slate-600 text-white hover:bg-slate-700"
-	  >
-		设置客服
-	  </button>
     </div>
 
     <!-- 数据统计卡片 -->
@@ -475,7 +466,7 @@
 
           <div class="flex-1"></div>
           <button
-            v-if="canSellCards && canVerify"
+            v-if="(!isTechnicianAuth() && merchant.support_direct_sale) || (isTechnicianAuth() && canSellCards && canVerify)"
             type="button"
             @click="loadSellTemplates"
             class="px-4 py-2 bg-slate-600 text-white text-sm rounded-lg"
