@@ -819,8 +819,12 @@ const noticeForm = ref({
 const currentView = ref('cards') // 'cards' | 'sellTemplates'
 const issuedCards = ref([])
 const sellTemplates = ref([])
-const displayMode = ref('cards') // 'cards' | 'sellTemplates'
+const displayMode = ref('auto') // 'auto' | 'cards' | 'sellTemplates'
 const currentDisplay = computed(() => {
+  // 如果手动指定了显示模式，优先使用
+  if (displayMode.value !== 'auto') {
+    return displayMode.value
+  }
   // 如果没有核销权限但有售卡权限，默认显示售卡模板
   if (!canVerify.value && canSellCards.value) {
     return 'sellTemplates'
@@ -945,10 +949,16 @@ const searchCards = async () => {
 }
 
 const loadSellTemplates = async () => {
-  displayMode.value = 'sellTemplates'
+  console.log('loadSellTemplates 被调用, isTechnicianAuth():', isTechnicianAuth())
+  displayMode.value = 'sellTemplates'  // 手动设置为售卡模式
+  console.log('displayMode 设置为:', displayMode.value)
+  console.log('currentDisplay 现在是:', currentDisplay.value)
+  
   try {
     const res = await shopApi.getCardTemplates()
+    console.log('API 响应:', res)
     sellTemplates.value = (res.data.data || []).filter(t => t && t.is_active)
+    console.log('售卡模板数据:', sellTemplates.value)
   } catch (e) {
     console.error('加载售卡模板失败', e)
     if (e.response?.status === 403) {
@@ -957,7 +967,7 @@ const loadSellTemplates = async () => {
       alert('加载售卡模板失败，请稍后重试')
     }
     sellTemplates.value = []
-    displayMode.value = 'auto'
+    displayMode.value = 'auto'  // 出错时重置为自动模式
   }
 }
 
