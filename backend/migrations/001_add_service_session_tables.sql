@@ -4,6 +4,9 @@
 -- 1) 商户表增加房间功能开关
 ALTER TABLE merchants ADD COLUMN IF NOT EXISTS support_room BOOLEAN DEFAULT FALSE COMMENT '是否启用房间功能';
 
+-- 1.1) 商户表增加工作人员签到开关
+ALTER TABLE merchants ADD COLUMN IF NOT EXISTS support_technician_checkin BOOLEAN DEFAULT FALSE COMMENT '是否启用工作人员签到';
+
 -- 2) 创建房间表
 CREATE TABLE IF NOT EXISTS rooms (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

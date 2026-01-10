@@ -28,6 +28,7 @@ type Merchant struct {
 	SupportAppointment     bool   `json:"support_appointment" gorm:"default:false;comment:是否支持预约（0-不支持，1-支持）"`
 	SupportQueue           bool   `json:"support_queue" gorm:"default:false;comment:是否支持叫号/排队（0-不支持，1-支持）"`
 	SupportRoom            bool   `json:"support_room" gorm:"default:false;comment:是否启用房间/教室功能（0-不启用，1-启用）"`
+	SupportTechnicianCheckin bool `json:"support_technician_checkin" gorm:"default:false;comment:是否启用工作人员签到（0-不启用，1-启用）"`
 	QueuePrefix            string `json:"queue_prefix" gorm:"size:20;default:'';comment:叫号前缀（如A、B）"`
 	QueueStartNo           int    `json:"queue_start_no" gorm:"default:1;comment:叫号起始号码"`
 	SupportDirectSale      bool   `json:"support_direct_sale" gorm:"default:false;comment:是否支持直购售卡（0-不支持，1-支持）"`

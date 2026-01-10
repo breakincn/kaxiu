@@ -22,6 +22,16 @@ func TechnicianCheckIn(c *gin.Context) {
 		return
 	}
 
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+	if !merchant.SupportTechnicianCheckin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "该商户未启用工作人员签到"})
+		return
+	}
+
 	authTypeAny, _ := c.Get("auth_type")
 	authType, _ := authTypeAny.(string)
 
@@ -95,6 +105,16 @@ func UpdateTechnicianServiceStatus(c *gin.Context) {
 		return
 	}
 
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+	if !merchant.SupportTechnicianCheckin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "该商户未启用工作人员签到"})
+		return
+	}
+
 	authTypeAny, _ := c.Get("auth_type")
 	authType, _ := authTypeAny.(string)
 
@@ -156,6 +176,16 @@ func ListAvailableTechnicians(c *gin.Context) {
 	merchantID, _ := merchantIDAny.(uint)
 	if merchantID == 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+	if !merchant.SupportTechnicianCheckin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "该商户未启用工作人员签到"})
 		return
 	}
 

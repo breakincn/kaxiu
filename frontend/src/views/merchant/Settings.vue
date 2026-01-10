@@ -128,7 +128,7 @@ const canCustomerServiceManage = computed(() => {
   return hasMerchantPermission('merchant.cs.manage') && !!merchant.value?.support_customer_service
 })
 
-const canRoomManage = computed(() => hasMerchantPermission('merchant.service.manage'))
+const canRoomManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_room)
 
 const merchant = ref({})
 
@@ -167,7 +167,7 @@ const goToCustomerService = () => {
 }
 
 const goToRoomManage = () => {
-  router.push({ path: '/merchant', query: { tab: 'service' } })
+  router.push('/merchant/rooms')
 }
 
 const handleLogout = () => {

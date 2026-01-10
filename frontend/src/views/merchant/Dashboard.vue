@@ -663,8 +663,8 @@
             <div class="text-gray-500 text-sm mt-1">用于核销后房间占用与调度</div>
           </div>
           <button
-            v-if="canRoomManage"
-            @click="openRoomModal"
+            v-if="canRoomManage && merchant?.support_room"
+            @click="router.push('/merchant/rooms')"
             class="px-4 py-2 bg-slate-600 text-white rounded-lg text-sm font-medium"
           >
             管理房间
@@ -672,124 +672,7 @@
         </div>
       </div>
 
-      <!-- 会话看板 -->
-      <div class="bg-white rounded-xl p-4 shadow-sm">
-        <div class="flex items-center justify-between mb-3">
-          <div class="font-medium text-gray-800">服务会话看板</div>
-          <div class="flex items-center gap-2">
-            <select v-model="sessionStatusFilter" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
-              <option value="">全部</option>
-              <option value="room_selecting">选房中</option>
-              <option value="staff_selecting">选人中</option>
-              <option value="precheck_pending">待预结单</option>
-              <option value="delay_pending">延迟中</option>
-              <option value="serving">进行中</option>
-              <option value="auto_finishing">待自动结单</option>
-              <option value="finished">已完成</option>
-            </select>
-            <button
-              :disabled="sessionLoading"
-              @click="fetchServiceSessions"
-              class="px-4 py-2 rounded-lg text-sm font-medium"
-              :class="sessionLoading ? 'bg-gray-100 text-gray-400' : 'bg-primary text-white'"
-            >
-              刷新
-            </button>
-          </div>
-        </div>
-
-        <div v-if="sessionLoading" class="text-gray-500 text-sm">加载中...</div>
-        <div v-else-if="serviceSessions.length === 0" class="text-gray-500 text-sm">暂无会话</div>
-        <div v-else>
-          <!-- 技师视角：我的服务中 -->
-          <div v-if="isTechnicianAuth() && myServingSessions.length > 0" class="mb-4">
-            <div class="text-sm font-medium text-gray-700 mb-2">我的服务中</div>
-            <div class="space-y-2">
-              <div v-for="s in myServingSessions" :key="s.id" class="border border-primary bg-primary-light rounded-lg p-3">
-                <div class="flex items-start justify-between gap-2">
-                  <div>
-                    <div class="font-medium text-primary">会话 #{{ s.id }} <span class="ml-2 text-xs text-primary">{{ getSessionStatusText(s.status) }}</span></div>
-                    <div class="text-gray-600 text-sm mt-1">房间：{{ s.room?.name || '-' }}</div>
-                    <div class="text-gray-600 text-sm mt-1">预结单码：SS:{{ s.id }}</div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <button v-if="s.status === 'serving'" :disabled="extendLoadingIds.has(s.id)" @click="showExtendModal(s)" class="px-3 py-2 bg-primary text-white rounded-lg text-sm disabled:opacity-50">
-                      加钟
-                    </button>
-                    <button
-                      type="button"
-                      class="px-3 py-2 bg-primary text-white rounded-lg text-sm"
-                      @click="copyText('SS:' + String(s.id))"
-                    >
-                      复制
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 其他会话 -->
-          <div>
-            <div v-if="isTechnicianAuth() && myServingSessions.length > 0" class="text-sm font-medium text-gray-700 mb-2">其他会话</div>
-            <div class="space-y-3">
-              <div v-for="s in filteredOtherSessions" :key="s.id" class="border border-gray-100 rounded-lg p-3">
-                <div class="flex items-start justify-between gap-2">
-                  <div>
-                    <div class="font-medium text-gray-800">会话 #{{ s.id }} <span class="ml-2 text-xs text-gray-500">{{ getSessionStatusText(s.status) }}</span></div>
-                    <div class="text-gray-500 text-sm mt-1">房间：{{ s.room?.name || '-' }} / 工作人员：{{ s.technician?.name || s.technician?.account || '-' }}</div>
-                    <div class="text-gray-500 text-sm mt-1">预结单码：SS:{{ s.id }}</div>
-                  </div>
-                  <button
-                    type="button"
-                    class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
-                    @click="copyText('SS:' + String(s.id))"
-                  >
-                    复制
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 房间管理弹窗 -->
-    <div v-if="showRoomManageModal" class="fixed inset-0 bg-black/40 flex items-end justify-center z-50">
-      <div class="bg-white w-full max-w-lg rounded-t-2xl p-4">
-        <div class="flex items-center justify-between mb-3">
-          <div class="font-medium text-gray-800">房间管理</div>
-          <button class="text-gray-500" @click="closeRoomModal">关闭</button>
-        </div>
-
-        <div class="flex gap-2 mb-3">
-          <input v-model="roomFormName" class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="房间编号/名称" />
-          <button
-            class="px-4 py-2 rounded-lg text-sm font-medium"
-            :class="roomSaving ? 'bg-gray-100 text-gray-400' : 'bg-primary text-white'"
-            :disabled="roomSaving"
-            @click="saveRoom"
-          >
-            {{ editingRoomId ? '保存' : '新增' }}
-          </button>
-        </div>
-
-        <div v-if="roomsLoading" class="text-gray-500 text-sm">加载中...</div>
-        <div v-else-if="rooms.length === 0" class="text-gray-500 text-sm">暂无房间</div>
-        <div v-else class="space-y-2 max-h-[50vh] overflow-auto">
-          <div v-for="r in rooms" :key="r.id" class="flex items-center justify-between border border-gray-100 rounded-lg px-3 py-2">
-            <div>
-              <div class="text-gray-800">{{ r.name }}</div>
-              <div class="text-gray-500 text-xs">{{ r.is_active ? '启用' : '停用' }}</div>
-            </div>
-            <div class="flex gap-2">
-              <button class="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm" @click="editRoom(r)">编辑</button>
-              <button class="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-sm" @click="removeRoom(r)">删除</button>
-            </div>
-          </div>
-        </div>
-      </div>
+      
     </div>
 
     <!-- 技师加钟弹窗 -->
@@ -990,7 +873,7 @@ const showCardsTab = computed(() => {
 })
 
 const showServiceTab = computed(() => {
-  return canRoomManage.value || isTechnicianAuth()
+  return isTechnicianAuth() && !!merchant.value?.support_technician_checkin
 })
 const currentTab = ref('queue')
 const routeUserCode = ref('')
@@ -1129,13 +1012,7 @@ const cardTemplates = ref([])
 
 const showBusinessStatusModal = ref(false)
 
-// service tab: 房间/签到/会话
-const showRoomManageModal = ref(false)
-const rooms = ref([])
-const roomsLoading = ref(false)
-const roomSaving = ref(false)
-const roomFormName = ref('')
-const editingRoomId = ref(null)
+// service tab: 签到
 
 const attendanceLoading = ref(false)
 const attendanceUpdating = ref(false)
@@ -1953,8 +1830,7 @@ watch(currentTab, (tab) => {
     } else if (tab === 'notice') {
       fetchNotices()
     } else if (tab === 'service') {
-      if (canRoomManage.value) fetchRooms()
-      fetchServiceSessions()
+      // no-op
     }
   }
 })
@@ -2109,8 +1985,7 @@ onMounted(async () => {
   fetchAppointments()
   loadCardTemplates() // 加载卡片模板
   if (currentTab.value === 'service') {
-    if (canRoomManage.value) await fetchRooms()
-    await fetchServiceSessions()
+    // no-op
   }
 })
 
@@ -2120,64 +1995,6 @@ const copyText = async (text) => {
     alert('已复制')
   } catch (e) {
     alert('复制失败')
-  }
-}
-
-const openRoomModal = async () => {
-  showRoomManageModal.value = true
-  await fetchRooms()
-}
-
-const closeRoomModal = () => {
-  showRoomManageModal.value = false
-  roomFormName.value = ''
-  editingRoomId.value = null
-}
-
-const fetchRooms = async () => {
-  if (!canRoomManage.value) return
-  roomsLoading.value = true
-  try {
-    const res = await roomApi.listRooms()
-    rooms.value = res.data?.data || []
-  } catch (e) {
-    rooms.value = []
-  } finally {
-    roomsLoading.value = false
-  }
-}
-
-const saveRoom = async () => {
-  if (!roomFormName.value) return
-  roomSaving.value = true
-  try {
-    if (editingRoomId.value) {
-      await roomApi.updateRoom(editingRoomId.value, { name: roomFormName.value })
-    } else {
-      await roomApi.createRoom({ name: roomFormName.value })
-    }
-    roomFormName.value = ''
-    editingRoomId.value = null
-    await fetchRooms()
-  } catch (e) {
-    alert(e.response?.data?.error || '操作失败')
-  } finally {
-    roomSaving.value = false
-  }
-}
-
-const editRoom = (r) => {
-  editingRoomId.value = r.id
-  roomFormName.value = r.name
-}
-
-const removeRoom = async (r) => {
-  if (!confirm('确定删除该房间吗？')) return
-  try {
-    await roomApi.deleteRoom(r.id)
-    await fetchRooms()
-  } catch (e) {
-    alert(e.response?.data?.error || '删除失败')
   }
 }
 

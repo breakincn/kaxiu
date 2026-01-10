@@ -186,6 +186,11 @@ const merchantRoutes = [
     component: () => import('../views/merchant/CustomerService.vue')
   },
   {
+    path: '/merchant/rooms',
+    name: 'MerchantRooms',
+    component: () => import('../views/merchant/Rooms.vue')
+  },
+  {
     path: '/merchant/role-permissions/:roleKey',
     name: 'MerchantRolePermissionAdjust',
     component: () => import('../views/merchant/RolePermissionAdjust.vue')

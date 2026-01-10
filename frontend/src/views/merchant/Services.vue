@@ -24,6 +24,16 @@
             <input type="checkbox" v-model="form.support_queue" />
           </div>
 
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="text-gray-800 font-medium">房间管理</div>
+            <input type="checkbox" v-model="form.support_room" />
+          </div>
+
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="text-gray-800 font-medium">工作人员签到</div>
+            <input type="checkbox" v-model="form.support_technician_checkin" />
+          </div>
+
           <div v-if="form.support_queue" class="px-4 py-4 border-b border-gray-100 space-y-3">
             <div>
               <div class="text-sm font-medium text-gray-700 mb-2">叫号前缀</div>
@@ -91,6 +101,8 @@ const saving = ref(false)
 const form = ref({
   support_appointment: false,
   support_queue: false,
+  support_room: false,
+  support_technician_checkin: false,
   queue_prefix: '',
   queue_start_no: 1,
   support_direct_sale: false,
@@ -119,6 +131,8 @@ const load = async () => {
     form.value = {
       support_appointment: !!m.support_appointment,
       support_queue: !!m.support_queue,
+      support_room: !!m.support_room,
+      support_technician_checkin: !!m.support_technician_checkin,
       queue_prefix: m.queue_prefix || '',
       queue_start_no: m.queue_start_no || 1,
       support_direct_sale: !!m.support_direct_sale,
@@ -149,6 +163,8 @@ const save = async () => {
     await merchantApi.updateCurrentMerchantServices({
       support_appointment: form.value.support_appointment,
       support_queue: form.value.support_queue,
+      support_room: form.value.support_room,
+      support_technician_checkin: form.value.support_technician_checkin,
       queue_prefix: form.value.queue_prefix,
       queue_start_no: form.value.queue_start_no,
       support_direct_sale: form.value.support_direct_sale,

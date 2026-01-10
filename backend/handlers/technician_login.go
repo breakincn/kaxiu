@@ -45,6 +45,11 @@ func TechnicianLogin(c *gin.Context) {
 		return
 	}
 
+	if !merchant.SupportTechnicianCheckin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "该商户未启用工作人员签到"})
+		return
+	}
+
 	var tech models.Technician
 	if err := config.DB.Where("merchant_id = ? AND account = ?", merchant.ID, account).First(&tech).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "账号或密码错误"})
