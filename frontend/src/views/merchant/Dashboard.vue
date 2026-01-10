@@ -839,6 +839,10 @@ const currentDisplay = computed(() => {
   if (displayMode.value !== 'auto') {
     return displayMode.value
   }
+  // 如果没有核销权限但有售卡权限，默认显示售卡模板
+  if (!canVerify.value && canSellCards.value) {
+    return 'sellTemplates'
+  }
   return 'cards'
 })
 const cardsLoading = ref(false)
