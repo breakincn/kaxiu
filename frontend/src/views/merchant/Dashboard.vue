@@ -313,7 +313,10 @@
             <div class="text-right">
               <div class="text-gray-700 text-sm">核销 {{ usage.used_times }} 次</div>
               <div class="text-gray-500 text-xs mt-1">
-                {{ getOperatorName(usage) }}
+                {{ getVerifyOperatorInfo(usage).split(' / ')[0] }}
+              </div>
+              <div v-if="getVerifyOperatorInfo(usage).includes(' / ')" class="text-gray-500 text-xs mt-1">
+                {{ getVerifyOperatorInfo(usage).split(' / ')[1] }}
               </div>
             </div>
           </div>
@@ -1027,6 +1030,31 @@ const getOperatorName = (usage) => {
     return usage.merchant.name || '店铺'
   }
   return '-'
+}
+
+// 获取核销记录的完整操作人信息（包括结单人员）
+const getVerifyOperatorInfo = (usage) => {
+  const operatorInfo = []
+  
+  // 核销人员
+  if (usage.technician) {
+    operatorInfo.push(`核销：${usage.technician.name || usage.technician.account || '技师'}`)
+  } else if (usage.merchant) {
+    operatorInfo.push(`核销：${usage.merchant.name || '店铺'}`)
+  }
+  
+  // 如果已结单且有结单服务，显示结单人员
+  if (usage.status === 'success' && usage.finished_at && merchant.value?.support_customer_service) {
+    if (usage.technician_id && usage.technician) {
+      // 技师结单
+      operatorInfo.push(`结单：${usage.technician.name || usage.technician.account || '技师'}`)
+    } else if (!usage.technician_id && usage.merchant) {
+      // 商户老板结单
+      operatorInfo.push(`结单：${usage.merchant.name || '店铺'}`)
+    }
+  }
+  
+  return operatorInfo.join(' / ')
 }
 
 const fetchMerchant = async () => {
