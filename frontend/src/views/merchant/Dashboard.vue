@@ -662,6 +662,32 @@
         </div>
       </div>
     </div>
+
+    <!-- 扫码错误弹窗 -->
+    <div v-if="showErrorModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-xl p-6 m-4 max-w-sm w-full">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-3">
+            <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-medium text-gray-900">扫码失败</h3>
+        </div>
+        <p class="text-gray-600 mb-6">{{ errorMessage }}</p>
+        <div class="flex gap-3">
+          <button
+            @click="closeErrorModal"
+            class="flex-1 py-2 bg-primary text-white rounded-lg font-medium"
+          >
+            确定
+          </button>
+        </div>
+        <p class="text-center text-gray-400 text-xs mt-3">
+          10秒后自动关闭
+        </p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -818,6 +844,11 @@ const noticeForm = ref({
   content: ''
 })
 
+// 扫码错误弹窗
+const showErrorModal = ref(false)
+const errorMessage = ref('')
+let errorTimer = null
+
 const currentView = ref('cards') // 'cards' | 'sellTemplates'
 const issuedCards = ref([])
 const sellTemplates = ref([])
@@ -953,6 +984,26 @@ const onTopScanTouchEnd = () => {
 const goToDirectPurchaseOrders = () => {
   if (!merchant.value.support_direct_sale) return
   router.push({ path: '/merchant/shop-manage', query: { tab: 'orders' } })
+}
+
+// 错误弹窗处理
+const closeErrorModal = () => {
+  if (errorTimer) {
+    clearTimeout(errorTimer)
+    errorTimer = null
+  }
+  showErrorModal.value = false
+}
+
+const showErrorModalWithMessage = (message) => {
+  errorMessage.value = message
+  showErrorModal.value = true
+  
+  // 10秒后自动关闭
+  if (errorTimer) clearTimeout(errorTimer)
+  errorTimer = setTimeout(() => {
+    showErrorModal.value = false
+  }, 10000)
 }
 
 const fetchMerchant = async () => {
@@ -1585,6 +1636,14 @@ onMounted(async () => {
     currentTab.value = tabParam
   }
 
+  // 检查错误参数，显示错误弹窗
+  const errorParam = route.query.error
+  if (errorParam) {
+    showErrorModalWithMessage(String(errorParam))
+    // 清除URL中的错误参数，避免刷新时重复显示
+    router.replace({ path: '/merchant', query: { tab: tabParam || 'queue' } })
+  }
+
   const userCodeParam = route.query.user_code
   routeUserCode.value = userCodeParam ? String(userCodeParam) : ''
   scanUserCodeActive.value = !!userCodeParam && String(route.query.from_scan || '') === '1'
@@ -1702,6 +1761,10 @@ onUnmounted(() => {
   stopCountdownTimer()
   scanUserCodeActive.value = false
   routeUserCode.value = ''
+  if (errorTimer) {
+    clearTimeout(errorTimer)
+    errorTimer = null
+  }
 })
 
 onActivated(() => {
