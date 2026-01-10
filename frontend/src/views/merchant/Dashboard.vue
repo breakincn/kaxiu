@@ -338,18 +338,15 @@
       <!-- 今日结单记录 -->
       <div class="bg-white rounded-xl p-4 shadow-sm mt-4">
         <h3 class="font-medium text-gray-800 mb-4">今日结单记录</h3>
-        <div v-if="todayUsages.length > 0" class="space-y-3">
-          <div v-for="usage in todayUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
+        <div v-if="todayFinishedUsages.length > 0" class="space-y-3">
+          <div v-for="usage in todayFinishedUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
             <div class="flex-1">
               <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
-              <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
+              <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.finished_at) }}</div>
             </div>
             <div class="text-right">
               <div class="text-gray-700 text-sm">结单 {{ usage.used_times }} 次</div>
-              <div class="text-gray-500 text-xs mt-1">
-                {{ getOperatorName(usage) }}
-              </div>
             </div>
           </div>
         </div>
@@ -842,6 +839,7 @@ const pendingAppointments = ref(0)
 const pendingDirectPurchases = ref(0)
 const appointments = ref([])
 const todayUsages = ref([])
+const todayFinishedUsages = ref([])
 const notices = ref([])
 const currentTime = ref(Date.now())
 let countdownTimer = null
@@ -1207,6 +1205,31 @@ const fetchTodayUsages = async () => {
     todayUsages.value = (res.data.data || []).filter(u => u.used_at && u.used_at.startsWith(today))
   } catch (err) {
     console.error('获取核销记录失败:', err)
+  }
+}
+
+const fetchTodayFinishedUsages = async () => {
+  try {
+    const res = await usageApi.getMerchantUsages(merchantId.value)
+    const today = new Date().toISOString().split('T')[0]
+    const currentTechnicianId = getTechnicianId()
+    const isTechnician = isTechnicianAuth()
+    
+    // 只显示今天已结单的记录，且是当前用户的操作
+    todayFinishedUsages.value = (res.data.data || []).filter(u => 
+      u.finished_at && 
+      u.finished_at.startsWith(today) &&
+      u.status === 'success' &&
+      // 过滤当前用户的记录
+      (isTechnician ? 
+        // 技师账号：只显示自己结单的记录
+        (u.technician_id === currentTechnicianId) :
+        // 商户老板号：只显示没有技师ID的记录（即老板操作的记录）
+        (!u.technician_id)
+      )
+    )
+  } catch (err) {
+    console.error('获取结单记录失败:', err)
   }
 }
 
@@ -1600,8 +1623,8 @@ watch(currentTab, (tab) => {
       verifyResult.value = null
       fetchTodayUsages()
     } else if (tab === 'finish') {
-      // 结单Tab也显示今日核销记录
-      fetchTodayUsages()
+      // 结单Tab显示今日结单记录
+      fetchTodayFinishedUsages()
     } else if (tab === 'cards') {
       // 重置显示模式为自动，让computed决定显示什么
       displayMode.value = 'auto'
@@ -1766,6 +1789,14 @@ onMounted(async () => {
   fetchPendingDirectPurchases()
   fetchAppointments()
   loadCardTemplates() // 加载卡片模板
+  
+  // 根据当前Tab加载对应数据
+  if (currentTab.value === 'verify') {
+    fetchTodayUsages()
+  } else if (currentTab.value === 'finish') {
+    fetchTodayFinishedUsages()
+  }
+  
   if (merchant.value.support_appointment) {
     startCountdownTimer()
   }
@@ -1795,6 +1826,13 @@ onUnmounted(() => {
 onActivated(() => {
   if (!merchantId.value) return
   fetchMerchant()
+  
+  // 根据当前Tab刷新对应数据
+  if (currentTab.value === 'verify') {
+    fetchTodayUsages()
+  } else if (currentTab.value === 'finish') {
+    fetchTodayFinishedUsages()
+  }
 })
 </script>
 
