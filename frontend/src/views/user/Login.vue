@@ -59,10 +59,11 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { authApi } from '../../api'
 
 const router = useRouter()
+const route = useRoute()
 const username = ref('')
 const password = ref('')
 const loading = ref(false)
@@ -79,8 +80,9 @@ const handleLogin = async () => {
     localStorage.setItem('userId', user_id)
     localStorage.setItem('userName', nickname || username.value)
     
-    // 跳转到用户卡片列表
-    router.push('/user/cards')
+    // 优先跳转到 redirect 参数，否则默认卡片列表
+    const redirectTo = route.query.redirect
+    router.push(redirectTo || '/user/cards')
   } catch (err) {
     alert(err.response?.data?.error || '登录失败，请重试')
   } finally {

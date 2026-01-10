@@ -4,6 +4,7 @@ import (
 	"kabao/config"
 	"kabao/middleware"
 	"kabao/routes"
+	"kabao/scheduler"
 	"log"
 
 	"github.com/gin-contrib/cors"
@@ -13,6 +14,9 @@ import (
 func main() {
 	// 初始化数据库
 	config.InitDB()
+
+	// 启动服务会话调度器（自动分房/延迟开计时/自动结单/回收空闲）
+	scheduler.StartServiceSessionScheduler()
 
 	// 初始化 Gin
 	r := gin.Default()

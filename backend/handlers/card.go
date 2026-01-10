@@ -472,6 +472,8 @@ func VerifyCard(c *gin.Context) {
 	var merchant models.Merchant
 	var usedAt time.Time
 	var remainTimes int
+	var sessionID uint
+	var nextStep string
 	usageStatus := "success"
 
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
@@ -560,6 +562,41 @@ func VerifyCard(c *gin.Context) {
 			return err
 		}
 
+		// 新流程：创建服务会话（核销->资源锁定->人员选择->预结单->自动结单）
+		status := "staff_selecting"
+		var roomSelectDeadlineAt *time.Time
+		if merchant.SupportRoom {
+			status = "room_selecting"
+			dl := now.Add(90 * time.Second)
+			roomSelectDeadlineAt = &dl
+			nextStep = "room_select"
+		} else {
+			nextStep = "staff_select"
+		}
+
+		durationMinutes := merchant.AvgServiceMinutes
+		if durationMinutes <= 0 {
+			durationMinutes = 50
+		}
+
+		session := models.ServiceSession{
+			MerchantID:             merchantID,
+			UserID:                 card.UserID,
+			CardID:                 card.ID,
+			InitialUsageID:         usage.ID,
+			VerifyCode:             verifyCode.Code,
+			Status:                 status,
+			RoomSelectDeadlineAt:   roomSelectDeadlineAt,
+			DelaySeconds:           60,
+			DurationMinutes:        durationMinutes,
+			AutoFinishDelaySeconds: 60,
+			AutoIdleAfterSeconds:   180,
+		}
+		if err := tx.Create(&session).Error; err != nil {
+			return err
+		}
+		sessionID = session.ID
+
 		return nil
 	})
 	if err != nil {
@@ -578,6 +615,8 @@ func VerifyCard(c *gin.Context) {
 			"card_id":      card.ID,
 			"remain_times": remainTimes,
 			"used_at":      usedAt.Format("2006-01-02 15:04:05"),
+			"session_id":   sessionID,
+			"next_step":    nextStep,
 		},
 	})
 }
@@ -752,6 +791,11 @@ func ScanVerifyCard(c *gin.Context) {
 		return
 	}
 
+	// B方案：预结单二维码（SS:<session_id>）走服务会话预结单逻辑
+	if handled := handleServiceSessionPrecheckScan(c, code); handled {
+		return
+	}
+
 	var verifyCode models.VerifyCode
 	var card models.Card
 	var merchant models.Merchant
@@ -759,6 +803,8 @@ func ScanVerifyCard(c *gin.Context) {
 	var usedAt time.Time
 	var finishedAt time.Time
 	var remainTimes int
+	var sessionID uint
+	var nextStep string
 	usageStatus := "success"
 	action := "verify"
 
@@ -841,6 +887,42 @@ func ScanVerifyCard(c *gin.Context) {
 			if err := tx.Create(&usage).Error; err != nil {
 				return err
 			}
+
+			// 新流程：创建服务会话（核销->资源锁定->人员选择->预结单->自动结单）
+			status := "staff_selecting"
+			var roomSelectDeadlineAt *time.Time
+			if merchant.SupportRoom {
+				status = "room_selecting"
+				dl := now.Add(90 * time.Second)
+				roomSelectDeadlineAt = &dl
+				nextStep = "room_select"
+			} else {
+				nextStep = "staff_select"
+			}
+
+			durationMinutes := merchant.AvgServiceMinutes
+			if durationMinutes <= 0 {
+				durationMinutes = 50
+			}
+
+			session := models.ServiceSession{
+				MerchantID:             merchantID,
+				UserID:                 card.UserID,
+				CardID:                 card.ID,
+				InitialUsageID:         usage.ID,
+				VerifyCode:             verifyCode.Code,
+				Status:                 status,
+				RoomSelectDeadlineAt:   roomSelectDeadlineAt,
+				DelaySeconds:           60,
+				DurationMinutes:        durationMinutes,
+				AutoFinishDelaySeconds: 60,
+				AutoIdleAfterSeconds:   180,
+			}
+			if err := tx.Create(&session).Error; err != nil {
+				return err
+			}
+			sessionID = session.ID
+
 			action = "verify"
 			return nil
 		}
@@ -929,6 +1011,8 @@ func ScanVerifyCard(c *gin.Context) {
 		resp["card_id"] = card.ID
 		resp["remain_times"] = remainTimes
 		resp["used_at"] = usedAt.Format("2006-01-02 15:04:05")
+		resp["session_id"] = sessionID
+		resp["next_step"] = nextStep
 		c.JSON(http.StatusOK, gin.H{"message": "核销成功", "data": resp})
 		return
 	}

@@ -40,6 +40,7 @@ func InitDB() {
 		&models.User{},
 		&models.Merchant{},
 		&models.Technician{},
+		&models.TechnicianAttendance{},
 		&models.ServiceRole{},
 		&models.Permission{},
 		&models.RolePermission{},
@@ -47,6 +48,8 @@ func InitDB() {
 		&models.SystemConfig{},
 		&models.Card{},
 		&models.Usage{},
+		&models.Room{},
+		&models.ServiceSession{},
 		&models.Notice{},
 		&models.Appointment{},
 		&models.VerifyCode{},
@@ -80,6 +83,9 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `merchant_role_permission_overrides` COMMENT = '商户角色权限微调表'")
 	DB.Exec("ALTER TABLE `cards` COMMENT = '用户会员卡表'")
 	DB.Exec("ALTER TABLE `usages` COMMENT = '卡片使用记录表'")
+	DB.Exec("ALTER TABLE `rooms` COMMENT = '商户房间配置表'")
+	DB.Exec("ALTER TABLE `technician_attendances` COMMENT = '工作人员签到与可服务状态表'")
+	DB.Exec("ALTER TABLE `service_sessions` COMMENT = '服务会话表'")
 	DB.Exec("ALTER TABLE `notices` COMMENT = '商户通知表'")
 	DB.Exec("ALTER TABLE `appointments` COMMENT = '用户预约排队表'")
 	DB.Exec("ALTER TABLE `verify_codes` COMMENT = '核销码表'")

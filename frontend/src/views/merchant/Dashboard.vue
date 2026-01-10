@@ -173,6 +173,19 @@
       >
         卡片
       </button>
+
+      <button
+        v-if="showServiceTab"
+        @click="currentTab = 'service'"
+        :class="[
+          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          currentTab === 'service'
+            ? 'border-primary text-primary'
+            : 'border-transparent text-gray-500'
+        ]"
+      >
+        服务
+      </button>
     </div>
 
     <!-- 排队管理 -->
@@ -601,6 +614,205 @@
       </div>
     </div>
 
+    <!-- 服务/会话 -->
+    <div v-if="currentTab === 'service' && showServiceTab" class="px-4 py-4 space-y-4">
+      <!-- 签到/状态 -->
+      <div class="bg-white rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="font-medium text-gray-800">工作人员签到</div>
+            <div class="text-gray-500 text-sm mt-1" v-if="isTechnicianAuth()">当前账号：{{ getTechnicianName() }}</div>
+            <div class="text-gray-500 text-sm mt-1" v-else>请使用工作人员账号登录进行签到</div>
+          </div>
+          <button
+            v-if="isTechnicianAuth()"
+            :disabled="attendanceLoading"
+            @click="doCheckIn"
+            class="px-4 py-2 rounded-lg text-sm font-medium"
+            :class="attendanceLoading ? 'bg-gray-100 text-gray-400' : 'bg-primary text-white'"
+          >
+            上班签到
+          </button>
+        </div>
+
+        <div v-if="isTechnicianAuth()" class="mt-3">
+          <div class="flex items-center gap-2">
+            <select v-model="attendanceStatus" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <option value="available">可服务</option>
+              <option value="idle">空闲</option>
+              <option value="rest">休息</option>
+              <option value="paused">暂停</option>
+            </select>
+            <button
+              :disabled="attendanceUpdating"
+              @click="updateAttendanceStatus"
+              class="px-4 py-2 rounded-lg text-sm font-medium"
+              :class="attendanceUpdating ? 'bg-gray-100 text-gray-400' : 'bg-gray-900 text-white'"
+            >
+              更新状态
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 房间管理入口 -->
+      <div class="bg-white rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="font-medium text-gray-800">房间管理</div>
+            <div class="text-gray-500 text-sm mt-1">用于核销后房间占用与调度</div>
+          </div>
+          <button
+            v-if="canRoomManage"
+            @click="openRoomModal"
+            class="px-4 py-2 bg-slate-600 text-white rounded-lg text-sm font-medium"
+          >
+            管理房间
+          </button>
+        </div>
+      </div>
+
+      <!-- 会话看板 -->
+      <div class="bg-white rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between mb-3">
+          <div class="font-medium text-gray-800">服务会话看板</div>
+          <div class="flex items-center gap-2">
+            <select v-model="sessionStatusFilter" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <option value="">全部</option>
+              <option value="room_selecting">选房中</option>
+              <option value="staff_selecting">选人中</option>
+              <option value="precheck_pending">待预结单</option>
+              <option value="delay_pending">延迟中</option>
+              <option value="serving">进行中</option>
+              <option value="auto_finishing">待自动结单</option>
+              <option value="finished">已完成</option>
+            </select>
+            <button
+              :disabled="sessionLoading"
+              @click="fetchServiceSessions"
+              class="px-4 py-2 rounded-lg text-sm font-medium"
+              :class="sessionLoading ? 'bg-gray-100 text-gray-400' : 'bg-primary text-white'"
+            >
+              刷新
+            </button>
+          </div>
+        </div>
+
+        <div v-if="sessionLoading" class="text-gray-500 text-sm">加载中...</div>
+        <div v-else-if="serviceSessions.length === 0" class="text-gray-500 text-sm">暂无会话</div>
+        <div v-else>
+          <!-- 技师视角：我的服务中 -->
+          <div v-if="isTechnicianAuth() && myServingSessions.length > 0" class="mb-4">
+            <div class="text-sm font-medium text-gray-700 mb-2">我的服务中</div>
+            <div class="space-y-2">
+              <div v-for="s in myServingSessions" :key="s.id" class="border border-primary bg-primary-light rounded-lg p-3">
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <div class="font-medium text-primary">会话 #{{ s.id }} <span class="ml-2 text-xs text-primary">{{ getSessionStatusText(s.status) }}</span></div>
+                    <div class="text-gray-600 text-sm mt-1">房间：{{ s.room?.name || '-' }}</div>
+                    <div class="text-gray-600 text-sm mt-1">预结单码：SS:{{ s.id }}</div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button v-if="s.status === 'serving'" :disabled="extendLoadingIds.has(s.id)" @click="showExtendModal(s)" class="px-3 py-2 bg-primary text-white rounded-lg text-sm disabled:opacity-50">
+                      加钟
+                    </button>
+                    <button
+                      type="button"
+                      class="px-3 py-2 bg-primary text-white rounded-lg text-sm"
+                      @click="copyText('SS:' + String(s.id))"
+                    >
+                      复制
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 其他会话 -->
+          <div>
+            <div v-if="isTechnicianAuth() && myServingSessions.length > 0" class="text-sm font-medium text-gray-700 mb-2">其他会话</div>
+            <div class="space-y-3">
+              <div v-for="s in filteredOtherSessions" :key="s.id" class="border border-gray-100 rounded-lg p-3">
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <div class="font-medium text-gray-800">会话 #{{ s.id }} <span class="ml-2 text-xs text-gray-500">{{ getSessionStatusText(s.status) }}</span></div>
+                    <div class="text-gray-500 text-sm mt-1">房间：{{ s.room?.name || '-' }} / 工作人员：{{ s.technician?.name || s.technician?.account || '-' }}</div>
+                    <div class="text-gray-500 text-sm mt-1">预结单码：SS:{{ s.id }}</div>
+                  </div>
+                  <button
+                    type="button"
+                    class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
+                    @click="copyText('SS:' + String(s.id))"
+                  >
+                    复制
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 房间管理弹窗 -->
+    <div v-if="showRoomManageModal" class="fixed inset-0 bg-black/40 flex items-end justify-center z-50">
+      <div class="bg-white w-full max-w-lg rounded-t-2xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div class="font-medium text-gray-800">房间管理</div>
+          <button class="text-gray-500" @click="closeRoomModal">关闭</button>
+        </div>
+
+        <div class="flex gap-2 mb-3">
+          <input v-model="roomFormName" class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="房间编号/名称" />
+          <button
+            class="px-4 py-2 rounded-lg text-sm font-medium"
+            :class="roomSaving ? 'bg-gray-100 text-gray-400' : 'bg-primary text-white'"
+            :disabled="roomSaving"
+            @click="saveRoom"
+          >
+            {{ editingRoomId ? '保存' : '新增' }}
+          </button>
+        </div>
+
+        <div v-if="roomsLoading" class="text-gray-500 text-sm">加载中...</div>
+        <div v-else-if="rooms.length === 0" class="text-gray-500 text-sm">暂无房间</div>
+        <div v-else class="space-y-2 max-h-[50vh] overflow-auto">
+          <div v-for="r in rooms" :key="r.id" class="flex items-center justify-between border border-gray-100 rounded-lg px-3 py-2">
+            <div>
+              <div class="text-gray-800">{{ r.name }}</div>
+              <div class="text-gray-500 text-xs">{{ r.is_active ? '启用' : '停用' }}</div>
+            </div>
+            <div class="flex gap-2">
+              <button class="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm" @click="editRoom(r)">编辑</button>
+              <button class="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-sm" @click="removeRoom(r)">删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 技师加钟弹窗 -->
+    <div v-if="showExtendModalVisible" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div class="bg-white w-full max-w-sm rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div class="font-medium text-gray-800">加钟</div>
+          <button class="text-gray-500" @click="closeExtendModal">关闭</button>
+        </div>
+
+        <div class="text-gray-600 text-sm mb-3">延长服务时间（5~180分钟）</div>
+        <div class="mb-4">
+          <input v-model.number="extendMinutes" type="number" min="5" max="180" placeholder="分钟" class="w-full px-4 py-3 border border-gray-200 rounded-lg">
+        </div>
+        <div class="flex gap-2">
+          <button @click="closeExtendModal" class="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium">取消</button>
+          <button :disabled="!extendMinutes || extendMinutes < 5 || extendMinutes > 180 || extendLoadingIds.has(extendSession?.id)" @click="doExtendSession" class="flex-1 px-4 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50">
+            {{ extendLoadingIds.has(extendSession?.id) ? '加钟中...' : '确认' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 营业状态切换弹窗 -->
     <div v-if="showBusinessStatusModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showBusinessStatusModal = false">
       <div class="bg-white rounded-2xl w-11/12 max-w-sm overflow-hidden">
@@ -706,7 +918,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, onActivated, watch, nextTick, computed } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
-import { ensureMerchantPermissionsLoaded, merchantApi, cardApi, appointmentApi, noticeApi, usageApi, shopApi } from '../../api'
+import { ensureMerchantPermissionsLoaded, merchantApi, cardApi, appointmentApi, noticeApi, usageApi, shopApi, roomApi, attendanceApi, serviceSessionApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
 
@@ -733,6 +945,7 @@ const canVerify = computed(() => hasMerchantPermission('merchant.card.verify'))
 const canNoticeManage = computed(() => hasMerchantPermission('merchant.notice.manage'))
 const canAppointmentView = computed(() => hasMerchantPermission('merchant.appointment.view'))
 const canAppointmentManage = computed(() => hasMerchantPermission('merchant.appointment.manage'))
+const canRoomManage = computed(() => hasMerchantPermission('merchant.service.manage'))
 
 // 统计卡片显示个数
 const visibleStatsCount = computed(() => {
@@ -774,6 +987,10 @@ const canCardSell = computed(() => hasMerchantPermission('merchant.card.sell'))
 
 const showCardsTab = computed(() => {
   return canVerify.value || canCardSell.value
+})
+
+const showServiceTab = computed(() => {
+  return canRoomManage.value || isTechnicianAuth()
 })
 const currentTab = ref('queue')
 const routeUserCode = ref('')
@@ -912,6 +1129,43 @@ const cardTemplates = ref([])
 
 const showBusinessStatusModal = ref(false)
 
+// service tab: 房间/签到/会话
+const showRoomManageModal = ref(false)
+const rooms = ref([])
+const roomsLoading = ref(false)
+const roomSaving = ref(false)
+const roomFormName = ref('')
+const editingRoomId = ref(null)
+
+const attendanceLoading = ref(false)
+const attendanceUpdating = ref(false)
+const attendanceStatus = ref('available')
+
+const serviceSessions = ref([])
+const sessionLoading = ref(false)
+const sessionStatusFilter = ref('')
+
+// 技师视角：我的服务中会话
+const myServingSessions = computed(() => {
+  if (!isTechnicianAuth()) return []
+  const techId = getTechnicianId()
+  if (!techId) return []
+  return serviceSessions.value.filter(s => s.technician_id === techId && ['delay_pending', 'serving', 'auto_finishing'].includes(s.status))
+})
+
+// 其他会话（技师视角）或全部会话（商户视角）
+const filteredOtherSessions = computed(() => {
+  if (!isTechnicianAuth()) return serviceSessions.value
+  const myIds = new Set(myServingSessions.value.map(s => s.id))
+  return serviceSessions.value.filter(s => !myIds.has(s.id))
+})
+
+// 加钟弹窗状态
+const extendLoadingIds = ref(new Set())
+const showExtendModalVisible = ref(false)
+const extendSession = ref(null)
+const extendMinutes = ref(null)
+
 const getCardTypeLabel = (type) => {
   const labels = { times: '次数卡', lesson: '课时卡', balance: '充值卡' }
   return labels[type] || type
@@ -923,6 +1177,40 @@ const goScanVerify = () => {
 
 const goScanFinish = () => {
   router.push('/merchant/scan-verify?mode=finish')
+}
+
+const showExtendModal = (session) => {
+  extendSession.value = session
+  extendMinutes.value = null
+  showExtendModalVisible.value = true
+}
+
+const closeExtendModal = () => {
+  showExtendModalVisible.value = false
+  extendSession.value = null
+  extendMinutes.value = null
+}
+
+const doExtendSession = async () => {
+  if (!extendSession.value?.id || !extendMinutes.value || extendMinutes.value < 5 || extendMinutes.value > 180) {
+    alert('请输入5~180分钟的加钟时长')
+    return
+  }
+  extendLoadingIds.value.add(extendSession.value.id)
+  try {
+    const res = await serviceSessionApi.extendDuration(extendSession.value.id, { minutes: extendMinutes.value })
+    const updated = res.data?.data
+    if (updated) {
+      // 更新会话列表中的对应项
+      const idx = serviceSessions.value.findIndex(s => s.id === updated.id)
+      if (idx !== -1) serviceSessions.value[idx] = updated
+    }
+    closeExtendModal()
+  } catch (e) {
+    alert(e.response?.data?.error || '加钟失败')
+  } finally {
+    extendLoadingIds.value.delete(extendSession.value.id)
+  }
 }
 
 const onTopScanClick = () => {
@@ -1664,6 +1952,9 @@ watch(currentTab, (tab) => {
       }
     } else if (tab === 'notice') {
       fetchNotices()
+    } else if (tab === 'service') {
+      if (canRoomManage.value) fetchRooms()
+      fetchServiceSessions()
     }
   }
 })
@@ -1708,7 +1999,7 @@ onMounted(async () => {
   
   // 检查查询参数，自动切换到指定Tab
   const tabParam = route.query.tab
-  if (tabParam && ['queue', 'verify', 'finish', 'notice', 'cards'].includes(tabParam)) {
+  if (tabParam && ['queue', 'verify', 'finish', 'notice', 'cards', 'service'].includes(tabParam)) {
     currentTab.value = tabParam
   }
 
@@ -1817,24 +2108,134 @@ onMounted(async () => {
   fetchPendingDirectPurchases()
   fetchAppointments()
   loadCardTemplates() // 加载卡片模板
-  
-  // 根据当前Tab加载对应数据
-  if (currentTab.value === 'verify') {
-    fetchTodayUsages()
-  } else if (currentTab.value === 'finish') {
-    fetchTodayFinishedUsages()
-  }
-  
-  if (merchant.value.support_appointment) {
-    startCountdownTimer()
-  }
-
-  if (currentTab.value === 'cards' && scanUserCodeActive.value && routeUserCode.value) {
-    await fetchIssuedCards()
-    await scrollToUserCodeHint()
-    await cleanupScanQuery()
+  if (currentTab.value === 'service') {
+    if (canRoomManage.value) await fetchRooms()
+    await fetchServiceSessions()
   }
 })
+
+const copyText = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text)
+    alert('已复制')
+  } catch (e) {
+    alert('复制失败')
+  }
+}
+
+const openRoomModal = async () => {
+  showRoomManageModal.value = true
+  await fetchRooms()
+}
+
+const closeRoomModal = () => {
+  showRoomManageModal.value = false
+  roomFormName.value = ''
+  editingRoomId.value = null
+}
+
+const fetchRooms = async () => {
+  if (!canRoomManage.value) return
+  roomsLoading.value = true
+  try {
+    const res = await roomApi.listRooms()
+    rooms.value = res.data?.data || []
+  } catch (e) {
+    rooms.value = []
+  } finally {
+    roomsLoading.value = false
+  }
+}
+
+const saveRoom = async () => {
+  if (!roomFormName.value) return
+  roomSaving.value = true
+  try {
+    if (editingRoomId.value) {
+      await roomApi.updateRoom(editingRoomId.value, { name: roomFormName.value })
+    } else {
+      await roomApi.createRoom({ name: roomFormName.value })
+    }
+    roomFormName.value = ''
+    editingRoomId.value = null
+    await fetchRooms()
+  } catch (e) {
+    alert(e.response?.data?.error || '操作失败')
+  } finally {
+    roomSaving.value = false
+  }
+}
+
+const editRoom = (r) => {
+  editingRoomId.value = r.id
+  roomFormName.value = r.name
+}
+
+const removeRoom = async (r) => {
+  if (!confirm('确定删除该房间吗？')) return
+  try {
+    await roomApi.deleteRoom(r.id)
+    await fetchRooms()
+  } catch (e) {
+    alert(e.response?.data?.error || '删除失败')
+  }
+}
+
+const doCheckIn = async () => {
+  if (!isTechnicianAuth()) return
+  attendanceLoading.value = true
+  try {
+    await attendanceApi.checkIn({})
+    attendanceStatus.value = 'available'
+    alert('签到成功')
+  } catch (e) {
+    alert(e.response?.data?.error || '签到失败')
+  } finally {
+    attendanceLoading.value = false
+  }
+}
+
+const updateAttendanceStatus = async () => {
+  if (!isTechnicianAuth()) return
+  attendanceUpdating.value = true
+  try {
+    await attendanceApi.updateStatus({ status: attendanceStatus.value })
+    alert('状态已更新')
+  } catch (e) {
+    alert(e.response?.data?.error || '更新失败')
+  } finally {
+    attendanceUpdating.value = false
+  }
+}
+
+const getSessionStatusText = (status) => {
+  const m = {
+    room_selecting: '选房中',
+    room_locked: '房间已锁定',
+    staff_selecting: '选人中',
+    precheck_pending: '待预结单',
+    delay_pending: '延迟中',
+    serving: '进行中',
+    auto_finishing: '待自动结单',
+    finished: '已完成',
+    canceled: '已取消'
+  }
+  return m[status] || status || '-'
+}
+
+const fetchServiceSessions = async () => {
+  sessionLoading.value = true
+  try {
+    const params = {}
+    if (sessionStatusFilter.value) params.status = sessionStatusFilter.value
+    const res = await serviceSessionApi.listSessions(params)
+    serviceSessions.value = res.data?.data || []
+  } catch (e) {
+    serviceSessions.value = []
+  } finally {
+    sessionLoading.value = false
+  }
+}
 
 onBeforeRouteLeave(() => {
   scanUserCodeActive.value = false

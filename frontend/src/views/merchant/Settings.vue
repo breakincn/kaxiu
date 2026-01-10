@@ -64,6 +64,22 @@
         </button>
 
         <button
+          v-if="canRoomManage"
+          @click="goToRoomManage"
+          class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7v14h14V7M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/>
+            </svg>
+            <span class="text-gray-800 font-medium">房间管理</span>
+          </div>
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+
+        <button
           @click="goToBindPhone"
           class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
         >
@@ -112,6 +128,8 @@ const canCustomerServiceManage = computed(() => {
   return hasMerchantPermission('merchant.cs.manage') && !!merchant.value?.support_customer_service
 })
 
+const canRoomManage = computed(() => hasMerchantPermission('merchant.service.manage'))
+
 const merchant = ref({})
 
 onMounted(() => {
@@ -146,6 +164,10 @@ const goToMerchantInfo = () => {
 
 const goToCustomerService = () => {
   router.push('/merchant/customer-service')
+}
+
+const goToRoomManage = () => {
+  router.push({ path: '/merchant', query: { tab: 'service' } })
 }
 
 const handleLogout = () => {

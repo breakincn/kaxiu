@@ -46,6 +46,14 @@ func SetupUserRoutes(r *gin.Engine) {
 	auth.POST("/cards/:id/verify-code", handlers.GenerateVerifyCode)
 	auth.GET("/cards/:id/usages", handlers.GetCardUsages)
 
+	// 服务会话（用户端：选房/选工作人员/查询）
+	auth.GET("/service-sessions/:id", handlers.UserGetServiceSession)
+	auth.GET("/service-sessions/:id/rooms", handlers.UserListAvailableRooms)
+	auth.POST("/service-sessions/:id/room", handlers.UserChooseServiceSessionRoom)
+	auth.GET("/service-sessions/:id/technicians", handlers.UserListAvailableTechnicians)
+	auth.POST("/service-sessions/:id/technician", handlers.UserChooseServiceSessionTechnician)
+	auth.POST("/service-sessions/:id/extend", handlers.ExtendServiceSessionUser)
+
 	// 用户预约/排队
 	auth.GET("/users/:id/appointments", handlers.GetUserAppointments)
 	auth.GET("/cards/:id/appointment", handlers.GetCardAppointment)
@@ -132,6 +140,25 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.POST("/technicians", middleware.RequirePermission("merchant.cs.manage"), handlers.CreateMerchantTechnician)
 	auth.PUT("/technicians/:id", middleware.RequirePermission("merchant.cs.manage"), handlers.UpdateMerchantTechnician)
 	auth.DELETE("/technicians/:id", middleware.RequirePermission("merchant.cs.manage"), handlers.DeleteMerchantTechnician)
+
+	// 房间管理
+	auth.GET("/rooms", middleware.RequirePermission("merchant.service.manage"), handlers.ListRooms)
+	auth.POST("/rooms", middleware.RequirePermission("merchant.service.manage"), handlers.CreateRoom)
+	auth.PUT("/rooms/:id", middleware.RequirePermission("merchant.service.manage"), handlers.UpdateRoom)
+	auth.DELETE("/rooms/:id", middleware.RequirePermission("merchant.service.manage"), handlers.DeleteRoom)
+
+	// 工作人员签到/状态
+	auth.POST("/technician/checkin", handlers.TechnicianCheckIn)
+	auth.PUT("/technician/status", handlers.UpdateTechnicianServiceStatus)
+	auth.GET("/technicians/available", handlers.ListAvailableTechnicians)
+
+	// 服务会话（先提供查询，后续补齐核销创建/选房/选人/预结单/加钟）
+	auth.GET("/service-sessions", handlers.ListServiceSessions)
+	auth.GET("/service-sessions/:id", handlers.GetServiceSession)
+	auth.POST("/service-sessions/:id/room", handlers.ChooseServiceSessionRoom)
+	auth.POST("/service-sessions/:id/technician", handlers.ChooseServiceSessionTechnician)
+	auth.POST("/service-sessions/:id/extend", handlers.ExtendServiceSession)
+	auth.POST("/service-sessions/:id/extend-duration", handlers.ExtendServiceSessionDuration)
 
 	// 商户端：角色权限微调
 	auth.GET("/role-permissions/:roleKey", handlers.GetMerchantRolePermissionOverrides)

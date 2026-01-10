@@ -29,6 +29,11 @@ const userRoutes = [
     component: () => import('../views/user/CardDetail.vue')
   },
   {
+    path: '/user/service-sessions/:id',
+    name: 'UserServiceSession',
+    component: () => import('../views/user/ServiceSession.vue')
+  },
+  {
     path: '/user/settings',
     name: 'UserSettings',
     component: () => import('../views/user/Settings.vue')
@@ -214,7 +219,11 @@ router.beforeEach((to) => {
   if (!isMerchantApp) {
     if (isUserPublic) return true
     const userId = localStorage.getItem('userId')
-    if (!userId) return '/login'
+    if (!userId) {
+      // 保存 redirect 参数用于登录后跳转
+      const redirect = to.fullPath !== '/' ? to.fullPath : undefined
+      return redirect ? `/login?redirect=${encodeURIComponent(redirect)}` : '/login'
+    }
     return true
   }
 

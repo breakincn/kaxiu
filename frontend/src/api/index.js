@@ -221,6 +221,37 @@ export const usageApi = {
   getMerchantUsages: (merchantId) => api.get(`/merchant/merchants/${merchantId}/usages`)
 }
 
+export const userServiceSessionApi = {
+  getSession: (id) => api.get(`/user/service-sessions/${id}`),
+  listRooms: (id) => api.get(`/user/service-sessions/${id}/rooms`),
+  chooseRoom: (id, data) => api.post(`/user/service-sessions/${id}/room`, data),
+  listTechnicians: (id) => api.get(`/user/service-sessions/${id}/technicians`),
+  chooseTechnician: (id, data) => api.post(`/user/service-sessions/${id}/technician`, data),
+  extend: (id, data) => api.post(`/user/service-sessions/${id}/extend`, data)
+}
+
+export const roomApi = {
+  listRooms: () => api.get('/merchant/rooms'),
+  createRoom: (data) => api.post('/merchant/rooms', data),
+  updateRoom: (id, data) => api.put(`/merchant/rooms/${id}`, data),
+  deleteRoom: (id) => api.delete(`/merchant/rooms/${id}`)
+}
+
+export const attendanceApi = {
+  checkIn: (data) => api.post('/merchant/technician/checkin', data),
+  updateStatus: (data) => api.put('/merchant/technician/status', data),
+  listAvailableTechnicians: () => api.get('/merchant/technicians/available')
+}
+
+export const serviceSessionApi = {
+  listSessions: (params) => api.get('/merchant/service-sessions', { params }),
+  getSession: (id) => api.get(`/merchant/service-sessions/${id}`),
+  chooseRoom: (id, data) => api.post(`/merchant/service-sessions/${id}/room`, data),
+  chooseTechnician: (id, data) => api.post(`/merchant/service-sessions/${id}/technician`, data),
+  extend: (id, data) => api.post(`/merchant/service-sessions/${id}/extend`, data),
+  extendDuration: (id, data) => api.post(`/merchant/service-sessions/${id}/extend-duration`, data)
+}
+
 export const noticeApi = {
   getMerchantNotices: (merchantId, limit) => api.get(`/merchant/merchants/${merchantId}/notices`, { params: { limit } }),
   createNotice: (data) => api.post('/merchant/notices', data),

@@ -33,6 +33,18 @@
           {{ resultText }}
         </div>
 
+        <div v-if="userContinueUrl && userContinueQrDataUrl" class="mb-3 p-3 bg-white border border-gray-200 rounded-lg">
+          <div class="text-gray-800 font-medium">让用户继续办理</div>
+          <div class="text-gray-500 text-xs mt-1">用户扫码进入选房/选人页面</div>
+          <div class="mt-3 flex justify-center">
+            <img :src="userContinueQrDataUrl" alt="用户继续办理二维码" class="w-44 h-44" />
+          </div>
+          <div class="mt-3 flex gap-2">
+            <button class="flex-1 py-2.5 bg-primary text-white rounded-lg font-medium" @click="copyText(userContinueUrl)">复制链接</button>
+            <button class="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium" @click="clearUserContinue">清除</button>
+          </div>
+        </div>
+
         <div class="rounded-lg overflow-hidden border border-gray-200 bg-black">
           <div id="qr-reader" class="w-full"></div>
         </div>
@@ -69,6 +81,8 @@ import { Html5Qrcode } from 'html5-qrcode'
 import { cardApi } from '../../api'
 import PwaInstallGuide from '../../components/PwaInstallGuide.vue'
 
+import QRCode from 'qrcode'
+
 import { getMerchantId, getMerchantToken } from '../../utils/auth'
 
 const router = useRouter()
@@ -83,6 +97,9 @@ const errorText = ref('')
 const resultText = ref('')
 const resultSuccess = ref(false)
 
+const userContinueUrl = ref('')
+const userContinueQrDataUrl = ref('')
+
 const currentCameraIndex = ref(0)
 const cameras = ref([])
 
@@ -91,6 +108,27 @@ let lastScannedAt = 0
 
 const goBack = () => {
   router.back()
+}
+
+const getUserOrigin = () => {
+  const host = typeof window !== 'undefined' ? window.location.host : ''
+  if (host.includes('localhost') || host.startsWith('127.0.0.1')) return 'http://localhost:3000'
+  if (host === 'kabao.shop' || host.endsWith('.kabao.shop')) return 'https://kabao.app'
+  return typeof window !== 'undefined' ? window.location.origin : 'https://kabao.app'
+}
+
+const copyText = async (text) => {
+  try {
+    await navigator.clipboard.writeText(String(text || ''))
+    alert('已复制')
+  } catch (_) {
+    alert('复制失败')
+  }
+}
+
+const clearUserContinue = () => {
+  userContinueUrl.value = ''
+  userContinueQrDataUrl.value = ''
 }
 
 const loadCameras = async () => {
@@ -138,6 +176,7 @@ const start = async () => {
 
   errorText.value = ''
   resultText.value = ''
+  clearUserContinue()
 
   starting.value = true
   try {
@@ -220,13 +259,32 @@ const onDecoded = async (decodedText) => {
     resultSuccess.value = true
     if (action === 'finish') {
       resultText.value = '结单成功！'
+    } else if (action === 'precheck') {
+      const sid = res?.data?.data?.session_id
+      resultText.value = `预结单成功！会话#${sid ?? '-'}，已开始计时。`
     } else {
       const remainTimes = res?.data?.data?.remain_times
       resultText.value = `核销成功！剩余次数: ${remainTimes ?? '-'}`
+
+      const sid = res?.data?.data?.session_id
+      const nextStep = res?.data?.data?.next_step
+      if (sid) {
+        const origin = getUserOrigin()
+        userContinueUrl.value = `${origin}/user/service-sessions/${sid}${nextStep ? `?next_step=${encodeURIComponent(nextStep)}` : ''}`
+        try {
+          userContinueQrDataUrl.value = await QRCode.toDataURL(userContinueUrl.value, {
+            margin: 1,
+            scale: 8,
+            errorCorrectionLevel: 'M'
+          })
+        } catch (_) {
+          userContinueQrDataUrl.value = ''
+        }
+      }
     }
 
     // 回到 dashboard 并切到对应 tab
-    const backTab = mode === 'finish' ? 'finish' : 'verify'
+    const backTab = action === 'precheck' ? 'service' : (mode === 'finish' ? 'finish' : 'verify')
     setTimeout(() => {
       router.replace({ path: '/merchant', query: { tab: backTab } })
     }, 700)
@@ -265,5 +323,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   stop()
+  clearUserContinue()
 })
 </script>
