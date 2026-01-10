@@ -55,14 +55,23 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: isMerchantApp ? 'dist-merchant' : (isAdminApp ? 'dist-admin' : 'dist-user'),
-      // 生产构建时确保文件名包含hash以破坏缓存
+      // 减少代码分割
       rollupOptions: {
         output: {
           entryFileNames: 'assets/[name].[hash].js',
           chunkFileNames: 'assets/[name].[hash].js',
-          assetFileNames: 'assets/[name].[hash].[ext]'
+          assetFileNames: 'assets/[name].[hash].[ext]',
+          // 手动合并 chunks，减少文件数量
+          manualChunks: {
+            // 将所有第三方库合并到一个文件
+            vendor: ['vue', 'vue-router', 'axios', 'qrcode'],
+            // 将所有页面组件合并到一个文件
+            pages: []
+          }
         }
-      }
+      },
+      // 设置最小 chunk 大小阈值，避免生成过小的文件
+      chunkSizeWarningLimit: 1000
     }
   }
 })
