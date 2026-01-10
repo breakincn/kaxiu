@@ -723,7 +723,8 @@ const showVerifyTab = computed(() => {
 const showFinishTab = computed(() => {
   // 有结单权限
   console.log('showFinishTab:', canFinishVerify.value)
-  return canFinishVerify.value
+  // 若同时拥有核销+结单权限，则只显示扫码核销页（结单走扫码智能逻辑）
+  return canFinishVerify.value && !canVerify.value
 })
 
 const showNoticeTab = computed(() => {
@@ -877,11 +878,19 @@ const goScanVerify = () => {
 }
 
 const goScanFinish = () => {
-  router.push('/merchant/scan-verify')
+  router.push('/merchant/scan-verify?mode=finish')
 }
 
 const onTopScanClick = () => {
   if (Date.now() < suppressTopScanClickUntil.value) return
+  // 顶部扫码入口也按同样规则：
+  // - 只有结单权限：进入结单模式（只结单，不核销）
+  // - 同时有核销+结单：进入智能模式（优先核销，满足条件才结单）
+  // - 只有核销：进入核销模式
+  if (!canVerify.value && canFinishVerify.value) {
+    goScanFinish()
+    return
+  }
   goScanVerify()
 }
 

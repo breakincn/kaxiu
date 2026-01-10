@@ -64,7 +64,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { Html5Qrcode } from 'html5-qrcode'
 import { cardApi } from '../../api'
 import PwaInstallGuide from '../../components/PwaInstallGuide.vue'
@@ -72,6 +72,7 @@ import PwaInstallGuide from '../../components/PwaInstallGuide.vue'
 import { getMerchantId, getMerchantToken } from '../../utils/auth'
 
 const router = useRouter()
+const route = useRoute()
 
 const pageTitle = ref('扫码')
 
@@ -206,8 +207,16 @@ const onDecoded = async (decodedText) => {
 
   verifying.value = true
   try {
-    const res = await cardApi.scanVerify(code)
-    const action = res?.data?.data?.action
+    const mode = String(route.query.mode || 'verify')
+    let res
+    let action = 'verify'
+    if (mode === 'finish') {
+      res = await cardApi.finishVerify(code)
+      action = 'finish'
+    } else {
+      res = await cardApi.scanVerify(code)
+      action = res?.data?.data?.action || 'verify'
+    }
     resultSuccess.value = true
     if (action === 'finish') {
       resultText.value = '结单成功！'
@@ -216,9 +225,10 @@ const onDecoded = async (decodedText) => {
       resultText.value = `核销成功！剩余次数: ${remainTimes ?? '-'}`
     }
 
-    // 刷新商户后台数据：回到 dashboard 并切到 verify tab
+    // 回到 dashboard 并切到对应 tab
+    const backTab = mode === 'finish' ? 'finish' : 'verify'
     setTimeout(() => {
-      router.replace({ path: '/merchant', query: { tab: 'verify' } })
+      router.replace({ path: '/merchant', query: { tab: backTab } })
     }, 700)
   } catch (err) {
     resultSuccess.value = false
@@ -229,7 +239,8 @@ const onDecoded = async (decodedText) => {
 }
 
 onMounted(() => {
-  pageTitle.value = '扫码'
+  const mode = String(route.query.mode || 'verify')
+  pageTitle.value = mode === 'finish' ? '扫码结单' : '扫码核销'
 
   const token = getMerchantToken()
   const id = getMerchantId()
