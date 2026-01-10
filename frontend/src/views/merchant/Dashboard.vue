@@ -828,7 +828,14 @@ const noticeForm = ref({
 const currentView = ref('cards') // 'cards' | 'sellTemplates'
 const issuedCards = ref([])
 const sellTemplates = ref([])
-const currentDisplay = ref('cards') // 'cards' | 'sellTemplates' - 默认显示会员卡片
+const displayMode = ref('cards') // 'cards' | 'sellTemplates'
+const currentDisplay = computed(() => {
+  // 如果没有核销权限但有售卡权限，默认显示售卡模板
+  if (!canVerify.value && canSellCards.value) {
+    return 'sellTemplates'
+  }
+  return 'cards'
+})
 const cardsLoading = ref(false)
 const cardsError = ref('')
 const expandedCardId = ref(null)
@@ -942,12 +949,12 @@ const loadCardTemplates = async () => {
 }
 
 const searchCards = async () => {
-  currentDisplay.value = 'cards'
+  displayMode.value = 'cards'
   await fetchIssuedCards()
 }
 
 const loadSellTemplates = async () => {
-  currentDisplay.value = 'sellTemplates'
+  displayMode.value = 'sellTemplates'
   try {
     const res = await shopApi.getCardTemplates()
     sellTemplates.value = (res.data.data || []).filter(t => t && t.is_active)
@@ -959,7 +966,7 @@ const loadSellTemplates = async () => {
       alert('加载售卡模板失败，请稍后重试')
     }
     sellTemplates.value = []
-    currentDisplay.value = 'cards'
+    displayMode.value = 'auto'
   }
 }
 
@@ -1004,7 +1011,7 @@ const closeSellQrModal = () => {
 const resetCardSearch = async () => {
   cardSearch.value = { card_no: '', card_type: '' }
   expandedCardId.value = null
-  currentDisplay.value = 'cards'
+  displayMode.value = 'auto'
   await fetchIssuedCards()
 }
 
@@ -1486,10 +1493,17 @@ watch(currentTab, (tab) => {
     } else if (tab === 'finish') {
       // 结单Tab也显示今日核销记录
       fetchTodayUsages()
+    } else if (tab === 'cards') {
+      // 重置显示模式为自动，让computed决定显示什么
+      displayMode.value = 'auto'
+      // 如果默认显示售卡模板，则加载售卡模板数据
+      if (currentDisplay.value === 'sellTemplates') {
+        loadSellTemplates()
+      } else {
+        fetchIssuedCards()
+      }
     } else if (tab === 'notice') {
       fetchNotices()
-    } else if (tab === 'cards') {
-      fetchIssuedCards()
     }
   }
 })
