@@ -1,11 +1,31 @@
 -- 新增服务会话相关表与字段迁移脚本
 -- 适用于存量环境升级，请在业务低峰期执行
 
--- 1) 商户表增加房间功能开关
-ALTER TABLE merchants ADD COLUMN IF NOT EXISTS support_room BOOLEAN DEFAULT FALSE COMMENT '是否启用房间功能';
+-- 1) 商户表增加房间功能开关（如果不存在）
+SET @sql = (SELECT IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+     WHERE TABLE_SCHEMA = DATABASE() 
+     AND TABLE_NAME = 'merchants' 
+     AND COLUMN_NAME = 'support_room') > 0,
+    'SELECT "support_room column already exists";',
+    'ALTER TABLE merchants ADD COLUMN support_room BOOLEAN DEFAULT FALSE COMMENT "是否启用房间功能";'
+));
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
--- 1.1) 商户表增加工作人员签到开关
-ALTER TABLE merchants ADD COLUMN IF NOT EXISTS support_technician_checkin BOOLEAN DEFAULT FALSE COMMENT '是否启用工作人员签到';
+-- 1.1) 商户表增加工作人员签到开关（如果不存在）
+SET @sql = (SELECT IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS 
+     WHERE TABLE_SCHEMA = DATABASE() 
+     AND TABLE_NAME = 'merchants' 
+     AND COLUMN_NAME = 'support_technician_checkin') > 0,
+    'SELECT "support_technician_checkin column already exists";',
+    'ALTER TABLE merchants ADD COLUMN support_technician_checkin BOOLEAN DEFAULT FALSE COMMENT "是否启用工作人员签到";'
+));
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 2) 创建房间表
 CREATE TABLE IF NOT EXISTS rooms (
@@ -66,19 +86,92 @@ CREATE TABLE IF NOT EXISTS service_sessions (
 ) COMMENT='服务会话表';
 
 -- 5) 为存量 technicians 表增加索引（若不存在）
-ALTER TABLE technicians ADD INDEX IF NOT EXISTS idx_merchant (merchant_id);
+SET @sql = (SELECT IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+     WHERE TABLE_SCHEMA = DATABASE() 
+     AND TABLE_NAME = 'technicians' 
+     AND INDEX_NAME = 'idx_merchant') > 0,
+    'SELECT "idx_merchant index already exists on technicians";',
+    'ALTER TABLE technicians ADD INDEX idx_merchant (merchant_id);'
+));
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 6) 为存量 usages 表增加索引（若不存在）
-ALTER TABLE usages ADD INDEX IF NOT EXISTS idx_card_id (card_id);
-ALTER TABLE usages ADD INDEX IF NOT EXISTS idx_merchant_id (merchant_id);
-ALTER TABLE usages ADD INDEX IF NOT EXISTS idx_used_at (used_at);
+SET @sql = (SELECT IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+     WHERE TABLE_SCHEMA = DATABASE() 
+     AND TABLE_NAME = 'usages' 
+     AND INDEX_NAME = 'idx_card_id') > 0,
+    'SELECT "idx_card_id index already exists on usages";',
+    'ALTER TABLE usages ADD INDEX idx_card_id (card_id);'
+));
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (SELECT IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+     WHERE TABLE_SCHEMA = DATABASE() 
+     AND TABLE_NAME = 'usages' 
+     AND INDEX_NAME = 'idx_merchant_id') > 0,
+    'SELECT "idx_merchant_id index already exists on usages";',
+    'ALTER TABLE usages ADD INDEX idx_merchant_id (merchant_id);'
+));
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (SELECT IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+     WHERE TABLE_SCHEMA = DATABASE() 
+     AND TABLE_NAME = 'usages' 
+     AND INDEX_NAME = 'idx_used_at') > 0,
+    'SELECT "idx_used_at index already exists on usages";',
+    'ALTER TABLE usages ADD INDEX idx_used_at (used_at);'
+));
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 7) 为存量 cards 表增加索引（若不存在）
-ALTER TABLE cards ADD INDEX IF NOT EXISTS idx_user_id (user_id);
-ALTER TABLE cards ADD INDEX IF NOT EXISTS idx_merchant_id (merchant_id);
+SET @sql = (SELECT IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+     WHERE TABLE_SCHEMA = DATABASE() 
+     AND TABLE_NAME = 'cards' 
+     AND INDEX_NAME = 'idx_user_id') > 0,
+    'SELECT "idx_user_id index already exists on cards";',
+    'ALTER TABLE cards ADD INDEX idx_user_id (user_id);'
+));
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = (SELECT IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+     WHERE TABLE_SCHEMA = DATABASE() 
+     AND TABLE_NAME = 'cards' 
+     AND INDEX_NAME = 'idx_merchant_id') > 0,
+    'SELECT "idx_merchant_id index already exists on cards";',
+    'ALTER TABLE cards ADD INDEX idx_merchant_id (merchant_id);'
+));
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 8) 为存量 merchants 表增加索引（若不存在）
-ALTER TABLE merchants ADD INDEX IF NOT EXISTS idx_avg_service_minutes (avg_service_minutes);
+SET @sql = (SELECT IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS 
+     WHERE TABLE_SCHEMA = DATABASE() 
+     AND TABLE_NAME = 'merchants' 
+     AND INDEX_NAME = 'idx_avg_service_minutes') > 0,
+    'SELECT "idx_avg_service_minutes index already exists on merchants";',
+    'ALTER TABLE merchants ADD INDEX idx_avg_service_minutes (avg_service_minutes);'
+));
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 9) 可选：初始化示例房间（仅演示，生产环境请自行配置）
 -- INSERT IGNORE INTO rooms (merchant_id, name, enabled) 
