@@ -583,13 +583,6 @@ func VerifyCard(c *gin.Context) {
 }
 
 func FinishVerifyCard(c *gin.Context) {
-	authTypeAny, _ := c.Get("auth_type")
-	authType, _ := authTypeAny.(string)
-	if authType != "technician" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "仅技师账号可结单"})
-		return
-	}
-
 	merchantIDAny, ok := c.Get("merchant_id")
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
@@ -601,15 +594,32 @@ func FinishVerifyCard(c *gin.Context) {
 		return
 	}
 
-	techIDAny, ok := c.Get("technician_id")
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
-		return
+	// 获取账号类型
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+
+	// 商户老板号拥有全部权限，不需要检查
+	if authType != "merchant" {
+		// 技师账号需要检查结单权限
+		okFinish, err := middleware.HasPermission(c, "merchant.card.finish")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "权限检查失败"})
+			return
+		}
+		if !okFinish {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无结单权限"})
+			return
+		}
 	}
-	techID, ok := techIDAny.(uint)
-	if !ok || techID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
-		return
+
+	var techID uint
+	var hasTechnicianID bool
+	if authType == "staff" {
+		techIDAny, ok := c.Get("technician_id")
+		if ok {
+			techID, hasTechnicianID = techIDAny.(uint)
+			hasTechnicianID = hasTechnicianID && techID > 0
+		}
 	}
 
 	var input struct {
@@ -681,11 +691,15 @@ func FinishVerifyCard(c *gin.Context) {
 		}
 
 		finishedAt = now
-		return tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
-			"technician_id": techID,
-			"finished_at":   finishedAt,
-			"status":        "success",
-		}).Error
+		updates := map[string]interface{}{
+			"finished_at": finishedAt,
+			"status":      "success",
+		}
+		// 如果是技师账号，记录技师ID
+		if hasTechnicianID {
+			updates["technician_id"] = techID
+		}
+		return tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(updates).Error
 	})
 	if err != nil {
 		var ae apiErr
@@ -721,6 +735,7 @@ func ScanVerifyCard(c *gin.Context) {
 		return
 	}
 
+	// 获取账号类型
 	authTypeAny, _ := c.Get("auth_type")
 	authType, _ := authTypeAny.(string)
 
@@ -830,16 +845,16 @@ func ScanVerifyCard(c *gin.Context) {
 			return nil
 		}
 
-		// 已核销：尝试结单（技师账号且有结单权限）
-		if authType != "technician" {
-			return apiErr{status: http.StatusBadRequest, msg: "该二维码已核销，请使用技师账号结单"}
-		}
-		okFinish, err := middleware.HasPermission(c, "merchant.card.finish")
-		if err != nil {
-			return err
-		}
-		if !okFinish {
-			return apiErr{status: http.StatusForbidden, msg: "无结单权限"}
+		// 已核销：尝试结单
+		// 商户老板号拥有全部权限，技师账号需要检查结单权限
+		if authType != "merchant" {
+			okFinish, err := middleware.HasPermission(c, "merchant.card.finish")
+			if err != nil {
+				return err
+			}
+			if !okFinish {
+				return apiErr{status: http.StatusForbidden, msg: "无结单权限"}
+			}
 		}
 		if !merchant.SupportCustomerService {
 			return apiErr{status: http.StatusBadRequest, msg: "该商户无需结单"}
@@ -880,22 +895,22 @@ func ScanVerifyCard(c *gin.Context) {
 			return apiErr{status: http.StatusBadRequest, msg: "该核销记录已超过可结单时间"}
 		}
 
-		techIDAny, ok := c.Get("technician_id")
-		if !ok {
-			return apiErr{status: http.StatusUnauthorized, msg: "未登录"}
-		}
-		techID, ok := techIDAny.(uint)
-		if !ok || techID == 0 {
-			return apiErr{status: http.StatusUnauthorized, msg: "未登录"}
-		}
-
 		finishedAt = now
 		action = "finish"
-		return tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
-			"technician_id": techID,
-			"finished_at":   finishedAt,
-			"status":        "success",
-		}).Error
+		updates := map[string]interface{}{
+			"finished_at": finishedAt,
+			"status":      "success",
+		}
+		// 如果是技师账号，记录技师ID
+		if authType == "staff" {
+			techIDAny, ok := c.Get("technician_id")
+			if ok {
+				if techID, hasTechnicianID := techIDAny.(uint); hasTechnicianID && techID > 0 {
+					updates["technician_id"] = techID
+				}
+			}
+		}
+		return tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(updates).Error
 	})
 	if err != nil {
 		var ae apiErr
