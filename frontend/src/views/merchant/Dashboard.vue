@@ -427,8 +427,9 @@
       </div>
 
       <div class="bg-white rounded-xl p-4 shadow-sm mb-4">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="grid grid-cols-1 gap-3" :class="canVerify ? 'sm:grid-cols-2' : ''">
           <input
+            v-if="canVerify"
             v-model="cardSearch.card_no"
             class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
             placeholder="按卡号搜索"
@@ -448,7 +449,7 @@
           </select>
         </div>
 
-        <div class="flex gap-2 mt-3 items-center">
+        <div class="flex gap-2 mt-3 items-center" :class="!canVerify ? 'justify-start' : ''">
           <button
             v-if="canVerify"
             @click="searchCards"
@@ -464,7 +465,7 @@
             重置
           </button>
 
-          <div class="flex-1"></div>
+          <div v-if="canVerify" class="flex-1"></div>
           <button
             v-if="(!isTechnicianAuth() && merchant.support_direct_sale) || (isTechnicianAuth() && canSellCards && canVerify)"
             type="button"
@@ -555,13 +556,13 @@
 
       <!-- 售卡模板列表 -->
       <div v-if="currentDisplay === 'sellTemplates'">
-        <div v-if="sellTemplates.length === 0" class="text-center py-12 text-gray-400">
-          暂无在售卡片模板
+        <div v-if="filteredSellTemplates.length === 0" class="text-center py-12 text-gray-400">
+          {{ sellTemplates.length === 0 ? '暂无在售卡片模板' : '没有找到匹配的卡片模板' }}
         </div>
         
         <div v-else class="template-list">
           <div 
-            v-for="tpl in sellTemplates" 
+            v-for="tpl in filteredSellTemplates" 
             :key="tpl.id" 
             class="template-item"
           >
@@ -820,14 +821,23 @@ const currentView = ref('cards') // 'cards' | 'sellTemplates'
 const issuedCards = ref([])
 const sellTemplates = ref([])
 const displayMode = ref('auto') // 'auto' | 'cards' | 'sellTemplates'
+const filteredSellTemplates = computed(() => {
+  if (!sellTemplates.value.length) return []
+  
+  let filtered = sellTemplates.value
+  
+  // 按卡片类型过滤
+  if (cardSearch.value.card_type) {
+    filtered = filtered.filter(tpl => tpl.name === cardSearch.value.card_type)
+  }
+  
+  return filtered
+})
+
 const currentDisplay = computed(() => {
   // 如果手动指定了显示模式，优先使用
   if (displayMode.value !== 'auto') {
     return displayMode.value
-  }
-  // 如果没有核销权限但有售卡权限，默认显示售卡模板
-  if (!canVerify.value && canSellCards.value) {
-    return 'sellTemplates'
   }
   return 'cards'
 })
@@ -839,6 +849,15 @@ const cardSearch = ref({
   card_no: '',
   card_type: ''
 })
+
+watch(
+  () => cardSearch.value.card_type,
+  async () => {
+    if (currentTab.value !== 'cards') return
+    if (currentDisplay.value !== 'cards') return
+    await fetchIssuedCards()
+  }
+)
 
 const cardTemplates = ref([])
 
