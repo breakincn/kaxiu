@@ -304,12 +304,18 @@
           </button>
         </div>
         <div v-if="todayUsages.length > 0" class="space-y-3">
-          <div v-for="usage in todayUsages" :key="usage.id" class="flex justify-between items-center py-2 border-b last:border-0">
-            <div>
-              <div class="text-gray-800">{{ usage.card?.user?.nickname || '用户' }}</div>
-              <div class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</div>
+          <div v-for="usage in todayUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
+            <div class="flex-1">
+              <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
+              <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
+              <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             </div>
-            <span class="text-gray-700 text-sm">核销 {{ usage.used_times }} 次</span>
+            <div class="text-right">
+              <div class="text-gray-700 text-sm">核销 {{ usage.used_times }} 次</div>
+              <div class="text-gray-500 text-xs mt-1">
+                {{ getOperatorName(usage) }}
+              </div>
+            </div>
           </div>
         </div>
         <div v-else class="text-center text-gray-400 py-4">
@@ -333,12 +339,18 @@
       <div class="bg-white rounded-xl p-4 shadow-sm mt-4">
         <h3 class="font-medium text-gray-800 mb-4">今日结单记录</h3>
         <div v-if="todayUsages.length > 0" class="space-y-3">
-          <div v-for="usage in todayUsages" :key="usage.id" class="flex justify-between items-center py-2 border-b last:border-0">
-            <div>
-              <div class="text-gray-800">{{ usage.card?.user?.nickname || '用户' }}</div>
-              <div class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</div>
+          <div v-for="usage in todayUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
+            <div class="flex-1">
+              <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
+              <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
+              <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             </div>
-            <span class="text-gray-700 text-sm">结单 {{ usage.used_times }} 次</span>
+            <div class="text-right">
+              <div class="text-gray-700 text-sm">结单 {{ usage.used_times }} 次</div>
+              <div class="text-gray-500 text-xs mt-1">
+                {{ getOperatorName(usage) }}
+              </div>
+            </div>
           </div>
         </div>
         <div v-else class="text-center text-gray-400 py-4">
@@ -1004,6 +1016,19 @@ const showErrorModalWithMessage = (message) => {
   errorTimer = setTimeout(() => {
     showErrorModal.value = false
   }, 10000)
+}
+
+// 获取操作人名称
+const getOperatorName = (usage) => {
+  // 如果有技师信息，显示技师姓名或账号
+  if (usage.technician) {
+    return usage.technician.name || usage.technician.account || '技师'
+  }
+  // 如果没有技师信息，显示商户店名（商户老板号操作）
+  if (usage.merchant) {
+    return usage.merchant.name || '店铺'
+  }
+  return '-'
 }
 
 const fetchMerchant = async () => {
