@@ -475,7 +475,7 @@
 
           <div class="flex-1"></div>
           <button
-            v-if="canSellCards"
+            v-if="canSellCards && canVerify"
             type="button"
             @click="loadSellTemplates"
             class="px-4 py-2 bg-slate-600 text-white text-sm rounded-lg"
