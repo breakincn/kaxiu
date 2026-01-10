@@ -190,8 +190,8 @@
                 <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
                 <span class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</span>
               </div>
-              <div v-if="usage.technician?.code" class="text-gray-400 text-sm mt-0.5">
-                服务人员：{{ usage.technician.code }}
+              <div v-if="getUsageOperatorInfo(usage)" class="text-gray-400 text-sm mt-0.5">
+                {{ getUsageOperatorInfo(usage) }}
               </div>
             </div>
             <span :class="getUsageStatusClass(usage)" class="text-sm font-medium">
@@ -601,6 +601,28 @@ const loadingSlots = ref(false)
 const technicians = ref([])
 const loadingTechnicians = ref(false)
 const selectedTechnicianId = ref(null)
+
+const getUsageOperatorInfo = (usage) => {
+  // 如果已结单，只显示服务人员
+  if (usage.status === 'success' && usage.finished_at) {
+    if (usage.technician) {
+      return `服务人员：${usage.technician.name || usage.technician.account || '技师'}`
+    }
+    // 结单完成且没有技师信息（商户老板操作），不显示任何信息
+    return ''
+  }
+  
+  // 结单前，显示核销人员信息
+  if (usage.technician) {
+    // 技师操作：显示技师姓名或账号
+    return `核销人员：${usage.technician.name || usage.technician.account || '技师'}`
+  } else if (usage.merchant) {
+    // 商户老板操作：显示店名
+    return `核销人员：${usage.merchant.name || '店铺'}`
+  }
+  
+  return ''
+}
 
 const goBack = () => {
   router.push('/user/cards')
