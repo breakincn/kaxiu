@@ -191,6 +191,21 @@ const merchantRoutes = [
     component: () => import('../views/merchant/Rooms.vue')
   },
   {
+    path: '/merchant/project-settings',
+    name: 'MerchantProjectSettings',
+    component: () => import('../views/merchant/ProjectSettings.vue')
+  },
+  {
+    path: '/merchant/hand-card-settings',
+    name: 'MerchantHandCardSettings',
+    component: () => import('../views/merchant/HandCardSettings.vue')
+  },
+  {
+    path: '/merchant/room-number-card-settings',
+    name: 'MerchantRoomNumberCardSettings',
+    component: () => import('../views/merchant/RoomNumberCardSettings.vue')
+  },
+  {
     path: '/merchant/role-permissions/:roleKey',
     name: 'MerchantRolePermissionAdjust',
     component: () => import('../views/merchant/RolePermissionAdjust.vue')

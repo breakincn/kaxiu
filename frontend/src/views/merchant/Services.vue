@@ -15,23 +15,53 @@
       <div v-else class="space-y-4">
         <div class="bg-white rounded-xl shadow-sm overflow-hidden">
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">开启预约</div>
-            <input type="checkbox" v-model="form.support_appointment" />
-          </div>
-
-          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
             <div class="text-gray-800 font-medium">开启叫号</div>
             <input type="checkbox" v-model="form.support_queue" />
           </div>
 
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">房间管理</div>
+            <div class="text-gray-800 font-medium">开启预约</div>
+            <input type="checkbox" v-model="form.support_appointment" />
+          </div>
+
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="text-gray-800 font-medium">开启项目</div>
+            <input type="checkbox" v-model="form.support_project" />
+          </div>
+
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="text-gray-800 font-medium">开启直购售卡</div>
+            <input type="checkbox" v-model="form.support_direct_sale" />
+          </div>
+
+		  <div v-if="form.support_direct_sale" class="px-4 py-4 flex items-center justify-between border-t border-gray-100">
+			<div class="text-gray-800 font-medium">开启客服</div>
+			<input type="checkbox" v-model="form.support_customer_service" />
+		  </div>
+
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="text-gray-800 font-medium">开启结单</div>
+            <input type="checkbox" v-model="form.support_order_complete" />
+          </div>
+
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="text-gray-800 font-medium">开启签到</div>
+            <input type="checkbox" v-model="form.support_technician_checkin" />
+          </div>
+
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="text-gray-800 font-medium">开启房间</div>
             <input type="checkbox" v-model="form.support_room" />
           </div>
 
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">工作人员签到</div>
-            <input type="checkbox" v-model="form.support_technician_checkin" />
+            <div class="text-gray-800 font-medium">开启发手牌</div>
+            <input type="checkbox" v-model="form.support_hand_card" />
+          </div>
+
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="text-gray-800 font-medium">开启发房间号牌</div>
+            <input type="checkbox" v-model="form.support_room_number_card" />
           </div>
 
           <div v-if="form.support_queue" class="px-4 py-4 border-b border-gray-100 space-y-3">
@@ -60,21 +90,8 @@
             <input type="checkbox" v-model="form.support_direct_sale" />
           </div>
 
-		  <div v-if="form.support_direct_sale" class="px-4 py-4 flex items-center justify-between border-t border-gray-100">
-			<div class="text-gray-800 font-medium">设置客服</div>
-			<input type="checkbox" v-model="form.support_customer_service" />
-		  </div>
         </div>
 
-        <div class="bg-white rounded-xl shadow-sm p-4">
-          <div class="text-sm font-medium text-gray-700 mb-2">平均服务时长（分钟）</div>
-          <input
-            v-model.number="form.avg_service_minutes"
-            type="number"
-            min="1"
-            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
 
         <button
           @click="save"
@@ -107,7 +124,11 @@ const form = ref({
   queue_start_no: 1,
   support_direct_sale: false,
   support_customer_service: false,
-  avg_service_minutes: 30
+  avg_service_minutes: 30,
+  support_project: false,
+  support_order_complete: false,
+  support_hand_card: false,
+  support_room_number_card: false
 })
 
 const goBack = () => {
@@ -137,7 +158,11 @@ const load = async () => {
       queue_start_no: m.queue_start_no || 1,
       support_direct_sale: !!m.support_direct_sale,
       support_customer_service: !!m.support_customer_service,
-      avg_service_minutes: m.avg_service_minutes || 30
+      avg_service_minutes: m.avg_service_minutes || 30,
+      support_project: !!m.support_project,
+      support_order_complete: !!m.support_order_complete,
+      support_hand_card: !!m.support_hand_card,
+      support_room_number_card: !!m.support_room_number_card
     }
   } catch (e) {
     console.error('加载商户服务配置失败', e)
@@ -169,7 +194,11 @@ const save = async () => {
       queue_start_no: form.value.queue_start_no,
       support_direct_sale: form.value.support_direct_sale,
       support_customer_service: form.value.support_customer_service,
-      avg_service_minutes: form.value.avg_service_minutes
+      avg_service_minutes: form.value.avg_service_minutes,
+      support_project: form.value.support_project,
+      support_order_complete: form.value.support_order_complete,
+      support_hand_card: form.value.support_hand_card,
+      support_room_number_card: form.value.support_room_number_card
     })
     alert('保存成功')
     await load()

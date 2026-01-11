@@ -31,6 +31,54 @@
         </button>
 
         <button
+          v-if="canProjectManage"
+          @click="goToProjectSettings"
+          class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+            <span class="text-gray-800 font-medium">项目设置</span>
+          </div>
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+
+        <button
+          v-if="canHandCardManage"
+          @click="goToHandCardSettings"
+          class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2"/>
+            </svg>
+            <span class="text-gray-800 font-medium">手牌设置</span>
+          </div>
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+
+        <button
+          v-if="canRoomNumberCardManage"
+          @click="goToRoomNumberCardSettings"
+          class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+            </svg>
+            <span class="text-gray-800 font-medium">房间号牌设置</span>
+          </div>
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+
+        <button
           v-if="canMerchantInfoUpdate"
           @click="goToMerchantInfo"
           class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
@@ -72,7 +120,7 @@
             <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M5 7v14h14V7M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/>
             </svg>
-            <span class="text-gray-800 font-medium">房间管理</span>
+            <span class="text-gray-800 font-medium">开启房间</span>
           </div>
           <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
@@ -128,14 +176,13 @@ const canCustomerServiceManage = computed(() => {
   return hasMerchantPermission('merchant.cs.manage') && !!merchant.value?.support_customer_service
 })
 
+const canProjectManage = computed(() => hasMerchantPermission('merchant.service.update') && !!merchant.value?.support_project)
+const canHandCardManage = computed(() => hasMerchantPermission('merchant.service.update') && !!merchant.value?.support_hand_card)
+const canRoomNumberCardManage = computed(() => hasMerchantPermission('merchant.service.update') && !!merchant.value?.support_room_number_card)
+
 const canRoomManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_room)
 
 const merchant = ref({})
-
-onMounted(() => {
-  ensureMerchantPermissionsLoaded()
-  fetchMerchant()
-})
 
 const fetchMerchant = async () => {
   try {
@@ -166,9 +213,22 @@ const goToCustomerService = () => {
   router.push('/merchant/customer-service')
 }
 
-const goToRoomManage = () => {
-  router.push('/merchant/rooms')
+const goToProjectSettings = () => {
+  router.push('/merchant/project-settings')
 }
+
+const goToHandCardSettings = () => {
+  router.push('/merchant/hand-card-settings')
+}
+
+const goToRoomNumberCardSettings = () => {
+  router.push('/merchant/room-number-card-settings')
+}
+
+onMounted(() => {
+  ensureMerchantPermissionsLoaded()
+  fetchMerchant()
+})
 
 const handleLogout = () => {
   if (confirm('确定要退出登录吗？')) {

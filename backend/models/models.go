@@ -27,6 +27,7 @@ type Merchant struct {
 	Type                   string `json:"type" gorm:"size:50;comment:商户类型（如：理发、美容等）"`
 	SupportAppointment     bool   `json:"support_appointment" gorm:"default:false;comment:是否支持预约（0-不支持，1-支持）"`
 	SupportQueue           bool   `json:"support_queue" gorm:"default:false;comment:是否支持叫号/排队（0-不支持，1-支持）"`
+	SupportProject         bool   `json:"support_project" gorm:"default:false;comment:是否开启项目服务（0-不开启，1-开启）"`
 	SupportRoom            bool   `json:"support_room" gorm:"default:false;comment:是否启用房间/教室功能（0-不启用，1-启用）"`
 	SupportTechnicianCheckin bool `json:"support_technician_checkin" gorm:"default:false;comment:是否启用工作人员签到（0-不启用，1-启用）"`
 	QueuePrefix            string `json:"queue_prefix" gorm:"size:20;default:'';comment:叫号前缀（如A、B）"`
@@ -35,6 +36,16 @@ type Merchant struct {
 	SupportCustomerService bool   `json:"support_customer_service" gorm:"default:false;comment:是否开启设置客服/技师账号（0-不支持，1-支持）"`
 	TechnicianAlias        string `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
 	AvgServiceMinutes      int    `json:"avg_service_minutes" gorm:"default:30;comment:平均服务时长（分钟）"`
+	// 项目设置
+	Projects               string `json:"projects" gorm:"type:json;comment:项目设置（JSON格式）"`
+	// 手牌设置
+	HandCardPrefix         string `json:"hand_card_prefix" gorm:"size:20;default:'H';comment:手牌前缀"`
+	HandCardStartNo        int    `json:"hand_card_start_no" gorm:"default:1;comment:手牌起始号码"`
+	HandCardEndNo          int    `json:"hand_card_end_no" gorm:"default:100;comment:手牌结束号码"`
+	// 房间号牌设置
+	RoomNumberCardPrefix   string `json:"room_number_card_prefix" gorm:"size:20;default:'R';comment:房间号牌前缀"`
+	RoomNumberCardStartNo  int    `json:"room_number_card_start_no" gorm:"default:1;comment:房间号牌起始号码"`
+	RoomNumberCardEndNo    int    `json:"room_number_card_end_no" gorm:"default:50;comment:房间号牌结束号码"`
 	// 营业时间
 	MorningStart   string `json:"morning_start" gorm:"size:10;default:'';comment:上午营业开始时间（格式：HH:MM）"`
 	MorningEnd     string `json:"morning_end" gorm:"size:10;default:'';comment:上午营业结束时间（格式：HH:MM）"`

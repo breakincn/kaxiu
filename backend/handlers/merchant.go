@@ -197,13 +197,24 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	var input struct {
 		SupportAppointment     *bool   `json:"support_appointment"`
 		SupportQueue           *bool   `json:"support_queue"`
+		SupportProject         *bool   `json:"support_project"`
 		SupportRoom            *bool   `json:"support_room"`
 		SupportTechnicianCheckin *bool `json:"support_technician_checkin"`
-		QueuePrefix            *string `json:"queue_prefix"`
-		QueueStartNo           *int    `json:"queue_start_no"`
 		SupportDirectSale      *bool   `json:"support_direct_sale"`
 		SupportCustomerService *bool   `json:"support_customer_service"`
+		SupportOrderComplete   *bool   `json:"support_order_complete"`
+		SupportHandCard        *bool   `json:"support_hand_card"`
+		SupportRoomNumberCard  *bool   `json:"support_room_number_card"`
+		QueuePrefix            *string `json:"queue_prefix"`
+		QueueStartNo           *int    `json:"queue_start_no"`
 		AvgServiceMinutes      *int    `json:"avg_service_minutes"`
+		Projects               *string `json:"projects"`
+		HandCardPrefix         *string `json:"hand_card_prefix"`
+		HandCardStartNo        *int    `json:"hand_card_start_no"`
+		HandCardEndNo          *int    `json:"hand_card_end_no"`
+		RoomNumberCardPrefix   *string `json:"room_number_card_prefix"`
+		RoomNumberCardStartNo  *int    `json:"room_number_card_start_no"`
+		RoomNumberCardEndNo    *int    `json:"room_number_card_end_no"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -217,11 +228,29 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	if input.SupportQueue != nil {
 		updates["support_queue"] = *input.SupportQueue
 	}
+	if input.SupportProject != nil {
+		updates["support_project"] = *input.SupportProject
+	}
 	if input.SupportRoom != nil {
 		updates["support_room"] = *input.SupportRoom
 	}
 	if input.SupportTechnicianCheckin != nil {
 		updates["support_technician_checkin"] = *input.SupportTechnicianCheckin
+	}
+	if input.SupportDirectSale != nil {
+		updates["support_direct_sale"] = *input.SupportDirectSale
+	}
+	if input.SupportCustomerService != nil {
+		updates["support_customer_service"] = *input.SupportCustomerService
+	}
+	if input.SupportOrderComplete != nil {
+		updates["support_order_complete"] = *input.SupportOrderComplete
+	}
+	if input.SupportHandCard != nil {
+		updates["support_hand_card"] = *input.SupportHandCard
+	}
+	if input.SupportRoomNumberCard != nil {
+		updates["support_room_number_card"] = *input.SupportRoomNumberCard
 	}
 	if input.QueuePrefix != nil {
 		updates["queue_prefix"] = strings.TrimSpace(*input.QueuePrefix)
@@ -233,18 +262,49 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		}
 		updates["queue_start_no"] = *input.QueueStartNo
 	}
-	if input.SupportDirectSale != nil {
-		updates["support_direct_sale"] = *input.SupportDirectSale
-	}
-	if input.SupportCustomerService != nil {
-		updates["support_customer_service"] = *input.SupportCustomerService
-	}
 	if input.AvgServiceMinutes != nil {
 		if *input.AvgServiceMinutes < 1 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "平均服务时长必须大于等于1"})
 			return
 		}
 		updates["avg_service_minutes"] = *input.AvgServiceMinutes
+	}
+	if input.Projects != nil {
+		updates["projects"] = *input.Projects
+	}
+	if input.HandCardPrefix != nil {
+		updates["hand_card_prefix"] = strings.TrimSpace(*input.HandCardPrefix)
+	}
+	if input.HandCardStartNo != nil {
+		if *input.HandCardStartNo < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "手牌起始号码必须大于等于1"})
+			return
+		}
+		updates["hand_card_start_no"] = *input.HandCardStartNo
+	}
+	if input.HandCardEndNo != nil {
+		if *input.HandCardEndNo < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "手牌结束号码必须大于等于1"})
+			return
+		}
+		updates["hand_card_end_no"] = *input.HandCardEndNo
+	}
+	if input.RoomNumberCardPrefix != nil {
+		updates["room_number_card_prefix"] = strings.TrimSpace(*input.RoomNumberCardPrefix)
+	}
+	if input.RoomNumberCardStartNo != nil {
+		if *input.RoomNumberCardStartNo < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "房间号牌起始号码必须大于等于1"})
+			return
+		}
+		updates["room_number_card_start_no"] = *input.RoomNumberCardStartNo
+	}
+	if input.RoomNumberCardEndNo != nil {
+		if *input.RoomNumberCardEndNo < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "房间号牌结束号码必须大于等于1"})
+			return
+		}
+		updates["room_number_card_end_no"] = *input.RoomNumberCardEndNo
 	}
 
 	if len(updates) == 0 {
