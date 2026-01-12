@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /
+
+# 禁止所有搜索引擎抓取网站内容
+# This file prevents all search engines from crawling the site
