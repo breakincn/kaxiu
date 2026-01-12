@@ -253,9 +253,17 @@
           </div>
           <div class="form-group" v-if="showServiceProjectsSelect">
             <label>服务项目</label>
-            <select v-model="templateForm.project_ids" multiple>
-              <option v-for="p in merchantProjects" :key="p.id" :value="p.id">{{ p.name }}</option>
-            </select>
+            <div class="project-checkbox-list">
+              <label v-for="p in merchantProjects" :key="p.id" class="project-checkbox-item">
+                <input
+                  type="checkbox"
+                  :value="p.id"
+                  v-model="templateForm.project_ids"
+                />
+                <span class="project-checkbox-name">{{ p.name }}</span>
+              </label>
+              <div v-if="merchantProjects.length === 0" class="project-empty">暂无可选项目，请先在【项目设置】里添加</div>
+            </div>
           </div>
           <div class="form-group">
             <label>售价（元）*</label>
@@ -1285,6 +1293,48 @@ function downloadQrcode() {
   flex: 1;
   padding: 16px;
   overflow-y: auto;
+}
+
+.project-checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--kb-border);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--kb-surface);
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.project-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.project-checkbox-item:hover {
+  background: var(--kb-surface-muted);
+}
+
+.project-checkbox-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.project-checkbox-name {
+  font-size: 14px;
+  color: var(--kb-text);
+  line-height: 1.2;
+}
+
+.project-empty {
+  font-size: 12px;
+  color: var(--kb-text-muted);
+  padding: 6px 2px;
 }
 
 .modal-footer {
