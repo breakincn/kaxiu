@@ -80,6 +80,44 @@ func GetCard(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "卡片不存在"})
 		return
 	}
+
+	// 填充 Projects：优先从 card_projects 读取，回退到模板项目
+	var boundIDs []uint
+	config.DB.Model(&models.CardProject{}).
+		Where("card_id = ?", card.ID).
+		Order("id asc").
+		Pluck("project_id", &boundIDs)
+	if len(boundIDs) > 0 {
+		var projects []models.MerchantProject
+		config.DB.
+			Where("merchant_id = ? AND id IN ?", card.MerchantID, boundIDs).
+			Order("sort_order asc, id asc").
+			Find(&projects)
+		card.Projects = projects
+	} else {
+		// 回退：查直购订单 -> 模板 -> 模板项目
+		var purchase models.DirectPurchase
+		err := config.DB.
+			Where("card_id = ?", card.ID).
+			Order("id desc").
+			First(&purchase).Error
+		if err == nil {
+			var projectIDs []uint
+			config.DB.Model(&models.CardTemplateProject{}).
+				Where("card_template_id = ?", purchase.CardTemplateID).
+				Order("id asc").
+				Pluck("project_id", &projectIDs)
+			if len(projectIDs) > 0 {
+				var projects []models.MerchantProject
+				config.DB.
+					Where("merchant_id = ? AND id IN ?", card.MerchantID, projectIDs).
+					Order("sort_order asc, id asc").
+					Find(&projects)
+				card.Projects = projects
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"data": card})
 }
 

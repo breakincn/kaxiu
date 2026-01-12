@@ -88,8 +88,9 @@ type Card struct {
 	EndDate        *time.Time `json:"end_date" gorm:"type:date;comment:有效期结束日期"`
 	CreatedAt      *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
-	User     User     `json:"user" gorm:"foreignKey:UserID"`
-	Merchant Merchant `json:"merchant" gorm:"foreignKey:MerchantID"`
+	User     User              `json:"user" gorm:"foreignKey:UserID"`
+	Merchant Merchant          `json:"merchant" gorm:"foreignKey:MerchantID"`
+	Projects []MerchantProject `json:"projects" gorm:"-"`
 }
 
 func (Card) TableName() string {

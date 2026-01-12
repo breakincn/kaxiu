@@ -28,10 +28,10 @@
             <span class="text-gray-500">卡类型</span>
             <span class="text-gray-800">{{ card.card_type }}</span>
           </div>
-          <div v-if="projectOptions.length > 0" class="flex justify-between">
+          <div v-if="card.projects && card.projects.length > 0" class="flex justify-between">
             <span class="text-gray-500">包含项目</span>
             <span class="text-gray-800 text-right max-w-[70%]">
-              {{ projectOptions.map(p => p.name).join('、') }}
+              {{ card.projects.map(p => p.name).join('、') }}
             </span>
           </div>
           <div class="flex justify-between">
@@ -172,8 +172,8 @@
           <button class="text-gray-400" @click="closeProjectModal">×</button>
         </div>
         <div class="p-4 max-h-[60vh] overflow-y-auto">
-          <div v-if="projectOptions.length === 0" class="text-center text-gray-400 py-6">暂无可选项目</div>
-          <label v-for="p in projectOptions" :key="p.id" class="flex items-center gap-3 py-2">
+          <div v-if="!card.projects || card.projects.length === 0" class="text-center text-gray-400 py-6">暂无可选项目</div>
+          <label v-for="p in card.projects" :key="p.id" class="flex items-center gap-3 py-2">
             <input type="radio" name="project" :value="p.id" v-model="selectedProjectId" />
             <div class="flex-1">
               <div class="text-gray-800">{{ p.name }}</div>
@@ -444,7 +444,6 @@ const codeExpireTime = ref('')
 const generating = ref(false)
 const verifyQrDataUrl = ref('')
 let verifyExpireTimer = null
-const projectOptions = ref([])
 const showProjectModal = ref(false)
 const selectedProjectId = ref(null)
 const appointing = ref(false)
@@ -671,8 +670,6 @@ const fetchCard = async () => {
       fetchNotices(card.value.merchant_id)
     }
 
-    await loadCardProjects()
-
     fetchUsages()
     fetchAppointment()
   } catch (err) {
@@ -774,21 +771,6 @@ const closeProjectModal = () => {
   showProjectModal.value = false
 }
 
-const loadCardProjects = async () => {
-  try {
-    const res = await cardApi.getCardProjects(route.params.id)
-    projectOptions.value = Array.isArray(res?.data?.data) ? res.data.data : []
-  } catch (e) {
-    projectOptions.value = []
-  }
-}
-
-const getProjectById = (id) => {
-  const pid = Number(id || 0)
-  if (!pid) return null
-  return projectOptions.value.find(p => Number(p.id) === pid) || null
-}
-
 const getUsageProjectText = (usage) => {
   const pFromUsage = usage?.project
   if (pFromUsage && pFromUsage.name) {
@@ -797,7 +779,7 @@ const getUsageProjectText = (usage) => {
   }
   const pid = usage?.project_id
   if (!pid) return ''
-  const p = getProjectById(pid)
+  const p = (card.value.projects || []).find(p => Number(p.id) === Number(pid))
   if (!p) return ''
   const duration = Number(p.duration || 0)
   return duration > 0 ? `${p.name}（${duration}分钟）` : p.name
@@ -845,8 +827,8 @@ const confirmProjectAndGenerate = async () => {
 const generateCode = async () => {
   if (generating.value || card.value.remain_times <= 0) return
 
-  await loadCardProjects()
-  if (projectOptions.value.length > 1) {
+  const projects = card.value.projects || []
+  if (projects.length > 1) {
     selectedProjectId.value = null
     showProjectModal.value = true
     return
@@ -854,7 +836,7 @@ const generateCode = async () => {
 
   generating.value = true
   try {
-    const onlyProjectId = projectOptions.value.length === 1 ? projectOptions.value[0].id : null
+    const onlyProjectId = projects.length === 1 ? projects[0].id : null
     await doGenerateVerifyCode(onlyProjectId)
   } catch (err) {
     alert(err.response?.data?.error || '生成核销码失败')
