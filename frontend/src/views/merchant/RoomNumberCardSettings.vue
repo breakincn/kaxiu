@@ -24,7 +24,7 @@
               <input
                 v-model="form.room_number_card_prefix"
                 type="text"
-                placeholder="如 R"
+                placeholder="R（可选）"
                 class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -84,7 +84,7 @@ const loading = ref(true)
 const saving = ref(false)
 
 const form = ref({
-  room_number_card_prefix: 'R',
+  room_number_card_prefix: '',
   room_number_card_start_no: 1,
   room_number_card_end_no: 50
 })
@@ -108,7 +108,7 @@ const load = async () => {
     const res = await merchantApi.getCurrentMerchant()
     const m = res.data.data || {}
     form.value = {
-      room_number_card_prefix: m.room_number_card_prefix || 'R',
+      room_number_card_prefix: m.room_number_card_prefix || '',
       room_number_card_start_no: m.room_number_card_start_no || 1,
       room_number_card_end_no: m.room_number_card_end_no || 50
     }

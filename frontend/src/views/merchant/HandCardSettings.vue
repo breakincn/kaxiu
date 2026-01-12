@@ -24,7 +24,7 @@
               <input
                 v-model="form.hand_card_prefix"
                 type="text"
-                placeholder="如 H"
+                placeholder="H（可选）"
                 class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -84,7 +84,7 @@ const loading = ref(true)
 const saving = ref(false)
 
 const form = ref({
-  hand_card_prefix: 'H',
+  hand_card_prefix: '',
   hand_card_start_no: 1,
   hand_card_end_no: 100
 })
@@ -108,7 +108,7 @@ const load = async () => {
     const res = await merchantApi.getCurrentMerchant()
     const m = res.data.data || {}
     form.value = {
-      hand_card_prefix: m.hand_card_prefix || 'H',
+      hand_card_prefix: m.hand_card_prefix || '',
       hand_card_start_no: m.hand_card_start_no || 1,
       hand_card_end_no: m.hand_card_end_no || 100
     }
