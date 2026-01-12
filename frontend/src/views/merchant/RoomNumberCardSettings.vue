@@ -55,8 +55,8 @@
           <div class="text-sm text-gray-600">
             <div class="mb-2">预览：</div>
             <div class="font-mono text-lg">
-              {{ form.room_number_card_prefix || 'R' }}{{ form.room_number_card_start_no || 1 }} - 
-              {{ form.room_number_card_prefix || 'R' }}{{ form.room_number_card_end_no || 50 }}
+              {{ form.room_number_card_prefix }}{{ form.room_number_card_start_no || 1 }} - 
+              {{ form.room_number_card_prefix }}{{ form.room_number_card_end_no || 50 }}
             </div>
           </div>
         </div>

@@ -55,8 +55,8 @@
           <div class="text-sm text-gray-600">
             <div class="mb-2">预览：</div>
             <div class="font-mono text-lg">
-              {{ form.hand_card_prefix || 'H' }}{{ form.hand_card_start_no || 1 }} - 
-              {{ form.hand_card_prefix || 'H' }}{{ form.hand_card_end_no || 100 }}
+              {{ form.hand_card_prefix }}{{ form.hand_card_start_no || 1 }} - 
+              {{ form.hand_card_prefix }}{{ form.hand_card_end_no || 100 }}
             </div>
           </div>
         </div>
