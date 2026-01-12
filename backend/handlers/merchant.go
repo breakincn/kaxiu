@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"kabao/config"
 	"kabao/models"
@@ -14,6 +15,27 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+func fillMerchantProjects(m *models.Merchant) {
+	if m == nil {
+		return
+	}
+	if strings.TrimSpace(m.Projects) == "" {
+		m.ProjectsData = []models.MerchantProject{}
+		return
+	}
+	var arr []models.MerchantProject
+	if err := json.Unmarshal([]byte(m.Projects), &arr); err != nil {
+		m.ProjectsData = []models.MerchantProject{}
+		return
+	}
+	for i := range arr {
+		if strings.TrimSpace(arr[i].ID) == "" {
+			arr[i].ID = strings.TrimSpace(arr[i].Name)
+		}
+	}
+	m.ProjectsData = arr
+}
 
 // MerchantRegister 商户注册
 func MerchantRegister(c *gin.Context) {
@@ -195,26 +217,26 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	}
 
 	var input struct {
-		SupportAppointment     *bool   `json:"support_appointment"`
-		SupportQueue           *bool   `json:"support_queue"`
-		SupportProject         *bool   `json:"support_project"`
-		SupportRoom            *bool   `json:"support_room"`
-		SupportTechnicianCheckin *bool `json:"support_technician_checkin"`
-		SupportDirectSale      *bool   `json:"support_direct_sale"`
-		SupportCustomerService *bool   `json:"support_customer_service"`
-		SupportOrderComplete   *bool   `json:"support_order_complete"`
-		SupportHandCard        *bool   `json:"support_hand_card"`
-		SupportRoomNumberCard  *bool   `json:"support_room_number_card"`
-		QueuePrefix            *string `json:"queue_prefix"`
-		QueueStartNo           *int    `json:"queue_start_no"`
-		AvgServiceMinutes      *int    `json:"avg_service_minutes"`
-		Projects               *string `json:"projects"`
-		HandCardPrefix         *string `json:"hand_card_prefix"`
-		HandCardStartNo        *int    `json:"hand_card_start_no"`
-		HandCardEndNo          *int    `json:"hand_card_end_no"`
-		RoomNumberCardPrefix   *string `json:"room_number_card_prefix"`
-		RoomNumberCardStartNo  *int    `json:"room_number_card_start_no"`
-		RoomNumberCardEndNo    *int    `json:"room_number_card_end_no"`
+		SupportAppointment       *bool           `json:"support_appointment"`
+		SupportQueue             *bool           `json:"support_queue"`
+		SupportProject           *bool           `json:"support_project"`
+		SupportRoom              *bool           `json:"support_room"`
+		SupportTechnicianCheckin *bool           `json:"support_technician_checkin"`
+		SupportDirectSale        *bool           `json:"support_direct_sale"`
+		SupportCustomerService   *bool           `json:"support_customer_service"`
+		SupportOrderComplete     *bool           `json:"support_order_complete"`
+		SupportHandCard          *bool           `json:"support_hand_card"`
+		SupportRoomNumberCard    *bool           `json:"support_room_number_card"`
+		QueuePrefix              *string         `json:"queue_prefix"`
+		QueueStartNo             *int            `json:"queue_start_no"`
+		AvgServiceMinutes        *int            `json:"avg_service_minutes"`
+		Projects                 json.RawMessage `json:"projects"`
+		HandCardPrefix           *string         `json:"hand_card_prefix"`
+		HandCardStartNo          *int            `json:"hand_card_start_no"`
+		HandCardEndNo            *int            `json:"hand_card_end_no"`
+		RoomNumberCardPrefix     *string         `json:"room_number_card_prefix"`
+		RoomNumberCardStartNo    *int            `json:"room_number_card_start_no"`
+		RoomNumberCardEndNo      *int            `json:"room_number_card_end_no"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -270,7 +292,16 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		updates["avg_service_minutes"] = *input.AvgServiceMinutes
 	}
 	if input.Projects != nil {
-		updates["projects"] = *input.Projects
+		if len(strings.TrimSpace(string(input.Projects))) == 0 {
+			updates["projects"] = "[]"
+		} else {
+			var arr []models.MerchantProject
+			if err := json.Unmarshal(input.Projects, &arr); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "projects 格式不正确"})
+				return
+			}
+			updates["projects"] = string(input.Projects)
+		}
 	}
 	if input.HandCardPrefix != nil {
 		updates["hand_card_prefix"] = strings.TrimSpace(*input.HandCardPrefix)
@@ -318,6 +349,7 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		return
 	}
 	config.DB.First(&merchant, merchantID)
+	fillMerchantProjects(&merchant)
 	c.JSON(http.StatusOK, gin.H{"data": merchant})
 }
 
@@ -381,6 +413,7 @@ func GetCurrentUserMerchant(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
 		return
 	}
+	fillMerchantProjects(&merchant)
 	c.JSON(http.StatusOK, gin.H{"data": merchant})
 }
 

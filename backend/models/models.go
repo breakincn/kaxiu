@@ -2,6 +2,12 @@ package models
 
 import "time"
 
+type MerchantProject struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Duration int    `json:"duration"`
+}
+
 type User struct {
 	ID        uint       `json:"id" gorm:"primaryKey;comment:用户ID"`
 	Username  string     `json:"username" gorm:"size:50;uniqueIndex;comment:用户名"`
@@ -39,7 +45,8 @@ type Merchant struct {
 	TechnicianAlias        string `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
 	AvgServiceMinutes      int    `json:"avg_service_minutes" gorm:"default:30;comment:平均服务时长（分钟）"`
 	// 项目设置
-	Projects               string `json:"projects" gorm:"type:json;comment:项目设置（JSON格式）"`
+	Projects               string           `json:"-" gorm:"type:json;comment:项目设置（JSON格式）"`
+	ProjectsData           []MerchantProject `json:"projects" gorm:"-"`
 	// 手牌设置
 	HandCardPrefix         string `json:"hand_card_prefix" gorm:"size:20;default:'H';comment:手牌前缀"`
 	HandCardStartNo        int    `json:"hand_card_start_no" gorm:"default:1;comment:手牌起始号码"`

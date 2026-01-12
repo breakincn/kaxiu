@@ -27,20 +27,22 @@ func (PaymentConfig) TableComment() string {
 // CardTemplate 卡片售卖模板
 // 商户配置的在售卡片信息
 type CardTemplate struct {
-	ID                 uint       `json:"id" gorm:"primaryKey;comment:模板ID"`
-	MerchantID         uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
-	Name               string     `json:"name" gorm:"size:100;comment:卡片名称（如：洗车10次卡）"`
-	CardType           string     `json:"card_type" gorm:"size:50;comment:卡片类型（times-次数卡，balance-充值卡，lesson-课时卡）"`
-	Price              int        `json:"price" gorm:"comment:售价（单位：分）"`
-	TotalTimes         int        `json:"total_times" gorm:"comment:总次数（次数卡/课时卡适用）"`
-	RechargeAmount     int        `json:"recharge_amount" gorm:"comment:充值金额（单位：分，充值卡适用）"`
-	ValidDays          int        `json:"valid_days" gorm:"comment:有效期天数（0表示永久有效）"`
-	SupportAppointment bool       `json:"support_appointment" gorm:"default:false;comment:是否支持预约"`
-	Description        string     `json:"description" gorm:"size:500;comment:卡片描述"`
-	SortOrder          int        `json:"sort_order" gorm:"default:0;comment:排序顺序（越小越靠前）"`
-	IsActive           bool       `json:"is_active" gorm:"default:true;comment:是否在售（0-下架，1-在售）"`
-	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
-	UpdatedAt          *time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
+	ID                  uint       `json:"id" gorm:"primaryKey;comment:模板ID"`
+	MerchantID          uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
+	Name                string     `json:"name" gorm:"size:100;comment:卡片名称（如：洗车10次卡）"`
+	CardType            string     `json:"card_type" gorm:"size:50;comment:卡片类型（times-次数卡，balance-充值卡，lesson-课时卡）"`
+	Price               int        `json:"price" gorm:"comment:售价（单位：分）"`
+	TotalTimes          int        `json:"total_times" gorm:"comment:总次数（次数卡/课时卡适用）"`
+	RechargeAmount      int        `json:"recharge_amount" gorm:"comment:充值金额（单位：分，充值卡适用）"`
+	ValidDays           int        `json:"valid_days" gorm:"comment:有效期天数（0表示永久有效）"`
+	SupportAppointment  bool       `json:"support_appointment" gorm:"default:false;comment:是否支持预约"`
+	ServiceProjects     string     `json:"-" gorm:"type:json;comment:关联服务项目（JSON数组，存项目名称）"`
+	ServiceProjectsData []string   `json:"service_projects" gorm:"-"`
+	Description         string     `json:"description" gorm:"size:500;comment:卡片描述"`
+	SortOrder           int        `json:"sort_order" gorm:"default:0;comment:排序顺序（越小越靠前）"`
+	IsActive            bool       `json:"is_active" gorm:"default:true;comment:是否在售（0-下架，1-在售）"`
+	CreatedAt           *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	UpdatedAt           *time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
 	Merchant Merchant `json:"merchant" gorm:"foreignKey:MerchantID"`
 }

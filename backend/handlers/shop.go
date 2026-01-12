@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"kabao/config"
@@ -14,6 +15,30 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+func fillCardTemplateServiceProjects(t *models.CardTemplate) {
+	if t == nil {
+		return
+	}
+	if strings.TrimSpace(t.ServiceProjects) == "" {
+		t.ServiceProjectsData = []string{}
+		return
+	}
+	var arr []string
+	if err := json.Unmarshal([]byte(t.ServiceProjects), &arr); err != nil {
+		t.ServiceProjectsData = []string{}
+		return
+	}
+	clean := make([]string, 0, len(arr))
+	for _, v := range arr {
+		s := strings.TrimSpace(v)
+		if s == "" {
+			continue
+		}
+		clean = append(clean, s)
+	}
+	t.ServiceProjectsData = clean
+}
 
 func requireDirectSaleEnabledByMerchantID(c *gin.Context, merchantID uint) bool {
 	var m models.Merchant
@@ -152,6 +177,9 @@ func GetCardTemplates(c *gin.Context) {
 
 	var templates []models.CardTemplate
 	config.DB.Where("merchant_id = ?", merchantID).Order("sort_order asc, id desc").Find(&templates)
+	for i := range templates {
+		fillCardTemplateServiceProjects(&templates[i])
+	}
 	c.JSON(http.StatusOK, gin.H{"data": templates})
 }
 
@@ -163,15 +191,16 @@ func CreateCardTemplate(c *gin.Context) {
 	}
 
 	var input struct {
-		Name               string `json:"name" binding:"required"`
-		CardType           string `json:"card_type" binding:"required"`
-		Price              int    `json:"price" binding:"required,min=1"`
-		TotalTimes         int    `json:"total_times"`
-		RechargeAmount     int    `json:"recharge_amount"`
-		ValidDays          int    `json:"valid_days"`
-		SupportAppointment bool   `json:"support_appointment"`
-		Description        string `json:"description"`
-		SortOrder          int    `json:"sort_order"`
+		Name               string   `json:"name" binding:"required"`
+		CardType           string   `json:"card_type" binding:"required"`
+		Price              int      `json:"price" binding:"required,min=1"`
+		TotalTimes         int      `json:"total_times"`
+		RechargeAmount     int      `json:"recharge_amount"`
+		ValidDays          int      `json:"valid_days"`
+		SupportAppointment bool     `json:"support_appointment"`
+		ServiceProjects    []string `json:"service_projects"`
+		Description        string   `json:"description"`
+		SortOrder          int      `json:"sort_order"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -197,6 +226,8 @@ func CreateCardTemplate(c *gin.Context) {
 		return
 	}
 
+	spBytes, _ := json.Marshal(input.ServiceProjects)
+
 	template := models.CardTemplate{
 		MerchantID:         merchantID,
 		Name:               input.Name,
@@ -206,6 +237,7 @@ func CreateCardTemplate(c *gin.Context) {
 		RechargeAmount:     input.RechargeAmount,
 		ValidDays:          input.ValidDays,
 		SupportAppointment: input.SupportAppointment,
+		ServiceProjects:    string(spBytes),
 		Description:        input.Description,
 		SortOrder:          input.SortOrder,
 		IsActive:           true,
@@ -216,6 +248,7 @@ func CreateCardTemplate(c *gin.Context) {
 		return
 	}
 
+	fillCardTemplateServiceProjects(&template)
 	c.JSON(http.StatusOK, gin.H{"data": template})
 }
 
@@ -234,16 +267,17 @@ func UpdateCardTemplate(c *gin.Context) {
 	}
 
 	var input struct {
-		Name               *string `json:"name"`
-		CardType           *string `json:"card_type"`
-		Price              *int    `json:"price"`
-		TotalTimes         *int    `json:"total_times"`
-		RechargeAmount     *int    `json:"recharge_amount"`
-		ValidDays          *int    `json:"valid_days"`
-		SupportAppointment *bool   `json:"support_appointment"`
-		Description        *string `json:"description"`
-		SortOrder          *int    `json:"sort_order"`
-		IsActive           *bool   `json:"is_active"`
+		Name               *string   `json:"name"`
+		CardType           *string   `json:"card_type"`
+		Price              *int      `json:"price"`
+		TotalTimes         *int      `json:"total_times"`
+		RechargeAmount     *int      `json:"recharge_amount"`
+		ValidDays          *int      `json:"valid_days"`
+		SupportAppointment *bool     `json:"support_appointment"`
+		ServiceProjects    *[]string `json:"service_projects"`
+		Description        *string   `json:"description"`
+		SortOrder          *int      `json:"sort_order"`
+		IsActive           *bool     `json:"is_active"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -273,6 +307,10 @@ func UpdateCardTemplate(c *gin.Context) {
 	if input.SupportAppointment != nil {
 		updates["support_appointment"] = *input.SupportAppointment
 	}
+	if input.ServiceProjects != nil {
+		b, _ := json.Marshal(*input.ServiceProjects)
+		updates["service_projects"] = string(b)
+	}
 	if input.Description != nil {
 		updates["description"] = *input.Description
 	}
@@ -289,6 +327,7 @@ func UpdateCardTemplate(c *gin.Context) {
 	}
 
 	config.DB.First(&template, template.ID)
+	fillCardTemplateServiceProjects(&template)
 	c.JSON(http.StatusOK, gin.H{"data": template})
 }
 

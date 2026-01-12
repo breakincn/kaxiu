@@ -251,6 +251,12 @@
               <option value="balance">充值卡</option>
             </select>
           </div>
+          <div class="form-group" v-if="showServiceProjectsSelect">
+            <label>服务项目</label>
+            <select v-model="templateForm.service_projects" multiple>
+              <option v-for="p in merchantProjects" :key="p" :value="p">{{ p }}</option>
+            </select>
+          </div>
           <div class="form-group">
             <label>售价（元）*</label>
             <input v-model.number="templateForm.priceYuan" type="number" min="0.01" step="0.01" placeholder="如：100" />
@@ -307,6 +313,7 @@ const editingTemplate = ref(null)
 const templateForm = ref({
   name: '',
   card_type: 'times',
+  service_projects: [],
   priceYuan: '',
   total_times: '',
   rechargeAmountYuan: '',
@@ -323,6 +330,17 @@ const paymentConfig = ref({
 
 const canSetDefault = computed(() => {
   return !!paymentConfig.value.alipay_qr_code && !!paymentConfig.value.wechat_qr_code
+})
+
+const merchantProjects = computed(() => {
+  const list = Array.isArray(merchant.value?.projects) ? merchant.value.projects : []
+  return list
+    .map(p => (p && typeof p.name === 'string' ? p.name.trim() : ''))
+    .filter(Boolean)
+})
+
+const showServiceProjectsSelect = computed(() => {
+  return !!merchant.value?.support_project && merchantProjects.value.length > 0
 })
 
 // 店铺短链接
@@ -552,6 +570,7 @@ function editTemplate(tpl) {
   templateForm.value = {
     name: tpl.name,
     card_type: tpl.card_type,
+    service_projects: Array.isArray(tpl.service_projects) ? tpl.service_projects : [],
     priceYuan: tpl.price / 100,
     total_times: tpl.total_times,
     rechargeAmountYuan: tpl.recharge_amount / 100,
@@ -567,6 +586,7 @@ function closeTemplateModal() {
   templateForm.value = {
     name: '',
     card_type: 'times',
+    service_projects: [],
     priceYuan: '',
     total_times: '',
     rechargeAmountYuan: '',
@@ -585,6 +605,7 @@ async function saveTemplate() {
   const data = {
     name: form.name,
     card_type: form.card_type,
+    service_projects: showServiceProjectsSelect.value ? (form.service_projects || []) : [],
     price: Math.round(form.priceYuan * 100),
     total_times: form.total_times || 0,
     recharge_amount: Math.round((form.rechargeAmountYuan || 0) * 100),
