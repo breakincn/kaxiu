@@ -124,7 +124,6 @@ const form = ref({
   queue_start_no: 1,
   support_direct_sale: false,
   support_customer_service: false,
-  avg_service_minutes: 30,
   support_project: false,
   support_order_complete: false,
   support_hand_card: false,
@@ -158,7 +157,6 @@ const load = async () => {
       queue_start_no: m.queue_start_no || 1,
       support_direct_sale: !!m.support_direct_sale,
       support_customer_service: !!m.support_customer_service,
-      avg_service_minutes: m.avg_service_minutes || 30,
       support_project: !!m.support_project,
       support_order_complete: !!m.support_order_complete,
       support_hand_card: !!m.support_hand_card,
@@ -178,10 +176,6 @@ const save = async () => {
     alert('叫号起始号码必须大于等于1')
     return
   }
-  if (!form.value.avg_service_minutes || form.value.avg_service_minutes < 1) {
-    alert('平均服务时长必须大于等于1')
-    return
-  }
 
   saving.value = true
   try {
@@ -194,7 +188,6 @@ const save = async () => {
       queue_start_no: form.value.queue_start_no,
       support_direct_sale: form.value.support_direct_sale,
       support_customer_service: form.value.support_customer_service,
-      avg_service_minutes: form.value.avg_service_minutes,
       support_project: form.value.support_project,
       support_order_complete: form.value.support_order_complete,
       support_hand_card: form.value.support_hand_card,

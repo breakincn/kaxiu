@@ -195,7 +195,7 @@ func GetCardAppointment(c *gin.Context) {
 		"data": gin.H{
 			"appointment":       appointment,
 			"queue_before":      queueBefore,
-			"estimated_minutes": int(queueBefore) * merchant.AvgServiceMinutes,
+			"estimated_minutes": int(queueBefore) * 30,
 			"cooldown_until":    cooldownUntil,
 		},
 	})
@@ -370,10 +370,7 @@ func FinishAppointment(c *gin.Context) {
 		return
 	}
 
-	serviceMinutes := merchant.AvgServiceMinutes
-	if serviceMinutes <= 0 {
-		serviceMinutes = 30
-	}
+	serviceMinutes := 30
 
 	now := time.Now()
 	finishDeadline := appointment.AppointmentTime.Add(time.Duration(serviceMinutes+30) * time.Minute)
@@ -469,7 +466,6 @@ func GetQueueStatus(c *gin.Context) {
 		"data": gin.H{
 			"pending_appointments": pendingCount,
 			"today_verify_count":   todayVerifyCount,
-			"avg_service_minutes":  merchant.AvgServiceMinutes,
 		},
 	})
 }
@@ -521,24 +517,17 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	config.DB.Preload("User").Where("merchant_id = ? AND appointment_time LIKE ? AND status IN ('pending', 'confirmed')",
 		merchantID, datePrefix).Order("appointment_time ASC").Find(&appointments)
 
-	// 生成可用时间段（营业时间 9:00-21:00，每个时间段为服务时长）
-	serviceMinutes := merchant.AvgServiceMinutes
-	if serviceMinutes == 0 {
-		serviceMinutes = 30
-	}
+	// 生成可用时间段（营业时间 9:00-21:00）
+	// 说明：平均服务时长字段已移除；后续可根据“预约选择的项目时长”生成更精确的时间段
+	serviceMinutes := 30
 
 	// 判断是否为今天
 	isToday := date == time.Now().In(loc).Format("2006-01-02")
 	var minStartTime time.Time
 	if isToday {
-		// 今天仅展示从当前时间之后的时间段，且需要满足：now + (avg_service_minutes + 5分钟)
-		// 若商户未配置 avg_service_minutes，则按 now + 1小时
+		// 今天仅展示从当前时间之后的时间段，且需要满足：now + (30分钟 + 5分钟)
 		now := time.Now().In(loc)
-		if merchant.AvgServiceMinutes == 0 {
-			minStartTime = now.Add(1 * time.Hour)
-		} else {
-			minStartTime = now.Add(time.Duration(merchant.AvgServiceMinutes)*time.Minute + 5*time.Minute)
-		}
+		minStartTime = now.Add(time.Duration(serviceMinutes)*time.Minute + 5*time.Minute)
 	}
 
 	// 解析日期

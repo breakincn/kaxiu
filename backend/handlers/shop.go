@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"kabao/config"
@@ -16,28 +16,39 @@ import (
 	"gorm.io/gorm"
 )
 
-func fillCardTemplateServiceProjects(t *models.CardTemplate) {
-	if t == nil {
+func fillCardTemplateProjectIDs(tx *gorm.DB, t *models.CardTemplate) {
+	if tx == nil || t == nil {
 		return
 	}
-	if strings.TrimSpace(t.ServiceProjects) == "" {
-		t.ServiceProjectsData = []string{}
-		return
+	var ids []uint
+	tx.Model(&models.CardTemplateProject{}).
+		Where("card_template_id = ?", t.ID).
+		Order("id asc").
+		Pluck("project_id", &ids)
+	t.ProjectIDs = ids
+}
+
+func syncCardTemplateProjectIDs(tx *gorm.DB, templateID uint, projectIDs []uint) error {
+	if tx == nil {
+		return fmt.Errorf("db is nil")
 	}
-	var arr []string
-	if err := json.Unmarshal([]byte(t.ServiceProjects), &arr); err != nil {
-		t.ServiceProjectsData = []string{}
-		return
+	// 先清空
+	if err := tx.Where("card_template_id = ?", templateID).Delete(&models.CardTemplateProject{}).Error; err != nil {
+		return err
 	}
-	clean := make([]string, 0, len(arr))
-	for _, v := range arr {
-		s := strings.TrimSpace(v)
-		if s == "" {
+	// 去重并插入
+	seen := map[uint]bool{}
+	for _, id := range projectIDs {
+		if id == 0 || seen[id] {
 			continue
 		}
-		clean = append(clean, s)
+		seen[id] = true
+		row := models.CardTemplateProject{CardTemplateID: templateID, ProjectID: id}
+		if err := tx.Create(&row).Error; err != nil {
+			return err
+		}
 	}
-	t.ServiceProjectsData = clean
+	return nil
 }
 
 func requireDirectSaleEnabledByMerchantID(c *gin.Context, merchantID uint) bool {
@@ -178,7 +189,7 @@ func GetCardTemplates(c *gin.Context) {
 	var templates []models.CardTemplate
 	config.DB.Where("merchant_id = ?", merchantID).Order("sort_order asc, id desc").Find(&templates)
 	for i := range templates {
-		fillCardTemplateServiceProjects(&templates[i])
+		fillCardTemplateProjectIDs(config.DB, &templates[i])
 	}
 	c.JSON(http.StatusOK, gin.H{"data": templates})
 }
@@ -191,16 +202,16 @@ func CreateCardTemplate(c *gin.Context) {
 	}
 
 	var input struct {
-		Name               string   `json:"name" binding:"required"`
-		CardType           string   `json:"card_type" binding:"required"`
-		Price              int      `json:"price" binding:"required,min=1"`
-		TotalTimes         int      `json:"total_times"`
-		RechargeAmount     int      `json:"recharge_amount"`
-		ValidDays          int      `json:"valid_days"`
-		SupportAppointment bool     `json:"support_appointment"`
-		ServiceProjects    []string `json:"service_projects"`
-		Description        string   `json:"description"`
-		SortOrder          int      `json:"sort_order"`
+		Name               string `json:"name" binding:"required"`
+		CardType           string `json:"card_type" binding:"required"`
+		Price              int    `json:"price" binding:"required,min=1"`
+		TotalTimes         int    `json:"total_times"`
+		RechargeAmount     int    `json:"recharge_amount"`
+		ValidDays          int    `json:"valid_days"`
+		SupportAppointment bool   `json:"support_appointment"`
+		ProjectIDs         []uint `json:"project_ids"`
+		Description        string `json:"description"`
+		SortOrder          int    `json:"sort_order"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -226,8 +237,6 @@ func CreateCardTemplate(c *gin.Context) {
 		return
 	}
 
-	spBytes, _ := json.Marshal(input.ServiceProjects)
-
 	template := models.CardTemplate{
 		MerchantID:         merchantID,
 		Name:               input.Name,
@@ -237,18 +246,37 @@ func CreateCardTemplate(c *gin.Context) {
 		RechargeAmount:     input.RechargeAmount,
 		ValidDays:          input.ValidDays,
 		SupportAppointment: input.SupportAppointment,
-		ServiceProjects:    string(spBytes),
 		Description:        input.Description,
 		SortOrder:          input.SortOrder,
 		IsActive:           true,
 	}
 
-	if err := config.DB.Create(&template).Error; err != nil {
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&template).Error; err != nil {
+			return err
+		}
+		// 校验项目ID归属当前商户
+		if len(input.ProjectIDs) > 0 {
+			var cnt int64
+			if err := tx.Model(&models.MerchantProject{}).
+				Where("merchant_id = ? AND id IN ?", merchantID, input.ProjectIDs).
+				Count(&cnt).Error; err != nil {
+				return err
+			}
+			if cnt != int64(len(uniqueUintSlice(input.ProjectIDs))) {
+				return apiErr{status: http.StatusBadRequest, msg: "包含无效的项目"}
+			}
+		}
+		if err := syncCardTemplateProjectIDs(tx, template.ID, input.ProjectIDs); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
 		return
 	}
-
-	fillCardTemplateServiceProjects(&template)
+	fillCardTemplateProjectIDs(config.DB, &template)
 	c.JSON(http.StatusOK, gin.H{"data": template})
 }
 
@@ -267,17 +295,17 @@ func UpdateCardTemplate(c *gin.Context) {
 	}
 
 	var input struct {
-		Name               *string   `json:"name"`
-		CardType           *string   `json:"card_type"`
-		Price              *int      `json:"price"`
-		TotalTimes         *int      `json:"total_times"`
-		RechargeAmount     *int      `json:"recharge_amount"`
-		ValidDays          *int      `json:"valid_days"`
-		SupportAppointment *bool     `json:"support_appointment"`
-		ServiceProjects    *[]string `json:"service_projects"`
-		Description        *string   `json:"description"`
-		SortOrder          *int      `json:"sort_order"`
-		IsActive           *bool     `json:"is_active"`
+		Name               *string `json:"name"`
+		CardType           *string `json:"card_type"`
+		Price              *int    `json:"price"`
+		TotalTimes         *int    `json:"total_times"`
+		RechargeAmount     *int    `json:"recharge_amount"`
+		ValidDays          *int    `json:"valid_days"`
+		SupportAppointment *bool   `json:"support_appointment"`
+		ProjectIDs         *[]uint `json:"project_ids"`
+		Description        *string `json:"description"`
+		SortOrder          *int    `json:"sort_order"`
+		IsActive           *bool   `json:"is_active"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -307,10 +335,6 @@ func UpdateCardTemplate(c *gin.Context) {
 	if input.SupportAppointment != nil {
 		updates["support_appointment"] = *input.SupportAppointment
 	}
-	if input.ServiceProjects != nil {
-		b, _ := json.Marshal(*input.ServiceProjects)
-		updates["service_projects"] = string(b)
-	}
 	if input.Description != nil {
 		updates["description"] = *input.Description
 	}
@@ -321,14 +345,57 @@ func UpdateCardTemplate(c *gin.Context) {
 		updates["is_active"] = *input.IsActive
 	}
 
-	if err := config.DB.Model(&template).Updates(updates).Error; err != nil {
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if len(updates) > 0 {
+			if err := tx.Model(&template).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		if input.ProjectIDs != nil {
+			ids := *input.ProjectIDs
+			if len(ids) > 0 {
+				var cnt int64
+				if err := tx.Model(&models.MerchantProject{}).
+					Where("merchant_id = ? AND id IN ?", merchantID, ids).
+					Count(&cnt).Error; err != nil {
+					return err
+				}
+				if cnt != int64(len(uniqueUintSlice(ids))) {
+					return apiErr{status: http.StatusBadRequest, msg: "包含无效的项目"}
+				}
+			}
+			if err := syncCardTemplateProjectIDs(tx, template.ID, ids); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
 		return
 	}
 
 	config.DB.First(&template, template.ID)
-	fillCardTemplateServiceProjects(&template)
+	fillCardTemplateProjectIDs(config.DB, &template)
 	c.JSON(http.StatusOK, gin.H{"data": template})
+}
+
+func uniqueUintSlice(in []uint) []uint {
+	seen := map[uint]bool{}
+	out := make([]uint, 0, len(in))
+	for _, v := range in {
+		if v == 0 || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
 }
 
 // DeleteCardTemplate 删除卡片模板

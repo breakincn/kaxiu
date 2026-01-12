@@ -102,6 +102,12 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.PUT("/merchants/:id", middleware.RequirePermission("merchant.info.manage"), handlers.UpdateMerchant)
 	auth.GET("/merchants/:id/queue", handlers.GetQueueStatus)
 
+	// 商户项目（项目设置）
+	auth.GET("/projects", middleware.RequirePermission("merchant.service.manage"), handlers.ListMerchantProjects)
+	auth.POST("/projects", middleware.RequirePermission("merchant.service.manage"), handlers.CreateMerchantProject)
+	auth.PUT("/projects/:id", middleware.RequirePermission("merchant.service.manage"), handlers.UpdateMerchantProject)
+	auth.DELETE("/projects/:id", middleware.RequirePermission("merchant.service.manage"), handlers.DeleteMerchantProject)
+
 	// 卡片（商户视角）
 	auth.GET("/merchants/:id/cards", handlers.GetMerchantCards)
 	auth.GET("/cards/:id", handlers.GetMerchantCard)

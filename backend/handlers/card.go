@@ -574,10 +574,7 @@ func VerifyCard(c *gin.Context) {
 			nextStep = "staff_select"
 		}
 
-		durationMinutes := merchant.AvgServiceMinutes
-		if durationMinutes <= 0 {
-			durationMinutes = 50
-		}
+		durationMinutes := 50
 
 		session := models.ServiceSession{
 			MerchantID:             merchantID,
@@ -697,10 +694,7 @@ func FinishVerifyCard(c *gin.Context) {
 		if !merchant.SupportCustomerService {
 			return apiErr{status: http.StatusBadRequest, msg: "该商户无需结单"}
 		}
-		avgMinutes := merchant.AvgServiceMinutes
-		if avgMinutes <= 0 {
-			avgMinutes = 15
-		}
+		avgMinutes := 15
 
 		// 找到对应使用记录（同卡同码，取最新）
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -900,10 +894,7 @@ func ScanVerifyCard(c *gin.Context) {
 				nextStep = "staff_select"
 			}
 
-			durationMinutes := merchant.AvgServiceMinutes
-			if durationMinutes <= 0 {
-				durationMinutes = 50
-			}
+			durationMinutes := 50
 
 			session := models.ServiceSession{
 				MerchantID:             merchantID,
@@ -947,10 +938,7 @@ func ScanVerifyCard(c *gin.Context) {
 		if now.Sub(*verifyCode.UsedAt) > 12*time.Hour {
 			return apiErr{status: http.StatusBadRequest, msg: "该核销记录已超过可结单时间"}
 		}
-		avgMinutes := merchant.AvgServiceMinutes
-		if avgMinutes <= 0 {
-			avgMinutes = 15
-		}
+		avgMinutes := 15
 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("merchant_id = ? AND card_id = ? AND verify_code = ?", merchantID, verifyCode.CardID, verifyCode.Code).
@@ -1024,7 +1012,6 @@ func ScanVerifyCard(c *gin.Context) {
 	resp["technician_id"] = usage.TechnicianID
 	resp["technician_code"] = usage.Technician.Code
 	resp["used_at"] = usage.UsedAt
-	resp["avg_service_minutes"] = merchant.AvgServiceMinutes
 	c.JSON(http.StatusOK, gin.H{"message": "结单成功", "data": resp})
 }
 

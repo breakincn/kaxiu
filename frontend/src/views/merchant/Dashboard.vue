@@ -1642,8 +1642,7 @@ const isWriteOffExpired = (appt) => {
   if (!appt || appt.status !== 'confirmed' || !appt.appointment_time) return false
 
   const appointmentTime = new Date(appt.appointment_time).getTime()
-  let serviceMinutes = merchant.value.avg_service_minutes
-  if (!serviceMinutes || serviceMinutes <= 0) serviceMinutes = 30
+  const serviceMinutes = 30
   const deadlineMs = appointmentTime + (serviceMinutes + 30) * 60 * 1000
   return currentTime.value > deadlineMs
 }
@@ -1653,8 +1652,7 @@ const isServiceTimeExpired = (appt) => {
   if (!appt || appt.status !== 'confirmed' || !appt.appointment_time) return false
 
   const appointmentTime = new Date(appt.appointment_time).getTime()
-  let serviceMinutes = merchant.value.avg_service_minutes
-  if (!serviceMinutes || serviceMinutes <= 0) serviceMinutes = 30
+  const serviceMinutes = 30
   const serviceDeadlineMs = appointmentTime + serviceMinutes * 60 * 1000
   return currentTime.value > serviceDeadlineMs
 }
@@ -1776,8 +1774,7 @@ const shouldShowFinishButton = (appt) => {
   const elapsed = now - appointmentTime // 已过的时间（毫秒）
   
   // 需要过了预约时间 + 服务时长 - 1分钟 才显示按钮
-  let serviceMinutes = merchant.value.avg_service_minutes
-  if (!serviceMinutes || serviceMinutes <= 0) serviceMinutes = 30
+  const serviceMinutes = 30
   const requiredTime = (serviceMinutes - 1) * 60 * 1000
   
   return elapsed >= requiredTime

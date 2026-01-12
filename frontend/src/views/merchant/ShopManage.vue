@@ -253,8 +253,8 @@
           </div>
           <div class="form-group" v-if="showServiceProjectsSelect">
             <label>服务项目</label>
-            <select v-model="templateForm.service_projects" multiple>
-              <option v-for="p in merchantProjects" :key="p" :value="p">{{ p }}</option>
+            <select v-model="templateForm.project_ids" multiple>
+              <option v-for="p in merchantProjects" :key="p.id" :value="p.id">{{ p.name }}</option>
             </select>
           </div>
           <div class="form-group">
@@ -292,7 +292,7 @@
 <script setup>
 import { ref, onMounted, computed, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { merchantApi } from '../../api'
+import { merchantApi, merchantProjectApi } from '../../api'
 import { shopApi } from '../../api/index.js'
 
 import { hasMerchantPermission } from '../../utils/auth'
@@ -313,7 +313,7 @@ const editingTemplate = ref(null)
 const templateForm = ref({
   name: '',
   card_type: 'times',
-  service_projects: [],
+  project_ids: [],
   priceYuan: '',
   total_times: '',
   rechargeAmountYuan: '',
@@ -332,16 +332,24 @@ const canSetDefault = computed(() => {
   return !!paymentConfig.value.alipay_qr_code && !!paymentConfig.value.wechat_qr_code
 })
 
+const projects = ref([])
+
 const merchantProjects = computed(() => {
-  const list = Array.isArray(merchant.value?.projects) ? merchant.value.projects : []
-  return list
-    .map(p => (p && typeof p.name === 'string' ? p.name.trim() : ''))
-    .filter(Boolean)
+  return Array.isArray(projects.value) ? projects.value : []
 })
 
 const showServiceProjectsSelect = computed(() => {
   return !!merchant.value?.support_project && merchantProjects.value.length > 0
 })
+
+async function loadMerchantProjects() {
+  try {
+    const res = await merchantProjectApi.list()
+    projects.value = res.data?.data || []
+  } catch (e) {
+    projects.value = []
+  }
+}
 
 // 店铺短链接
 const shopSlug = ref('')
@@ -391,6 +399,8 @@ onMounted(async () => {
       activeTab.value = 'templates'
     }
   }
+
+  await loadMerchantProjects()
 
   // 加载所有必要的数据
   loadTemplates()
@@ -570,7 +580,7 @@ function editTemplate(tpl) {
   templateForm.value = {
     name: tpl.name,
     card_type: tpl.card_type,
-    service_projects: Array.isArray(tpl.service_projects) ? tpl.service_projects : [],
+    project_ids: Array.isArray(tpl.project_ids) ? tpl.project_ids : [],
     priceYuan: tpl.price / 100,
     total_times: tpl.total_times,
     rechargeAmountYuan: tpl.recharge_amount / 100,
@@ -586,7 +596,7 @@ function closeTemplateModal() {
   templateForm.value = {
     name: '',
     card_type: 'times',
-    service_projects: [],
+    project_ids: [],
     priceYuan: '',
     total_times: '',
     rechargeAmountYuan: '',
@@ -605,7 +615,7 @@ async function saveTemplate() {
   const data = {
     name: form.name,
     card_type: form.card_type,
-    service_projects: showServiceProjectsSelect.value ? (form.service_projects || []) : [],
+    project_ids: showServiceProjectsSelect.value ? (form.project_ids || []) : [],
     price: Math.round(form.priceYuan * 100),
     total_times: form.total_times || 0,
     recharge_amount: Math.round((form.rechargeAmountYuan || 0) * 100),

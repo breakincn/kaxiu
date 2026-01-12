@@ -13,16 +13,6 @@
       <div v-if="loading" class="text-gray-400 text-center py-10">加载中...</div>
 
       <div v-else class="space-y-4">
-        <div class="bg-white rounded-xl shadow-sm p-4">
-          <div class="text-sm font-medium text-gray-700 mb-2">平均服务时长（分钟）</div>
-          <input
-            v-model.number="form.avg_service_minutes"
-            type="number"
-            min="1"
-            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-
         <div class="bg-white rounded-xl shadow-sm overflow-hidden">
           <div class="px-4 py-4 border-b border-gray-100">
             <div class="text-gray-800 font-medium">项目列表</div>
@@ -89,18 +79,19 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { merchantApi } from '../../api'
+import { merchantProjectApi } from '../../api'
 
 const router = useRouter()
 
 const loading = ref(true)
 const saving = ref(false)
 
+const removedProjectIds = ref([])
+
 const form = ref({
-  avg_service_minutes: 30,
   projects: [
-    { name: 'A 项目(课型)', duration: 45 },
-    { name: 'B 项目(课型)', duration: 60 }
+    { id: null, name: 'A 项目(课型)', duration: 45 },
+    { id: null, name: 'B 项目(课型)', duration: 60 }
   ]
 })
 
@@ -120,14 +111,20 @@ const goBack = () => {
 const load = async () => {
   loading.value = true
   try {
-    const res = await merchantApi.getCurrentMerchant()
-    const m = res.data.data || {}
+    const res = await merchantProjectApi.list()
+    const list = res.data?.data || []
+    removedProjectIds.value = []
     form.value = {
-      avg_service_minutes: m.avg_service_minutes || 30,
-      projects: m.projects || [
-        { name: 'A 项目(课型)', duration: 45 },
-        { name: 'B 项目(课型)', duration: 60 }
-      ]
+      projects: list.length > 0
+        ? list.map(p => ({
+          id: p.id,
+          name: p.name,
+          duration: p.duration
+        }))
+        : [
+          { id: null, name: 'A 项目(课型)', duration: 45 },
+          { id: null, name: 'B 项目(课型)', duration: 60 }
+        ]
     }
   } catch (e) {
     console.error('加载项目设置失败', e)
@@ -138,21 +135,19 @@ const load = async () => {
 }
 
 const addProject = () => {
-  form.value.projects.push({ name: '', duration: 30 })
+  form.value.projects.push({ id: null, name: '', duration: 30 })
 }
 
 const removeProject = (index) => {
+  const p = form.value.projects[index]
+  if (p && p.id) {
+    removedProjectIds.value.push(p.id)
+  }
   form.value.projects.splice(index, 1)
 }
 
 const save = async () => {
   if (saving.value) return
-  
-  // 验证平均服务时长
-  if (!form.value.avg_service_minutes || form.value.avg_service_minutes < 1) {
-    alert('平均服务时长必须大于等于1')
-    return
-  }
   
   // 验证项目列表
   for (let i = 0; i < form.value.projects.length; i++) {
@@ -169,10 +164,28 @@ const save = async () => {
 
   saving.value = true
   try {
-    await merchantApi.updateCurrentMerchantServices({
-      avg_service_minutes: form.value.avg_service_minutes,
-      projects: form.value.projects
-    })
+    // 先删除
+    for (const id of removedProjectIds.value) {
+      try {
+        await merchantProjectApi.delete(id)
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // 再新增/更新
+    for (const p of form.value.projects) {
+      const payload = {
+        name: (p.name || '').trim(),
+        duration: Number(p.duration || 0)
+      }
+      if (p.id) {
+        await merchantProjectApi.update(p.id, payload)
+      } else {
+        await merchantProjectApi.create(payload)
+      }
+    }
+
     alert('保存成功')
     await load()
   } catch (e) {

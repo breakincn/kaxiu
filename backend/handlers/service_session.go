@@ -224,115 +224,25 @@ func ChooseServiceSessionRoom(c *gin.Context) {
 
 	sid := c.Param("id")
 	now := time.Now()
-
 	var out models.ServiceSession
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 		var s models.ServiceSession
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", sid, merchantID).First(&s).Error; err != nil {
 			return err
 		}
-		if s.Status != "room_selecting" {
-			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可选房"}
+		if s.Status == "finished" || s.Status == "canceled" {
+			return apiErr{status: http.StatusBadRequest, msg: "会话已结束"}
 		}
-
-		var merchant models.Merchant
-		if err := tx.First(&merchant, merchantID).Error; err != nil {
-			return err
-		}
-		if !merchant.SupportRoom {
-			return apiErr{status: http.StatusBadRequest, msg: "商户未开启房间功能"}
-		}
-
-		var room models.Room
-		if err := tx.Where("id = ? AND merchant_id = ? AND is_active = ?", input.RoomID, merchantID, true).First(&room).Error; err != nil {
-			return apiErr{status: http.StatusBadRequest, msg: "房间不可用"}
-		}
-
-		var cnt int64
-		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','precheck_pending','delay_pending','serving','auto_finishing')", merchantID, room.ID).
-			Count(&cnt).Error; err != nil {
-			return err
-		}
-		if cnt > 0 {
-			return apiErr{status: http.StatusBadRequest, msg: "房间已占用"}
-		}
-
 		lockedAt := now
-		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
-			"room_id":        room.ID,
-			"room_locked_at": lockedAt,
-			"status":         "room_locked",
-		}).Error; err != nil {
-			return err
-		}
-		if err := tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error; err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		var ae apiErr
-		if errors.As(err, &ae) {
-			c.JSON(ae.status, gin.H{"error": ae.msg})
-			return
-		}
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "会话不存在"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"data": out})
-}
-
-func ExtendServiceSessionDuration(c *gin.Context) {
-	// 技师或商户都可操作
-	merchantIDAny, ok := c.Get("merchant_id")
-	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
-		return
-	}
-	merchantID, _ := merchantIDAny.(uint)
-	if merchantID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
-		return
-	}
-
-	var input struct {
-		Minutes uint `json:"minutes" binding:"required,min=5,max=180"`
-	}
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	sid := c.Param("id")
-	var out models.ServiceSession
-	err := config.DB.Transaction(func(tx *gorm.DB) error {
-		var s models.ServiceSession
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", sid, merchantID).First(&s).Error; err != nil {
-			return err
-		}
-
-		if s.Status != "serving" {
-			return apiErr{status: http.StatusBadRequest, msg: "仅服务中可延长"}
-		}
-
-		// 延长服务时长与自动结单延迟
 		updates := map[string]interface{}{
-			"duration_minutes":          gorm.Expr("duration_minutes + ?", input.Minutes),
-			"auto_finish_delay_seconds": gorm.Expr("auto_finish_delay_seconds + ?", input.Minutes*60),
-		}
-		if s.ScheduledFinishAt != nil {
-			updates["scheduled_finish_at"] = s.ScheduledFinishAt.Add(time.Duration(input.Minutes) * time.Minute)
+			"room_id":                 input.RoomID,
+			"room_locked_at":          lockedAt,
+			"status":                  "room_locked",
+			"room_select_deadline_at": nil,
 		}
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err
 		}
-
 		return tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error
 	})
 	if err != nil {
@@ -373,29 +283,30 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 	}
 
 	sid := c.Param("id")
-	cutoff := time.Now().Add(-15 * time.Minute)
+	now := time.Now()
 	var out models.ServiceSession
-
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 		var s models.ServiceSession
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", sid, merchantID).First(&s).Error; err != nil {
 			return err
 		}
-		if s.Status != "staff_selecting" && s.Status != "room_locked" {
-			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可选工作人员"}
+		if s.Status == "finished" || s.Status == "canceled" {
+			return apiErr{status: http.StatusBadRequest, msg: "会话已结束"}
 		}
-
-		var att models.TechnicianAttendance
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND status IN ('available','idle')", merchantID, input.TechnicianID, cutoff).
-			First(&att).Error; err != nil {
-			return apiErr{status: http.StatusBadRequest, msg: "工作人员不可选"}
-		}
-
-		if err := tx.Model(&models.TechnicianAttendance{}).Where("id = ?", att.ID).Update("status", "busy").Error; err != nil {
+		var m models.Merchant
+		if err := tx.First(&m, merchantID).Error; err != nil {
 			return err
 		}
-
+		if m.SupportRoom && s.RoomID == nil {
+			return apiErr{status: http.StatusBadRequest, msg: "请先选择房间"}
+		}
+		var tech models.Technician
+		if err := tx.Where("id = ? AND merchant_id = ?", input.TechnicianID, merchantID).First(&tech).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apiErr{status: http.StatusBadRequest, msg: "无效的工作人员"}
+			}
+			return err
+		}
 		updates := map[string]interface{}{
 			"technician_id": input.TechnicianID,
 			"status":        "precheck_pending",
@@ -403,6 +314,7 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err
 		}
+		_ = now
 		return tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error
 	})
 	if err != nil {
@@ -418,8 +330,7 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{"data": out, "precheck_code": "SS:" + strconv.FormatUint(uint64(out.ID), 10)})
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
 func ExtendServiceSession(c *gin.Context) {
@@ -434,13 +345,9 @@ func ExtendServiceSession(c *gin.Context) {
 		return
 	}
 
-	var input struct {
-		AddMinutes *int `json:"add_minutes"`
-	}
-	_ = c.ShouldBindJSON(&input)
-
 	sid := c.Param("id")
 	now := time.Now()
+	addMinutes := 50
 	var remainTimes int
 	var out models.ServiceSession
 
@@ -452,19 +359,6 @@ func ExtendServiceSession(c *gin.Context) {
 		if s.Status == "finished" || s.Status == "canceled" {
 			return apiErr{status: http.StatusBadRequest, msg: "会话已结束"}
 		}
-
-		var merchant models.Merchant
-		if err := tx.First(&merchant, merchantID).Error; err != nil {
-			return err
-		}
-		addMinutes := merchant.AvgServiceMinutes
-		if input.AddMinutes != nil && *input.AddMinutes > 0 {
-			addMinutes = *input.AddMinutes
-		}
-		if addMinutes <= 0 {
-			addMinutes = 50
-		}
-
 		var card models.Card
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&card, s.CardID).Error; err != nil {
 			return err
@@ -523,6 +417,73 @@ func ExtendServiceSession(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"data": out, "remain_times": remainTimes})
+}
+
+func ExtendServiceSessionDuration(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, _ := merchantIDAny.(uint)
+	if merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var input struct {
+		AddMinutes *int `json:"add_minutes"`
+		Minutes    *int `json:"minutes"`
+	}
+	_ = c.ShouldBindJSON(&input)
+
+	addMinutes := 50
+	if input.AddMinutes != nil && *input.AddMinutes > 0 {
+		addMinutes = *input.AddMinutes
+	} else if input.Minutes != nil && *input.Minutes > 0 {
+		addMinutes = *input.Minutes
+	}
+	if addMinutes < 5 || addMinutes > 180 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "minutes 范围应为 5-180"})
+		return
+	}
+
+	sid := c.Param("id")
+	var out models.ServiceSession
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		var s models.ServiceSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", sid, merchantID).First(&s).Error; err != nil {
+			return err
+		}
+		if s.Status != "serving" {
+			return apiErr{status: http.StatusBadRequest, msg: "仅服务中可延长"}
+		}
+
+		updates := map[string]interface{}{
+			"duration_minutes":          gorm.Expr("duration_minutes + ?", addMinutes),
+			"auto_finish_delay_seconds": gorm.Expr("auto_finish_delay_seconds + ?", addMinutes*60),
+		}
+		if s.ScheduledFinishAt != nil {
+			updates["scheduled_finish_at"] = s.ScheduledFinishAt.Add(time.Duration(addMinutes) * time.Minute)
+		}
+		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		return tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error
+	})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "会话不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"kabao/models"
 	"log"
 	"os"
@@ -55,6 +56,9 @@ func InitDB() {
 		&models.VerifyCode{},
 		&models.SMSCode{},
 		&models.InviteCode{},
+		// 项目（商户项目表 + 卡片模板项目关联表）
+		&models.MerchantProject{},
+		&models.CardTemplateProject{},
 		// Shop 模块（商户收款二维码 + 卡包直购）
 		&models.PaymentConfig{},
 		&models.CardTemplate{},
@@ -64,6 +68,8 @@ func InitDB() {
 	if err != nil {
 		log.Fatal("数据库迁移失败:", err)
 	}
+
+	migrateLegacyMerchantProjects()
 
 	// 兼容历史数据：为旧用户补充默认 username，避免新增唯一索引导致异常
 	DB.Exec("UPDATE users SET username = CONCAT('u', id) WHERE username IS NULL OR username = ''")
@@ -110,6 +116,50 @@ func InitDB() {
 
 	// 初始化测试数据
 	initTestData()
+}
+
+func migrateLegacyMerchantProjects() {
+	type row struct {
+		ID       uint
+		Projects string
+	}
+	var rows []row
+	DB.Raw("SELECT id, projects FROM merchants WHERE projects IS NOT NULL AND projects <> '' AND projects <> '[]'").Scan(&rows)
+	if len(rows) == 0 {
+		return
+	}
+
+	type legacyProject struct {
+		Name     string `json:"name"`
+		Duration int    `json:"duration"`
+	}
+
+	for _, r := range rows {
+		var cnt int64
+		DB.Model(&models.MerchantProject{}).Where("merchant_id = ?", r.ID).Count(&cnt)
+		if cnt > 0 {
+			continue
+		}
+		var arr []legacyProject
+		if err := json.Unmarshal([]byte(r.Projects), &arr); err != nil {
+			continue
+		}
+		for i, p := range arr {
+			name := p.Name
+			if name == "" || p.Duration <= 0 {
+				continue
+			}
+			mp := models.MerchantProject{
+				MerchantID: r.ID,
+				Name:       name,
+				Duration:   p.Duration,
+				Price:      0,
+				IsActive:   true,
+				SortOrder:  i,
+			}
+			DB.Create(&mp)
+		}
+	}
 }
 
 func initServiceRoles() {
@@ -181,8 +231,8 @@ func initTestData() {
 
 	// 创建测试商户
 	merchants := []models.Merchant{
-		{Name: "快剪理发店", Type: "理发", SupportAppointment: true, AvgServiceMinutes: 30},
-		{Name: "顺风洗车", Type: "洗车", SupportAppointment: false, AvgServiceMinutes: 20},
+		{Name: "快剪理发店", Type: "理发", SupportAppointment: true},
+		{Name: "顺风洗车", Type: "洗车", SupportAppointment: false},
 	}
 	DB.Create(&merchants)
 

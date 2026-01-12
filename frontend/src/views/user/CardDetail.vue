@@ -466,9 +466,7 @@ const formatFinishExpireTime = (usage) => {
 const getFinishAvailableAtMs = (usage) => {
   const usedAtMs = getUsageUsedAtMs(usage)
   if (!usedAtMs) return 0
-  let avg = Number(card.value?.merchant?.avg_service_minutes || 0)
-  if (!avg || avg <= 0) avg = 15
-  return usedAtMs + avg * 60 * 1000
+  return usedAtMs + 15 * 60 * 1000
 }
 
 const nowForFinish = ref(Date.now())
