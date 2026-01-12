@@ -104,6 +104,7 @@ type Usage struct {
 	ID                 uint       `json:"id" gorm:"primaryKey;comment:记录ID"`
 	CardID             uint       `json:"card_id" gorm:"index;comment:卡片ID（外键关联cards表）"`
 	MerchantID         uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
+	ProjectID          *uint      `json:"project_id" gorm:"index;comment:项目ID（merchant_projects表主键，可为空）"`
 	UsedTimes          int        `json:"used_times" gorm:"comment:本次核销次数"`
 	UsedAt             *time.Time `json:"used_at" gorm:"type:datetime(3);comment:使用时间"`
 	VerifyCode         string     `json:"verify_code" gorm:"size:50;index;default:'';comment:核销码（用于结单/追溯）"`
@@ -113,9 +114,10 @@ type Usage struct {
 	Status             string     `json:"status" gorm:"size:20;default:success;comment:状态（in_progress-进行中，success-完成，failed-失败）"`
 	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
-	Card       Card        `json:"card" gorm:"foreignKey:CardID"`
-	Merchant   Merchant    `json:"merchant" gorm:"foreignKey:MerchantID"`
-	Technician *Technician `json:"technician" gorm:"foreignKey:TechnicianID"`
+	Card       Card             `json:"card" gorm:"foreignKey:CardID"`
+	Merchant   Merchant         `json:"merchant" gorm:"foreignKey:MerchantID"`
+	Project    *MerchantProject `json:"project" gorm:"foreignKey:ProjectID"`
+	Technician *Technician      `json:"technician" gorm:"foreignKey:TechnicianID"`
 }
 
 func (Usage) TableName() string {
@@ -171,6 +173,7 @@ func (Appointment) TableComment() string {
 type VerifyCode struct {
 	ID        uint       `json:"id" gorm:"primaryKey;comment:核销码ID"`
 	CardID    uint       `json:"card_id" gorm:"index;comment:卡片ID（外键关联cards表）"`
+	ProjectID *uint      `json:"project_id" gorm:"index;comment:项目ID（merchant_projects表主键，可为空）"`
 	Code      string     `json:"code" gorm:"size:50;uniqueIndex;comment:核销码"`
 	ExpireAt  int64      `json:"expire_at" gorm:"comment:过期时间（Unix时间戳）"`
 	Used      bool       `json:"used" gorm:"default:false;comment:是否已使用（0-未使用，1-已使用）"`

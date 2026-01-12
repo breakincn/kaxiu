@@ -48,6 +48,7 @@ func InitDB() {
 		&models.MerchantRolePermissionOverride{},
 		&models.SystemConfig{},
 		&models.Card{},
+		&models.CardProject{},
 		&models.Usage{},
 		&models.Room{},
 		&models.ServiceSession{},

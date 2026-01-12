@@ -83,6 +83,73 @@ func GetCard(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": card})
 }
 
+func GetCardProjects(c *gin.Context) {
+	cardID := c.Param("id")
+	var card models.Card
+	if err := config.DB.First(&card, cardID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "卡片不存在"})
+		return
+	}
+
+	if userIDAny, ok := c.Get("user_id"); ok {
+		if userID, ok2 := userIDAny.(uint); ok2 && userID > 0 {
+			if card.UserID != userID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此卡"})
+				return
+			}
+		}
+	}
+
+	// 规则A：优先从 card_projects 读取卡片已绑定项目
+	var boundIDs []uint
+	config.DB.Model(&models.CardProject{}).
+		Where("card_id = ?", card.ID).
+		Order("id asc").
+		Pluck("project_id", &boundIDs)
+	if len(boundIDs) > 0 {
+		var projects []models.MerchantProject
+		config.DB.
+			Where("merchant_id = ? AND id IN ?", card.MerchantID, boundIDs).
+			Order("sort_order asc, id asc").
+			Find(&projects)
+		c.JSON(http.StatusOK, gin.H{"data": projects})
+		return
+	}
+
+	// 兼容：老卡没有 card_projects 时，回退到 直购订单 -> 模板 -> 模板项目
+	var purchase models.DirectPurchase
+	err := config.DB.
+		Where("card_id = ?", card.ID).
+		Order("id desc").
+		First(&purchase).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusOK, gin.H{"data": []models.MerchantProject{}})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+
+	var projectIDs []uint
+	config.DB.Model(&models.CardTemplateProject{}).
+		Where("card_template_id = ?", purchase.CardTemplateID).
+		Order("id asc").
+		Pluck("project_id", &projectIDs)
+	if len(projectIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{"data": []models.MerchantProject{}})
+		return
+	}
+
+	var projects []models.MerchantProject
+	config.DB.
+		Where("merchant_id = ? AND id IN ?", card.MerchantID, projectIDs).
+		Order("sort_order asc, id asc").
+		Find(&projects)
+
+	c.JSON(http.StatusOK, gin.H{"data": projects})
+}
+
 func GetNextMerchantCardNo(c *gin.Context) {
 	merchantIDAny, ok := c.Get("merchant_id")
 	if !ok {
@@ -275,6 +342,7 @@ func CreateCard(c *gin.Context) {
 		RechargeAmount int    `json:"recharge_amount"`
 		StartDate      string `json:"start_date"`
 		EndDate        string `json:"end_date" binding:"required"`
+		ProjectIDs     []uint `json:"project_ids"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -311,6 +379,30 @@ func CreateCard(c *gin.Context) {
 	now := time.Now()
 	var card models.Card
 	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		// 校验项目ID（可选）
+		var validProjectIDs []uint
+		if len(input.ProjectIDs) > 0 {
+			uniq := make(map[uint]struct{}, len(input.ProjectIDs))
+			for _, pid := range input.ProjectIDs {
+				if pid == 0 {
+					continue
+				}
+				uniq[pid] = struct{}{}
+			}
+			for pid := range uniq {
+				validProjectIDs = append(validProjectIDs, pid)
+			}
+			var cnt int64
+			if err := tx.Model(&models.MerchantProject{}).
+				Where("merchant_id = ? AND id IN ?", merchantID, validProjectIDs).
+				Count(&cnt).Error; err != nil {
+				return err
+			}
+			if cnt != int64(len(validProjectIDs)) {
+				return apiErr{status: http.StatusBadRequest, msg: "包含无效的项目"}
+			}
+		}
+
 		cardNo := strings.TrimSpace(input.CardNo)
 		if cardNo == "" {
 			v, err := nextMerchantCardNo(tx, merchantID)
@@ -342,8 +434,27 @@ func CreateCard(c *gin.Context) {
 			card.StartDate = dateOnlyPtr(now)
 		}
 
-		return tx.Create(&card).Error
+		if err := tx.Create(&card).Error; err != nil {
+			return err
+		}
+
+		// 写入 card_projects
+		if len(validProjectIDs) > 0 {
+			for _, pid := range validProjectIDs {
+				cp := models.CardProject{CardID: card.ID, ProjectID: pid}
+				if err := tx.Create(&cp).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
 	}); err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -404,6 +515,11 @@ func GenerateVerifyCode(c *gin.Context) {
 		return
 	}
 
+	var input struct {
+		ProjectID *uint `json:"project_id"`
+	}
+	_ = c.ShouldBindJSON(&input)
+
 	// 用户端仅允许生成自己的卡片核销码
 	if userIDAny, ok := c.Get("user_id"); ok {
 		if userID, ok2 := userIDAny.(uint); ok2 && userID > 0 {
@@ -426,6 +542,50 @@ func GenerateVerifyCode(c *gin.Context) {
 		return
 	}
 
+	// 规则A：优先使用 card_projects 作为可选项目来源
+	var ids []uint
+	config.DB.Model(&models.CardProject{}).
+		Where("card_id = ?", card.ID).
+		Order("id asc").
+		Pluck("project_id", &ids)
+	if len(ids) == 0 {
+		// 兼容：老卡没有 card_projects 时，回退到 直购订单 -> 模板 -> 模板项目
+		var purchase models.DirectPurchase
+		err := config.DB.
+			Where("card_id = ?", card.ID).
+			Order("id desc").
+			First(&purchase).Error
+		if err == nil {
+			config.DB.Model(&models.CardTemplateProject{}).
+				Where("card_template_id = ?", purchase.CardTemplateID).
+				Order("id asc").
+				Pluck("project_id", &ids)
+		}
+	}
+	// 多项目时必须选项目；单项目时默认该项目
+	if len(ids) > 1 {
+		if input.ProjectID == nil || *input.ProjectID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请先选择项目"})
+			return
+		}
+		ok := false
+		for _, v := range ids {
+			if v == *input.ProjectID {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
+			return
+		}
+	} else if len(ids) == 1 {
+		if input.ProjectID == nil || *input.ProjectID == 0 {
+			pid := ids[0]
+			input.ProjectID = &pid
+		}
+	}
+
 	// 恢复为默认短有效期核销码：每次生成都强制生成新码，并使旧未使用码立即失效
 	config.DB.Model(&models.VerifyCode{}).
 		Where("card_id = ? AND used = ? AND expire_at > ?", card.ID, false, now.Unix()).
@@ -434,14 +594,15 @@ func GenerateVerifyCode(c *gin.Context) {
 	code := uuid.New().String()[:8]
 	expireAt := now.Add(5 * time.Minute).Unix()
 
-	verifyCode := models.VerifyCode{CardID: card.ID, Code: code, ExpireAt: expireAt, Used: false}
+	verifyCode := models.VerifyCode{CardID: card.ID, ProjectID: input.ProjectID, Code: code, ExpireAt: expireAt, Used: false}
 	config.DB.Create(&verifyCode)
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"code":      code,
-			"expire_at": expireAt,
-			"card_id":   card.ID,
+			"code":       code,
+			"expire_at":  expireAt,
+			"card_id":    card.ID,
+			"project_id": input.ProjectID,
 		},
 	})
 }
@@ -552,6 +713,7 @@ func VerifyCard(c *gin.Context) {
 		usage := models.Usage{
 			CardID:             card.ID,
 			MerchantID:         card.MerchantID,
+			ProjectID:          verifyCode.ProjectID,
 			UsedTimes:          1,
 			UsedAt:             &usedAt,
 			VerifyCode:         verifyCode.Code,
@@ -580,6 +742,7 @@ func VerifyCard(c *gin.Context) {
 			MerchantID:             merchantID,
 			UserID:                 card.UserID,
 			CardID:                 card.ID,
+			ProjectID:              verifyCode.ProjectID,
 			InitialUsageID:         usage.ID,
 			VerifyCode:             verifyCode.Code,
 			Status:                 status,

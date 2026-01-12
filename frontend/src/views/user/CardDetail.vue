@@ -28,6 +28,12 @@
             <span class="text-gray-500">卡类型</span>
             <span class="text-gray-800">{{ card.card_type }}</span>
           </div>
+          <div v-if="projectOptions.length > 0" class="flex justify-between">
+            <span class="text-gray-500">包含项目</span>
+            <span class="text-gray-800 text-right max-w-[70%]">
+              {{ projectOptions.map(p => p.name).join('、') }}
+            </span>
+          </div>
           <div class="flex justify-between">
             <span class="text-gray-500">开卡/充值</span>
             <span class="text-gray-800">{{ formatDateTime(card.recharge_at) }} / ¥{{ card.recharge_amount }}</span>
@@ -158,6 +164,30 @@
       </div>
     </div>
 
+    <!-- 选择项目弹窗（多项目时生成核销码前选择） -->
+    <div v-if="showProjectModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="closeProjectModal">
+      <div class="bg-white rounded-xl w-[90%] max-w-sm overflow-hidden">
+        <div class="px-4 py-3 border-b flex items-center justify-between">
+          <div class="font-medium text-gray-800">请选择项目</div>
+          <button class="text-gray-400" @click="closeProjectModal">×</button>
+        </div>
+        <div class="p-4 max-h-[60vh] overflow-y-auto">
+          <div v-if="projectOptions.length === 0" class="text-center text-gray-400 py-6">暂无可选项目</div>
+          <label v-for="p in projectOptions" :key="p.id" class="flex items-center gap-3 py-2">
+            <input type="radio" name="project" :value="p.id" v-model="selectedProjectId" />
+            <div class="flex-1">
+              <div class="text-gray-800">{{ p.name }}</div>
+              <div v-if="p.duration" class="text-gray-400 text-xs">时长 {{ p.duration }} 分钟</div>
+            </div>
+          </label>
+        </div>
+        <div class="px-4 py-3 border-t flex gap-3">
+          <button class="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600" @click="closeProjectModal">取消</button>
+          <button class="flex-1 py-2.5 rounded-lg bg-primary text-white disabled:opacity-50" :disabled="!selectedProjectId || generating" @click="confirmProjectAndGenerate">确认</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 使用记录 -->
     <div class="px-4 mt-4">
       <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
@@ -189,6 +219,9 @@
               <div class="flex items-center gap-2">
                 <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
                 <span class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</span>
+              </div>
+              <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
+                {{ getUsageProjectText(usage) }}
               </div>
               <div v-if="getUsageOperatorInfo(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageOperatorInfo(usage) }}
@@ -411,6 +444,9 @@ const codeExpireTime = ref('')
 const generating = ref(false)
 const verifyQrDataUrl = ref('')
 let verifyExpireTimer = null
+const projectOptions = ref([])
+const showProjectModal = ref(false)
+const selectedProjectId = ref(null)
 const appointing = ref(false)
 const canceling = ref(false)
 
@@ -634,7 +670,9 @@ const fetchCard = async () => {
     if (card.value.merchant_id) {
       fetchNotices(card.value.merchant_id)
     }
-    
+
+    await loadCardProjects()
+
     fetchUsages()
     fetchAppointment()
   } catch (err) {
@@ -732,33 +770,92 @@ const cancelButtonText = computed(() => {
   return canceling.value ? '取消中...' : '取消预约'
 })
 
-const generateCode = async () => {
-  if (generating.value || card.value.remain_times <= 0) return
-  
+const closeProjectModal = () => {
+  showProjectModal.value = false
+}
+
+const loadCardProjects = async () => {
+  try {
+    const res = await cardApi.getCardProjects(route.params.id)
+    projectOptions.value = Array.isArray(res?.data?.data) ? res.data.data : []
+  } catch (e) {
+    projectOptions.value = []
+  }
+}
+
+const getProjectById = (id) => {
+  const pid = Number(id || 0)
+  if (!pid) return null
+  return projectOptions.value.find(p => Number(p.id) === pid) || null
+}
+
+const getUsageProjectText = (usage) => {
+  const pFromUsage = usage?.project
+  if (pFromUsage && pFromUsage.name) {
+    const duration = Number(pFromUsage.duration || 0)
+    return duration > 0 ? `${pFromUsage.name}（${duration}分钟）` : pFromUsage.name
+  }
+  const pid = usage?.project_id
+  if (!pid) return ''
+  const p = getProjectById(pid)
+  if (!p) return ''
+  const duration = Number(p.duration || 0)
+  return duration > 0 ? `${p.name}（${duration}分钟）` : p.name
+}
+
+const doGenerateVerifyCode = async (projectId) => {
+  const payload = projectId ? { project_id: projectId } : undefined
+  const res = await cardApi.generateVerifyCode(route.params.id, payload)
+  verifyCode.value = res.data.data.code
+  const expireAt = new Date(res.data.data.expire_at * 1000)
+  codeExpireTime.value = expireAt.toLocaleTimeString()
+
+  verifyQrDataUrl.value = await QRCode.toDataURL(verifyCode.value, {
+    margin: 1,
+    scale: 8,
+    errorCorrectionLevel: 'M'
+  })
+
+  if (verifyExpireTimer) {
+    clearTimeout(verifyExpireTimer)
+    verifyExpireTimer = null
+  }
+  const delayMs = Math.max(0, expireAt.getTime() - Date.now())
+  verifyExpireTimer = setTimeout(() => {
+    verifyCode.value = ''
+    codeExpireTime.value = ''
+    verifyQrDataUrl.value = ''
+    verifyExpireTimer = null
+  }, delayMs)
+}
+
+const confirmProjectAndGenerate = async () => {
+  if (!selectedProjectId.value) return
   generating.value = true
   try {
-    const res = await cardApi.generateVerifyCode(route.params.id)
-    verifyCode.value = res.data.data.code
-    const expireAt = new Date(res.data.data.expire_at * 1000)
-    codeExpireTime.value = expireAt.toLocaleTimeString()
+    await doGenerateVerifyCode(Number(selectedProjectId.value))
+    showProjectModal.value = false
+  } catch (err) {
+    alert(err.response?.data?.error || '生成核销码失败')
+  } finally {
+    generating.value = false
+  }
+}
 
-		verifyQrDataUrl.value = await QRCode.toDataURL(verifyCode.value, {
-			margin: 1,
-			scale: 8,
-			errorCorrectionLevel: 'M'
-		})
+const generateCode = async () => {
+  if (generating.value || card.value.remain_times <= 0) return
 
-		if (verifyExpireTimer) {
-			clearTimeout(verifyExpireTimer)
-			verifyExpireTimer = null
-		}
-		const delayMs = Math.max(0, expireAt.getTime() - Date.now())
-		verifyExpireTimer = setTimeout(() => {
-			verifyCode.value = ''
-			codeExpireTime.value = ''
-			verifyQrDataUrl.value = ''
-			verifyExpireTimer = null
-		}, delayMs)
+  await loadCardProjects()
+  if (projectOptions.value.length > 1) {
+    selectedProjectId.value = null
+    showProjectModal.value = true
+    return
+  }
+
+  generating.value = true
+  try {
+    const onlyProjectId = projectOptions.value.length === 1 ? projectOptions.value[0].id : null
+    await doGenerateVerifyCode(onlyProjectId)
   } catch (err) {
     alert(err.response?.data?.error || '生成核销码失败')
   } finally {

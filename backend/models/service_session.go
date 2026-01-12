@@ -7,6 +7,7 @@ type ServiceSession struct {
 	MerchantID     uint   `json:"merchant_id" gorm:"index;comment:商户ID"`
 	UserID         uint   `json:"user_id" gorm:"index;comment:用户ID"`
 	CardID         uint   `json:"card_id" gorm:"index;comment:卡片ID"`
+	ProjectID      *uint  `json:"project_id" gorm:"index;comment:项目ID（merchant_projects表主键，可为空）"`
 	InitialUsageID uint   `json:"initial_usage_id" gorm:"index;comment:首次核销usage_id"`
 	VerifyCode     string `json:"verify_code" gorm:"size:50;index;default:'';comment:首次核销码"`
 	RoomID         *uint  `json:"room_id" gorm:"index;comment:房间ID"`

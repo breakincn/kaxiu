@@ -296,7 +296,8 @@ const submit = async () => {
       total_times: tpl.card_type === 'balance' ? 0 : (Number(tpl.total_times) || 0),
       recharge_amount: tpl.card_type === 'balance' ? Math.round((Number(tpl.recharge_amount) || 0) / 100) : 0,
       start_date: startDate,
-      end_date: endDate
+      end_date: endDate,
+      project_ids: Array.isArray(tpl.project_ids) ? tpl.project_ids : []
     }
 
     if (tpl.card_type === 'balance' && (!payload.recharge_amount || payload.recharge_amount <= 0)) {

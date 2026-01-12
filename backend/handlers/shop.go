@@ -847,6 +847,29 @@ func MerchantConfirmDirectPurchase(c *gin.Context) {
 			return err
 		}
 
+		// 规则A：开卡时将模板项目固化到卡片项目（card_projects）
+		var projectIDs []uint
+		tx.Model(&models.CardTemplateProject{}).
+			Where("card_template_id = ?", template.ID).
+			Order("id asc").
+			Pluck("project_id", &projectIDs)
+		if len(projectIDs) > 0 {
+			uniq := make(map[uint]struct{}, len(projectIDs))
+			for _, pid := range projectIDs {
+				if pid == 0 {
+					continue
+				}
+				if _, ok := uniq[pid]; ok {
+					continue
+				}
+				uniq[pid] = struct{}{}
+				cp := models.CardProject{CardID: card.ID, ProjectID: pid}
+				if err := tx.Create(&cp).Error; err != nil {
+					return err
+				}
+			}
+		}
+
 		if err := tx.Model(&purchase).Updates(map[string]interface{}{
 			"status":       "confirmed",
 			"confirmed_at": &confirmedAt,
