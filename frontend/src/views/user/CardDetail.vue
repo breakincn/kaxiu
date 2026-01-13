@@ -449,6 +449,10 @@ const generating = ref(false)
 const verifyQrDataUrl = ref('')
 const verifyCodeProject = ref(null) // 当前核销码对应的项目
 let verifyExpireTimer = null
+
+let verifyStatusPollTimer = null
+const verifyStatusChecking = ref(false)
+const hasJumpedToRoomSelect = ref(false)
 const showProjectModal = ref(false)
 const selectedProjectId = ref(null)
 const appointing = ref(false)
@@ -476,6 +480,60 @@ const getUsageStatusClass = (usage) => {
   if (s === 'in_progress') return 'text-blue-500'
   if (s === 'success') return ''
   return 'text-red-500'
+}
+
+const stopVerifyStatusPoll = () => {
+  if (verifyStatusPollTimer) {
+    clearInterval(verifyStatusPollTimer)
+    verifyStatusPollTimer = null
+  }
+  verifyStatusChecking.value = false
+}
+
+const checkVerifyStatusAndMaybeJump = async () => {
+  if (verifyStatusChecking.value) return
+  if (hasJumpedToRoomSelect.value) return
+  if (!verifyCode.value) return
+  if (!card.value?.merchant?.support_room) return
+
+  verifyStatusChecking.value = true
+  try {
+    const res = await cardApi.getVerifyCodeStatus(verifyCode.value)
+    const data = res?.data?.data || {}
+    const used = Boolean(data.used)
+    const supportRoom = Boolean(data.merchant_support_room)
+    const nextStep = String(data.next_step || '')
+    const sessionId = data.session_id
+
+    if (used && supportRoom && nextStep === 'room_select' && sessionId) {
+      hasJumpedToRoomSelect.value = true
+      stopVerifyStatusPoll()
+      router.push({ path: `/user/service-sessions/${sessionId}`, query: { next_step: 'room_select' } })
+    }
+  } catch (_) {
+    // ignore
+  } finally {
+    verifyStatusChecking.value = false
+  }
+}
+
+const startVerifyStatusPoll = async () => {
+  stopVerifyStatusPoll()
+  hasJumpedToRoomSelect.value = false
+  if (!verifyCode.value) return
+  if (!card.value?.merchant?.support_room) return
+
+  await checkVerifyStatusAndMaybeJump()
+  if (hasJumpedToRoomSelect.value) return
+
+  verifyStatusPollTimer = setInterval(() => {
+    // 核销码被清空/过期后停止轮询
+    if (!verifyCode.value) {
+      stopVerifyStatusPoll()
+      return
+    }
+    checkVerifyStatusAndMaybeJump()
+  }, 1200)
 }
 
 const formatExpireTime = (expireAtUnix) => {
@@ -811,6 +869,8 @@ const doGenerateVerifyCode = async (projectId) => {
     errorCorrectionLevel: 'M'
   })
 
+  startVerifyStatusPoll()
+
   if (verifyExpireTimer) {
     clearTimeout(verifyExpireTimer)
     verifyExpireTimer = null
@@ -822,6 +882,8 @@ const doGenerateVerifyCode = async (projectId) => {
     verifyQrDataUrl.value = ''
     verifyCodeProject.value = null
     verifyExpireTimer = null
+
+    stopVerifyStatusPoll()
   }, delayMs)
 }
 
@@ -1238,6 +1300,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopCountdownTimer()
+  stopVerifyStatusPoll()
   if (verifyExpireTimer) {
     clearTimeout(verifyExpireTimer)
     verifyExpireTimer = null

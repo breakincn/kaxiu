@@ -46,6 +46,7 @@ func SetupUserRoutes(r *gin.Engine) {
 	auth.GET("/users/:id/cards", handlers.GetUserCards)
 	auth.POST("/cards/:id/verify-code", handlers.GenerateVerifyCode)
 	auth.GET("/cards/:id/usages", handlers.GetCardUsages)
+	auth.GET("/verify-codes/:code/status", handlers.UserGetVerifyCodeStatus)
 
 	// 服务会话（用户端：选房/选工作人员/查询）
 	auth.GET("/service-sessions/:id", handlers.UserGetServiceSession)

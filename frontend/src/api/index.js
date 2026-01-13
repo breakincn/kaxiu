@@ -206,6 +206,7 @@ export const cardApi = {
   getCard: (id) => api.get(`/user/cards/${id}`),
   getCardProjects: (id) => api.get(`/user/cards/${id}/projects`),
   getUserCards: (userId, status) => api.get(`/user/users/${userId}/cards`, { params: { status } }),
+  getVerifyCodeStatus: (code) => api.get(`/user/verify-codes/${encodeURIComponent(code)}/status`),
   getMerchantCards: (merchantId, params) => api.get(`/merchant/merchants/${merchantId}/cards`, { params }),
   getMerchantCard: (id) => api.get(`/merchant/cards/${id}`),
   createCard: (data) => api.post('/merchant/cards', data),

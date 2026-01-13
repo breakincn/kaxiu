@@ -34,6 +34,81 @@ func UserGetServiceSession(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": s})
 }
 
+func UserGetVerifyCodeStatus(c *gin.Context) {
+	userIDAny, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	userID, _ := userIDAny.(uint)
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	code := c.Param("code")
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "code 不能为空"})
+		return
+	}
+
+	var vc models.VerifyCode
+	if err := config.DB.Where("code = ?", code).First(&vc).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "核销码不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+
+	var card models.Card
+	if err := config.DB.First(&card, vc.CardID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "卡片不存在"})
+		return
+	}
+	if card.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此核销码"})
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, card.MerchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+
+	resp := gin.H{
+		"code":                 vc.Code,
+		"card_id":              vc.CardID,
+		"expire_at":            vc.ExpireAt,
+		"used":                 vc.Used,
+		"used_at":              vc.UsedAt,
+		"merchant_support_room": merchant.SupportRoom,
+	}
+
+	if vc.Used {
+		var s models.ServiceSession
+		err := config.DB.
+			Where("verify_code = ? AND user_id = ? AND card_id = ?", vc.Code, userID, card.ID).
+			Order("id desc").
+			First(&s).Error
+		if err == nil {
+			nextStep := ""
+			if s.Status == "room_selecting" {
+				nextStep = "room_select"
+			} else if s.Status == "staff_selecting" || s.Status == "room_locked" {
+				nextStep = "staff_select"
+			}
+			resp["session_id"] = s.ID
+			resp["session_status"] = s.Status
+			resp["next_step"] = nextStep
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": resp})
+}
+
 func UserListAvailableRooms(c *gin.Context) {
 	userIDAny, ok := c.Get("user_id")
 	if !ok {
