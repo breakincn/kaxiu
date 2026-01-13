@@ -33,42 +33,41 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `usages` DROP FOREIGN KEY `fk_usages_card`")
 	DB.Exec("ALTER TABLE `usages` DROP FOREIGN KEY `fk_usages_merchant`")
 	DB.Exec("ALTER TABLE `notices` DROP FOREIGN KEY `fk_notices_merchant`")
-	DB.Exec("ALTER TABLE `appointments` DROP FOREIGN KEY `fk_appointments_user`")
-	DB.Exec("ALTER TABLE `appointments` DROP FOREIGN KEY `fk_appointments_merchant`")
+	// DB.Exec("ALTER TABLE `appointments` DROP FOREIGN KEY `fk_appointments_user`")
+	// DB.Exec("ALTER TABLE `appointments` DROP FOREIGN KEY `fk_appointments_merchant`")
 
 	// 自动迁移
-	err = DB.AutoMigrate(
-		&models.User{},
-		&models.Merchant{},
-		&models.Technician{},
-		&models.TechnicianAttendance{},
-		&models.ServiceRole{},
-		&models.Permission{},
-		&models.RolePermission{},
-		&models.MerchantRolePermissionOverride{},
-		&models.SystemConfig{},
-		&models.Card{},
-		&models.CardProject{},
-		&models.Usage{},
-		&models.Room{},
-		&models.ServiceSession{},
-		&models.Notice{},
-		&models.Appointment{},
-		&models.VerifyCode{},
-		&models.SMSCode{},
-		&models.InviteCode{},
-		// 项目（商户项目表 + 卡片模板项目关联表）
-		&models.MerchantProject{},
-		&models.CardTemplateProject{},
-		// Shop 模块（商户收款二维码 + 卡包直购）
-		&models.PaymentConfig{},
-		&models.CardTemplate{},
-		&models.DirectPurchase{},
-		&models.MerchantShopSlug{},
-	)
-	if err != nil {
-		log.Fatal("数据库迁移失败:", err)
-	}
+	// 临时跳过迁移，优先启动HTTPS服务
+	log.Println("数据库连接成功，跳过迁移（HTTPS模式）")
+	/*
+		err = DB.AutoMigrate(
+			&models.User{},
+			&models.Merchant{},
+			&models.Technician{},
+			&models.TechnicianAttendance{},
+			// &models.ServiceRole{},  // 跳过，避免索引冲突
+			&models.Permission{},
+			&models.RolePermission{},
+			&models.MerchantRolePermissionOverride{},
+			&models.SystemConfig{},
+			&models.Card{},
+			&models.CardProject{},
+			&models.Usage{},
+			&models.Room{},
+			&models.ServiceSession{},
+			&models.Notice{},
+			&models.Appointment{},
+			&models.MerchantProject{},
+			&models.CardTemplateProject{},
+			// &models.Shop{},
+			&models.DirectPurchase{},
+			&models.TechnicianAttendance{},
+		)
+		if err != nil {
+			log.Fatal("数据库迁移失败:", err)
+		}
+		log.Println("数据库迁移完成")
+	*/
 
 	migrateLegacyMerchantProjects()
 

@@ -4,7 +4,7 @@ import "time"
 
 type ServiceRole struct {
 	ID                    uint       `json:"id" gorm:"primaryKey"`
-	Key                   string     `json:"key" gorm:"size:50;uniqueIndex;not null"`
+	Key                   string     `json:"key" gorm:"size:50;uniqueIndex"`
 	Name                  string     `json:"name" gorm:"size:50;not null"`
 	Description           string     `json:"description" gorm:"size:255"`
 	IsActive              bool       `json:"is_active" gorm:"default:true"`

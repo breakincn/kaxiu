@@ -5,3 +5,6 @@ frontend/dist/
 frontend/node_modules/
 node_modules/
 backend/config/conf.go
+/frontend/ssl/cert.pem
+/frontend/ssl/key.pem
+/frontend/package.json
