@@ -6,6 +6,8 @@ import (
 	"kabao/routes"
 	"kabao/scheduler"
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -27,9 +29,15 @@ func main() {
 	// 注册路由
 	routes.SetupRoutes(r)
 
+	// 获取SSL证书的绝对路径
+	workDir, _ := os.Getwd()
+	certPath := filepath.Join(workDir, "..", "kabao/frontend", "ssl", "cert.pem")
+	keyPath := filepath.Join(workDir, "..", "kabao/frontend", "ssl", "key.pem")
+
 	// 启动服务
-	log.Println("卡包后端服务启动于 :8080")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatal("服务启动失败:", err)
+	log.Println("卡包后端服务启动于 https://10.0.0.20:8080")
+	log.Println("SSL证书路径:", certPath)
+	if err := r.RunTLS(":8080", certPath, keyPath); err != nil {
+		log.Fatal("HTTPS服务启动失败:", err)
 	}
 }
