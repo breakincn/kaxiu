@@ -81,41 +81,16 @@ func GetCard(c *gin.Context) {
 		return
 	}
 
-	// 原生 JOIN 查出卡片关联项目
+	// 查询卡片关联项目
 	var projects []models.MerchantProject
-	err := config.DB.Raw(`
+	config.DB.Raw(`
 		SELECT p.* 
 		FROM merchant_projects p
 		INNER JOIN card_projects cp ON cp.project_id = p.id
 		WHERE cp.card_id = ? AND p.merchant_id = ?
 		ORDER BY cp.id ASC
-	`, card.ID, card.MerchantID).Scan(&projects).Error
-
-	if err == nil && len(projects) > 0 {
-		card.Projects = projects
-	} else {
-		// 回退：查直购订单 -> 模板 -> 模板项目
-		var purchase models.DirectPurchase
-		err := config.DB.
-			Where("card_id = ?", card.ID).
-			Order("id desc").
-			First(&purchase).Error
-		if err == nil {
-			var projectIDs []uint
-			config.DB.Model(&models.CardTemplateProject{}).
-				Where("card_template_id = ?", purchase.CardTemplateID).
-				Order("id asc").
-				Pluck("project_id", &projectIDs)
-			if len(projectIDs) > 0 {
-				var projects []models.MerchantProject
-				config.DB.
-					Where("merchant_id = ? AND id IN ?", card.MerchantID, projectIDs).
-					Order("sort_order asc, id asc").
-					Find(&projects)
-				card.Projects = projects
-			}
-		}
-	}
+	`, card.ID, card.MerchantID).Scan(&projects)
+	card.Projects = projects
 
 	c.JSON(http.StatusOK, gin.H{"data": card})
 }
