@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -9,7 +10,15 @@ import (
 
 func CORSMiddleware() cors.Config {
 	originsEnv := strings.TrimSpace(os.Getenv("KABAO_CORS_ALLOW_ORIGINS"))
-	origins := []string{"https://kabao.app", "https://kabao.shop"}
+	origins := []string{
+		"https://kabao.app",
+		"https://kabao.shop",
+		"http://localhost:3000",
+		"http://127.0.0.1:3000",
+		"http://10.0.0.20:3000",
+		"http://10.0.0.20:5173", // Vite 默认端口
+	}
+	fmt.Println("DEBUG KABAO_CORS_ALLOW_ORIGINS =", originsEnv) // 打印环境变量
 	if originsEnv != "" {
 		parts := strings.Split(originsEnv, ",")
 		list := make([]string, 0, len(parts))
