@@ -81,18 +81,17 @@ func GetCard(c *gin.Context) {
 		return
 	}
 
-	// 填充 Projects：优先从 card_projects 读取，回退到模板项目
-	var boundIDs []uint
-	config.DB.Model(&models.CardProject{}).
-		Where("card_id = ?", card.ID).
-		Order("id asc").
-		Pluck("project_id", &boundIDs)
-	if len(boundIDs) > 0 {
-		var projects []models.MerchantProject
-		config.DB.
-			Where("merchant_id = ? AND id IN ?", card.MerchantID, boundIDs).
-			Order("sort_order asc, id asc").
-			Find(&projects)
+	// 原生 JOIN 查出卡片关联项目
+	var projects []models.MerchantProject
+	err := config.DB.Raw(`
+		SELECT p.* 
+		FROM merchant_projects p
+		INNER JOIN card_projects cp ON cp.project_id = p.id
+		WHERE cp.card_id = ? AND p.merchant_id = ?
+		ORDER BY cp.id ASC
+	`, card.ID, card.MerchantID).Scan(&projects).Error
+
+	if err == nil && len(projects) > 0 {
 		card.Projects = projects
 	} else {
 		// 回退：查直购订单 -> 模板 -> 模板项目
