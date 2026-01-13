@@ -232,7 +232,7 @@ const onDecoded = async (decodedText) => {
     const backTab = action === 'precheck' ? 'service' : (mode === 'finish' ? 'finish' : 'verify')
     setTimeout(() => {
       router.replace({ path: '/merchant', query: { tab: backTab } })
-    }, 60000) // 延迟1分钟后跳转页面
+    }, 30000) // 延迟30秒后跳转页面
   } catch (err) {
     resultSuccess.value = false
     const errorMsg = err.response?.data?.error || '扫码失败'
