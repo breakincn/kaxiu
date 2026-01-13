@@ -158,6 +158,10 @@
 			<div v-if="verifyQrDataUrl" class="mt-4 flex justify-center">
 				<img :src="verifyQrDataUrl" alt="核销二维码" class="w-48 h-48" />
 			</div>
+			<div v-if="verifyCodeProject" class="text-center text-gray-800 text-sm mt-3 font-medium">
+				{{ verifyCodeProject.name }}
+				<span v-if="verifyCodeProject.duration" class="text-gray-500">（{{ verifyCodeProject.duration }}分钟）</span>
+			</div>
         <p v-if="codeExpireTime" class="text-center text-gray-400 text-sm mt-2">
           有效期至 {{ codeExpireTime }}
         </p>
@@ -443,6 +447,7 @@ const verifyCode = ref('')
 const codeExpireTime = ref('')
 const generating = ref(false)
 const verifyQrDataUrl = ref('')
+const verifyCodeProject = ref(null) // 当前核销码对应的项目
 let verifyExpireTimer = null
 const showProjectModal = ref(false)
 const selectedProjectId = ref(null)
@@ -792,6 +797,14 @@ const doGenerateVerifyCode = async (projectId) => {
   const expireAt = new Date(res.data.data.expire_at * 1000)
   codeExpireTime.value = expireAt.toLocaleTimeString()
 
+  // 保存当前核销码对应的项目信息
+  if (projectId) {
+    const project = (card.value.projects || []).find(p => p.id === projectId)
+    verifyCodeProject.value = project || null
+  } else {
+    verifyCodeProject.value = null
+  }
+
   verifyQrDataUrl.value = await QRCode.toDataURL(verifyCode.value, {
     margin: 1,
     scale: 8,
@@ -807,6 +820,7 @@ const doGenerateVerifyCode = async (projectId) => {
     verifyCode.value = ''
     codeExpireTime.value = ''
     verifyQrDataUrl.value = ''
+    verifyCodeProject.value = null
     verifyExpireTimer = null
   }, delayMs)
 }
