@@ -14,10 +14,16 @@ import (
 	"gorm.io/gorm"
 )
 
-func nextTechnicianCode4(tx *gorm.DB, merchantID uint, serviceRoleID uint) (string, error) {
+func nextTechnicianCode4(tx *gorm.DB, merchantID uint, serviceRoleID uint, roleType string) (string, error) {
+	// 运营客服用3位编号（001），专业客服用4位编号（0001）
+	digits := 4
+	if roleType == "operational" {
+		digits = 3
+	}
+
 	var last string
 	err := tx.Raw(
-		"SELECT code FROM technicians WHERE merchant_id = ? AND service_role_id = ? AND code REGEXP '^[0-9]{4}$' ORDER BY code DESC LIMIT 1 FOR UPDATE",
+		fmt.Sprintf("SELECT code FROM technicians WHERE merchant_id = ? AND service_role_id = ? AND code REGEXP '^[0-9]{%d}$' ORDER BY code DESC LIMIT 1 FOR UPDATE", digits),
 		merchantID,
 		serviceRoleID,
 	).Scan(&last).Error
@@ -25,17 +31,17 @@ func nextTechnicianCode4(tx *gorm.DB, merchantID uint, serviceRoleID uint) (stri
 		return "", err
 	}
 	if strings.TrimSpace(last) == "" {
-		return fmt.Sprintf("%04d", 1), nil
+		return fmt.Sprintf("%0*d", digits, 1), nil
 	}
 	seq, err := strconv.Atoi(last)
 	if err != nil {
-		return fmt.Sprintf("%04d", 1), nil
+		return fmt.Sprintf("%0*d", digits, 1), nil
 	}
 	seq++
 	if seq < 1 {
 		seq = 1
 	}
-	return fmt.Sprintf("%04d", seq), nil
+	return fmt.Sprintf("%0*d", digits, seq), nil
 }
 
 func GetCurrentTechnician(c *gin.Context) {
@@ -342,7 +348,7 @@ func CreateMerchantTechnician(c *gin.Context) {
 	var tech models.Technician
 	defaultPassword := ""
 	if err := config.DB.Transaction(func(tx *gorm.DB) error {
-		code, err := nextTechnicianCode4(tx, merchantID, role.ID)
+		code, err := nextTechnicianCode4(tx, merchantID, role.ID, role.RoleType)
 		if err != nil {
 			return err
 		}
