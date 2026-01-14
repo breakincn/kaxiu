@@ -40,14 +40,19 @@
               <div v-for="it in rooms" :key="it.room.id" class="border border-gray-100 rounded-xl p-4 bg-white">
                 <div class="flex items-start justify-between gap-3">
                   <div class="flex-1">
-                    <div class="flex items-center gap-2 flex-wrap">
-                      <div class="text-gray-800 font-medium">{{ it.room.name }}</div>
-                      <span class="px-2 py-0.5 rounded text-xs" :class="it.occupied ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'">
-                        {{ it.occupied ? '使用中' : '空闲' }}
-                      </span>
-                      <span v-if="it.occupied" class="px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-600">
-                        {{ sessionStatusText(it.status) }}
-                      </span>
+                    <div class="flex items-center gap-2 flex-wrap justify-between">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <div class="text-gray-800 font-medium">{{ it.room.name }}</div>
+                        <span class="px-2 py-0.5 rounded text-xs" :class="it.occupied ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'">
+                          {{ it.occupied ? '使用中' : '空闲' }}
+                        </span>
+                        <span v-if="it.occupied" class="px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-600">
+                          {{ sessionStatusText(it.status) }}
+                        </span>
+                      </div>
+                      <div v-if="it.occupied && (it.started_at || it.room_locked_at)" class="text-gray-500 text-sm font-mono">
+                        {{ calculateElapsedTime(it.started_at || it.room_locked_at) }}
+                      </div>
                     </div>
                     <div v-if="it.occupied" class="text-gray-500 text-sm mt-1">
                       <div v-if="it.technician">{{ it.technician_role?.name || '工作人员' }}: {{ it.technician.account }} {{ it.technician.name }}</div>
@@ -96,7 +101,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
 
@@ -106,6 +111,15 @@ const activeTab = ref('rooms')
 const loading = ref(false)
 const rooms = ref([])
 const staff = ref([])
+const currentTime = ref(new Date())
+
+// 定时器
+let timer = null
+
+// 更新当前时间
+const updateCurrentTime = () => {
+  currentTime.value = new Date()
+}
 
 const goBack = () => {
   router.back()
@@ -131,6 +145,27 @@ const formatDuration = (secs) => {
   const ss = Math.floor(s % 60)
   if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`
   return `${m}m${String(ss).padStart(2, '0')}s`
+}
+
+const calculateElapsedTime = (startTime) => {
+  if (!startTime) return ''
+  const start = new Date(startTime)
+  const diffMs = currentTime.value - start
+  const diffSeconds = Math.floor(diffMs / 1000)
+  const h = Math.floor(diffSeconds / 3600)
+  const m = Math.floor((diffSeconds % 3600) / 60)
+  const s = Math.floor(diffSeconds % 60)
+  
+  if (h === 0) {
+    // 小时为0，只显示 MM:SS
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  } else if (h < 10) {
+    // 小时第一位是0，显示 M:SS
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  } else {
+    // 小时两位数，显示 HH:MM:SS
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
 }
 
 const sessionStatusText = (st) => {
@@ -204,5 +239,15 @@ const load = async () => {
 
 onMounted(async () => {
   await load()
+  // 启动定时器，每秒更新一次
+  timer = setInterval(updateCurrentTime, 1000)
+})
+
+onUnmounted(() => {
+  // 清理定时器
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
 })
 </script>
