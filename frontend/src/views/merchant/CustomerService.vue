@@ -256,7 +256,7 @@
               placeholder="如：zj"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
             />
-            <div class="text-gray-500 text-sm mt-2">最多5个英文字母，如：js / zj</div>
+            <div class="text-gray-500 text-sm mt-2">最多5个英文字母，如：zj / js</div>
           </div>
 
           <button
