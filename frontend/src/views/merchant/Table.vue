@@ -36,19 +36,21 @@
         <div v-else class="mt-4">
           <div v-if="activeTab === 'rooms'">
             <div v-if="rooms.length === 0" class="text-center text-gray-400 py-10">暂无房间</div>
-            <div v-else class="grid grid-cols-2 gap-3">
+            <div v-else class="space-y-3">
               <div v-for="it in rooms" :key="it.room.id" class="border border-gray-100 rounded-xl p-4 bg-white">
                 <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <div class="flex items-center gap-2">
+                  <div class="flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
                       <div class="text-gray-800 font-medium">{{ it.room.name }}</div>
                       <span class="px-2 py-0.5 rounded text-xs" :class="it.occupied ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'">
                         {{ it.occupied ? '使用中' : '空闲' }}
                       </span>
+                      <span v-if="it.occupied" class="px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-600">
+                        {{ sessionStatusText(it.status) }}
+                      </span>
                     </div>
                     <div v-if="it.occupied" class="text-gray-500 text-sm mt-1">
-                      <div>状态：{{ sessionStatusText(it.status) }}</div>
-                      <div v-if="it.technician">工作人员：{{ it.technician.name }}（{{ it.technician_role?.name || '-' }}）</div>
+                      <div v-if="it.technician">{{ it.technician_role?.name || '工作人员' }}: {{ it.technician.account }} {{ it.technician.name }}</div>
                       <div v-if="it.started_at">开始：{{ formatTime(it.started_at) }}</div>
                       <div v-if="it.finish_at">结束：{{ formatTime(it.finish_at) }}</div>
                       <div v-if="it.finish_at">剩余：{{ formatDuration(it.remain_seconds) }}</div>
