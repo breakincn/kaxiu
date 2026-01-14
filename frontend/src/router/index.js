@@ -61,6 +61,12 @@ const userRoutes = [
     name: 'UserScanPay',
     component: () => import('../views/user/ScanShopPay.vue')
   },
+  // 技师登录路由（开发环境需要）
+  {
+    path: '/s/:slug/login',
+    name: 'TechnicianLogin',
+    component: () => import('../views/merchant/Login.vue')
+  },
   // Shop 模块：用户扫码售卡页面
   {
     path: '/s/:slug',
@@ -84,6 +90,7 @@ const merchantRoutes = [
     name: 'MerchantLogin',
     component: () => import('../views/merchant/Login.vue')
   },
+  // 技师登录路由（生产环境需要）
   {
     path: '/s/:slug/login',
     name: 'TechnicianLogin',
