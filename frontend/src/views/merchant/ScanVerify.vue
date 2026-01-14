@@ -88,6 +88,7 @@ const cameras = ref([])
 
 let html5QrCode = null
 let lastScannedAt = 0
+let jumpTimer = null
 
 const goBack = () => {
   router.back()
@@ -230,9 +231,20 @@ const onDecoded = async (decodedText) => {
 
     // 回到 dashboard 并切到对应 tab
     const backTab = action === 'precheck' ? 'service' : (mode === 'finish' ? 'finish' : 'verify')
-    setTimeout(() => {
+    console.log('扫码成功，将在30秒后跳转到', backTab, 'tab')
+    
+    // 清除之前的定时器（如果有）
+    if (jumpTimer) {
+      clearTimeout(jumpTimer)
+    }
+    
+    jumpTimer = setTimeout(() => {
+      console.log('正在执行跳转到 merchant 页面，tab:', backTab)
+      console.log('当前时间:', new Date().toLocaleTimeString())
       router.replace({ path: '/merchant', query: { tab: backTab } })
-    }, 30000) // 延迟30秒后跳转页面
+    }, 1000) // 延迟1秒后跳转页面
+    
+    console.log('定时器已设置，将在', new Date(Date.now() + 30000).toLocaleTimeString(), '执行跳转')
   } catch (err) {
     resultSuccess.value = false
     const errorMsg = err.response?.data?.error || '扫码失败'
@@ -268,5 +280,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   stop()
+  if (jumpTimer) {
+    clearTimeout(jumpTimer)
+    jumpTimer = null
+  }
 })
 </script>
