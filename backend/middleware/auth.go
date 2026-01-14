@@ -128,17 +128,15 @@ func AuthMiddleware() gin.HandlerFunc {
 			c.Set("service_role_id", serviceRoleID)
 			c.Set("service_role", staffRole)
 
-			// 如果是技师，还需要设置技师信息（兼容现有逻辑）
-			if staffRole.Key == "technician" {
-				var tech models.Technician
-				if err := config.DB.Where("id = ? AND merchant_id = ?", staffID, merchantID).First(&tech).Error; err != nil {
-					c.JSON(http.StatusUnauthorized, gin.H{"error": "技师不存在"})
-					c.Abort()
-					return
-				}
-				c.Set("technician_id", staffID)
-				c.Set("technician", tech)
+			// 对于所有 staff 类型，都设置 technician_id（兼容现有逻辑）
+			var tech models.Technician
+			if err := config.DB.Where("id = ? AND merchant_id = ?", staffID, merchantID).First(&tech).Error; err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "技师不存在"})
+				c.Abort()
+				return
 			}
+			c.Set("technician_id", staffID)
+			c.Set("technician", tech)
 		}
 
 		c.Next()
