@@ -117,7 +117,7 @@ func TableStaff(c *gin.Context) {
 	config.DB.
 		Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
 		Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
-		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('available','idle')", merchantID, start).
+		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL", merchantID, start).
 		Where("t.is_active = ?", true).
 		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 		Find(&atts)
