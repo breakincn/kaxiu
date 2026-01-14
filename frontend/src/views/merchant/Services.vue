@@ -55,7 +55,7 @@
           </div>
 
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">开启发手牌</div>
+            <div class="text-gray-800 font-medium">开启手牌</div>
             <input type="checkbox" v-model="form.support_hand_card" />
           </div>
 
