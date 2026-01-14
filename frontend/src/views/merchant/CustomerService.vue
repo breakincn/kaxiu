@@ -150,35 +150,54 @@
                 </div>
               </div>
 
-              <div v-if="visibleTechs.length === 0" class="text-center text-gray-400 py-10">暂无专业客服</div>
+              <div v-if="Object.keys(professionalTechsByRole).length === 0" class="text-center text-gray-400 py-10">暂无专业客服</div>
 
-              <div v-else class="mt-4 space-y-3">
-                <div v-for="t in visibleTechs" :key="t.id" class="border border-gray-100 rounded-xl p-4">
-                  <div class="flex items-start justify-between gap-3">
-                    <div>
-                      <div class="flex items-center gap-2">
-                        <div class="text-gray-800 font-medium">{{ t.name }}</div>
-                        <span class="px-2 py-0.5 rounded text-xs" :class="t.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'">
-                          {{ t.is_active ? '启用' : '禁用' }}
-                        </span>
-                      </div>
-                      <div class="text-gray-500 text-sm mt-1">岗位：{{ t.service_role?.name || '-' }}　编号：{{ t.code }}　账号：{{ t.account }}</div>
+              <div v-else class="mt-4 space-y-6">
+                <div v-for="(group, roleName) in professionalTechsByRole" :key="roleName" class="bg-gray-50 rounded-xl p-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                      <div class="text-gray-800 font-medium">{{ roleName }}</div>
+                      <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs">{{ group.techs.length }}人</span>
                     </div>
-                    <div class="text-gray-400 text-xs">ID: {{ t.id }}</div>
-                  </div>
-
-                  <div class="mt-3 flex gap-2">
-                    <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEdit(t)">编辑</button>
                     <button
+                      v-if="group.role && group.role.allow_permission_adjust"
                       type="button"
-                      class="px-3 py-2 rounded-lg text-sm font-medium"
-                      :class="t.is_active ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'"
-                      @click="toggleActive(t)"
+                      class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
+                      @click="openPermissionAdjustProfessional(group.role.key)"
                     >
-                      {{ t.is_active ? '禁用' : '启用' }}
+                      权限微调
                     </button>
-                    <div class="flex-1"></div>
-                    <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
+                  </div>
+                  
+                  <div class="space-y-3">
+                    <div v-for="t in group.techs" :key="t.id" class="bg-white border border-gray-100 rounded-xl p-4">
+                      <div class="flex items-start justify-between gap-3">
+                        <div>
+                          <div class="flex items-center gap-2">
+                            <div class="text-gray-800 font-medium">{{ t.name }}</div>
+                            <span class="px-2 py-0.5 rounded text-xs" :class="t.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'">
+                              {{ t.is_active ? '启用' : '禁用' }}
+                            </span>
+                          </div>
+                          <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：{{ t.account }}</div>
+                        </div>
+                        <div class="text-gray-400 text-xs">ID: {{ t.id }}</div>
+                      </div>
+
+                      <div class="mt-3 flex gap-2">
+                        <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEdit(t)">编辑</button>
+                        <button
+                          type="button"
+                          class="px-3 py-2 rounded-lg text-sm font-medium"
+                          :class="t.is_active ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'"
+                          @click="toggleActive(t)"
+                        >
+                          {{ t.is_active ? '禁用' : '启用' }}
+                        </button>
+                        <div class="flex-1"></div>
+                        <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -346,6 +365,29 @@ const visibleTechs = computed(() => {
   })
 })
 
+// 专业客服按岗位分组
+const professionalTechsByRole = computed(() => {
+  const list = techs.value || []
+  const professionalTechs = list.filter((t) => {
+    const k = String(t?.service_role?.key || '')
+    return k !== 'store_manager' && k !== 'front_desk'
+  })
+  
+  const grouped = {}
+  professionalTechs.forEach(t => {
+    const roleName = t.service_role?.name || '未知岗位'
+    if (!grouped[roleName]) {
+      grouped[roleName] = {
+        role: t.service_role,
+        techs: []
+      }
+    }
+    grouped[roleName].techs.push(t)
+  })
+  
+  return grouped
+})
+
 const showAdd = ref(false)
 const isEdit = ref(false)
 const form = ref({
@@ -369,9 +411,9 @@ const openPermissionAdjustOperational = () => {
   router.push(`/merchant/role-permissions/${selectedOperationalRole.value}`)
 }
 
-const openPermissionAdjustProfessional = () => {
-  if (!selectedProfessionalRole.value) return
-  router.push(`/merchant/role-permissions/${selectedProfessionalRole.value}`)
+const openPermissionAdjustProfessional = (roleKey) => {
+  if (!roleKey) return
+  router.push(`/merchant/role-permissions/${roleKey}`)
 }
 
 const load = async () => {
