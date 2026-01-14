@@ -363,7 +363,7 @@ func CreateMerchantTechnician(c *gin.Context) {
 		}
 		return tx.Create(&tech).Error
 	}); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "创建失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

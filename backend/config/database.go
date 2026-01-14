@@ -80,6 +80,15 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `technicians` DROP INDEX `idx_technicians_account`")
 	DB.Exec("ALTER TABLE `technicians` DROP INDEX `account`")
 
+	// 修正 technicians 表唯一索引：确保每个 (商户, 角色) 的编号独立自增
+	// 1. 清理可能存在的错误索引名
+	DB.Exec("ALTER TABLE `technicians` DROP INDEX `uidx_merchant_code`")
+	DB.Exec("ALTER TABLE `technicians` DROP INDEX `uidx_merchant_role_code`")
+	// 2. 清理冲突数据：同一商户同一角色下重复的 code 只保留最早的一条
+	DB.Exec("DELETE t1 FROM technicians t1 INNER JOIN technicians t2 WHERE t1.id > t2.id AND t1.merchant_id = t2.merchant_id AND t1.service_role_id = t2.service_role_id AND t1.code = t2.code")
+	// 3. 创建正确的唯一索引 (merchant_id, service_role_id, code)
+	DB.Exec("ALTER TABLE `technicians` ADD UNIQUE INDEX `uidx_merchant_role_code` (`merchant_id`, `service_role_id`, `code`) COMMENT '同一商户同一角色下编号唯一'")
+
 	// service_roles: 账号前缀（最多5个字母，用于生成工作人员账号）
 	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `account_prefix` varchar(5) NOT NULL DEFAULT '' COMMENT '账号前缀（最多5个英文字母）'")
 	// service_roles: 支持商户自定义专业岗位
