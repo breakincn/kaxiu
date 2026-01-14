@@ -195,7 +195,11 @@ export const merchantApi = {
 
   // 角色权限微调
   getRolePermissions: (roleKey) => api.get(`/merchant/role-permissions/${roleKey}`),
-  setRolePermissions: (roleKey, data) => api.post(`/merchant/role-permissions/${roleKey}`, data)
+  setRolePermissions: (roleKey, data) => api.post(`/merchant/role-permissions/${roleKey}`, data),
+
+  // 看板（Table）：房间/客服
+  getTableRooms: () => api.get('/merchant/table/rooms'),
+  getTableStaff: () => api.get('/merchant/table/staff')
 }
 
 export const ensureMerchantPermissionsLoaded = async () => {
