@@ -56,6 +56,12 @@
         </div>
       </div>
 
+      <!-- 已选择的房间 -->
+      <div v-if="session?.room && canChooseTechnician" class="bg-primary-light border border-gray-100 rounded-2xl p-4">
+        <div class="text-sm text-primary font-medium mb-1">已选择房间</div>
+        <div class="text-lg font-bold text-primary">{{ session.room.name }}</div>
+      </div>
+
       <div v-if="canChooseTechnician" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="font-medium text-gray-800 mb-3">选择工作人员</div>
 
