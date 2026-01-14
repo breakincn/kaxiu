@@ -12,7 +12,7 @@ SET @merchant_id = LAST_INSERT_ID();
 
 -- 2. 创建测试用户（用于开卡）
 INSERT INTO users (phone, nickname, created_at) VALUES 
-('13800138001', '张三', NOW()),
+('13800138001', '朱迪亚', NOW()),
 ('13800138002', '李四', NOW()),
 ('13800138003', '王五', NOW());
 

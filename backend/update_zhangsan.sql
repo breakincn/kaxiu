@@ -1,11 +1,11 @@
 -- 修改张三的卡片开卡日期为 2025-07-15
 UPDATE cards 
 SET start_date = '2025-07-15', recharge_at = '2025-07-15'
-WHERE user_id = (SELECT id FROM users WHERE nickname = '张三')
+WHERE user_id = (SELECT id FROM users WHERE nickname = '朱迪亚')
 LIMIT 1;
 
 -- 获取张三卡片的ID并记录
-SET @card_id = (SELECT id FROM cards WHERE user_id = (SELECT id FROM users WHERE nickname = '张三') LIMIT 1);
+SET @card_id = (SELECT id FROM cards WHERE user_id = (SELECT id FROM users WHERE nickname = '朱迪亚') LIMIT 1);
 SET @merchant_id = (SELECT merchant_id FROM cards WHERE id = @card_id);
 
 -- 创建 3 条使用记录
@@ -23,7 +23,7 @@ WHERE id = @card_id;
 SELECT '=== 张三的卡片信息 ===' AS '';
 SELECT c.*, u.nickname FROM cards c 
 JOIN users u ON c.user_id = u.id 
-WHERE u.nickname = '张三';
+WHERE u.nickname = '朱迪亚';
 
 SELECT '=== 张三的使用记录 ===' AS '';
 SELECT * FROM usages 

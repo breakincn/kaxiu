@@ -24,7 +24,7 @@ UPDATE `users` SET `password` = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad
 
 ## 测试账号
 
-### 张三
+### 朱迪亚
 - 手机号: `13800138001`
 - 密码: `123456`
 - 拥有卡片: 洗剪吹10次卡（剩余10次）
@@ -91,7 +91,7 @@ Content-Type: application/json
     "token": "user_1_1735466234",
     "user_id": 1,
     "phone": "13800138001",
-    "nickname": "张三"
+    "nickname": "朱迪亚"
   }
 }
 ```
@@ -106,7 +106,7 @@ Authorization: Bearer user_1_1735466234
   "data": {
     "id": 1,
     "phone": "13800138001",
-    "nickname": "张三",
+    "nickname": "朱迪亚",
     "created_at": "2024-12-29 10:00:00"
   }
 }

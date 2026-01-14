@@ -331,7 +331,7 @@ const staffNameLabel = computed(() => {
 
 const staffNamePlaceholder = computed(() => {
   if (activeType.value === 'professional') return '如：老师1'
-  return '如：张三'
+  return '如：朱迪亚'
 })
 
 const visibleTechs = computed(() => {

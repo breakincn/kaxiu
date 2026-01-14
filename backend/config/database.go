@@ -255,7 +255,7 @@ func initTestData() {
 	p2 := "13800138002"
 	p3 := "13800138003"
 	users := []models.User{
-		{Username: "u1", Phone: &p1, Nickname: "张三"},
+		{Username: "u1", Phone: &p1, Nickname: "朱迪亚"},
 		{Username: "u2", Phone: &p2, Nickname: "u1"},
 		{Username: "u3", Phone: &p3, Nickname: "u2"},
 	}
