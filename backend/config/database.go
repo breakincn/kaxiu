@@ -181,7 +181,7 @@ func migrateLegacyMerchantProjects() {
 func initServiceRoles() {
 	defaults := []models.ServiceRole{
 		{Key: "store_manager", Name: "店长", AccountPrefix: "sm", RoleType: "operational", Description: "运营客服-店长", IsActive: true, AllowPermissionAdjust: false, Sort: 5},
-		{Key: "front_desk", Name: "前台", AccountPrefix: "fo", RoleType: "operational", Description: "运营客服-前台", IsActive: true, AllowPermissionAdjust: false, Sort: 6},
+		{Key: "front_desk", Name: "前台", AccountPrefix: "fd", RoleType: "operational", Description: "运营客服-前台", IsActive: true, AllowPermissionAdjust: false, Sort: 6},
 		// 以下为历史默认专业岗位：为兼容旧数据保留，但不再作为“岗位下拉”显示
 		{Key: "technician", Name: "技师", AccountPrefix: "js", RoleType: "professional", Description: "技师账号(历史默认)", IsActive: false, AllowPermissionAdjust: true, Sort: 10},
 		{Key: "teacher", Name: "助教", AccountPrefix: "zj", RoleType: "professional", Description: "授课教师/助教(历史默认)", IsActive: false, AllowPermissionAdjust: true, Sort: 20},
