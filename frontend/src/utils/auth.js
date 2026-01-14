@@ -78,6 +78,17 @@ export const clearMerchantPermissionKeys = () => {
   sessionStorage.removeItem('merchantPermissionKeys')
 }
 
+export const getTechnicianId = () => {
+  const raw = sessionStorage.getItem('technicianId')
+  if (!raw) return null
+  const n = parseInt(String(raw), 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+export const isTechnicianAuth = () => {
+  return getMerchantActiveAuth() === 'staff'
+}
+
 export const hasMerchantPermission = (key) => {
   const k = String(key || '').trim()
   if (!k) return false

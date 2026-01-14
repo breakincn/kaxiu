@@ -206,6 +206,11 @@ const merchantRoutes = [
     component: () => import('../views/merchant/Table.vue')
   },
   {
+    path: '/merchant/service-sessions',
+    name: 'MerchantServiceSessions',
+    component: () => import('../views/merchant/ServiceSessions.vue')
+  },
+  {
     path: '/merchant/project-settings',
     name: 'MerchantProjectSettings',
     component: () => import('../views/merchant/ProjectSettings.vue')

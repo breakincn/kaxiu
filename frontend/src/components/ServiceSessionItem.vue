@@ -1,0 +1,112 @@
+<template>
+  <div class="space-y-2">
+    <!-- 基本信息 -->
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="font-medium text-gray-800">服务单 #{{ session.id }}</span>
+        <span class="px-2 py-0.5 rounded text-xs" :class="getStatusClass(session.status)">
+          {{ getStatusText(session.status) }}
+        </span>
+      </div>
+      <div class="text-gray-500 text-xs">
+        {{ formatDateTime(session.created_at) }}
+      </div>
+    </div>
+
+    <!-- 服务信息 -->
+    <div class="text-sm text-gray-600 space-y-1">
+      <div v-if="session.user">
+        用户：{{ session.user.nickname || session.user.phone || `ID:${session.user.id}` }}
+      </div>
+      <div v-if="session.card">
+        卡片：{{ session.card.card_type }} (剩余{{ session.card.remain_times }}次)
+      </div>
+      <div v-if="session.room">
+        房间：{{ session.room.name }}
+      </div>
+      <div v-if="session.technician">
+        技师：{{ session.technician.name || session.technician.account }}
+      </div>
+    </div>
+
+    <!-- 时间信息 -->
+    <div v-if="hasTimeInfo" class="text-xs text-gray-500 space-y-1">
+      <div v-if="session.started_at">
+        开始时间：{{ formatDateTime(session.started_at) }}
+      </div>
+      <div v-if="session.scheduled_finish_at">
+        预计结束：{{ formatDateTime(session.scheduled_finish_at) }}
+      </div>
+      <div v-if="session.duration_minutes > 0">
+        服务时长：{{ session.duration_minutes }}分钟
+      </div>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div class="flex gap-2 pt-2">
+      <button 
+        v-if="canExtend" 
+        @click="$emit('extend', session)"
+        class="px-3 py-1 bg-blue-500 text-white rounded text-xs font-medium"
+      >
+        加钟
+      </button>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed } from 'vue'
+import { formatDateTime } from '../utils/dateFormat'
+
+const props = defineProps({
+  session: {
+    type: Object,
+    required: true
+  }
+})
+
+defineEmits(['extend'])
+
+const hasTimeInfo = computed(() => {
+  return props.session.started_at || 
+         props.session.scheduled_finish_at || 
+         props.session.duration_minutes > 0
+})
+
+const canExtend = computed(() => {
+  return props.session.status === 'serving'
+})
+
+const getStatusText = (status) => {
+  const map = {
+    created: '已创建',
+    room_selecting: '选房中',
+    room_locked: '房间已锁定',
+    staff_selecting: '选人中',
+    precheck_pending: '待预结单',
+    delay_pending: '延迟中',
+    serving: '进行中',
+    auto_finishing: '待自动结单',
+    finished: '已完成',
+    canceled: '已取消'
+  }
+  return map[status] || status
+}
+
+const getStatusClass = (status) => {
+  const map = {
+    created: 'bg-gray-100 text-gray-600',
+    room_selecting: 'bg-yellow-100 text-yellow-600',
+    room_locked: 'bg-orange-100 text-orange-600',
+    staff_selecting: 'bg-blue-100 text-blue-600',
+    precheck_pending: 'bg-purple-100 text-purple-600',
+    delay_pending: 'bg-indigo-100 text-indigo-600',
+    serving: 'bg-green-100 text-green-600',
+    auto_finishing: 'bg-red-100 text-red-600',
+    finished: 'bg-gray-100 text-gray-500',
+    canceled: 'bg-red-100 text-red-500'
+  }
+  return map[status] || 'bg-gray-100 text-gray-600'
+}
+</script>
