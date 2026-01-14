@@ -165,6 +165,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 
 	// 工作人员签到/状态
 	auth.POST("/technician/checkin", handlers.TechnicianCheckIn)
+	auth.POST("/technician/checkout", handlers.TechnicianCheckOut)
 	auth.PUT("/technician/status", handlers.UpdateTechnicianServiceStatus)
 	auth.GET("/technicians/available", handlers.ListAvailableTechnicians)
 

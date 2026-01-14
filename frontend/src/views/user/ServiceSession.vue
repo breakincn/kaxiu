@@ -66,7 +66,7 @@
         <div class="font-medium text-gray-800 mb-3">选择工作人员</div>
 
         <div v-if="techLoading" class="text-gray-500 text-sm">加载工作人员中...</div>
-        <div v-else-if="technicians.length === 0" class="text-gray-500 text-sm">暂无可选工作人员（需最近15分钟签到且可服务）</div>
+        <div v-else-if="technicians.length === 0" class="text-gray-500 text-sm">暂无可选工作人员（需今日上班签到且未下班且可服务）</div>
         <div v-else class="space-y-2">
           <button
             v-for="t in technicians"

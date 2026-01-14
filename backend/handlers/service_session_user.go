@@ -79,11 +79,11 @@ func UserGetVerifyCodeStatus(c *gin.Context) {
 	}
 
 	resp := gin.H{
-		"code":                 vc.Code,
-		"card_id":              vc.CardID,
-		"expire_at":            vc.ExpireAt,
-		"used":                 vc.Used,
-		"used_at":              vc.UsedAt,
+		"code":                  vc.Code,
+		"card_id":               vc.CardID,
+		"expire_at":             vc.ExpireAt,
+		"used":                  vc.Used,
+		"used_at":               vc.UsedAt,
 		"merchant_support_room": merchant.SupportRoom,
 	}
 
@@ -292,11 +292,19 @@ func UserListAvailableTechnicians(c *gin.Context) {
 		return
 	}
 
-	cutoff := time.Now().Add(-15 * time.Minute)
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var list []models.TechnicianAttendance
-	config.DB.Preload("Technician").
-		Where("merchant_id = ? AND checked_in_at >= ? AND status IN ('available','idle')", s.MerchantID, cutoff).
-		Order("updated_at desc").
+	config.DB.
+		Model(&models.TechnicianAttendance{}).
+		Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
+		Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
+		Preload("Technician").
+		Preload("Technician.ServiceRole").
+		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('available','idle')", s.MerchantID, start).
+		Where("t.is_active = ?", true).
+		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
+		Order("technician_attendances.updated_at desc").
 		Find(&list)
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
@@ -322,7 +330,8 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 	}
 
 	sid := c.Param("id")
-	cutoff := time.Now().Add(-15 * time.Minute)
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var out models.ServiceSession
 
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
@@ -343,8 +352,14 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 		}
 
 		var att models.TechnicianAttendance
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND status IN ('available','idle')", s.MerchantID, input.TechnicianID, cutoff).
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Model(&models.TechnicianAttendance{}).
+			Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
+			Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
+			Where("technician_attendances.merchant_id = ? AND technician_attendances.technician_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('available','idle')", s.MerchantID, input.TechnicianID, start).
+			Where("t.is_active = ?", true).
+			Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 			First(&att).Error; err != nil {
 			return apiErr{status: http.StatusBadRequest, msg: "工作人员不可选"}
 		}

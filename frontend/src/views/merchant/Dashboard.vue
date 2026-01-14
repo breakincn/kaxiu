@@ -624,15 +624,24 @@
             <div class="text-gray-500 text-sm mt-1" v-if="isTechnicianAuth()">当前账号：{{ getTechnicianName() }}</div>
             <div class="text-gray-500 text-sm mt-1" v-else>请使用工作人员账号登录进行签到</div>
           </div>
-          <button
-            v-if="isTechnicianAuth()"
-            :disabled="attendanceLoading"
-            @click="doCheckIn"
-            class="px-4 py-2 rounded-lg text-sm font-medium"
-            :class="attendanceLoading ? 'bg-gray-100 text-gray-400' : 'bg-primary text-white'"
-          >
-            上班签到
-          </button>
+          <div v-if="isTechnicianAuth()" class="flex items-center gap-2">
+            <button
+              :disabled="attendanceLoading"
+              @click="doCheckIn"
+              class="px-4 py-2 rounded-lg text-sm font-medium"
+              :class="attendanceLoading ? 'bg-gray-100 text-gray-400' : 'bg-primary text-white'"
+            >
+              上班签到
+            </button>
+            <button
+              :disabled="attendanceLoading"
+              @click="doCheckOut"
+              class="px-4 py-2 rounded-lg text-sm font-medium"
+              :class="attendanceLoading ? 'bg-gray-100 text-gray-400' : 'bg-slate-600 text-white'"
+            >
+              下班签到
+            </button>
+          </div>
         </div>
 
         <div v-if="isTechnicianAuth()" class="mt-3">
@@ -2013,6 +2022,20 @@ const doCheckIn = async () => {
     alert('签到成功')
   } catch (e) {
     alert(e.response?.data?.error || '签到失败')
+  } finally {
+    attendanceLoading.value = false
+  }
+}
+
+const doCheckOut = async () => {
+  if (!isTechnicianAuth()) return
+  attendanceLoading.value = true
+  try {
+    await attendanceApi.checkOut({})
+    attendanceStatus.value = 'rest'
+    alert('下班签到成功')
+  } catch (e) {
+    alert(e.response?.data?.error || '下班签到失败')
   } finally {
     attendanceLoading.value = false
   }

@@ -158,7 +158,7 @@ func TableStaff(c *gin.Context) {
 
 		if a, ok := attByTech[t.ID]; ok {
 			it.Attendance = &a
-			it.CheckedIn = a.CheckedInAt != nil
+			it.CheckedIn = a.CheckedInAt != nil && a.CheckedOutAt == nil
 			it.CheckedInAt = a.CheckedInAt
 			if a.Status != "" {
 				it.ServiceStatus = a.Status
