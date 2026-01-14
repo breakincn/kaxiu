@@ -50,18 +50,13 @@
           </div>
 
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">开启房间</div>
-            <input type="checkbox" v-model="form.support_room" />
-          </div>
-
-          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
             <div class="text-gray-800 font-medium">开启手牌</div>
             <input type="checkbox" v-model="form.support_hand_card" />
           </div>
 
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">开启发房间号牌</div>
-            <input type="checkbox" v-model="form.support_room_number_card" />
+            <div class="text-gray-800 font-medium">开启房间</div>
+            <input type="checkbox" v-model="form.support_room" />
           </div>
 
           <div v-if="form.support_queue" class="px-4 py-4 border-b border-gray-100 space-y-3">
@@ -126,8 +121,7 @@ const form = ref({
   support_customer_service: false,
   support_project: false,
   support_order_complete: false,
-  support_hand_card: false,
-  support_room_number_card: false
+  support_hand_card: false
 })
 
 const goBack = () => {
@@ -159,8 +153,7 @@ const load = async () => {
       support_customer_service: !!m.support_customer_service,
       support_project: !!m.support_project,
       support_order_complete: !!m.support_order_complete,
-      support_hand_card: !!m.support_hand_card,
-      support_room_number_card: !!m.support_room_number_card
+      support_hand_card: !!m.support_hand_card
     }
   } catch (e) {
     console.error('加载商户服务配置失败', e)
@@ -190,8 +183,7 @@ const save = async () => {
       support_customer_service: form.value.support_customer_service,
       support_project: form.value.support_project,
       support_order_complete: form.value.support_order_complete,
-      support_hand_card: form.value.support_hand_card,
-      support_room_number_card: form.value.support_room_number_card
+      support_hand_card: form.value.support_hand_card
     })
     alert('保存成功')
     await load()

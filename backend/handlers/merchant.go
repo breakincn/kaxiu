@@ -204,7 +204,6 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		SupportCustomerService   *bool   `json:"support_customer_service"`
 		SupportOrderComplete     *bool   `json:"support_order_complete"`
 		SupportHandCard          *bool   `json:"support_hand_card"`
-		SupportRoomNumberCard    *bool   `json:"support_room_number_card"`
 		QueuePrefix              *string `json:"queue_prefix"`
 		QueueStartNo             *int    `json:"queue_start_no"`
 		HandCardPrefix           *string `json:"hand_card_prefix"`
@@ -246,9 +245,6 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	}
 	if input.SupportHandCard != nil {
 		updates["support_hand_card"] = *input.SupportHandCard
-	}
-	if input.SupportRoomNumberCard != nil {
-		updates["support_room_number_card"] = *input.SupportRoomNumberCard
 	}
 	if input.QueuePrefix != nil {
 		updates["queue_prefix"] = strings.TrimSpace(*input.QueuePrefix)
