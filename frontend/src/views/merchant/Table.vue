@@ -36,8 +36,8 @@
         <div v-else class="mt-4">
           <div v-if="activeTab === 'rooms'">
             <div v-if="rooms.length === 0" class="text-center text-gray-400 py-10">暂无房间</div>
-            <div v-else class="space-y-3">
-              <div v-for="it in rooms" :key="it.room.id" class="border border-gray-100 rounded-xl p-4">
+            <div v-else class="grid grid-cols-2 gap-3">
+              <div v-for="it in rooms" :key="it.room.id" class="border border-gray-100 rounded-xl p-4 bg-white">
                 <div class="flex items-start justify-between gap-3">
                   <div>
                     <div class="flex items-center gap-2">
@@ -47,7 +47,7 @@
                       </span>
                     </div>
                     <div v-if="it.occupied" class="text-gray-500 text-sm mt-1">
-                      <div>状态：{{ it.status }}</div>
+                      <div>状态：{{ sessionStatusText(it.status) }}</div>
                       <div v-if="it.technician">工作人员：{{ it.technician.name }}（{{ it.technician_role?.name || '-' }}）</div>
                       <div v-if="it.started_at">开始：{{ formatTime(it.started_at) }}</div>
                       <div v-if="it.finish_at">结束：{{ formatTime(it.finish_at) }}</div>
@@ -131,14 +131,45 @@ const formatDuration = (secs) => {
   return `${m}m${String(ss).padStart(2, '0')}s`
 }
 
+const sessionStatusText = (st) => {
+  const s = String(st || '').trim()
+  if (s === 'created') return '已创建'
+  if (s === 'room_selecting') return '选房中'
+  if (s === 'room_locked') return '房间已锁定'
+  if (s === 'staff_selecting') return '选人中'
+  if (s === 'precheck_pending') return '待预结单'
+  if (s === 'delay_pending') return '延迟中'
+  if (s === 'serving') return '服务中'
+  if (s === 'auto_finishing') return '待自动结单'
+  if (s === 'finished') return '已完成'
+  if (s === 'canceled') return '已取消'
+  return s || '-'
+}
+
 const badgeText = (it) => {
   const st = String(it.service_status || '')
   if (!it.checked_in) return '未签到'
+  // 会话状态：显示对应中文
+  if (
+    st === 'created' ||
+    st === 'room_selecting' ||
+    st === 'room_locked' ||
+    st === 'staff_selecting' ||
+    st === 'precheck_pending' ||
+    st === 'delay_pending' ||
+    st === 'serving' ||
+    st === 'auto_finishing' ||
+    st === 'finished' ||
+    st === 'canceled'
+  ) {
+    return sessionStatusText(st)
+  }
+
+  // 签到状态
   if (st === 'available') return '可服务'
   if (st === 'idle') return '空闲'
   if (st === 'rest') return '休息'
   if (st === 'paused') return '暂停'
-  if (st === 'serving' || st === 'delay_pending' || st === 'auto_finishing' || st === 'staff_selecting' || st === 'room_locked' || st === 'precheck_pending') return '服务中'
   return st || '未知'
 }
 

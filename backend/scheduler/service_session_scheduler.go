@@ -13,6 +13,7 @@ import (
 const (
 	schedulerTickInterval = 3 * time.Second
 	schedulerBatchLimit   = 200
+	staffSelectingTimeout = 5 * time.Minute
 )
 
 func StartServiceSessionScheduler() {
@@ -36,7 +37,7 @@ func runOnce(db *gorm.DB) error {
 
 	var sessions []models.ServiceSession
 	err := db.
-		Where("status IN ('room_selecting','delay_pending','serving','auto_finishing','finished')").
+		Where("status IN ('room_selecting','room_locked','staff_selecting','delay_pending','serving','auto_finishing','finished')").
 		Order("id asc").
 		Limit(schedulerBatchLimit).
 		Find(&sessions).Error
@@ -61,6 +62,30 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 		}
 
 		switch s.Status {
+		case "room_locked", "staff_selecting":
+			// 选人超时释放房间（仅限：有房间、已锁定房间、未选择工作人员）
+			if s.RoomID == nil || s.TechnicianID != nil || s.RoomLockedAt == nil {
+				return nil
+			}
+			var merchant models.Merchant
+			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+				return err
+			}
+			if !merchant.SupportRoom {
+				return nil
+			}
+			deadline := s.RoomLockedAt.Add(staffSelectingTimeout)
+			if now.Before(deadline) {
+				return nil
+			}
+			dl := now.Add(90 * time.Second)
+			updates := map[string]interface{}{
+				"room_id":                 nil,
+				"room_locked_at":          nil,
+				"status":                  "room_selecting",
+				"room_select_deadline_at": dl,
+			}
+			return tx.Model(&models.ServiceSession{}).Where("id = ? AND status IN ('room_locked','staff_selecting')", s.ID).Updates(updates).Error
 		case "room_selecting":
 			if s.RoomSelectDeadlineAt != nil && now.After(*s.RoomSelectDeadlineAt) {
 				return autoAssignRoom(tx, &s, now)
