@@ -302,6 +302,19 @@ const professionalRolesData = ref([])
 
 const activeType = ref('operational')
 
+// 从本地存储恢复上次选择的客服类型
+const restoreActiveType = () => {
+  const saved = localStorage.getItem('customer_service_active_type')
+  if (saved === 'operational' || saved === 'professional') {
+    activeType.value = saved
+  }
+}
+
+// 保存客服类型到本地存储
+const saveActiveType = (type) => {
+  localStorage.setItem('customer_service_active_type', type)
+}
+
 const operationalRoles = computed(() => {
   return operationalRolesData.value.filter((r) => r && (r.key === 'store_manager' || r.key === 'front_desk'))
 })
@@ -529,6 +542,7 @@ const removeTech = async (t) => {
 
 const selectType = async (t) => {
   activeType.value = t
+  saveActiveType(t)
   closeAdd()
   await load()
 }
@@ -601,7 +615,11 @@ onMounted(async () => {
     selectedProfessionalRole.value = String(proFirst.key)
   }
 
-  activeType.value = operationalRoles.value.length > 0 ? 'operational' : 'professional'
+  // 恢复上次选择的客服类型，如果没有则根据数据情况设置默认
+  restoreActiveType()
+  if (!localStorage.getItem('customer_service_active_type')) {
+    activeType.value = operationalRoles.value.length > 0 ? 'operational' : 'professional'
+  }
   await load()
 })
 
