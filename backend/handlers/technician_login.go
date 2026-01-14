@@ -51,7 +51,7 @@ func TechnicianLogin(c *gin.Context) {
 	}
 
 	var tech models.Technician
-	if err := config.DB.Where("merchant_id = ? AND account = ?", merchant.ID, account).First(&tech).Error; err != nil {
+	if err := config.DB.Preload("ServiceRole").Where("merchant_id = ? AND account = ?", merchant.ID, account).First(&tech).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "账号或密码错误"})
 		return
 	}
@@ -97,6 +97,11 @@ func TechnicianLogin(c *gin.Context) {
 			"name":    tech.Name,
 			"code":    tech.Code,
 			"account": tech.Account,
+			"service_role": gin.H{
+				"id":   tech.ServiceRole.ID,
+				"key":  tech.ServiceRole.Key,
+				"name": tech.ServiceRole.Name,
+			},
 		},
 	})
 }

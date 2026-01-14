@@ -266,6 +266,10 @@ const handleLogin = async () => {
       sessionStorage.setItem('technicianName', res.data.technician.name || '')
       sessionStorage.setItem('technicianCode', res.data.technician.code || '')
       sessionStorage.setItem('technicianAccount', res.data.technician.account || '')
+      const roleName = res.data.technician.service_role?.name || '技师'
+      sessionStorage.setItem('technicianRoleName', roleName)
+      console.log('技师登录 - 角色信息:', res.data.technician.service_role)
+      console.log('设置的角色名称:', roleName)
     } else {
       // 商户登录（来自 /merchant/login）
       setMerchantActiveAuth('merchant')
@@ -280,6 +284,7 @@ const handleLogin = async () => {
       sessionStorage.removeItem('technicianName')
       sessionStorage.removeItem('technicianCode')
       sessionStorage.removeItem('technicianAccount')
+      sessionStorage.removeItem('technicianRoleName')
     }
 
     await ensureMerchantPermissionsLoaded()

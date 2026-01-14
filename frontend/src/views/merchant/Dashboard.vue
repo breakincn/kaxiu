@@ -895,13 +895,22 @@ const sellSelectedTemplateName = computed(() => {
 })
 
 const currentAccountName = computed(() => {
-  // 如果是技师登录，显示技师账号
+  // 如果是工作人员登录，显示工作人员账号和称谓
   if (isTechnicianAuth()) {
     const technicianAccount = sessionStorage.getItem('technicianAccount')
-    if (technicianAccount) return `技师: ${technicianAccount}`
+    const technicianName = sessionStorage.getItem('technicianName')
+    const technicianRoleName = sessionStorage.getItem('technicianRoleName')
+    
+    if (technicianAccount && technicianName) {
+      return `${technicianRoleName}: ${technicianAccount} ${technicianName}`
+    }
+    if (technicianAccount) return `${technicianRoleName}: ${technicianAccount}`
     const technicianCode = sessionStorage.getItem('technicianCode')
-    if (technicianCode) return `技师: ${technicianCode}`
-    return '技师'
+    if (technicianCode && technicianName) {
+      return `${technicianRoleName}: ${technicianCode} ${technicianName}`
+    }
+    if (technicianCode) return `${technicianRoleName}: ${technicianCode}`
+    return technicianRoleName
   }
   // 如果是商户登录，显示商户手机号
   const merchantPhone = localStorage.getItem('merchantPhone')
