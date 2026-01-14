@@ -14,7 +14,21 @@ const (
 	schedulerTickInterval = 3 * time.Second
 	schedulerBatchLimit   = 200
 	staffSelectingTimeout = 5 * time.Minute
+	// 房间会话超时时间, 房间会话30分钟内没选技师、没开始服务则超时,自动取消房间锁定
+	sessionAbandonTimeout = 30 * time.Minute
 )
+
+func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
+	updates := map[string]interface{}{
+		"status":                  "canceled",
+		"room_id":                 nil,
+		"room_locked_at":          nil,
+		"room_select_deadline_at": nil,
+	}
+	return tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND status IN ('room_selecting','room_locked','staff_selecting')", s.ID).
+		Updates(updates).Error
+}
 
 func StartServiceSessionScheduler() {
 	go func() {
@@ -60,6 +74,11 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&s, session.ID).Error; err != nil {
 			return err
 		}
+		if s.TechnicianID == nil && s.StartedAt == nil && s.CreatedAt != nil {
+			if now.Sub(*s.CreatedAt) >= sessionAbandonTimeout {
+				return cancelAndReleaseSession(tx, &s, now)
+			}
+		}
 
 		switch s.Status {
 		case "room_locked", "staff_selecting":
@@ -88,6 +107,9 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			return tx.Model(&models.ServiceSession{}).Where("id = ? AND status IN ('room_locked','staff_selecting')", s.ID).Updates(updates).Error
 		case "room_selecting":
 			if s.RoomSelectDeadlineAt != nil && now.After(*s.RoomSelectDeadlineAt) {
+				if s.TechnicianID == nil && s.StartedAt == nil && s.CreatedAt != nil && now.Sub(*s.CreatedAt) >= sessionAbandonTimeout {
+					return cancelAndReleaseSession(tx, &s, now)
+				}
 				return autoAssignRoom(tx, &s, now)
 			}
 			return nil
