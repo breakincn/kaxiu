@@ -108,9 +108,17 @@ func TableStaff(c *gin.Context) {
 		Order("technicians.id desc").
 		Find(&techs)
 
-	// 签到/状态
+	// 签到/状态 - 和选择工作人员条件一致：当天签到且未下班
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var atts []models.TechnicianAttendance
-	config.DB.Where("merchant_id = ?", merchantID).Find(&atts)
+	config.DB.
+		Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
+		Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
+		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('available','idle')", merchantID, start).
+		Where("t.is_active = ?", true).
+		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
+		Find(&atts)
 	attByTech := map[uint]models.TechnicianAttendance{}
 	for _, a := range atts {
 		attByTech[a.TechnicianID] = a
@@ -134,7 +142,6 @@ func TableStaff(c *gin.Context) {
 		}
 	}
 
-	now := time.Now()
 	type staffItem struct {
 		Technician          models.Technician            `json:"technician"`
 		Attendance          *models.TechnicianAttendance `json:"attendance"`
