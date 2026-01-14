@@ -223,7 +223,7 @@ const onDecoded = async (decodedText) => {
       resultText.value = '结单成功！'
     } else if (action === 'precheck') {
       const sid = res?.data?.data?.session_id
-      resultText.value = `预结单成功！会话#${sid ?? '-'}，已开始计时。`
+      resultText.value = `预结单成功！服务单#${sid ?? '-'}，已开始计时。`
     } else {
       const remainTimes = res?.data?.data?.remain_times
       resultText.value = `核销成功！剩余次数: ${remainTimes ?? '-'}`

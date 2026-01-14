@@ -13,7 +13,7 @@
       <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center justify-between">
           <div>
-            <div class="font-medium text-gray-800">会话 #{{ session?.id || '-' }}</div>
+            <div class="font-medium text-gray-800">服务单 #{{ session?.id || '-' }}</div>
             <div class="text-gray-500 text-sm mt-1">状态：{{ statusText(session?.status) }}</div>
           </div>
           <button
