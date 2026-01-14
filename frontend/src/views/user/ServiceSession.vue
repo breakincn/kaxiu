@@ -61,7 +61,7 @@
         <div class="text-sm text-primary font-medium mb-1">已选择房间</div>
         <div class="text-lg font-bold text-primary">{{ session.room.name }}</div>
       </div>
-
+@@
       <div v-if="canChooseTechnician" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="font-medium text-gray-800 mb-3">选择工作人员</div>
 
@@ -76,17 +76,6 @@
             :disabled="actionLoading"
           >
             {{ t.technician?.name || t.technician?.account || ('ID:' + t.technician_id) }}
-          </button>
-        </div>
-      </div>
-
-      <div v-if="precheckCode" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
-        <div class="font-medium text-gray-800 mb-2">预结单码</div>
-        <div class="text-gray-600 text-sm">请向工作人员出示此码，由工作人员扫码开始计时</div>
-        <div class="mt-3 flex items-center gap-2">
-          <div class="flex-1 px-4 py-3 border border-gray-200 rounded-lg font-mono">{{ precheckCode }}</div>
-          <button class="px-4 py-3 bg-primary text-white rounded-lg font-medium" @click="copy(precheckCode)">
-            复制
           </button>
         </div>
       </div>
@@ -126,8 +115,6 @@ const extendLoading = ref(false)
 const session = ref(null)
 const rooms = ref([])
 const technicians = ref([])
-
-const precheckCode = ref('')
 const roomAutoAdjustedMsg = ref('')
 const errorText = ref('')
 const extendMinutes = ref(null)
@@ -173,15 +160,6 @@ const statusText = (s) => {
 
 const goBack = () => router.back()
 
-const copy = async (text) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    alert('已复制')
-  } catch (_) {
-    alert('复制失败')
-  }
-}
-
 const refresh = async () => {
   errorText.value = ''
   roomAutoAdjustedMsg.value = ''
@@ -196,10 +174,6 @@ const refresh = async () => {
     }
     if (canChooseTechnician.value) {
       await loadTechnicians()
-    }
-
-    if (session.value?.status === 'precheck_pending' && session.value?.id) {
-      precheckCode.value = `SS:${session.value.id}`
     }
   } catch (e) {
     errorText.value = e.response?.data?.error || '加载失败'
@@ -258,7 +232,15 @@ const chooseTechnician = async (technicianId) => {
     const res = await userServiceSessionApi.chooseTechnician(sessionId.value, { technician_id: technicianId })
     const data = res.data || {}
     session.value = data.data || null
-    precheckCode.value = data.precheck_code || (session.value?.id ? `SS:${session.value.id}` : '')
+
+    const cardId = session.value?.card_id
+    const sid = session.value?.id
+    if (cardId && sid) {
+      await router.replace({
+        path: `/user/cards/${cardId}`,
+        query: { session_id: String(sid) }
+      })
+    }
   } catch (e) {
     errorText.value = e.response?.data?.error || '选人失败'
   } finally {

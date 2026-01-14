@@ -5,7 +5,6 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -391,7 +390,7 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": out, "precheck_code": "SS:" + strconv.FormatUint(uint64(out.ID), 10)})
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
 func ExtendServiceSessionUser(c *gin.Context) {
