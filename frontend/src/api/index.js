@@ -180,10 +180,18 @@ export const merchantApi = {
   bindTechnicianPhone: (phone, code) => api.post('/merchant/technician/bind-phone', { phone, code }),
 
   // 技师账号管理
-  getTechnicians: (roleKey) => api.get('/merchant/technicians', { params: { role: roleKey } }),
+  getTechnicians: (roleKey) => {
+    const rk = String(roleKey || '').trim()
+    if (!rk) return api.get('/merchant/technicians')
+    return api.get('/merchant/technicians', { params: { role: rk } })
+  },
   createTechnician: (data) => api.post('/merchant/technicians', data),
   updateTechnician: (id, data) => api.put(`/merchant/technicians/${id}`, data),
   deleteTechnician: (id) => api.delete(`/merchant/technicians/${id}`),
+
+  // 专业客服岗位（商户自定义）
+  getProfessionalRoles: () => api.get('/merchant/professional-roles'),
+  createProfessionalRole: (data) => api.post('/merchant/professional-roles', data),
 
   // 角色权限微调
   getRolePermissions: (roleKey) => api.get(`/merchant/role-permissions/${roleKey}`),

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"kabao/config"
 	"kabao/models"
 	"net/http"
@@ -13,9 +14,33 @@ import (
 	"gorm.io/gorm"
 )
 
+func nextTechnicianCode4(tx *gorm.DB, merchantID uint, serviceRoleID uint) (string, error) {
+	var last string
+	err := tx.Raw(
+		"SELECT code FROM technicians WHERE merchant_id = ? AND service_role_id = ? AND code REGEXP '^[0-9]{4}$' ORDER BY code DESC LIMIT 1 FOR UPDATE",
+		merchantID,
+		serviceRoleID,
+	).Scan(&last).Error
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(last) == "" {
+		return fmt.Sprintf("%04d", 1), nil
+	}
+	seq, err := strconv.Atoi(last)
+	if err != nil {
+		return fmt.Sprintf("%04d", 1), nil
+	}
+	seq++
+	if seq < 1 {
+		seq = 1
+	}
+	return fmt.Sprintf("%04d", seq), nil
+}
+
 func GetCurrentTechnician(c *gin.Context) {
 	authType, _ := c.Get("auth_type")
-	if authType != "technician" {
+	if authType != "staff" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "仅技师账号可操作"})
 		return
 	}
@@ -47,7 +72,7 @@ func GetCurrentTechnician(c *gin.Context) {
 
 func BindTechnicianPhone(c *gin.Context) {
 	authType, _ := c.Get("auth_type")
-	if authType != "technician" {
+	if authType != "staff" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "仅技师账号可操作"})
 		return
 	}
@@ -123,7 +148,7 @@ func BindTechnicianPhone(c *gin.Context) {
 
 func GetMerchantTechnicians(c *gin.Context) {
 	authType, _ := c.Get("auth_type")
-	if authType == "technician" {
+	if authType == "staff" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
 		return
 	}
@@ -133,28 +158,28 @@ func GetMerchantTechnicians(c *gin.Context) {
 		return
 	}
 
-	// 获取角色参数
-	roleKey := c.Query("role")
-	if roleKey == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少角色参数"})
-		return
-	}
+	// 角色参数可选：不传则返回全部工作人员
+	roleKey := strings.TrimSpace(c.Query("role"))
 
-	// 查询角色ID
-	var role models.ServiceRole
-	if err := config.DB.Where("`key` = ?", roleKey).First(&role).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "角色不存在"})
-		return
+	q := config.DB.Model(&models.Technician{}).Where("merchant_id = ?", merchantID)
+	if roleKey != "" {
+		// 查询角色ID
+		var role models.ServiceRole
+		if err := config.DB.Where("`key` = ?", roleKey).First(&role).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "角色不存在"})
+			return
+		}
+		q = q.Where("service_role_id = ?", role.ID)
 	}
 
 	var list []models.Technician
-	config.DB.Where("merchant_id = ? AND service_role_id = ?", merchantID, role.ID).Order("id desc").Find(&list)
+	q.Preload("ServiceRole").Order("id desc").Find(&list)
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
 
 func UpdateMerchantTechnician(c *gin.Context) {
 	authType, _ := c.Get("auth_type")
-	if authType == "technician" {
+	if authType == "staff" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
 		return
 	}
@@ -225,7 +250,7 @@ func UpdateMerchantTechnician(c *gin.Context) {
 
 func DeleteMerchantTechnician(c *gin.Context) {
 	authType, _ := c.Get("auth_type")
-	if authType == "technician" {
+	if authType == "staff" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
 		return
 	}
@@ -252,7 +277,7 @@ func DeleteMerchantTechnician(c *gin.Context) {
 
 func CreateMerchantTechnician(c *gin.Context) {
 	authType, _ := c.Get("auth_type")
-	if authType == "technician" {
+	if authType == "staff" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
 		return
 	}
@@ -264,7 +289,6 @@ func CreateMerchantTechnician(c *gin.Context) {
 
 	var input struct {
 		Name string `json:"name" binding:"required"`
-		Code string `json:"code" binding:"required"`
 		Role string `json:"role" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -278,37 +302,67 @@ func CreateMerchantTechnician(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "角色不存在"})
 		return
 	}
+	// 角色归属校验：
+	// - 运营角色：平台默认（merchant_id IS NULL）
+	// - 专业角色：商户自定义（merchant_id = 当前商户）
+	if strings.TrimSpace(role.RoleType) == "operational" {
+		if role.MerchantID != nil {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权使用该角色"})
+			return
+		}
+	} else if strings.TrimSpace(role.RoleType) == "professional" {
+		if role.MerchantID == nil || *role.MerchantID != merchantID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权使用该岗位"})
+			return
+		}
+	}
 
 	name := strings.TrimSpace(input.Name)
-	code := strings.TrimSpace(input.Code)
 	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入技师姓名"})
-		return
-	}
-	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入技师编号"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入姓名"})
 		return
 	}
 
-	account := "js" + code
-	defaultPassword := code + "12345"
-
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(defaultPassword), bcrypt.DefaultCost)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
+	prefix := strings.ToLower(strings.TrimSpace(role.AccountPrefix))
+	if prefix == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该角色未配置账号前缀"})
 		return
 	}
-
-	tech := models.Technician{
-		MerchantID:    merchantID,
-		ServiceRoleID: role.ID,
-		Name:          name,
-		Code:          code,
-		Account:       account,
-		Password:      string(hashedPassword),
-		IsActive:      true,
+	if len(prefix) > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀最多5个英文字母"})
+		return
 	}
-	if err := config.DB.Create(&tech).Error; err != nil {
+	for _, ch := range prefix {
+		if ch < 'a' || ch > 'z' {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀只能包含英文字母"})
+			return
+		}
+	}
+
+	var tech models.Technician
+	defaultPassword := ""
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		code, err := nextTechnicianCode4(tx, merchantID, role.ID)
+		if err != nil {
+			return err
+		}
+		account := prefix + code
+		defaultPassword = account + "123"
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(defaultPassword), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+		tech = models.Technician{
+			MerchantID:    merchantID,
+			ServiceRoleID: role.ID,
+			Name:          name,
+			Code:          code,
+			Account:       account,
+			Password:      string(hashedPassword),
+			IsActive:      true,
+		}
+		return tx.Create(&tech).Error
+	}); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "创建失败"})
 		return
 	}

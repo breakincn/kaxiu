@@ -24,15 +24,21 @@
         <div v-else>
           <div v-if="items.length === 0" class="text-center text-gray-400 py-10">暂无权限项</div>
           <div v-else class="space-y-2">
-            <div v-for="it in items" :key="it.permission.id" class="flex items-center justify-between border border-gray-100 rounded-xl px-4 py-3">
+            <div v-for="it in visibleItems" :key="it.permission.id" class="flex items-center justify-between border border-gray-100 rounded-xl px-4 py-3">
               <div class="pr-3">
                 <div class="text-gray-800 text-sm font-medium">{{ it.permission.name }}</div>
                 <div class="text-gray-500 text-xs mt-0.5">{{ it.permission.key }}</div>
               </div>
-              <label class="flex items-center gap-2 text-sm text-gray-700 shrink-0">
-                <input type="checkbox" v-model="it.override_allowed" />
-                <span>{{ it.override_allowed ? '允许' : '禁止' }}</span>
-              </label>
+              <div class="flex items-center gap-3 shrink-0">
+                <label class="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" v-model="it.override_allowed" />
+                  <span>{{ it.override_allowed ? '允许' : '禁止' }}</span>
+                </label>
+                <label v-if="it.permission.key === 'merchant.card.verify' && verifyFinishItem" class="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" v-model="verifyFinishItem.override_allowed" />
+                  <span>核销即结单</span>
+                </label>
+              </div>
             </div>
           </div>
         </div>
@@ -46,7 +52,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
 
@@ -60,6 +66,14 @@ const saving = ref(false)
 
 const role = ref(null)
 const items = ref([])
+
+const verifyFinishItem = computed(() => {
+  return items.value.find((it) => it?.permission?.key === 'merchant.card.verify_finish') || null
+})
+
+const visibleItems = computed(() => {
+  return items.value.filter((it) => it?.permission?.key !== 'merchant.card.verify_finish')
+})
 
 const goBack = () => {
   router.back()

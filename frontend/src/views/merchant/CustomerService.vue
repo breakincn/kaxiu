@@ -16,104 +16,170 @@
 
         <div class="mt-3 flex flex-wrap gap-2">
           <button
-            v-for="r in roles"
-            :key="r.key"
             type="button"
             class="px-3 py-2 rounded-lg text-sm font-medium border"
-            :class="activeRole === r.key ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
-            @click="selectRole(r.key)"
+            :class="activeType === 'operational' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
+            @click="selectType('operational')"
           >
-            {{ r.name }}
+            运营客服
+          </button>
+          <button
+            type="button"
+            class="px-3 py-2 rounded-lg text-sm font-medium border"
+            :class="activeType === 'professional' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
+            @click="selectType('professional')"
+          >
+            专业客服
           </button>
         </div>
 
-        <div v-if="roles.length === 0" class="mt-3 text-sm text-gray-500">
-          暂无可用客服类型
-        </div>
+        <div v-if="allRoles.length === 0" class="mt-3 text-sm text-gray-500">暂无可用客服类型</div>
 
         <div class="mt-4 border-t border-gray-100 pt-4">
-          <div v-if="activeRole" class="flex items-center justify-between">
-            <div class="text-gray-800 font-medium">{{ activeRoleObj.name }}账号</div>
+          <div class="flex items-center justify-between">
+            <div class="text-gray-800 font-medium">
+              <span v-if="activeType === 'operational'">运营客服账号</span>
+              <span v-else>专业客服账号</span>
+            </div>
             <div class="flex items-center gap-2">
-              <button
-                v-if="activeRoleObj && activeRoleObj.allow_permission_adjust"
-                type="button"
-                class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
-                @click="openPermissionAdjust"
-              >
-                权限微调
-              </button>
-              <button
-                type="button"
-                class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
-                @click="openCreate"
-              >
-                添加{{ activeRoleObj.name }}
-              </button>
-              <button
-                v-if="activeRoleObj.key === 'technician'"
-                type="button"
-                class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium"
-                @click="openEditAlias"
-              >
-                编辑称谓
-              </button>
+              <template v-if="activeType === 'operational'">
+                <button
+                  v-if="selectedOperationalRoleObj && selectedOperationalRoleObj.allow_permission_adjust"
+                  type="button"
+                  class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
+                  @click="openPermissionAdjustOperational"
+                >
+                  权限微调
+                </button>
+                <button
+                  type="button"
+                  class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+                  @click="openCreateOperational"
+                >
+                  添加{{ selectedOperationalRoleObj?.name || '运营客服' }}
+                </button>
+              </template>
+              <template v-else>
+                <button
+                  v-if="selectedProfessionalRoleObj && selectedProfessionalRoleObj.allow_permission_adjust"
+                  type="button"
+                  class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
+                  @click="openPermissionAdjustProfessional"
+                >
+                  权限微调
+                </button>
+                <button
+                  type="button"
+                  class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+                  @click="openCreateProfessionalRole"
+                >
+                  添加客服
+                </button>
+              </template>
             </div>
           </div>
         </div>
 
-        <div v-if="activeRole">
+        <div>
           <div v-if="loading" class="text-center text-gray-400 py-10">加载中...</div>
 
           <div v-else>
-            <div v-if="techs.length === 0" class="text-center text-gray-400 py-10">暂无{{ activeRoleObj.name }}</div>
+            <div v-if="activeType === 'operational'" class="mt-4">
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="r in operationalRoles"
+                  :key="r.key"
+                  type="button"
+                  class="px-3 py-2 rounded-lg text-sm font-medium border"
+                  :class="selectedOperationalRole === r.key ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
+                  @click="selectOperationalRole(r.key)"
+                >
+                  {{ r.name }}
+                </button>
+              </div>
 
-            <div v-else class="mt-4 space-y-3">
-              <div
-                v-for="t in techs"
-                :key="t.id"
-                class="border border-gray-100 rounded-xl p-4"
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <div class="flex items-center gap-2">
-                      <div class="text-gray-800 font-medium">{{ t.name }}</div>
-                      <span
-                        class="px-2 py-0.5 rounded text-xs"
-                        :class="t.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'"
-                      >
-                        {{ t.is_active ? '启用' : '禁用' }}
-                      </span>
+              <div v-if="visibleTechs.length === 0" class="text-center text-gray-400 py-10">暂无{{ selectedOperationalRoleObj?.name || '运营客服' }}</div>
+
+              <div v-else class="mt-4 space-y-3">
+                <div v-for="t in visibleTechs" :key="t.id" class="border border-gray-100 rounded-xl p-4">
+                  <div class="flex items-start justify-between gap-3">
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <div class="text-gray-800 font-medium">{{ t.name }}</div>
+                        <span class="px-2 py-0.5 rounded text-xs" :class="t.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'">
+                          {{ t.is_active ? '启用' : '禁用' }}
+                        </span>
+                      </div>
+                      <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：{{ selectedOperationalRoleObj?.name }}: {{ t.account }}</div>
                     </div>
-                    <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：技师: {{ t.account }}</div>
+                    <div class="text-gray-400 text-xs">ID: {{ t.id }}</div>
                   </div>
-                  <div class="text-gray-400 text-xs">ID: {{ t.id }}</div>
-                </div>
 
-                <div class="mt-3 flex gap-2">
+                  <div class="mt-3 flex gap-2">
+                    <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEdit(t)">编辑</button>
+                    <button
+                      type="button"
+                      class="px-3 py-2 rounded-lg text-sm font-medium"
+                      :class="t.is_active ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'"
+                      @click="toggleActive(t)"
+                    >
+                      {{ t.is_active ? '禁用' : '启用' }}
+                    </button>
+                    <div class="flex-1"></div>
+                    <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="mt-4">
+              <div class="mb-3">
+                <label class="block text-gray-700 text-sm font-medium mb-2">新增岗位（称谓）</label>
+                <div class="flex items-center gap-2">
+                  <select v-model="selectedProfessionalRole" class="flex-1 px-4 py-3 border border-gray-200 rounded-lg bg-white">
+                    <option v-for="r in professionalRoles" :key="r.key" :value="r.key">{{ r.name }}</option>
+                  </select>
                   <button
                     type="button"
-                    class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium"
-                    @click="openEdit(t)"
+                    class="px-4 py-3 bg-primary text-white rounded-lg text-sm font-medium shrink-0"
+                    :disabled="!selectedProfessionalRole"
+                    @click="openCreateProfessionalStaff"
                   >
-                    编辑
+                    添加
                   </button>
-                  <button
-                    type="button"
-                    class="px-3 py-2 rounded-lg text-sm font-medium"
-                    :class="t.is_active ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'"
-                    @click="toggleActive(t)"
-                  >
-                    {{ t.is_active ? '禁用' : '启用' }}
-                  </button>
-                  <div class="flex-1"></div>
-                  <button
-                    type="button"
-                    class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium"
-                    @click="removeTech(t)"
-                  >
-                    删除
-                  </button>
+                </div>
+              </div>
+
+              <div v-if="visibleTechs.length === 0" class="text-center text-gray-400 py-10">暂无专业客服</div>
+
+              <div v-else class="mt-4 space-y-3">
+                <div v-for="t in visibleTechs" :key="t.id" class="border border-gray-100 rounded-xl p-4">
+                  <div class="flex items-start justify-between gap-3">
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <div class="text-gray-800 font-medium">{{ t.name }}</div>
+                        <span class="px-2 py-0.5 rounded text-xs" :class="t.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'">
+                          {{ t.is_active ? '启用' : '禁用' }}
+                        </span>
+                      </div>
+                      <div class="text-gray-500 text-sm mt-1">岗位：{{ t.service_role?.name || '-' }}　编号：{{ t.code }}　账号：{{ t.account }}</div>
+                    </div>
+                    <div class="text-gray-400 text-xs">ID: {{ t.id }}</div>
+                  </div>
+
+                  <div class="mt-3 flex gap-2">
+                    <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEdit(t)">编辑</button>
+                    <button
+                      type="button"
+                      class="px-3 py-2 rounded-lg text-sm font-medium"
+                      :class="t.is_active ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'"
+                      @click="toggleActive(t)"
+                    >
+                      {{ t.is_active ? '禁用' : '启用' }}
+                    </button>
+                    <div class="flex-1"></div>
+                    <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -125,7 +191,7 @@
     <div v-if="showAdd" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-4 z-50" @click.self="closeAdd">
       <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden">
         <div class="px-5 py-4 border-b flex items-center justify-between">
-          <div class="font-medium text-gray-800">{{ isEdit ? `编辑${activeRoleObj?.name}` : `添加${activeRoleObj?.name}` }}</div>
+          <div class="font-medium text-gray-800">{{ staffModalTitle }}</div>
           <button type="button" class="text-gray-400" @click="closeAdd">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -135,29 +201,17 @@
 
         <div class="px-5 py-5">
           <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">{{ activeRoleObj?.name }}姓名</label>
+            <label class="block text-gray-700 text-sm font-medium mb-2">{{ staffNameLabel }}</label>
             <input
               v-model="form.name"
               type="text"
-              placeholder="如：老师1"
-              class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-            />
-          </div>
-
-          <div v-if="!isEdit" class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">{{ activeRoleObj?.name }}编号</label>
-            <input
-              v-model="form.code"
-              type="text"
-              placeholder="如：0001"
+              :placeholder="staffNamePlaceholder"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
             />
           </div>
 
           <div v-if="!isEdit" class="text-gray-500 text-sm mb-5">
-            默认账号：<span class="text-gray-800 font-medium">js{{ form.code || 'xxxx' }}</span>
-            <br />
-            默认密码：<span class="text-gray-800 font-medium">{{ (form.code || 'xxxx') + '12345' }}</span>
+            系统将自动生成账号（前缀+4位编号自增），默认密码为账号+123
           </div>
 
           <button
@@ -172,42 +226,51 @@
       </div>
     </div>
 
-    <!-- 编辑称谓弹窗 -->
-    <div v-if="showEditAlias" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-4 z-50" @click.self="showEditAlias = false">
-      <div class="bg-white rounded-2xl w-full max-w-md p-6">
-        <div class="flex items-center justify-between mb-6">
-          <h3 class="text-xl font-bold text-gray-800">编辑技师称谓</h3>
-          <button @click="showEditAlias = false" class="text-gray-400 hover:text-gray-600">
+    <div v-if="showAddRole" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-4 z-50" @click.self="closeAddRole">
+      <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+          <div class="font-medium text-gray-800">添加专业客服</div>
+          <button type="button" class="text-gray-400" @click="closeAddRole">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
           </button>
         </div>
 
-        <form @submit.prevent="saveAlias">
+        <div class="px-5 py-5">
           <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">技师称谓</label>
+            <label class="block text-gray-700 text-sm font-medium mb-2">称谓</label>
             <input
-              v-model="aliasForm.technician_alias"
+              v-model="roleForm.name"
               type="text"
-              placeholder="如：小二、服务员、店员等"
+              placeholder="如：助教"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-              maxlength="20"
-              required
             />
-            <div class="text-gray-500 text-xs mt-1">将替代"技师"显示在界面中</div>
+          </div>
+
+          <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-medium mb-2">账号前缀</label>
+            <input
+              v-model="roleForm.account_prefix"
+              type="text"
+              placeholder="如：zj"
+              class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+            />
+            <div class="text-gray-500 text-sm mt-2">最多5个英文字母，如：js / zj</div>
           </div>
 
           <button
-            type="submit"
-            :disabled="savingAlias"
-            class="w-full py-3 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+            type="button"
+            class="w-full py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
+            :disabled="savingRole"
+            @click="submitRole"
           >
-            {{ savingAlias ? '保存中...' : '保存' }}
+            {{ savingRole ? '保存中...' : '保存' }}
           </button>
-        </form>
+        </div>
       </div>
     </div>
+
   </div>
 </template>
 
@@ -220,58 +283,101 @@ const router = useRouter()
 
 const loading = ref(false)
 const saving = ref(false)
+const savingRole = ref(false)
 const techs = ref([])
 
-const roles = ref([])
+const operationalRolesData = ref([])
+const professionalRolesData = ref([])
 
-const activeRole = ref('')
+const activeType = ref('operational')
 
-const activeRoleObj = computed(() => {
-  const k = activeRole.value
-  if (!k) return null
-  const role = roles.value.find((r) => r && r.key === k) || null
-  
-  // 如果是技师角色，使用自定义称谓
-  if (role && role.key === 'technician' && currentMerchant.value?.technician_alias) {
-    return {
-      ...role,
-      name: currentMerchant.value.technician_alias
-    }
+const operationalRoles = computed(() => {
+  return operationalRolesData.value.filter((r) => r && (r.key === 'store_manager' || r.key === 'front_desk'))
+})
+
+const professionalRoles = computed(() => {
+  return professionalRolesData.value
+})
+
+const allRoles = computed(() => {
+  return [...(operationalRolesData.value || []), ...(professionalRolesData.value || [])]
+})
+
+const selectedOperationalRole = ref('store_manager')
+const selectedProfessionalRole = ref('')
+
+const selectedOperationalRoleObj = computed(() => {
+  const k = selectedOperationalRole.value
+  return operationalRoles.value.find((r) => r && r.key === k) || null
+})
+
+const selectedProfessionalRoleObj = computed(() => {
+  const k = selectedProfessionalRole.value
+  return professionalRoles.value.find((r) => r && r.key === k) || null
+})
+
+const staffModalTitle = computed(() => {
+  if (isEdit.value) return '编辑工作人员'
+  if (activeType.value === 'professional') {
+    return `添加${selectedProfessionalRoleObj.value?.name || '专业客服'}`
   }
-  
-  return role
+  return `添加${selectedOperationalRoleObj.value?.name || '运营客服'}`
+})
+
+const staffNameLabel = computed(() => {
+  if (activeType.value === 'professional') return '称谓/昵称'
+  return '姓名'
+})
+
+const staffNamePlaceholder = computed(() => {
+  if (activeType.value === 'professional') return '如：老师1'
+  return '如：张三'
+})
+
+const visibleTechs = computed(() => {
+  const list = techs.value || []
+  if (activeType.value === 'operational') {
+    const k = selectedOperationalRole.value
+    return list.filter((t) => String(t?.service_role?.key || '') === String(k))
+  }
+  return list.filter((t) => {
+    const k = String(t?.service_role?.key || '')
+    return k !== 'store_manager' && k !== 'front_desk'
+  })
 })
 
 const showAdd = ref(false)
 const isEdit = ref(false)
-const showEditAlias = ref(false)
-const savingAlias = ref(false)
 const form = ref({
   id: 0,
   name: '',
   code: ''
 })
 
-const aliasForm = ref({
-  technician_alias: ''
+const showAddRole = ref(false)
+const roleForm = ref({
+  name: '',
+  account_prefix: ''
 })
-
-const currentMerchant = ref(null)
 
 const goBack = () => {
   router.back()
 }
 
-const openPermissionAdjust = () => {
-  if (!activeRole.value) return
-  router.push(`/merchant/role-permissions/${activeRole.value}`)
+const openPermissionAdjustOperational = () => {
+  if (!selectedOperationalRole.value) return
+  router.push(`/merchant/role-permissions/${selectedOperationalRole.value}`)
+}
+
+const openPermissionAdjustProfessional = () => {
+  if (!selectedProfessionalRole.value) return
+  router.push(`/merchant/role-permissions/${selectedProfessionalRole.value}`)
 }
 
 const load = async () => {
-  if (!activeRole.value) return
   loading.value = true
   try {
-    const res = await merchantApi.getTechnicians(activeRole.value)
+    const res = await merchantApi.getTechnicians(activeType.value === 'operational' ? selectedOperationalRole.value : '')
     techs.value = res.data.data || []
   } catch (e) {
     techs.value = []
@@ -284,13 +390,26 @@ const load = async () => {
 const closeAdd = () => {
   showAdd.value = false
   isEdit.value = false
-  form.value = { id: 0, name: '', code: '' }
+  form.value = { id: 0, name: '' }
 }
 
 const openCreate = () => {
   isEdit.value = false
-  form.value = { id: 0, name: '', code: '' }
+  form.value = { id: 0, name: '' }
   showAdd.value = true
+}
+
+const openCreateOperational = () => {
+  openCreate()
+}
+
+const openCreateProfessionalRole = () => {
+  roleForm.value = { name: '', account_prefix: '' }
+  showAddRole.value = true
+}
+
+const openCreateProfessionalStaff = () => {
+  openCreate()
 }
 
 const openEdit = (t) => {
@@ -304,58 +423,18 @@ const openEdit = (t) => {
   showAdd.value = true
 }
 
-const openEditAlias = async () => {
-  try {
-    // 获取当前商户信息
-    const res = await merchantApi.getCurrentMerchant()
-    currentMerchant.value = res.data?.data || null
-    
-    // 设置当前称谓
-    aliasForm.value.technician_alias = currentMerchant.value?.technician_alias || '技师'
-    
-    showEditAlias.value = true
-  } catch (e) {
-    alert('获取商户信息失败')
-  }
-}
-
-const saveAlias = async () => {
-  if (savingAlias.value) return
-  
-  if (!aliasForm.value.technician_alias.trim()) {
-    alert('技师称谓不能为空')
-    return
-  }
-
-  savingAlias.value = true
-  try {
-    await merchantApi.updateTechnicianAlias({
-      technician_alias: aliasForm.value.technician_alias.trim()
-    })
-    
-    alert('称谓更新成功')
-    showEditAlias.value = false
-    
-    // 更新当前商户信息
-    if (currentMerchant.value) {
-      currentMerchant.value.technician_alias = aliasForm.value.technician_alias.trim()
-    }
-  } catch (e) {
-    alert(e.response?.data?.error || '更新失败')
-  } finally {
-    savingAlias.value = false
-  }
-}
-
 const submit = async () => {
   if (saving.value) return
   if (!form.value.name) {
-    alert('请输入技师姓名')
+    alert('请输入姓名')
     return
   }
-  if (!isEdit.value && !form.value.code) {
-    alert('请输入技师编号')
-    return
+
+  if (!isEdit.value) {
+    if (activeType.value === 'professional' && !selectedProfessionalRole.value) {
+      alert('请选择岗位（称谓）')
+      return
+    }
   }
 
   saving.value = true
@@ -366,8 +445,7 @@ const submit = async () => {
     } else {
       const res = await merchantApi.createTechnician({
         name: form.value.name,
-        code: form.value.code,
-        role: activeRole.value
+        role: activeType.value === 'operational' ? selectedOperationalRole.value : selectedProfessionalRole.value
       })
       const pwd = res?.data?.data?.default_password
       if (pwd) {
@@ -402,7 +480,7 @@ const toggleActive = async (t) => {
 
 const removeTech = async (t) => {
   if (!t || !t.id) return
-  if (!confirm('确定要删除该技师吗？')) return
+  if (!confirm('确定要删除该工作人员吗？')) return
   if (saving.value) return
   saving.value = true
   try {
@@ -415,36 +493,86 @@ const removeTech = async (t) => {
   }
 }
 
-const selectRole = async (key) => {
-  activeRole.value = key
+const selectType = async (t) => {
+  activeType.value = t
   closeAdd()
-  if (key === 'technician') {
-    await load()
+  await load()
+}
+
+const selectOperationalRole = async (key) => {
+  selectedOperationalRole.value = key
+  closeAdd()
+  await load()
+}
+
+const loadProfessionalRoles = async () => {
+  try {
+    const res = await merchantApi.getProfessionalRoles()
+    professionalRolesData.value = res.data?.data || []
+  } catch (e) {
+    professionalRolesData.value = []
+  }
+}
+
+const closeAddRole = () => {
+  showAddRole.value = false
+  roleForm.value = { name: '', account_prefix: '' }
+}
+
+const submitRole = async () => {
+  if (savingRole.value) return
+  const name = String(roleForm.value.name || '').trim()
+  const prefix = String(roleForm.value.account_prefix || '').trim()
+  if (!name) {
+    alert('请输入称谓')
+    return
+  }
+  if (!prefix) {
+    alert('请输入账号前缀')
+    return
+  }
+  savingRole.value = true
+  try {
+    const res = await merchantApi.createProfessionalRole({ name, account_prefix: prefix })
+    const role = res?.data?.data
+    await loadProfessionalRoles()
+    if (role && role.key) {
+      selectedProfessionalRole.value = String(role.key)
+    }
+    closeAddRole()
+    alert('创建成功')
+  } catch (e) {
+    alert(e.response?.data?.error || '创建失败')
+  } finally {
+    savingRole.value = false
   }
 }
 
 onMounted(async () => {
   try {
     const res = await platformApi.getServiceRoles()
-    roles.value = res.data?.data || []
+    operationalRolesData.value = res.data?.data || []
   } catch (e) {
-    roles.value = []
+    operationalRolesData.value = []
   }
 
-  const hasTechnician = roles.value.some((r) => r && r.key === 'technician')
-  if (hasTechnician) {
-    activeRole.value = 'technician'
-    await load()
-    return
+  await loadProfessionalRoles()
+
+  const opFirst = operationalRoles.value[0]
+  if (opFirst && opFirst.key) {
+    selectedOperationalRole.value = String(opFirst.key)
+  }
+  const proFirst = professionalRoles.value[0]
+  if (proFirst && proFirst.key) {
+    selectedProfessionalRole.value = String(proFirst.key)
   }
 
-  const first = roles.value.find((r) => r && r.key)
-  activeRole.value = first ? String(first.key) : ''
+  activeType.value = operationalRoles.value.length > 0 ? 'operational' : 'professional'
   await load()
 })
 
 // 监听角色切换
-watch(activeRole, () => {
+watch([activeType, selectedOperationalRole, selectedProfessionalRole], () => {
   load()
 })
 </script>

@@ -154,15 +154,15 @@ import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission, 
 
 const router = useRouter()
 
-const canServiceUpdate = computed(() => hasMerchantPermission('merchant.service.update'))
-const canMerchantInfoUpdate = computed(() => hasMerchantPermission('merchant.merchant.update'))
+const canServiceUpdate = computed(() => hasMerchantPermission('merchant.service.manage'))
+const canMerchantInfoUpdate = computed(() => hasMerchantPermission('merchant.info.manage'))
 const canCustomerServiceManage = computed(() => {
   return hasMerchantPermission('merchant.cs.manage') && !!merchant.value?.support_customer_service
 })
 
-const canProjectManage = computed(() => hasMerchantPermission('merchant.service.update') && !!merchant.value?.support_project)
-const canHandCardManage = computed(() => hasMerchantPermission('merchant.service.update') && !!merchant.value?.support_hand_card)
-const canRoomNumberCardManage = computed(() => hasMerchantPermission('merchant.service.update') && !!merchant.value?.support_room)
+const canProjectManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_project)
+const canHandCardManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_hand_card)
+const canRoomNumberCardManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_room)
 
 const merchant = ref({})
 

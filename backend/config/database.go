@@ -5,6 +5,7 @@ import (
 	"kabao/models"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"gorm.io/driver/mysql"
@@ -78,6 +79,12 @@ func InitDB() {
 	// 尝试删除旧的 account 唯一索引（不同环境下索引名可能不同，忽略错误即可）
 	DB.Exec("ALTER TABLE `technicians` DROP INDEX `idx_technicians_account`")
 	DB.Exec("ALTER TABLE `technicians` DROP INDEX `account`")
+
+	// service_roles: 账号前缀（最多5个字母，用于生成工作人员账号）
+	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `account_prefix` varchar(5) NOT NULL DEFAULT '' COMMENT '账号前缀（最多5个英文字母）'")
+	// service_roles: 支持商户自定义专业岗位
+	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `merchant_id` int unsigned NULL DEFAULT NULL COMMENT '所属商户ID（NULL 表示平台默认）'")
+	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `role_type` varchar(20) NOT NULL DEFAULT '' COMMENT '角色类型：operational/professional'")
 
 	// 添加表注释
 	DB.Exec("ALTER TABLE `users` COMMENT = '用户表'")
@@ -164,10 +171,13 @@ func migrateLegacyMerchantProjects() {
 
 func initServiceRoles() {
 	defaults := []models.ServiceRole{
-		{Key: "technician", Name: "技师", Description: "技师账号", IsActive: true, AllowPermissionAdjust: true, Sort: 10},
-		{Key: "teacher", Name: "老师", Description: "老师", IsActive: true, AllowPermissionAdjust: false, Sort: 20},
-		{Key: "coach", Name: "教练", Description: "教练", IsActive: true, AllowPermissionAdjust: false, Sort: 30},
-		{Key: "pet_doctor", Name: "宠物医生", Description: "宠物医生", IsActive: true, AllowPermissionAdjust: false, Sort: 40},
+		{Key: "store_manager", Name: "店长", AccountPrefix: "dz", RoleType: "operational", Description: "运营客服-店长", IsActive: true, AllowPermissionAdjust: false, Sort: 5},
+		{Key: "front_desk", Name: "前台", AccountPrefix: "qt", RoleType: "operational", Description: "运营客服-前台", IsActive: true, AllowPermissionAdjust: false, Sort: 6},
+		// 以下为历史默认专业岗位：为兼容旧数据保留，但不再作为“岗位下拉”显示
+		{Key: "technician", Name: "技师", AccountPrefix: "js", RoleType: "professional", Description: "技师账号(历史默认)", IsActive: false, AllowPermissionAdjust: true, Sort: 10},
+		{Key: "teacher", Name: "助教", AccountPrefix: "zj", RoleType: "professional", Description: "授课教师/助教(历史默认)", IsActive: false, AllowPermissionAdjust: true, Sort: 20},
+		{Key: "coach", Name: "教练", AccountPrefix: "jl", RoleType: "professional", Description: "教练(历史默认)", IsActive: false, AllowPermissionAdjust: true, Sort: 30},
+		{Key: "pet_doctor", Name: "宠物医生", AccountPrefix: "ys", RoleType: "professional", Description: "宠物医生(历史默认)", IsActive: false, AllowPermissionAdjust: true, Sort: 40},
 	}
 
 	for _, r := range defaults {
@@ -177,11 +187,24 @@ func initServiceRoles() {
 			if existing.Name == "" {
 				updates["name"] = r.Name
 			}
+			if strings.TrimSpace(existing.RoleType) == "" && strings.TrimSpace(r.RoleType) != "" {
+				updates["role_type"] = r.RoleType
+			}
+			if existing.AccountPrefix == "" && r.AccountPrefix != "" {
+				updates["account_prefix"] = r.AccountPrefix
+			}
+			if !existing.AllowPermissionAdjust && r.AllowPermissionAdjust {
+				updates["allow_permission_adjust"] = true
+			}
 			if existing.Description == "" {
 				updates["description"] = r.Description
 			}
 			if existing.Sort == 0 {
 				updates["sort"] = r.Sort
+			}
+			// 历史默认专业岗位：更新为非激活，避免出现在岗位下拉
+			if r.IsActive == false && existing.IsActive == true {
+				updates["is_active"] = false
 			}
 			if len(updates) > 0 {
 				DB.Model(&models.ServiceRole{}).Where("id = ?", existing.ID).Updates(updates)
@@ -336,8 +359,9 @@ func initPermissions() {
 		// 卡片管理 (40-59)
 		{Key: "merchant.card.issue", Name: "发卡/开卡", Group: "卡片管理", Description: "创建卡片、发卡", Sort: 40},
 		{Key: "merchant.card.verify", Name: "核销", Group: "卡片管理", Description: "核销会员卡", Sort: 41},
-		{Key: "merchant.card.finish", Name: "结单", Group: "卡片管理", Description: "技师扫码结单，将进行中核销置为完成", Sort: 42},
-		{Key: "merchant.card.sell", Name: "售卡", Group: "卡片管理", Description: "技师售卡：查询售卡模板、生成售卡二维码", Sort: 43},
+		{Key: "merchant.card.verify_finish", Name: "核销即结单", Group: "卡片管理", Description: "核销后自动结单（不再需要二次扫码结单）", Sort: 42},
+		{Key: "merchant.card.finish", Name: "结单", Group: "卡片管理", Description: "技师扫码结单，将进行中核销置为完成", Sort: 43},
+		{Key: "merchant.card.sell", Name: "售卡", Group: "卡片管理", Description: "技师售卡：查询售卡模板、生成售卡二维码", Sort: 44},
 
 		// 客服管理 (60-69)
 		{Key: "merchant.cs.manage", Name: "客服管理", Group: "客服管理", Description: "新增/编辑/禁用/删除客服账号", Sort: 60},
@@ -377,34 +401,55 @@ func initPermissions() {
 }
 
 func initRolePermissions() {
-	// 默认策略：技师允许核销和售卡；其它角色默认无权限（后续可在平台后台配置）
-	var technicianRole models.ServiceRole
-	if err := DB.Where("`key` = ?", "technician").First(&technicianRole).Error; err != nil {
-		return
+	ensure := func(roleKey string, permKey string) {
+		var role models.ServiceRole
+		if err := DB.Where("`key` = ?", roleKey).First(&role).Error; err != nil {
+			return
+		}
+		var perm models.Permission
+		if err := DB.Where("`key` = ?", permKey).First(&perm).Error; err != nil {
+			return
+		}
+		var existing models.RolePermission
+		if err := DB.Where("service_role_id = ? AND permission_id = ?", role.ID, perm.ID).First(&existing).Error; err == nil {
+			return
+		}
+		DB.Create(&models.RolePermission{ServiceRoleID: role.ID, PermissionID: perm.ID, Allowed: true})
 	}
 
-	var permVerify models.Permission
-	if err := DB.Where("`key` = ?", "merchant.card.verify").First(&permVerify).Error; err != nil {
-		return
-	}
-	var permFinish models.Permission
-	if err := DB.Where("`key` = ?", "merchant.card.finish").First(&permFinish).Error; err != nil {
-		return
-	}
-	var permSell models.Permission
-	if err := DB.Where("`key` = ?", "merchant.card.sell").First(&permSell).Error; err != nil {
-		return
+	// 专业客服默认：核销、结单、售卡
+	professionalRoles := []string{"technician", "teacher", "coach", "pet_doctor"}
+	for _, rk := range professionalRoles {
+		ensure(rk, "merchant.card.verify")
+		ensure(rk, "merchant.card.finish")
+		ensure(rk, "merchant.card.sell")
 	}
 
-	var existing models.RolePermission
-	if err := DB.Where("service_role_id = ? AND permission_id = ?", technicianRole.ID, permVerify.ID).First(&existing).Error; err != nil {
-		DB.Create(&models.RolePermission{ServiceRoleID: technicianRole.ID, PermissionID: permVerify.ID, Allowed: true})
+	// 店长：除收款配置/店铺短链（merchant.direct_sale.manage）与商户地址信息设置（merchant.info.manage）之外，默认全开
+	var perms []models.Permission
+	DB.Find(&perms)
+	for _, p := range perms {
+		if strings.TrimSpace(p.Key) == "" {
+			continue
+		}
+		if p.Key == "merchant.direct_sale.manage" || p.Key == "merchant.info.manage" {
+			continue
+		}
+		ensure("store_manager", p.Key)
 	}
-	if err := DB.Where("service_role_id = ? AND permission_id = ?", technicianRole.ID, permFinish.ID).First(&existing).Error; err != nil {
-		DB.Create(&models.RolePermission{ServiceRoleID: technicianRole.ID, PermissionID: permFinish.ID, Allowed: true})
+
+	// 前台：营业状态、通知、核销、售卡管理、售卡、发卡、预约管理
+	frontDeskPerms := []string{
+		"merchant.business_status.manage",
+		"merchant.notice.manage",
+		"merchant.card.verify",
+		"merchant.direct_sale.manage",
+		"merchant.card.sell",
+		"merchant.card.issue",
+		"merchant.appointment.manage",
 	}
-	if err := DB.Where("service_role_id = ? AND permission_id = ?", technicianRole.ID, permSell.ID).First(&existing).Error; err != nil {
-		DB.Create(&models.RolePermission{ServiceRoleID: technicianRole.ID, PermissionID: permSell.ID, Allowed: true})
+	for _, pk := range frontDeskPerms {
+		ensure("front_desk", pk)
 	}
 }
 
@@ -413,6 +458,7 @@ func addFieldComments() {
 	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID'")
 	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `key` varchar(50) NOT NULL COMMENT '客服类型标识（如：technician、teacher）'")
 	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `name` varchar(50) NOT NULL COMMENT '客服类型名称（如：技师、老师）'")
+	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `account_prefix` varchar(5) NOT NULL DEFAULT '' COMMENT '账号前缀（最多5个英文字母）'")
 	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `description` varchar(255) DEFAULT '' COMMENT '客服类型描述'")
 	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否启用（0-禁用，1-启用）'")
 	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `allow_permission_adjust` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否允许权限调整（0-不允许，1-允许）'")

@@ -149,6 +149,10 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.PUT("/technicians/:id", middleware.RequirePermission("merchant.cs.manage"), handlers.UpdateMerchantTechnician)
 	auth.DELETE("/technicians/:id", middleware.RequirePermission("merchant.cs.manage"), handlers.DeleteMerchantTechnician)
 
+	// 商户端：专业客服岗位（称谓+前缀）
+	auth.GET("/professional-roles", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantProfessionalRoles)
+	auth.POST("/professional-roles", middleware.RequirePermission("merchant.cs.manage"), handlers.CreateMerchantProfessionalRole)
+
 	// 房间管理
 	auth.GET("/rooms", middleware.RequirePermission("merchant.service.manage"), handlers.ListRooms)
 	auth.POST("/rooms", middleware.RequirePermission("merchant.service.manage"), handlers.CreateRoom)

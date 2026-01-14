@@ -46,7 +46,7 @@ func GetMyPermissions(c *gin.Context) {
 
 func GetMerchantRolePermissionOverrides(c *gin.Context) {
 	authType, _ := c.Get("auth_type")
-	if authType == "technician" {
+	if authType == "staff" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
 		return
 	}
@@ -65,6 +65,10 @@ func GetMerchantRolePermissionOverrides(c *gin.Context) {
 	var role models.ServiceRole
 	if err := config.DB.Where("`key` = ?", roleKey).First(&role).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "角色不存在"})
+		return
+	}
+	if role.MerchantID != nil && *role.MerchantID != merchantID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权操作该角色"})
 		return
 	}
 
@@ -107,7 +111,7 @@ func GetMerchantRolePermissionOverrides(c *gin.Context) {
 
 func SetMerchantRolePermissionOverrides(c *gin.Context) {
 	authType, _ := c.Get("auth_type")
-	if authType == "technician" {
+	if authType == "staff" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
 		return
 	}
@@ -126,6 +130,10 @@ func SetMerchantRolePermissionOverrides(c *gin.Context) {
 	var role models.ServiceRole
 	if err := config.DB.Where("`key` = ?", roleKey).First(&role).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "角色不存在"})
+		return
+	}
+	if role.MerchantID != nil && *role.MerchantID != merchantID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权操作该角色"})
 		return
 	}
 	if !role.AllowPermissionAdjust {

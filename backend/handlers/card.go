@@ -631,6 +631,10 @@ func VerifyCard(c *gin.Context) {
 		return
 	}
 
+	// 获取账号类型（用于核销即结单判断）
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+
 	var input struct {
 		Code string `json:"code" binding:"required"`
 	}
@@ -648,6 +652,7 @@ func VerifyCard(c *gin.Context) {
 	var sessionID uint
 	var nextStep string
 	usageStatus := "success"
+	autoFinish := false
 
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
@@ -657,6 +662,17 @@ func VerifyCard(c *gin.Context) {
 		}
 		if merchant.SupportCustomerService {
 			usageStatus = "in_progress"
+			// 仅 staff 账号可使用“核销即结单”开关（商户老板号默认不走该开关）
+			if authType == "staff" {
+				okVF, err := middleware.HasPermission(c, "merchant.card.verify_finish")
+				if err != nil {
+					return err
+				}
+				if okVF {
+					autoFinish = true
+					usageStatus = "success"
+				}
+			}
 		}
 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", input.Code).First(&verifyCode).Error; err != nil {
@@ -734,6 +750,19 @@ func VerifyCard(c *gin.Context) {
 		}
 		if err := tx.Create(&usage).Error; err != nil {
 			return err
+		}
+
+		if autoFinish {
+			finishedAt := now
+			if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
+				"status":      "success",
+				"finished_at": &finishedAt,
+			}).Error; err != nil {
+				return err
+			}
+			nextStep = ""
+			sessionID = 0
+			return nil
 		}
 
 		// 新流程：创建服务会话（核销->资源锁定->人员选择->预结单->自动结单）
@@ -976,6 +1005,7 @@ func ScanVerifyCard(c *gin.Context) {
 	var nextStep string
 	usageStatus := "success"
 	action := "verify"
+	autoFinish := false
 
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
@@ -984,6 +1014,16 @@ func ScanVerifyCard(c *gin.Context) {
 		}
 		if merchant.SupportCustomerService {
 			usageStatus = "in_progress"
+			if authType == "staff" {
+				okVF, err := middleware.HasPermission(c, "merchant.card.verify_finish")
+				if err != nil {
+					return err
+				}
+				if okVF {
+					autoFinish = true
+					usageStatus = "success"
+				}
+			}
 		}
 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", code).First(&verifyCode).Error; err != nil {
@@ -1055,6 +1095,20 @@ func ScanVerifyCard(c *gin.Context) {
 			}
 			if err := tx.Create(&usage).Error; err != nil {
 				return err
+			}
+
+			if autoFinish {
+				finishedAt = now
+				action = "verify"
+				if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
+					"status":      "success",
+					"finished_at": &finishedAt,
+				}).Error; err != nil {
+					return err
+				}
+				nextStep = ""
+				sessionID = 0
+				return nil
 			}
 
 			// 新流程：创建服务会话（核销->资源锁定->人员选择->预结单->自动结单）
