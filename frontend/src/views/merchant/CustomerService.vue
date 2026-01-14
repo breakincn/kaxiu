@@ -61,14 +61,6 @@
               </template>
               <template v-else>
                 <button
-                  v-if="selectedProfessionalRoleObj && selectedProfessionalRoleObj.allow_permission_adjust"
-                  type="button"
-                  class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
-                  @click="openPermissionAdjustProfessional"
-                >
-                  权限微调
-                </button>
-                <button
                   type="button"
                   class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
                   @click="openCreateProfessionalRole"
