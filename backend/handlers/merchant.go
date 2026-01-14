@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"kabao/config"
 	"kabao/models"
 	"log"
@@ -302,6 +303,15 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		return
 	}
 	config.DB.First(&merchant, merchantID)
+
+	// 如果开启了房间功能，且房间号牌设置有变化，自动创建房间
+	if merchant.SupportRoom {
+		if err := createOrUpdateRoomsForMerchant(merchant.ID, merchant.RoomNumberCardPrefix, merchant.RoomNumberCardStartNo, merchant.RoomNumberCardEndNo); err != nil {
+			// 不影响主流程，只记录错误
+			fmt.Printf("自动创建房间失败: %v\n", err)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"data": merchant})
 }
 
@@ -599,4 +609,79 @@ func UpdateTechnicianAlias(c *gin.Context) {
 	// 返回更新后的商户信息
 	config.DB.First(&merchant, merchantID)
 	c.JSON(http.StatusOK, gin.H{"data": merchant})
+}
+
+// createOrUpdateRoomsForMerchant 根据商户的房间号牌设置自动创建或更新房间
+func createOrUpdateRoomsForMerchant(merchantID uint, prefix string, startNo, endNo int) error {
+	// 参数验证
+	if startNo < 1 || endNo < 1 || startNo > endNo {
+		return fmt.Errorf("房间号牌参数无效: startNo=%d, endNo=%d", startNo, endNo)
+	}
+
+	// 获取现有房间
+	var existingRooms []models.Room
+	if err := config.DB.Where("merchant_id = ?", merchantID).Order("id asc").Find(&existingRooms).Error; err != nil {
+		return fmt.Errorf("查询现有房间失败: %v", err)
+	}
+
+	// 创建房间名称映射
+	existingRoomNames := make(map[string]bool)
+	for _, room := range existingRooms {
+		existingRoomNames[room.Name] = true
+	}
+
+	// 生成目标房间列表
+	targetRooms := make([]string, 0, endNo-startNo+1)
+	for i := startNo; i <= endNo; i++ {
+		roomName := fmt.Sprintf("%s%d", prefix, i)
+		targetRooms = append(targetRooms, roomName)
+	}
+
+	// 删除不再需要的房间
+	roomsToDelete := make([]uint, 0)
+	for _, room := range existingRooms {
+		// 检查房间是否在目标列表中
+		found := false
+		for _, targetName := range targetRooms {
+			if room.Name == targetName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			// 检查房间是否正在使用
+			var activeSessionCount int64
+			config.DB.Model(&models.ServiceSession{}).
+				Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','precheck_pending','delay_pending','serving','auto_finishing')",
+					merchantID, room.ID).
+				Count(&activeSessionCount)
+
+			if activeSessionCount == 0 {
+				roomsToDelete = append(roomsToDelete, room.ID)
+			}
+		}
+	}
+
+	// 批量删除不需要的房间
+	if len(roomsToDelete) > 0 {
+		if err := config.DB.Where("id IN ?", roomsToDelete).Delete(&models.Room{}).Error; err != nil {
+			return fmt.Errorf("删除房间失败: %v", err)
+		}
+	}
+
+	// 创建新房间
+	for _, roomName := range targetRooms {
+		if !existingRoomNames[roomName] {
+			newRoom := models.Room{
+				MerchantID: merchantID,
+				Name:       roomName,
+				IsActive:   true,
+			}
+			if err := config.DB.Create(&newRoom).Error; err != nil {
+				return fmt.Errorf("创建房间 %s 失败: %v", roomName, err)
+			}
+		}
+	}
+
+	return nil
 }
