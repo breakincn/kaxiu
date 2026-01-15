@@ -241,7 +241,7 @@
         </div>
       </div>
     </div>
-@@
+
     <div v-if="showUsageQrModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 select-none" @click.self="closeUsageQrModal" @contextmenu.prevent>
       <div class="bg-white rounded-2xl w-11/12 max-w-lg overflow-hidden">
         <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
