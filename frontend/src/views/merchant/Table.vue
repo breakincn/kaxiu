@@ -58,16 +58,19 @@
                       <div v-if="it.technician">{{ it.technician_role?.name || '工作人员' }}: {{ it.technician.account }} {{ it.technician.name }}</div>
                       <div v-if="it.started_at">开始：{{ formatTime(it.started_at) }}</div>
                       <div v-if="it.finish_at">结束：{{ formatTime(it.finish_at) }}</div>
-                      <div v-if="it.finish_at">剩余：{{ formatDuration(it.remain_seconds) }}</div>
+                      <div v-if="it.finish_at">剩余：{{ calculateRemainTime(it.finish_at) }}</div>
                       <div v-if="it.phase_text" class="mt-1">
                         <span class="font-medium" :class="it.phase_class === 'precheck_pending' ? 'text-red-500' : (it.phase_class === 'finish_failed' ? 'text-red-500' : 'text-blue-600')">
                           {{ it.phase_text }}
                         </span>
-                        <span v-if="it.phase_class === 'precheck_pending' && it.precheck_remain_seconds" class="ml-2 text-red-500 font-mono">
-                          {{ formatDuration(it.precheck_remain_seconds) }}
+                        <span v-if="it.phase_class === 'precheck_pending'" class="ml-2 text-red-500 font-mono">
+                          {{ calculateRemainTime(it.updated_at, 15 * 60) }}
                         </span>
-                        <span v-else-if="it.phase_class === 'manual_finish' && it.manual_finish_remain_seconds" class="ml-2 text-blue-600 font-mono">
-                          {{ formatDuration(it.manual_finish_remain_seconds) }}
+                        <span v-else-if="it.phase_class === 'manual_finish'" class="ml-2 text-blue-600 font-mono">
+                          {{ calculateRemainTime(it.used_at, 12 * 60 * 60) }}
+                        </span>
+                        <span v-else-if="it.phase_class === 'room_selecting'" class="ml-2 text-blue-600 font-mono">
+                          {{ calculateRemainTime(it.room_select_deadline_at) }}
                         </span>
                       </div>
                     </div>
@@ -156,6 +159,33 @@ const formatDuration = (secs) => {
   const ss = Math.floor(s % 60)
   if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`
   return `${m}m${String(ss).padStart(2, '0')}s`
+}
+
+const calculateRemainTime = (endTime, durationSeconds = null) => {
+  if (!endTime) return '-'
+  
+  let deadline
+  if (durationSeconds !== null) {
+    // 如果提供了持续时间，从开始时间计算截止时间
+    const start = new Date(endTime)
+    deadline = new Date(start.getTime() + durationSeconds * 1000)
+  } else {
+    // 直接使用结束时间
+    deadline = new Date(endTime)
+  }
+  
+  const now = currentTime.value
+  const diffMs = deadline - now
+  const diffSeconds = Math.floor(diffMs / 1000)
+  
+  if (diffSeconds <= 0) return '0m0s'
+  
+  const h = Math.floor(diffSeconds / 3600)
+  const m = Math.floor((diffSeconds % 3600) / 60)
+  const s = diffSeconds % 60
+  
+  if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`
+  return `${m}m${String(s).padStart(2, '0')}s`
 }
 
 const calculateElapsedTime = (startTime) => {

@@ -76,6 +76,9 @@ func TableRooms(c *gin.Context) {
 		StartedAt      *time.Time             `json:"started_at"`
 		FinishAt       *time.Time             `json:"finish_at"`
 		RoomLockedAt   *time.Time             `json:"room_locked_at"`
+		UpdatedAt      *time.Time             `json:"updated_at"`
+		UsedAt         *time.Time             `json:"used_at"`
+		RoomSelectDeadlineAt *time.Time       `json:"room_select_deadline_at"`
 		ElapsedSeconds int64                  `json:"elapsed_seconds"`
 		RemainSeconds  int64                  `json:"remain_seconds"`
 		Status         string                 `json:"status"`
@@ -83,12 +86,13 @@ func TableRooms(c *gin.Context) {
 		PhaseClass     string                 `json:"phase_class"`
 		PrecheckRemainSeconds    int64         `json:"precheck_remain_seconds"`
 		ManualFinishRemainSeconds int64        `json:"manual_finish_remain_seconds"`
+		RoomSelectRemainSeconds  int64         `json:"room_select_remain_seconds"`
 		Now            time.Time              `json:"now"`
 	}
 
 	out := make([]roomItem, 0, len(rooms))
 	for _, r := range rooms {
-		it := roomItem{Room: r, Occupied: false, Session: nil, Technician: nil, TechnicianRole: nil, StartedAt: nil, FinishAt: nil, RoomLockedAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, Status: "idle", PhaseText: "", PhaseClass: "", PrecheckRemainSeconds: 0, ManualFinishRemainSeconds: 0, Now: now}
+		it := roomItem{Room: r, Occupied: false, Session: nil, Technician: nil, TechnicianRole: nil, StartedAt: nil, FinishAt: nil, RoomLockedAt: nil, UpdatedAt: nil, UsedAt: nil, RoomSelectDeadlineAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, Status: "idle", PhaseText: "", PhaseClass: "", PrecheckRemainSeconds: 0, ManualFinishRemainSeconds: 0, RoomSelectRemainSeconds: 0, Now: now}
 		s, ok := byRoom[r.ID]
 		if ok {
 			it.Occupied = true
@@ -100,6 +104,8 @@ func TableRooms(c *gin.Context) {
 			}
 			it.StartedAt = s.StartedAt
 			it.RoomLockedAt = s.RoomLockedAt
+			it.UpdatedAt = s.UpdatedAt
+			it.RoomSelectDeadlineAt = s.RoomSelectDeadlineAt
 			finishAt := s.ScheduledFinishAt
 			if finishAt == nil && s.StartedAt != nil && s.DurationMinutes > 0 {
 				t := s.StartedAt.Add(time.Duration(s.DurationMinutes) * time.Minute)
@@ -130,6 +136,7 @@ func TableRooms(c *gin.Context) {
 				u, okU := usageByID[s.InitialUsageID]
 				manualRemain := int64(0)
 				if okU && u.UsedAt != nil {
+					it.UsedAt = u.UsedAt
 					manualDeadline := u.UsedAt.Add(manualFinishTimeout)
 					manualRemain = int64(manualDeadline.Sub(now).Seconds())
 					if manualRemain < 0 {
