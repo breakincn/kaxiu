@@ -227,14 +227,16 @@
               <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageProjectText(usage) }}
               </div>
-              <div v-if="getUsageOperatorInfo(usage) || getUsageRoomInfo(usage)" class="text-gray-400 text-sm mt-0.5 flex justify-between items-center">
-                <span>{{ getUsageOperatorInfo(usage) }}</span>
-                <span v-if="getUsageRoomInfo(usage)" class="text-gray-600 whitespace-nowrap">{{ getUsageRoomInfo(usage) }}</span>
+              <div v-if="getUsageOperatorInfo(usage)" class="text-gray-400 text-sm mt-0.5">
+                {{ getUsageOperatorInfo(usage) }}
               </div>
             </div>
             <div class="text-right">
               <div :class="getUsageStatusClass(usage)" class="text-sm font-medium">
                 {{ getUsageStatusText(usage) }}
+              </div>
+              <div v-if="getUsageRoomInfo(usage)" class="text-xs mt-0.5 text-gray-600 whitespace-nowrap">
+                {{ getUsageRoomInfo(usage) }}
               </div>
               <div v-if="getUsageStatusCountdownText(usage)" class="text-xs mt-0.5 font-mono" :class="getUsageStatusCountdownClass(usage)">
                 {{ getUsageStatusCountdownText(usage) }}
