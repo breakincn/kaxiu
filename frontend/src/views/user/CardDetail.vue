@@ -231,9 +231,14 @@
                 {{ getUsageOperatorInfo(usage) }}
               </div>
             </div>
-            <span :class="getUsageStatusClass(usage)" class="text-sm font-medium">
-              {{ getUsageStatusText(usage) }}
-            </span>
+            <div class="text-right">
+              <div :class="getUsageStatusClass(usage)" class="text-sm font-medium">
+                {{ getUsageStatusText(usage) }}
+              </div>
+              <div v-if="getUsageStatusCountdownText(usage)" class="text-xs mt-0.5 font-mono" :class="getUsageStatusCountdownClass(usage)">
+                {{ getUsageStatusCountdownText(usage) }}
+              </div>
+            </div>
           </div>
         </div>
         <div v-else class="text-center text-gray-400 py-4">
@@ -499,7 +504,19 @@ let usageTouchMoved = false
 
 const getUsageStatusText = (usage) => {
   const s = String(usage?.status || '').trim()
-  if (s === 'in_progress') return '进行中'
+  if (s === 'in_progress') {
+    const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+    const sessStatus = String(usage?.service_session_status || '').trim()
+    const precheckedAt = usage?.service_session_precheck_at
+    const now = nowForFinish.value
+    const expireAt = getFinishExpireAtUnix(usage) * 1000
+    if (expireAt && now > expireAt) return '结单超时'
+    if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) {
+      const dl = getPrecheckDeadlineAtMs(usage)
+      if (dl && now < dl) return '待预结单'
+    }
+    return '待结单'
+  }
   if (s === 'success') return '完成'
   if (s === 'failed') return '失败'
   return s || ''
@@ -507,7 +524,19 @@ const getUsageStatusText = (usage) => {
 
 const getUsageStatusClass = (usage) => {
   const s = String(usage?.status || '').trim()
-  if (s === 'in_progress') return 'text-blue-500'
+  if (s === 'in_progress') {
+    const now = nowForFinish.value
+    const expireAt = getFinishExpireAtUnix(usage) * 1000
+    if (expireAt && now > expireAt) return 'text-red-500'
+    const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+    const sessStatus = String(usage?.service_session_status || '').trim()
+    const precheckedAt = usage?.service_session_precheck_at
+    if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) {
+      const dl = getPrecheckDeadlineAtMs(usage)
+      if (dl && now < dl) return 'text-red-500'
+    }
+    return 'text-blue-500'
+  }
   if (s === 'success') return ''
   return 'text-red-500'
 }
@@ -580,10 +609,23 @@ const getUsageUsedAtMs = (usage) => {
   return Number.isFinite(ms) ? ms : 0
 }
 
+const getUsageSessionUpdatedAtMs = (usage) => {
+  const v = usage?.service_session_updated_at
+  if (!v) return 0
+  const ms = new Date(v).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
 const getFinishExpireAtUnix = (usage) => {
   const usedAtMs = getUsageUsedAtMs(usage)
   if (!usedAtMs) return 0
   return Math.floor(usedAtMs / 1000) + 12 * 60 * 60
+}
+
+const getPrecheckDeadlineAtMs = (usage) => {
+  const ms = getUsageSessionUpdatedAtMs(usage)
+  if (!ms) return 0
+  return ms + 15 * 60 * 1000
 }
 
 const formatFinishExpireTime = (usage) => {
@@ -612,6 +654,54 @@ const stopFinishNowTimer = () => {
     clearInterval(finishNowTimer)
     finishNowTimer = null
   }
+}
+
+const getUsageStatusCountdownText = (usage) => {
+  const s = String(usage?.status || '').trim()
+  if (s !== 'in_progress') return ''
+
+  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+  const sessStatus = String(usage?.service_session_status || '').trim()
+  const precheckedAt = usage?.service_session_precheck_at
+  const now = nowForFinish.value
+
+  if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) {
+    const dl = getPrecheckDeadlineAtMs(usage)
+    if (dl) {
+      const diff = dl - now
+      if (diff > 0) {
+        const totalSeconds = Math.floor(diff / 1000)
+        const minutes = Math.floor(totalSeconds / 60)
+        const seconds = totalSeconds % 60
+        return `${minutes}分${seconds}秒`
+      }
+    }
+  }
+
+  const expireAt = getFinishExpireAtUnix(usage) * 1000
+  if (!expireAt) return ''
+  const diff = expireAt - now
+  if (diff <= 0) return ''
+  const totalSeconds = Math.floor(diff / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) return `${hours}小时${minutes}分${seconds}秒`
+  if (minutes > 0) return `${minutes}分${seconds}秒`
+  return `${seconds}秒`
+}
+
+const getUsageStatusCountdownClass = (usage) => {
+  const s = String(usage?.status || '').trim()
+  if (s !== 'in_progress') return 'text-gray-400'
+
+  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+  const sessStatus = String(usage?.service_session_status || '').trim()
+  const precheckedAt = usage?.service_session_precheck_at
+  if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) {
+    return 'text-red-500'
+  }
+  return 'text-blue-500'
 }
 
 const getFinishExpireTextClass = (usage) => {
@@ -718,9 +808,6 @@ const closeUsageQrModal = () => {
   usageQrDataUrl.value = ''
   qrMode.value = 'finish'
   qrSessionId.value = ''
-  if (!isPrecheckModal.value) {
-    stopFinishNowTimer()
-  }
 }
 
 const clearUsageLongPress = () => {
@@ -1364,24 +1451,4 @@ const scrollToNotice = async () => {
     }
   }
 }
-
-onMounted(async () => {
-  await fetchCard()
-  // 如果有预约，启动倒计时
-  if (appointment.value) {
-    startCountdownTimer()
-  }
-})
-
-onUnmounted(() => {
-  stopCountdownTimer()
-  stopVerifyStatusPoll()
-  if (verifyExpireTimer) {
-    clearTimeout(verifyExpireTimer)
-    verifyExpireTimer = null
-  }
-  stopFinishNowTimer()
-  // 重置底部占位状态
-  shouldShowBottomSpacer.value = false
-})
 </script>

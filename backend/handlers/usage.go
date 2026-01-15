@@ -48,12 +48,13 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		InitialUsageID uint      `gorm:"column:initial_usage_id"`
 		Status       string     `gorm:"column:status"`
 		PrecheckAt   *time.Time `gorm:"column:precheck_at"`
+		UpdatedAt   *time.Time `gorm:"column:updated_at"`
 	}
 
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions").
-		Select("id, initial_usage_id, status, precheck_at").
+		Select("id, initial_usage_id, status, precheck_at, updated_at").
 		Where("initial_usage_id IN ?", ids).
 		Find(&sessions).Error; err != nil {
 		return
@@ -75,6 +76,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 			u.ServiceSessionID = &sid
 			u.ServiceSessionStatus = s.Status
 			u.ServiceSessionPrecheckAt = s.PrecheckAt
+			u.ServiceSessionUpdatedAt = s.UpdatedAt
 		}
 	}
 }
@@ -85,6 +87,9 @@ func autoFixUsages(usages *[]models.Usage) {
 	for i := range *usages {
 		u := &(*usages)[i]
 		if u.UsedAt == nil || u.Status == "failed" {
+			continue
+		}
+		if u.Merchant.SupportCustomerService {
 			continue
 		}
 		// 超过12小时，自动置为完成并清空技师ID

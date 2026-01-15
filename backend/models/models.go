@@ -117,6 +117,7 @@ type Usage struct {
 	ServiceSessionID        *uint      `json:"service_session_id" gorm:"-"`
 	ServiceSessionStatus    string     `json:"service_session_status" gorm:"-"`
 	ServiceSessionPrecheckAt *time.Time `json:"service_session_precheck_at" gorm:"-"`
+	ServiceSessionUpdatedAt *time.Time `json:"service_session_updated_at" gorm:"-"`
 
 	Card       Card             `json:"card" gorm:"foreignKey:CardID"`
 	Merchant   Merchant         `json:"merchant" gorm:"foreignKey:MerchantID"`

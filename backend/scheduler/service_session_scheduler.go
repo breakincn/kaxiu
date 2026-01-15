@@ -19,6 +19,28 @@ const (
 	sessionAbandonTimeout = 30 * time.Minute
 )
 
+func finishAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, finishedAt time.Time) error {
+	updates := map[string]interface{}{
+		"status":                  "finished",
+		"finished_at":             finishedAt,
+		"room_id":                 nil,
+		"room_locked_at":          nil,
+		"room_select_deadline_at": nil,
+	}
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND status = ?", s.ID, "precheck_pending").
+		Updates(updates).Error; err != nil {
+		return err
+	}
+
+	if s.TechnicianID == nil || *s.TechnicianID == 0 {
+		return nil
+	}
+	return tx.Model(&models.TechnicianAttendance{}).
+		Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+		Updates(map[string]interface{}{"status": "idle"}).Error
+}
+
 func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
 	updates := map[string]interface{}{
 		"status":                  "canceled",
@@ -27,7 +49,7 @@ func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Tim
 		"room_select_deadline_at": nil,
 	}
 	return tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status IN ('room_selecting','room_locked','staff_selecting','precheck_pending')", s.ID).
+		Where("id = ? AND status IN ('room_selecting','room_locked','staff_selecting')", s.ID).
 		Updates(updates).Error
 }
 
@@ -115,17 +137,38 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 			return nil
 		case "precheck_pending":
-			// 待预结单超时释放：进入 precheck_pending 后 15 分钟仍未扫码预结单（PrecheckAt 为空）则取消会话并释放资源。
+			// 新规则：待预结单超时后不取消、不释放资源，仅进入手动结单阶段展示。
+			// 但当达到“服务完成时间”且仍未手动结单（usage仍in_progress）时，立即释放房间与技师。
 			if s.PrecheckAt != nil {
 				return nil
 			}
 			if s.UpdatedAt == nil {
 				return nil
 			}
-			if now.Sub(*s.UpdatedAt) >= precheckPendingTimeout {
-				return cancelAndReleaseSession(tx, &s, now)
+			precheckDeadline := s.UpdatedAt.Add(precheckPendingTimeout)
+			if now.Before(precheckDeadline) {
+				return nil
 			}
-			return nil
+			base := precheckDeadline
+			duration := s.DurationMinutes
+			if duration <= 0 {
+				duration = 50
+			}
+			serviceFinishAt := base.Add(60*time.Second + time.Duration(duration)*time.Minute + 60*time.Second)
+			if now.Before(serviceFinishAt) {
+				return nil
+			}
+			if s.InitialUsageID == 0 {
+				return finishAndReleaseSession(tx, &s, serviceFinishAt)
+			}
+			var u models.Usage
+			if err := tx.Select("id,status").First(&u, s.InitialUsageID).Error; err != nil {
+				return err
+			}
+			if u.Status != "in_progress" {
+				return finishAndReleaseSession(tx, &s, serviceFinishAt)
+			}
+			return finishAndReleaseSession(tx, &s, serviceFinishAt)
 		case "delay_pending":
 			if s.ScheduledStartAt != nil && !now.Before(*s.ScheduledStartAt) {
 				updates := map[string]interface{}{

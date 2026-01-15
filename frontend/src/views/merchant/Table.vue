@@ -59,6 +59,17 @@
                       <div v-if="it.started_at">开始：{{ formatTime(it.started_at) }}</div>
                       <div v-if="it.finish_at">结束：{{ formatTime(it.finish_at) }}</div>
                       <div v-if="it.finish_at">剩余：{{ formatDuration(it.remain_seconds) }}</div>
+                      <div v-if="it.phase_text" class="mt-1">
+                        <span class="font-medium" :class="it.phase_class === 'precheck_pending' ? 'text-red-500' : (it.phase_class === 'finish_failed' ? 'text-red-500' : 'text-blue-600')">
+                          {{ it.phase_text }}
+                        </span>
+                        <span v-if="it.phase_class === 'precheck_pending' && it.precheck_remain_seconds" class="ml-2 text-red-500 font-mono">
+                          {{ formatDuration(it.precheck_remain_seconds) }}
+                        </span>
+                        <span v-else-if="it.phase_class === 'manual_finish' && it.manual_finish_remain_seconds" class="ml-2 text-blue-600 font-mono">
+                          {{ formatDuration(it.manual_finish_remain_seconds) }}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
