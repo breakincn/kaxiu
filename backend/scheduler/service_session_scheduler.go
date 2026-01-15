@@ -120,14 +120,8 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if now.Before(deadline) {
 				return nil
 			}
-			dl := now.Add(90 * time.Second)
-			updates := map[string]interface{}{
-				"room_id":                 nil,
-				"room_locked_at":          nil,
-				"status":                  "room_selecting",
-				"room_select_deadline_at": dl,
-			}
-			return tx.Model(&models.ServiceSession{}).Where("id = ? AND status IN ('room_locked','staff_selecting')", s.ID).Updates(updates).Error
+			// 5分钟超时后直接取消会话，彻底释放房间
+			return cancelAndReleaseSession(tx, &s, now)
 		case "room_selecting":
 			if s.RoomSelectDeadlineAt != nil && now.After(*s.RoomSelectDeadlineAt) {
 				if s.TechnicianID == nil && s.StartedAt == nil && s.CreatedAt != nil && now.Sub(*s.CreatedAt) >= sessionAbandonTimeout {
