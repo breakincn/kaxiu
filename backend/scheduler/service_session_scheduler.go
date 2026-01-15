@@ -195,7 +195,30 @@ func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error
 	if s.FinishedAt == nil {
 		updates["finished_at"] = now
 	}
-	return tx.Model(&models.ServiceSession{}).Where("id = ? AND status = ?", s.ID, "auto_finishing").Updates(updates).Error
+	if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND status = ?", s.ID, "auto_finishing").Updates(updates).Error; err != nil {
+		return err
+	}
+
+	if s.InitialUsageID == 0 {
+		return nil
+	}
+
+	finishedAt := now
+	if s.FinishedAt != nil {
+		finishedAt = *s.FinishedAt
+	}
+
+	uUpdates := map[string]interface{}{
+		"status":      "success",
+		"finished_at": finishedAt,
+	}
+	if s.TechnicianID != nil && *s.TechnicianID > 0 {
+		uUpdates["technician_id"] = *s.TechnicianID
+	}
+
+	return tx.Model(&models.Usage{}).
+		Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
+		Updates(uUpdates).Error
 }
 
 func releaseTechnicianIfNeeded(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {

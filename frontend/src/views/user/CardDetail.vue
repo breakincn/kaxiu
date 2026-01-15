@@ -466,17 +466,22 @@ const showUsageQrModal = ref(false)
 const selectedUsage = ref(null)
 const usageQrDataUrl = ref('')
 
+const qrMode = ref('finish')
+const qrSessionId = ref('')
+
 const sessionIdFromQuery = computed(() => {
   const v = String(route.query.session_id || '').trim()
   return v
 })
 
 const isPrecheckModal = computed(() => {
-  return !!sessionIdFromQuery.value
+  if (sessionIdFromQuery.value) return true
+  return qrMode.value === 'precheck'
 })
 
 const precheckCode = computed(() => {
-  return sessionIdFromQuery.value ? `SS:${sessionIdFromQuery.value}` : ''
+  const sid = sessionIdFromQuery.value || String(qrSessionId.value || '').trim()
+  return sid ? `SS:${sid}` : ''
 })
 
 const usageQrTitle = computed(() => {
@@ -649,7 +654,31 @@ const canShowUsageQr = (usage) => {
 }
 
 const openUsageQrModal = async (usage) => {
-  if (isPrecheckModal.value) {
+  qrMode.value = 'finish'
+  qrSessionId.value = ''
+
+  if (sessionIdFromQuery.value) {
+    selectedUsage.value = null
+    showUsageQrModal.value = true
+    usageQrDataUrl.value = ''
+    try {
+      usageQrDataUrl.value = await QRCode.toDataURL(precheckCode.value, {
+        margin: 1,
+        scale: 8,
+        errorCorrectionLevel: 'M'
+      })
+    } catch (_) {
+      // ignore
+    }
+    return
+  }
+
+  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+  const sessID = usage?.service_session_id
+  const precheckedAt = usage?.service_session_precheck_at
+  if (supportCS && sessID && !precheckedAt) {
+    qrMode.value = 'precheck'
+    qrSessionId.value = String(sessID)
     selectedUsage.value = null
     showUsageQrModal.value = true
     usageQrDataUrl.value = ''
@@ -686,6 +715,8 @@ const closeUsageQrModal = () => {
   showUsageQrModal.value = false
   selectedUsage.value = null
   usageQrDataUrl.value = ''
+  qrMode.value = 'finish'
+  qrSessionId.value = ''
   if (!isPrecheckModal.value) {
     stopFinishNowTimer()
   }

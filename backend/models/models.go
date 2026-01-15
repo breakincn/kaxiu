@@ -114,6 +114,10 @@ type Usage struct {
 	Status             string     `json:"status" gorm:"size:20;default:success;comment:状态（in_progress-进行中，success-完成，failed-失败）"`
 	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
+	ServiceSessionID        *uint      `json:"service_session_id" gorm:"-"`
+	ServiceSessionStatus    string     `json:"service_session_status" gorm:"-"`
+	ServiceSessionPrecheckAt *time.Time `json:"service_session_precheck_at" gorm:"-"`
+
 	Card       Card             `json:"card" gorm:"foreignKey:CardID"`
 	Merchant   Merchant         `json:"merchant" gorm:"foreignKey:MerchantID"`
 	Project    *MerchantProject `json:"project" gorm:"foreignKey:ProjectID"`
