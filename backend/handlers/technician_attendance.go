@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"kabao/config"
 	"kabao/models"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func sameLocalDay(a, b time.Time) bool {
@@ -82,7 +84,7 @@ func TechnicianCheckIn(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		attendance = models.TechnicianAttendance{MerchantID: merchantID, TechnicianID: techID, CheckedInAt: &now, CheckedOutAt: nil, Status: "idle"}
+		attendance = models.TechnicianAttendance{MerchantID: merchantID, TechnicianID: techID, CheckedInAt: &now, CheckedOutAt: nil, Status: "idle", NextStatus: nil}
 		if err := config.DB.Create(&attendance).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -98,7 +100,7 @@ func TechnicianCheckIn(c *gin.Context) {
 		return
 	}
 
-	updates := map[string]interface{}{"checked_in_at": now, "checked_out_at": nil, "status": "idle"}
+	updates := map[string]interface{}{"checked_in_at": now, "checked_out_at": nil, "status": "idle", "next_status": nil}
 	if err := config.DB.Model(&models.TechnicianAttendance{}).Where("id = ?", attendance.ID).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -242,17 +244,64 @@ func UpdateTechnicianServiceStatus(c *gin.Context) {
 		return
 	}
 
-	var attendance models.TechnicianAttendance
-	if err := config.DB.Where("merchant_id = ? AND technician_id = ?", merchantID, techID).First(&attendance).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "未签到"})
-		return
-	}
-	if err := config.DB.Model(&models.TechnicianAttendance{}).Where("id = ?", attendance.ID).Update("status", input.Status).Error; err != nil {
+	var out models.TechnicianAttendance
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		var attendance models.TechnicianAttendance
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("merchant_id = ? AND technician_id = ?", merchantID, techID).
+			First(&attendance).Error; err != nil {
+			return err
+		}
+
+		updates := map[string]interface{}{}
+		cur := attendance.Status
+		// 4状态逻辑：
+		// - idle: 允许手动切到 paused
+		// - paused: 只允许手动切回 idle
+		// - busy: 仅允许设置 next_status=paused（结单后自动暂停），不能直接改 status
+		if cur == "idle" {
+			if input.Status != "paused" {
+				return apiErr{status: http.StatusBadRequest, msg: "空闲状态仅允许切换为暂停"}
+			}
+			updates["status"] = "paused"
+			updates["next_status"] = nil
+		} else if cur == "paused" {
+			if input.Status != "idle" {
+				return apiErr{status: http.StatusBadRequest, msg: "暂停状态仅允许切换为空闲"}
+			}
+			updates["status"] = "idle"
+			updates["next_status"] = nil
+		} else if cur == "busy" {
+			if input.Status != "paused" {
+				return apiErr{status: http.StatusBadRequest, msg: "服务中仅允许设置结单后进入暂停"}
+			}
+			ns := "paused"
+			updates["next_status"] = &ns
+		} else {
+			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可操作"}
+		}
+
+		if err := tx.Model(&models.TechnicianAttendance{}).Where("id = ?", attendance.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		return tx.Preload("Technician").First(&out, attendance.ID).Error
+	})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "未签到"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	config.DB.Preload("Technician").First(&attendance, attendance.ID)
-	c.JSON(http.StatusOK, gin.H{"data": attendance})
+
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
 func ListAvailableTechnicians(c *gin.Context) {

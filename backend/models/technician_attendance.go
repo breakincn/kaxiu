@@ -9,6 +9,7 @@ type TechnicianAttendance struct {
 	CheckedInAt  *time.Time `json:"checked_in_at" gorm:"type:datetime(3);comment:签到时间"`
 	CheckedOutAt *time.Time `json:"checked_out_at" gorm:"type:datetime(3);comment:下班时间"`
 	Status       string     `json:"status" gorm:"size:20;default:idle;comment:状态（idle-空闲，busy-服务中，paused-暂停，rest-下班）"`
+	NextStatus   *string    `json:"next_status" gorm:"size:20;comment:忙碌结束后要切换到的状态（仅允许 paused）"`
 	CreatedAt    *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt    *time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 

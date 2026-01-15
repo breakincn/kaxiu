@@ -293,6 +293,7 @@ func UserListAvailableTechnicians(c *gin.Context) {
 
 	now := time.Now()
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	activeSessionStatuses := []string{"room_locked", "staff_selecting", "precheck_pending", "delay_pending", "serving", "auto_finishing"}
 	var list []models.TechnicianAttendance
 	config.DB.
 		Model(&models.TechnicianAttendance{}).
@@ -301,6 +302,7 @@ func UserListAvailableTechnicians(c *gin.Context) {
 		Preload("Technician").
 		Preload("Technician.ServiceRole").
 		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", s.MerchantID, start).
+		Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, activeSessionStatuses).
 		Where("t.is_active = ?", true).
 		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 		Order("technician_attendances.updated_at desc").
@@ -357,6 +359,7 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
 			Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
 			Where("technician_attendances.merchant_id = ? AND technician_attendances.technician_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", s.MerchantID, input.TechnicianID, start).
+			Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, []string{"room_locked", "staff_selecting", "precheck_pending", "delay_pending", "serving", "auto_finishing"}).
 			Where("t.is_active = ?", true).
 			Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 			First(&att).Error; err != nil {

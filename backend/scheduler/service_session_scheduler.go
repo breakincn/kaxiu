@@ -288,7 +288,21 @@ func releaseTechnicianIfNeeded(tx *gorm.DB, s *models.ServiceSession, now time.T
 	if now.Before(releaseAt) {
 		return nil
 	}
-	return tx.Model(&models.TechnicianAttendance{}).
+	var att models.TechnicianAttendance
+	if err := tx.
+		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
-		Updates(map[string]interface{}{"status": "idle"}).Error
+		First(&att).Error; err != nil {
+		return err
+	}
+
+	updates := map[string]interface{}{
+		"next_status": nil,
+	}
+	if att.NextStatus != nil && *att.NextStatus == "paused" {
+		updates["status"] = "paused"
+	} else {
+		updates["status"] = "idle"
+	}
+	return tx.Model(&models.TechnicianAttendance{}).Where("id = ?", att.ID).Updates(updates).Error
 }
