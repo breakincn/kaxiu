@@ -645,19 +645,46 @@
         </div>
 
         <div v-if="isTechnicianAuth()" class="mt-3">
-          <div class="flex items-center gap-2">
-            <select v-model="attendanceStatus" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
-              <option value="idle">空闲</option>
-              <option value="paused">暂停</option>
-            </select>
-            <button
-              :disabled="attendanceUpdating"
-              @click="updateAttendanceStatus"
-              class="px-4 py-2 rounded-lg text-sm font-medium"
-              :class="attendanceUpdating ? 'bg-gray-100 text-gray-400' : 'bg-gray-900 text-white'"
-            >
-              更新状态
-            </button>
+          <div class="flex items-center justify-between">
+            <div class="text-sm text-gray-600">
+              当前状态：<span class="font-medium">{{ technicianCurrentStatusText }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <template v-if="technicianCurrentStatus === 'service_pending_settlement'">
+                <button
+                  :disabled="setNextPausedLoading"
+                  @click="setNextStatusPaused"
+                  class="px-4 py-2 rounded-lg text-sm font-medium"
+                  :class="setNextPausedLoading ? 'bg-gray-100 text-gray-400' : 'bg-orange-600 text-white'"
+                >
+                  结单后暂停
+                </button>
+              </template>
+
+              <template v-else>
+                <select
+                  v-model="statusSelectValue"
+                  class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  :class="canManualUpdateStatus ? 'w-32' : 'w-44'"
+                  :disabled="!canManualUpdateStatus"
+                >
+                  <option value="idle">空闲</option>
+                  <option value="paused" :disabled="!canManualUpdateStatus">暂停</option>
+                  <option value="service_pending_presettlement" disabled>服务 待预结单</option>
+                  <option value="service_pending_settlement" disabled>服务 待结单</option>
+                </select>
+
+                <button
+                  v-if="canManualUpdateStatus"
+                  :disabled="attendanceUpdating"
+                  @click="updateAttendanceStatus"
+                  class="px-4 py-2 rounded-lg text-sm font-medium"
+                  :class="attendanceUpdating ? 'bg-gray-100 text-gray-400' : 'bg-gray-900 text-white'"
+                >
+                  更新状态
+                </button>
+              </template>
+            </div>
           </div>
         </div>
       </div>
@@ -962,6 +989,7 @@ const todayFinishedUsages = ref([])
 const notices = ref([])
 const currentTime = ref(Date.now())
 let countdownTimer = null
+let serviceSessionTimer = null
 
 const verifyCodeInput = ref('')
 const verifying = ref(false)
@@ -1033,10 +1061,52 @@ const showBusinessStatusModal = ref(false)
 const attendanceLoading = ref(false)
 const attendanceUpdating = ref(false)
 const attendanceStatus = ref('idle')
+const setNextPausedLoading = ref(false)
 
 const serviceSessions = ref([])
 const sessionLoading = ref(false)
 const sessionStatusFilter = ref('')
+
+// 技师当前服务状态（用于显示）
+const technicianCurrentStatus = computed(() => {
+  if (!isTechnicianAuth()) return null
+  const techId = getTechnicianId()
+  if (!techId) return null
+  const sess = serviceSessions.value.find(s => s.technician_id === techId && ['precheck_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(s.status))
+  if (!sess) {
+    // 没有活跃会话，返回签到状态 idle/paused
+    return attendanceStatus.value
+  }
+  if (sess.status === 'precheck_pending' && !sess.precheck_at) return 'service_pending_presettlement'
+  return 'service_pending_settlement'
+})
+
+const technicianCurrentStatusText = computed(() => {
+  const st = technicianCurrentStatus.value
+  if (st === 'idle') return '空闲'
+  if (st === 'paused') return '暂停'
+  if (st === 'service_pending_presettlement') return '服务 待预结单'
+  if (st === 'service_pending_settlement') return '服务 待结单'
+  return st || '-'
+})
+
+const canManualUpdateStatus = computed(() => {
+  // 按最新要求：仅在“空闲”时允许手动更新为“暂停”
+  return technicianCurrentStatus.value === 'idle'
+})
+
+const statusSelectValue = computed({
+  get() {
+    return String(technicianCurrentStatus.value || '')
+  },
+  set(v) {
+    // 仅在可手动更新时，允许选择 paused
+    if (!canManualUpdateStatus.value) return
+    if (v === 'paused' || v === 'idle') {
+      attendanceStatus.value = v
+    }
+  }
+})
 
 // 技师视角：我的服务中会话
 const myServingSessions = computed(() => {
@@ -1843,10 +1913,26 @@ watch(currentTab, (tab) => {
     } else if (tab === 'notice') {
       fetchNotices()
     } else if (tab === 'service') {
-      // no-op
+      fetchServiceSessions()
+      startServiceSessionTimer()
     }
   }
 })
+
+const startServiceSessionTimer = () => {
+  stopServiceSessionTimer()
+  serviceSessionTimer = setInterval(() => {
+    if (currentTab.value !== 'service') return
+    fetchServiceSessions()
+  }, 3000)
+}
+
+const stopServiceSessionTimer = () => {
+  if (serviceSessionTimer) {
+    clearInterval(serviceSessionTimer)
+    serviceSessionTimer = null
+  }
+}
 
 watch(
   () => route.query.user_code,
@@ -2052,6 +2138,20 @@ const updateAttendanceStatus = async () => {
   }
 }
 
+// 设置结单后自动暂停
+const setNextStatusPaused = async () => {
+  if (!isTechnicianAuth()) return
+  setNextPausedLoading.value = true
+  try {
+    await attendanceApi.updateStatus({ status: 'paused' })
+    alert('已设置：结单后自动暂停')
+  } catch (e) {
+    alert(e.response?.data?.error || '设置失败')
+  } finally {
+    setNextPausedLoading.value = false
+  }
+}
+
 const getSessionStatusText = (status) => {
   const m = {
     room_selecting: '选房中',
@@ -2088,6 +2188,7 @@ onBeforeRouteLeave(() => {
 
 onUnmounted(() => {
   stopCountdownTimer()
+  stopServiceSessionTimer()
   scanUserCodeActive.value = false
   routeUserCode.value = ''
   if (errorTimer) {
