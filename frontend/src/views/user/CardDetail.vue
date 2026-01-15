@@ -265,10 +265,15 @@
           </div>
 
           <div v-if="isPrecheckModal" class="mt-2 text-center text-gray-600 text-sm">
-            请向工作人员出示此码，由工作人员扫码开始计时
+            <template v-if="usagePrecheckDone">
+              预结单完成，进入服务
+            </template>
+            <template v-else>
+              请向工作人员出示此码，由工作人员扫码进入服务
+            </template>
           </div>
 
-          <div v-if="usageQrDataUrl" class="mt-4 flex justify-center">
+          <div v-if="usageQrDataUrl && !(isPrecheckModal && usagePrecheckDone)" class="mt-4 flex justify-center">
             <div
               class="select-none"
               style="-webkit-touch-callout: none; -webkit-user-select: none; user-select: none; pointer-events: none; touch-action: none;"
@@ -470,6 +475,7 @@ const canceling = ref(false)
 const showUsageQrModal = ref(false)
 const selectedUsage = ref(null)
 const usageQrDataUrl = ref('')
+const usagePrecheckDone = ref(false)
 
 const qrMode = ref('finish')
 const qrSessionId = ref('')
@@ -764,32 +770,18 @@ const trySwitchUsageQrToFinish = async () => {
   if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) return
   stopUsageQrPoll()
 
-  if (!latest || !canShowUsageQr(latest)) {
-    closeUsageQrModal()
-    return
-  }
-
-  qrMode.value = 'finish'
-  qrSessionId.value = ''
-  selectedUsage.value = latest
+  usagePrecheckDone.value = true
   usageQrDataUrl.value = ''
-  nowForFinish.value = Date.now()
-  startFinishNowTimer()
-  try {
-    usageQrDataUrl.value = await QRCode.toDataURL(String(latest.verify_code).trim(), {
-      margin: 1,
-      scale: 8,
-      errorCorrectionLevel: 'M'
-    })
-  } catch (_) {
-    // ignore
-  }
+  setTimeout(() => {
+    closeUsageQrModal()
+  }, 2000)
 }
 
 const openUsageQrModal = async (usage) => {
   stopUsageQrPoll()
   qrMode.value = 'finish'
   qrSessionId.value = ''
+  usagePrecheckDone.value = false
 
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessID = usage?.service_session_id
@@ -809,6 +801,7 @@ const openUsageQrModal = async (usage) => {
     selectedUsage.value = null
     showUsageQrModal.value = true
     usageQrDataUrl.value = ''
+    usagePrecheckDone.value = false
     usageQrPollSessionId = String(sessID)
     usageQrPollTimer = setInterval(() => {
       if (!showUsageQrModal.value || qrMode.value !== 'precheck') {
@@ -834,6 +827,7 @@ const openUsageQrModal = async (usage) => {
     selectedUsage.value = null
     showUsageQrModal.value = true
     usageQrDataUrl.value = ''
+    usagePrecheckDone.value = false
     usageQrPollSessionId = String(sessID)
     usageQrPollTimer = setInterval(() => {
       if (!showUsageQrModal.value || qrMode.value !== 'precheck') {
@@ -878,6 +872,7 @@ const closeUsageQrModal = () => {
   usageQrDataUrl.value = ''
   qrMode.value = 'finish'
   qrSessionId.value = ''
+  usagePrecheckDone.value = false
 }
 
 const clearUsageLongPress = () => {
