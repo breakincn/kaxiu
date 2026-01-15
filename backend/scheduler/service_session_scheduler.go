@@ -14,6 +14,7 @@ const (
 	schedulerTickInterval = 3 * time.Second
 	schedulerBatchLimit   = 200
 	staffSelectingTimeout = 5 * time.Minute
+	precheckPendingTimeout = 15 * time.Minute
 	// 房间会话超时时间, 房间会话30分钟内没选技师、没开始服务则超时,自动取消房间锁定
 	sessionAbandonTimeout = 30 * time.Minute
 )
@@ -26,7 +27,7 @@ func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Tim
 		"room_select_deadline_at": nil,
 	}
 	return tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status IN ('room_selecting','room_locked','staff_selecting')", s.ID).
+		Where("id = ? AND status IN ('room_selecting','room_locked','staff_selecting','precheck_pending')", s.ID).
 		Updates(updates).Error
 }
 
@@ -51,7 +52,7 @@ func runOnce(db *gorm.DB) error {
 
 	var sessions []models.ServiceSession
 	err := db.
-		Where("status IN ('room_selecting','room_locked','staff_selecting','delay_pending','serving','auto_finishing','finished')").
+		Where("status IN ('room_selecting','room_locked','staff_selecting','precheck_pending','delay_pending','serving','auto_finishing','finished')").
 		Order("id asc").
 		Limit(schedulerBatchLimit).
 		Find(&sessions).Error
@@ -111,6 +112,18 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 					return cancelAndReleaseSession(tx, &s, now)
 				}
 				return autoAssignRoom(tx, &s, now)
+			}
+			return nil
+		case "precheck_pending":
+			// 待预结单超时释放：进入 precheck_pending 后 15 分钟仍未扫码预结单（PrecheckAt 为空）则取消会话并释放资源。
+			if s.PrecheckAt != nil {
+				return nil
+			}
+			if s.UpdatedAt == nil {
+				return nil
+			}
+			if now.Sub(*s.UpdatedAt) >= precheckPendingTimeout {
+				return cancelAndReleaseSession(tx, &s, now)
 			}
 			return nil
 		case "delay_pending":

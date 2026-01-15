@@ -675,8 +675,9 @@ const openUsageQrModal = async (usage) => {
 
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessID = usage?.service_session_id
+  const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_precheck_at
-  if (supportCS && sessID && !precheckedAt) {
+  if (supportCS && sessID && sessStatus === 'precheck_pending' && !precheckedAt) {
     qrMode.value = 'precheck'
     qrSessionId.value = String(sessID)
     selectedUsage.value = null
