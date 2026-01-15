@@ -90,7 +90,12 @@ func autoFixUsages(usages *[]models.Usage) {
 		// 超过12小时，自动置为完成并清空技师ID
 		if now.Sub(*u.UsedAt) > 12*time.Hour {
 			if u.Status != "success" || u.TechnicianID != nil {
-				finishedAt := u.UsedAt.Add(time.Duration(15+5) * time.Minute)
+				// 优先使用项目时长，如果没有则用默认15分钟
+				durationMinutes := 15
+				if u.Project != nil && u.Project.Duration > 0 {
+					durationMinutes = u.Project.Duration
+				}
+				finishedAt := u.UsedAt.Add(time.Duration(durationMinutes+5) * time.Minute)
 				config.DB.Model(u).Updates(map[string]interface{}{
 					"status":        "success",
 					"technician_id": nil,
