@@ -210,7 +210,7 @@
           <div
             v-for="usage in usages"
             :key="usage.id"
-            class="flex justify-between items-center p-3 bg-white rounded-lg shadow-sm"
+            class="flex justify-between items-start p-3 bg-white rounded-lg shadow-sm"
             @touchstart="(e) => onUsageTouchStart(e, usage)"
             @touchmove="onUsageTouchMove"
             @touchend="onUsageTouchEnd"
@@ -218,7 +218,7 @@
             @contextmenu.prevent
             style="-webkit-touch-callout: none;"
           >
-            <div>
+            <div class="flex-1 min-w-0">
               <div class="text-gray-800">核销次数: {{ usage.used_times }}</div>
               <div class="flex items-center gap-2">
                 <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
@@ -227,16 +227,14 @@
               <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageProjectText(usage) }}
               </div>
-              <div v-if="getUsageOperatorInfo(usage)" class="text-gray-400 text-sm mt-0.5">
-                {{ getUsageOperatorInfo(usage) }}
+              <div v-if="getUsageOperatorInfo(usage) || getUsageRoomInfo(usage)" class="flex items-center justify-between text-gray-400 text-sm mt-0.5">
+                <span v-if="getUsageOperatorInfo(usage)">{{ getUsageOperatorInfo(usage) }}</span>
+                <span v-if="getUsageRoomInfo(usage)" class="text-gray-600 text-xs ml-auto">{{ getUsageRoomInfo(usage) }}</span>
               </div>
             </div>
-            <div class="text-right">
+            <div class="text-right flex-shrink-0 ml-3">
               <div :class="getUsageStatusClass(usage)" class="text-sm font-medium">
                 {{ getUsageStatusText(usage) }}
-              </div>
-              <div v-if="getUsageRoomInfo(usage)" class="text-xs mt-0.5 text-gray-600 whitespace-nowrap">
-                {{ getUsageRoomInfo(usage) }}
               </div>
               <div v-if="getUsageStatusCountdownText(usage)" class="text-xs mt-0.5 font-mono" :class="getUsageStatusCountdownClass(usage)">
                 {{ getUsageStatusCountdownText(usage) }}
