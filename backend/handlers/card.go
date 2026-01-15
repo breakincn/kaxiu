@@ -936,6 +936,13 @@ func FinishVerifyCard(c *gin.Context) {
 		if hasTechnicianID {
 			updates["technician_id"] = techID
 		}
+		// 从服务会话获取房间ID
+		var session models.ServiceSession
+		if err := tx.Where("initial_usage_id = ?", usage.ID).First(&session).Error; err == nil {
+			if session.RoomID != nil && *session.RoomID > 0 {
+				updates["room_id"] = *session.RoomID
+			}
+		}
 		return tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(updates).Error
 	})
 	if err != nil {
@@ -1207,6 +1214,13 @@ func ScanVerifyCard(c *gin.Context) {
 				if techID, hasTechnicianID := techIDAny.(uint); hasTechnicianID && techID > 0 {
 					updates["technician_id"] = techID
 				}
+			}
+		}
+		// 从服务会话获取房间ID
+		var session models.ServiceSession
+		if err := tx.Where("initial_usage_id = ?", usage.ID).First(&session).Error; err == nil {
+			if session.RoomID != nil && *session.RoomID > 0 {
+				updates["room_id"] = *session.RoomID
 			}
 		}
 		return tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(updates).Error

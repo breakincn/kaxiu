@@ -47,6 +47,8 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		ID           uint       `gorm:"column:id"`
 		InitialUsageID uint      `gorm:"column:initial_usage_id"`
 		Status       string     `gorm:"column:status"`
+		RoomID       *uint      `gorm:"column:room_id"`
+		TechnicianID *uint      `gorm:"column:technician_id"`
 		PrecheckAt   *time.Time `gorm:"column:precheck_at"`
 		UpdatedAt   *time.Time `gorm:"column:updated_at"`
 		RoomSelectDeadlineAt *time.Time `gorm:"column:room_select_deadline_at"`
@@ -56,7 +58,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions").
-		Select("id, initial_usage_id, status, precheck_at, updated_at, room_select_deadline_at, room_locked_at").
+		Select("id, initial_usage_id, status, room_id, technician_id, precheck_at, updated_at, room_select_deadline_at, room_locked_at").
 		Where("initial_usage_id IN ?", ids).
 		Find(&sessions).Error; err != nil {
 		return
@@ -71,6 +73,40 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		byUsageID[s.InitialUsageID] = s
 	}
 
+	roomIDs := make([]uint, 0, len(sessions))
+	techIDs := make([]uint, 0, len(sessions))
+	for i := range sessions {
+		s := sessions[i]
+		if s.RoomID != nil && *s.RoomID > 0 {
+			roomIDs = append(roomIDs, *s.RoomID)
+		}
+		if s.TechnicianID != nil && *s.TechnicianID > 0 {
+			techIDs = append(techIDs, *s.TechnicianID)
+		}
+	}
+
+	byRoomID := make(map[uint]*models.Room, len(roomIDs))
+	if len(roomIDs) > 0 {
+		var rooms []models.Room
+		if err := config.DB.Where("id IN ?", roomIDs).Find(&rooms).Error; err == nil {
+			for i := range rooms {
+				r := rooms[i]
+				byRoomID[r.ID] = &rooms[i]
+			}
+		}
+	}
+
+	byTechID := make(map[uint]*models.Technician, len(techIDs))
+	if len(techIDs) > 0 {
+		var techs []models.Technician
+		if err := config.DB.Where("id IN ?", techIDs).Find(&techs).Error; err == nil {
+			for i := range techs {
+				t := techs[i]
+				byTechID[t.ID] = &techs[i]
+			}
+		}
+	}
+
 	for i := range *usages {
 		u := &(*usages)[i]
 		if s, ok := byUsageID[u.ID]; ok {
@@ -81,6 +117,16 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 			u.ServiceSessionUpdatedAt = s.UpdatedAt
 			u.RoomSelectDeadlineAt = s.RoomSelectDeadlineAt
 			u.RoomLockedAt = s.RoomLockedAt
+			if s.RoomID != nil {
+				if r, okR := byRoomID[*s.RoomID]; okR {
+					u.ServiceRoom = r
+				}
+			}
+			if s.TechnicianID != nil {
+				if t, okT := byTechID[*s.TechnicianID]; okT {
+					u.ServiceTechnician = t
+				}
+			}
 		}
 	}
 }

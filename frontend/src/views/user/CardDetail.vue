@@ -227,8 +227,9 @@
               <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageProjectText(usage) }}
               </div>
-              <div v-if="getUsageOperatorInfo(usage)" class="text-gray-400 text-sm mt-0.5">
-                {{ getUsageOperatorInfo(usage) }}
+              <div v-if="getUsageOperatorInfo(usage) || getUsageRoomInfo(usage)" class="text-gray-400 text-sm mt-0.5 flex justify-between items-center">
+                <span>{{ getUsageOperatorInfo(usage) }}</span>
+                <span v-if="getUsageRoomInfo(usage)" class="text-gray-600 whitespace-nowrap">{{ getUsageRoomInfo(usage) }}</span>
               </div>
             </div>
             <div class="text-right">
@@ -284,6 +285,19 @@
             >
               <img :src="usageQrDataUrl" :alt="usageQrAlt" class="w-56 h-56" style="-webkit-touch-callout: none;" />
             </div>
+          </div>
+
+          <!-- 房间号与客服人员信息 -->
+          <div v-if="selectedUsage && (selectedUsage.service_room || selectedUsage.service_technician)" class="mt-3 text-center text-sm text-gray-600">
+            <template v-if="selectedUsage.service_room && selectedUsage.service_technician">
+              {{ selectedUsage.service_room.name || selectedUsage.service_room.code }}：{{ selectedUsage.service_technician.account }}:{{ selectedUsage.service_technician.name }}
+            </template>
+            <template v-else-if="selectedUsage.service_room">
+              {{ selectedUsage.service_room.name || selectedUsage.service_room.code }}
+            </template>
+            <template v-else-if="selectedUsage.service_technician">
+              {{ selectedUsage.service_technician.account }}:{{ selectedUsage.service_technician.name }}
+            </template>
           </div>
 
           <div v-if="!isPrecheckModal && selectedUsage" class="mt-4 text-center text-xs" :class="getFinishExpireTextClass(selectedUsage)">
@@ -847,7 +861,7 @@ const openUsageQrModal = async (usage) => {
   ) {
     qrMode.value = 'precheck'
     qrSessionId.value = String(sessID)
-    selectedUsage.value = null
+    selectedUsage.value = usage
     showUsageQrModal.value = true
     usageQrDataUrl.value = ''
     usagePrecheckDone.value = false
@@ -873,7 +887,7 @@ const openUsageQrModal = async (usage) => {
   if (supportCS && sessID && sessStatus === 'precheck_pending' && !precheckedAt) {
     qrMode.value = 'precheck'
     qrSessionId.value = String(sessID)
-    selectedUsage.value = null
+    selectedUsage.value = usage
     showUsageQrModal.value = true
     usageQrDataUrl.value = ''
     usagePrecheckDone.value = false
@@ -1018,6 +1032,14 @@ const getUsageOperatorInfo = (usage) => {
     return `核销人员：${usage.merchant.name || '店铺'}`
   }
   
+  return ''
+}
+
+const getUsageRoomInfo = (usage) => {
+  // 只在已完成状态显示房间号
+  if (usage.status === 'success' && usage.finished_at && usage.service_room) {
+    return `房间: ${usage.service_room.name || usage.service_room.code}`
+  }
   return ''
 }
 

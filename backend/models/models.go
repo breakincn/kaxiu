@@ -120,6 +120,8 @@ type Usage struct {
 	ServiceSessionUpdatedAt *time.Time `json:"service_session_updated_at" gorm:"-"`
 	RoomSelectDeadlineAt    *time.Time `json:"room_select_deadline_at" gorm:"-"`
 	RoomLockedAt            *time.Time `json:"room_locked_at" gorm:"-"`
+	ServiceRoom             *Room      `json:"service_room" gorm:"-"`
+	ServiceTechnician       *Technician `json:"service_technician" gorm:"-"`
 
 	Card       Card             `json:"card" gorm:"foreignKey:CardID"`
 	Merchant   Merchant         `json:"merchant" gorm:"foreignKey:MerchantID"`

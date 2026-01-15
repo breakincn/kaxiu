@@ -265,6 +265,9 @@ func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error
 	if s.TechnicianID != nil && *s.TechnicianID > 0 {
 		uUpdates["technician_id"] = *s.TechnicianID
 	}
+	if s.RoomID != nil && *s.RoomID > 0 {
+		uUpdates["room_id"] = *s.RoomID
+	}
 
 	return tx.Model(&models.Usage{}).
 		Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
