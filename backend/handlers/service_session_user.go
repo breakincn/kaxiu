@@ -300,7 +300,7 @@ func UserListAvailableTechnicians(c *gin.Context) {
 		Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
 		Preload("Technician").
 		Preload("Technician.ServiceRole").
-		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('available','idle')", s.MerchantID, start).
+		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", s.MerchantID, start).
 		Where("t.is_active = ?", true).
 		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 		Order("technician_attendances.updated_at desc").
@@ -356,7 +356,7 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			Model(&models.TechnicianAttendance{}).
 			Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
 			Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
-			Where("technician_attendances.merchant_id = ? AND technician_attendances.technician_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('available','idle')", s.MerchantID, input.TechnicianID, start).
+			Where("technician_attendances.merchant_id = ? AND technician_attendances.technician_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", s.MerchantID, input.TechnicianID, start).
 			Where("t.is_active = ?", true).
 			Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 			First(&att).Error; err != nil {

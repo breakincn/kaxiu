@@ -8,7 +8,7 @@ type TechnicianAttendance struct {
 	TechnicianID uint       `json:"technician_id" gorm:"index;comment:工作人员ID"`
 	CheckedInAt  *time.Time `json:"checked_in_at" gorm:"type:datetime(3);comment:签到时间"`
 	CheckedOutAt *time.Time `json:"checked_out_at" gorm:"type:datetime(3);comment:下班时间"`
-	Status       string     `json:"status" gorm:"size:20;default:available;comment:状态（available-可服务，busy-服务中，idle-空闲，rest-休息，paused-暂停）"`
+	Status       string     `json:"status" gorm:"size:20;default:idle;comment:状态（idle-空闲，busy-服务中，paused-暂停，rest-下班）"`
 	CreatedAt    *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt    *time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 

@@ -82,7 +82,7 @@ func TechnicianCheckIn(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		attendance = models.TechnicianAttendance{MerchantID: merchantID, TechnicianID: techID, CheckedInAt: &now, CheckedOutAt: nil, Status: "available"}
+		attendance = models.TechnicianAttendance{MerchantID: merchantID, TechnicianID: techID, CheckedInAt: &now, CheckedOutAt: nil, Status: "idle"}
 		if err := config.DB.Create(&attendance).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -98,7 +98,7 @@ func TechnicianCheckIn(c *gin.Context) {
 		return
 	}
 
-	updates := map[string]interface{}{"checked_in_at": now, "checked_out_at": nil, "status": "available"}
+	updates := map[string]interface{}{"checked_in_at": now, "checked_out_at": nil, "status": "idle"}
 	if err := config.DB.Model(&models.TechnicianAttendance{}).Where("id = ?", attendance.ID).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -236,7 +236,7 @@ func UpdateTechnicianServiceStatus(c *gin.Context) {
 		techID = *input.TechnicianID
 	}
 
-	allowed := map[string]bool{"available": true, "idle": true, "rest": true, "paused": true}
+	allowed := map[string]bool{"idle": true, "paused": true}
 	if !allowed[input.Status] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的状态"})
 		return
@@ -281,7 +281,7 @@ func ListAvailableTechnicians(c *gin.Context) {
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var list []models.TechnicianAttendance
 	config.DB.Preload("Technician").
-		Where("merchant_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL AND status IN ('available','idle')", merchantID, start).
+		Where("merchant_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL AND status IN ('idle')", merchantID, start).
 		Order("updated_at desc").
 		Find(&list)
 

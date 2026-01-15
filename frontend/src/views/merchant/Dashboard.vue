@@ -647,9 +647,7 @@
         <div v-if="isTechnicianAuth()" class="mt-3">
           <div class="flex items-center gap-2">
             <select v-model="attendanceStatus" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
-              <option value="available">可服务</option>
               <option value="idle">空闲</option>
-              <option value="rest">休息</option>
               <option value="paused">暂停</option>
             </select>
             <button
@@ -1034,7 +1032,7 @@ const showBusinessStatusModal = ref(false)
 
 const attendanceLoading = ref(false)
 const attendanceUpdating = ref(false)
-const attendanceStatus = ref('available')
+const attendanceStatus = ref('idle')
 
 const serviceSessions = ref([])
 const sessionLoading = ref(false)
@@ -2018,7 +2016,7 @@ const doCheckIn = async () => {
   attendanceLoading.value = true
   try {
     await attendanceApi.checkIn({})
-    attendanceStatus.value = 'available'
+    attendanceStatus.value = 'idle'
     alert('签到成功')
   } catch (e) {
     alert(e.response?.data?.error || '签到失败')
@@ -2032,7 +2030,7 @@ const doCheckOut = async () => {
   attendanceLoading.value = true
   try {
     await attendanceApi.checkOut({})
-    attendanceStatus.value = 'rest'
+    attendanceStatus.value = 'paused'
     alert('下班签到成功')
   } catch (e) {
     alert(e.response?.data?.error || '下班签到失败')

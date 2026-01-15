@@ -197,35 +197,28 @@ const sessionStatusText = (st) => {
 const badgeText = (it) => {
   const st = String(it.service_status || '')
   if (!it.checked_in) return '未签到'
-  // 会话状态：显示对应中文
-  if (
-    st === 'created' ||
-    st === 'room_selecting' ||
-    st === 'room_locked' ||
-    st === 'staff_selecting' ||
-    st === 'precheck_pending' ||
-    st === 'delay_pending' ||
-    st === 'serving' ||
-    st === 'auto_finishing' ||
-    st === 'finished' ||
-    st === 'canceled'
-  ) {
-    return sessionStatusText(st)
+
+  const sess = it.current_session
+  if (sess) {
+    const sst = String(sess.status || '').trim()
+    const precheckedAt = sess.precheck_at
+    if (sst === 'precheck_pending' && !precheckedAt) return '服务 待预结单'
+    return '服务 待结单'
   }
 
-  // 签到状态
-  if (st === 'available') return '可服务'
-  if (st === 'idle') return '空闲'
-  if (st === 'rest') return '休息'
+  // 签到状态：仅保留空闲/暂停
   if (st === 'paused') return '暂停'
-  return st || '未知'
+  if (st === 'idle') return '空闲'
+  return st || '暂停'
 }
 
 const badgeClass = (it) => {
   const txt = badgeText(it)
   if (txt === '未签到') return 'bg-gray-100 text-gray-500'
-  if (txt === '可服务' || txt === '空闲') return 'bg-green-50 text-green-600'
-  if (txt === '服务中') return 'bg-orange-50 text-orange-600'
+  if (txt === '空闲') return 'bg-green-50 text-green-600'
+  if (txt === '服务 待预结单') return 'bg-red-50 text-red-600'
+  if (txt === '服务 待结单') return 'bg-orange-50 text-orange-600'
+  if (txt === '暂停') return 'bg-blue-50 text-blue-600'
   return 'bg-blue-50 text-blue-600'
 }
 
