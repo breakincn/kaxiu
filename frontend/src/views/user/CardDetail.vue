@@ -512,11 +512,14 @@ const getUsageStatusText = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s === 'in_progress') {
     const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+    const supportRoom = Boolean(card.value?.merchant?.support_room)
     const sessStatus = String(usage?.service_session_status || '').trim()
     const precheckedAt = usage?.service_session_precheck_at
     const now = nowForFinish.value
     const expireAt = getFinishExpireAtUnix(usage) * 1000
     if (expireAt && now > expireAt) return '结单超时'
+    if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
+    if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) return '待选客服'
     if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) {
       const dl = getPrecheckDeadlineAtMs(usage)
       if (dl && now < dl) return '待预结单'
@@ -535,8 +538,11 @@ const getUsageStatusClass = (usage) => {
     const expireAt = getFinishExpireAtUnix(usage) * 1000
     if (expireAt && now > expireAt) return 'text-red-500'
     const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+    const supportRoom = Boolean(card.value?.merchant?.support_room)
     const sessStatus = String(usage?.service_session_status || '').trim()
     const precheckedAt = usage?.service_session_precheck_at
+    if (supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
+    if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) return 'text-orange-500'
     if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) {
       const dl = getPrecheckDeadlineAtMs(usage)
       if (dl && now < dl) return 'text-red-500'
@@ -900,6 +906,23 @@ const onUsageTouchStart = (e, usage) => {
         // ignore
       }
       const latest = (usages.value || []).find(u => Number(u?.id) === Number(usage?.id)) || usage
+
+      const supportRoom = Boolean(card.value?.merchant?.support_room)
+      const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+      const sessStatus = String(latest?.service_session_status || '').trim()
+      const sessID = latest?.service_session_id
+
+      if (sessID) {
+        if (supportRoom && sessStatus === 'room_selecting') {
+          router.push({ path: `/user/service-sessions/${sessID}`, query: { next_step: 'room_select' } })
+          return
+        }
+        if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) {
+          router.push({ path: `/user/service-sessions/${sessID}`, query: { next_step: 'staff_select' } })
+          return
+        }
+      }
+
       openUsageQrModal(latest)
     })()
   }, 550)
