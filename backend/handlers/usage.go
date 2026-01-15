@@ -49,12 +49,14 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		Status       string     `gorm:"column:status"`
 		PrecheckAt   *time.Time `gorm:"column:precheck_at"`
 		UpdatedAt   *time.Time `gorm:"column:updated_at"`
+		RoomSelectDeadlineAt *time.Time `gorm:"column:room_select_deadline_at"`
+		RoomLockedAt         *time.Time `gorm:"column:room_locked_at"`
 	}
 
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions").
-		Select("id, initial_usage_id, status, precheck_at, updated_at").
+		Select("id, initial_usage_id, status, precheck_at, updated_at, room_select_deadline_at, room_locked_at").
 		Where("initial_usage_id IN ?", ids).
 		Find(&sessions).Error; err != nil {
 		return
@@ -77,6 +79,8 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 			u.ServiceSessionStatus = s.Status
 			u.ServiceSessionPrecheckAt = s.PrecheckAt
 			u.ServiceSessionUpdatedAt = s.UpdatedAt
+			u.RoomSelectDeadlineAt = s.RoomSelectDeadlineAt
+			u.RoomLockedAt = s.RoomLockedAt
 		}
 	}
 }

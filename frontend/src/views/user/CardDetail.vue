@@ -672,11 +672,38 @@ const getUsageStatusCountdownText = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s !== 'in_progress') return ''
 
+  const supportRoom = Boolean(card.value?.merchant?.support_room)
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_precheck_at
   const now = nowForFinish.value
 
+  // 待选房间倒计时（90秒）
+  if (supportRoom && sessStatus === 'room_selecting' && usage?.room_select_deadline_at) {
+    const deadline = new Date(usage.room_select_deadline_at).getTime()
+    const diff = deadline - now
+    if (diff > 0) {
+      const totalSeconds = Math.floor(diff / 1000)
+      const minutes = Math.floor(totalSeconds / 60)
+      const seconds = totalSeconds % 60
+      return `${minutes}分${seconds}秒`
+    }
+  }
+
+  // 待选客服倒计时（5分钟）
+  if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') && usage?.room_locked_at) {
+    const lockedTime = new Date(usage.room_locked_at).getTime()
+    const deadline = lockedTime + 5 * 60 * 1000 // 5分钟
+    const diff = deadline - now
+    if (diff > 0) {
+      const totalSeconds = Math.floor(diff / 1000)
+      const minutes = Math.floor(totalSeconds / 60)
+      const seconds = totalSeconds % 60
+      return `${minutes}分${seconds}秒`
+    }
+  }
+
+  // 待预结单倒计时（15分钟）
   if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) {
     const dl = getPrecheckDeadlineAtMs(usage)
     if (dl) {
@@ -690,6 +717,7 @@ const getUsageStatusCountdownText = (usage) => {
     }
   }
 
+  // 结单超时倒计时（12小时）
   const expireAt = getFinishExpireAtUnix(usage) * 1000
   if (!expireAt) return ''
   const diff = expireAt - now
@@ -707,12 +735,26 @@ const getUsageStatusCountdownClass = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s !== 'in_progress') return 'text-gray-400'
 
+  const supportRoom = Boolean(card.value?.merchant?.support_room)
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_precheck_at
+
+  // 待选房间倒计时（橙色）
+  if (supportRoom && sessStatus === 'room_selecting' && usage?.room_select_deadline_at) {
+    return 'text-orange-500'
+  }
+
+  // 待选客服倒计时（橙色）
+  if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') && usage?.room_locked_at) {
+    return 'text-orange-500'
+  }
+
+  // 待预结单倒计时（红色）
   if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) {
     return 'text-red-500'
   }
+
   return 'text-blue-500'
 }
 
