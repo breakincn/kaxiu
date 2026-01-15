@@ -495,6 +495,7 @@ const precheckCode = computed(() => {
 })
 
 const usageQrTitle = computed(() => {
+  if (isPrecheckModal.value && usagePrecheckDone.value) return '即将进入服务'
   return isPrecheckModal.value ? '预结单二维码' : '结单二维码'
 })
 
@@ -774,7 +775,7 @@ const trySwitchUsageQrToFinish = async () => {
   usageQrDataUrl.value = ''
   setTimeout(() => {
     closeUsageQrModal()
-  }, 2000)
+  }, 3000)
 }
 
 const openUsageQrModal = async (usage) => {
