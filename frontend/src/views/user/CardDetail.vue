@@ -480,7 +480,6 @@ const sessionIdFromQuery = computed(() => {
 })
 
 const isPrecheckModal = computed(() => {
-  if (sessionIdFromQuery.value) return true
   return qrMode.value === 'precheck'
 })
 
@@ -743,14 +742,81 @@ const canShowUsageQr = (usage) => {
   return Math.floor(Date.now() / 1000) <= finishExpireAt
 }
 
+let usageQrPollTimer = null
+let usageQrPollSessionId = ''
+
+const stopUsageQrPoll = () => {
+  if (usageQrPollTimer) {
+    clearInterval(usageQrPollTimer)
+    usageQrPollTimer = null
+  }
+  usageQrPollSessionId = ''
+}
+
+const trySwitchUsageQrToFinish = async () => {
+  const sid = String(usageQrPollSessionId || '').trim()
+  if (!sid) return
+  await fetchUsages()
+  const latest = (usages.value || []).find(u => String(u?.service_session_id || '') === sid)
+  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+  const sessStatus = String(latest?.service_session_status || '').trim()
+  const precheckedAt = latest?.service_session_precheck_at
+  if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) return
+  stopUsageQrPoll()
+
+  if (!latest || !canShowUsageQr(latest)) {
+    closeUsageQrModal()
+    return
+  }
+
+  qrMode.value = 'finish'
+  qrSessionId.value = ''
+  selectedUsage.value = latest
+  usageQrDataUrl.value = ''
+  nowForFinish.value = Date.now()
+  startFinishNowTimer()
+  try {
+    usageQrDataUrl.value = await QRCode.toDataURL(String(latest.verify_code).trim(), {
+      margin: 1,
+      scale: 8,
+      errorCorrectionLevel: 'M'
+    })
+  } catch (_) {
+    // ignore
+  }
+}
+
 const openUsageQrModal = async (usage) => {
+  stopUsageQrPoll()
   qrMode.value = 'finish'
   qrSessionId.value = ''
 
-  if (sessionIdFromQuery.value) {
+  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+  const sessID = usage?.service_session_id
+  const sessStatus = String(usage?.service_session_status || '').trim()
+  const precheckedAt = usage?.service_session_precheck_at
+
+  // 仅当当前 usage 匹配 query.session_id 且确实处于待预结单时，才显示预结单二维码
+  if (
+    supportCS &&
+    sessionIdFromQuery.value &&
+    String(sessID || '') === String(sessionIdFromQuery.value) &&
+    sessStatus === 'precheck_pending' &&
+    !precheckedAt
+  ) {
+    qrMode.value = 'precheck'
+    qrSessionId.value = String(sessID)
     selectedUsage.value = null
     showUsageQrModal.value = true
     usageQrDataUrl.value = ''
+    usageQrPollSessionId = String(sessID)
+    usageQrPollTimer = setInterval(() => {
+      if (!showUsageQrModal.value || qrMode.value !== 'precheck') {
+        stopUsageQrPoll()
+        return
+      }
+      trySwitchUsageQrToFinish()
+    }, 2000)
     try {
       usageQrDataUrl.value = await QRCode.toDataURL(precheckCode.value, {
         margin: 1,
@@ -762,17 +828,20 @@ const openUsageQrModal = async (usage) => {
     }
     return
   }
-
-  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
-  const sessID = usage?.service_session_id
-  const sessStatus = String(usage?.service_session_status || '').trim()
-  const precheckedAt = usage?.service_session_precheck_at
   if (supportCS && sessID && sessStatus === 'precheck_pending' && !precheckedAt) {
     qrMode.value = 'precheck'
     qrSessionId.value = String(sessID)
     selectedUsage.value = null
     showUsageQrModal.value = true
     usageQrDataUrl.value = ''
+    usageQrPollSessionId = String(sessID)
+    usageQrPollTimer = setInterval(() => {
+      if (!showUsageQrModal.value || qrMode.value !== 'precheck') {
+        stopUsageQrPoll()
+        return
+      }
+      trySwitchUsageQrToFinish()
+    }, 2000)
     try {
       usageQrDataUrl.value = await QRCode.toDataURL(precheckCode.value, {
         margin: 1,
@@ -803,6 +872,7 @@ const openUsageQrModal = async (usage) => {
 }
 
 const closeUsageQrModal = () => {
+  stopUsageQrPoll()
   showUsageQrModal.value = false
   selectedUsage.value = null
   usageQrDataUrl.value = ''
@@ -827,7 +897,15 @@ const onUsageTouchStart = (e, usage) => {
   usageLongPressTimer = setTimeout(() => {
     usageLongPressTimer = null
     if (usageTouchMoved) return
-    openUsageQrModal(usage)
+    ;(async () => {
+      try {
+        await fetchUsages()
+      } catch (_) {
+        // ignore
+      }
+      const latest = (usages.value || []).find(u => Number(u?.id) === Number(usage?.id)) || usage
+      openUsageQrModal(latest)
+    })()
   }, 550)
 }
 
@@ -1462,6 +1540,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  stopUsageQrPoll()
   stopCountdownTimer()
   stopVerifyStatusPoll()
   stopFinishNowTimer()
