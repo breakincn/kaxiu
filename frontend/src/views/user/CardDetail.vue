@@ -1451,4 +1451,25 @@ const scrollToNotice = async () => {
     }
   }
 }
+
+onMounted(async () => {
+  await fetchCard()
+  startFinishNowTimer()
+  // 如果有预约，启动倒计时
+  if (appointment.value) {
+    startCountdownTimer()
+  }
+})
+
+onUnmounted(() => {
+  stopCountdownTimer()
+  stopVerifyStatusPoll()
+  stopFinishNowTimer()
+  if (verifyExpireTimer) {
+    clearTimeout(verifyExpireTimer)
+    verifyExpireTimer = null
+  }
+  // 重置底部占位状态
+  shouldShowBottomSpacer.value = false
+})
 </script>
