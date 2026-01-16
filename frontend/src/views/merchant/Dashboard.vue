@@ -93,7 +93,7 @@
         v-if="showQueueTab"
         type="button"
         class="bg-white rounded-xl p-4 text-left border border-gray-100"
-        @click="currentTab = 'queue'"
+        @click="selectTab('queue')"
       >
         <div class="text-gray-600 text-sm mb-1">待处理预约</div>
         <div class="text-3xl font-bold" :class="pendingAppointments > 0 ? 'text-orange-500' : 'text-gray-400'">{{ pendingAppointments }}</div>
@@ -103,7 +103,7 @@
         v-if="canVerify"
         type="button"
         class="bg-white rounded-xl p-4 text-left border border-gray-100"
-        @click="currentTab = 'verify'"
+        @click="selectTab('verify')"
       >
         <div class="text-gray-600 text-sm mb-1">今日核销</div>
         <div class="text-3xl font-bold" :class="todayVerifyCount > 0 ? 'text-secondary' : 'text-gray-400'">{{ todayVerifyCount }}</div>
@@ -115,7 +115,7 @@
     <div class="px-4 flex gap-2 border-b bg-white">
       <button
         v-if="showQueueTab"
-        @click="currentTab = 'queue'"
+        @click="selectTab('queue')"
         :class="[
           'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'queue'
@@ -127,7 +127,7 @@
       </button>
       <button
         v-if="showVerifyTab"
-        @click="currentTab = 'verify'"
+        @click="selectTab('verify')"
         :class="[
           'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'verify'
@@ -139,7 +139,7 @@
       </button>
       <button
         v-if="showFinishTab"
-        @click="currentTab = 'finish'"
+        @click="selectTab('finish')"
         :class="[
           'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'finish'
@@ -151,7 +151,7 @@
       </button>
       <button
         v-if="showNoticeTab"
-        @click="currentTab = 'notice'"
+        @click="selectTab('notice')"
         :class="[
           'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'notice'
@@ -163,7 +163,7 @@
       </button>
       <button
         v-if="showCardsTab"
-        @click="currentTab = 'cards'"
+        @click="selectTab('cards')"
         :class="[
           'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'cards'
@@ -176,7 +176,7 @@
 
       <button
         v-if="showServiceTab"
-        @click="currentTab = 'service'"
+        @click="selectTab('service')"
         :class="[
           'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'service'
@@ -912,6 +912,31 @@ const showServiceTab = computed(() => {
 const currentTab = ref('queue')
 const routeUserCode = ref('')
 const userCodeAnchor = ref(null)
+
+const DASHBOARD_ACTIVE_TAB_STORAGE_KEY = 'merchant_dashboard_active_tab'
+
+const selectTab = (tab) => {
+  currentTab.value = tab
+  try {
+    localStorage.setItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY, String(tab))
+  } catch (e) {
+    // ignore
+  }
+}
+
+const getDefaultTab = () => {
+  if (showQueueTab.value) {
+    return 'queue'
+  } else if (showVerifyTab.value) {
+    return 'verify'
+  } else if (showFinishTab.value) {
+    return 'finish'
+  } else if (showNoticeTab.value) {
+    return 'notice'
+  } else {
+    return showCardsTab.value ? 'cards' : 'queue'
+  }
+}
 
 const showSellView = ref(false)
 const showSellQrView = ref(false)
@@ -1963,6 +1988,17 @@ onMounted(async () => {
   console.log('Merchant Dashboard mounted')
   console.log('localStorage merchantId:', localStorage.getItem('merchantId'))
 
+  // 尝试从 localStorage 恢复上次选择的 tab
+  try {
+    const savedTab = localStorage.getItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY)
+    if (savedTab && ['queue', 'verify', 'finish', 'notice', 'cards', 'service'].includes(savedTab)) {
+      selectTab(savedTab)
+      console.log('从 localStorage 恢复 tab:', savedTab)
+    }
+  } catch (e) {
+    // ignore
+  }
+
   // 等待权限加载完成
   await ensureMerchantPermissionsLoaded()
   console.log('Permissions loaded, checking permissions:', {
@@ -1972,10 +2008,10 @@ onMounted(async () => {
     canFinishVerify: canFinishVerify.value
   })
   
-  // 检查查询参数，自动切换到指定Tab
+  // 检查查询参数，自动切换到指定Tab（优先级高于 localStorage）
   const tabParam = route.query.tab
   if (tabParam && ['queue', 'verify', 'finish', 'notice', 'cards', 'service'].includes(tabParam)) {
-    currentTab.value = tabParam
+    selectTab(tabParam)
   }
 
   // 检查错误参数，显示错误弹窗
@@ -2011,70 +2047,96 @@ onMounted(async () => {
   
   // 根据权限选择默认Tab
   if (!tabParam) {
-    if (showQueueTab.value) {
-      currentTab.value = 'queue'
-    } else if (showVerifyTab.value) {
-      currentTab.value = 'verify'
-    } else if (showFinishTab.value) {
-      currentTab.value = 'finish'
-    } else if (showNoticeTab.value) {
-      currentTab.value = 'notice'
+    // 如果已经从 localStorage 恢复了 tab，并且该 tab 有权限显示，则保持不变
+    const restoredTab = currentTab.value
+    if (restoredTab && ['queue', 'verify', 'finish', 'notice', 'cards', 'service'].includes(restoredTab)) {
+      // 检查恢复的 tab 是否有权限显示
+      const canShowRestoredTab = 
+        (restoredTab === 'queue' && showQueueTab.value) ||
+        (restoredTab === 'verify' && showVerifyTab.value) ||
+        (restoredTab === 'finish' && showFinishTab.value) ||
+        (restoredTab === 'notice' && showNoticeTab.value) ||
+        (restoredTab === 'cards' && showCardsTab.value) ||
+        (restoredTab === 'service' && showServiceTab.value)
+      
+      if (canShowRestoredTab) {
+        // 保持恢复的 tab，不需要改变（也不需要重新保存到 localStorage）
+        console.log('保持从 localStorage 恢复的 tab:', restoredTab)
+      } else {
+        // 恢复的 tab 没有权限，设置默认 tab
+        console.log('恢复的 tab 没有权限，设置默认 tab')
+        currentTab.value = getDefaultTab()
+        // 重新保存新的默认 tab
+        try {
+          localStorage.setItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY, currentTab.value)
+        } catch (e) {
+          // ignore
+        }
+      }
     } else {
-      currentTab.value = showCardsTab.value ? 'cards' : 'queue'
+      // 没有恢复有效的 tab，设置默认 tab
+      console.log('没有恢复有效的 tab，设置默认 tab')
+      currentTab.value = getDefaultTab()
+      // 保存默认 tab
+      try {
+        localStorage.setItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY, currentTab.value)
+      } catch (e) {
+        // ignore
+      }
     }
   } else {
     // 如果指定了tab但没有权限，则切换到默认tab
     if (currentTab.value === 'queue' && !showQueueTab.value) {
       if (showVerifyTab.value) {
-        currentTab.value = 'verify'
+        selectTab('verify')
       } else if (showFinishTab.value) {
-        currentTab.value = 'finish'
+        selectTab('finish')
       } else if (showNoticeTab.value) {
-        currentTab.value = 'notice'
+        selectTab('notice')
       } else {
-        currentTab.value = showCardsTab.value ? 'cards' : 'queue'
+        selectTab(showCardsTab.value ? 'cards' : 'queue')
       }
     } else if (currentTab.value === 'verify' && !showVerifyTab.value) {
       if (showQueueTab.value) {
-        currentTab.value = 'queue'
+        selectTab('queue')
       } else if (showFinishTab.value) {
-        currentTab.value = 'finish'
+        selectTab('finish')
       } else if (showNoticeTab.value) {
-        currentTab.value = 'notice'
+        selectTab('notice')
       } else {
-        currentTab.value = showCardsTab.value ? 'cards' : 'queue'
+        selectTab(showCardsTab.value ? 'cards' : 'queue')
       }
     } else if (currentTab.value === 'finish' && !showFinishTab.value) {
       if (showQueueTab.value) {
-        currentTab.value = 'queue'
+        selectTab('queue')
       } else if (showVerifyTab.value) {
-        currentTab.value = 'verify'
+        selectTab('verify')
       } else if (showNoticeTab.value) {
-        currentTab.value = 'notice'
+        selectTab('notice')
       } else {
-        currentTab.value = showCardsTab.value ? 'cards' : 'queue'
+        selectTab(showCardsTab.value ? 'cards' : 'queue')
       }
     } else if (currentTab.value === 'notice' && !showNoticeTab.value) {
       if (showQueueTab.value) {
-        currentTab.value = 'queue'
+        selectTab('queue')
       } else if (showVerifyTab.value) {
-        currentTab.value = 'verify'
+        selectTab('verify')
       } else if (showFinishTab.value) {
-        currentTab.value = 'finish'
+        selectTab('finish')
       } else {
-        currentTab.value = showCardsTab.value ? 'cards' : 'queue'
+        selectTab(showCardsTab.value ? 'cards' : 'queue')
       }
     } else if (currentTab.value === 'cards' && !showCardsTab.value) {
       if (showQueueTab.value) {
-        currentTab.value = 'queue'
+        selectTab('queue')
       } else if (showVerifyTab.value) {
-        currentTab.value = 'verify'
+        selectTab('verify')
       } else if (showFinishTab.value) {
-        currentTab.value = 'finish'
+        selectTab('finish')
       } else if (showNoticeTab.value) {
-        currentTab.value = 'notice'
+        selectTab('notice')
       } else {
-        currentTab.value = 'queue'
+        selectTab('queue')
       }
     }
   }
@@ -2083,8 +2145,29 @@ onMounted(async () => {
   fetchPendingDirectPurchases()
   fetchAppointments()
   loadCardTemplates() // 加载卡片模板
-  if (currentTab.value === 'service') {
-    // no-op
+  
+  // 根据最终的 currentTab 加载对应的数据
+  if (currentTab.value === 'queue') {
+    fetchAppointments()
+    startCountdownTimer()
+  } else if (currentTab.value === 'verify') {
+    fetchTodayUsages()
+  } else if (currentTab.value === 'finish') {
+    fetchTodayFinishedUsages()
+  } else if (currentTab.value === 'cards') {
+    // 重置显示模式为自动，让computed决定显示什么
+    displayMode.value = 'auto'
+    // 如果默认显示售卡模板，则加载售卡模板数据
+    if (currentDisplay.value === 'sellTemplates') {
+      loadSellTemplates()
+    } else {
+      fetchIssuedCards()
+    }
+  } else if (currentTab.value === 'notice') {
+    fetchNotices()
+  } else if (currentTab.value === 'service') {
+    fetchServiceSessions()
+    startServiceSessionTimer()
   }
 })
 
