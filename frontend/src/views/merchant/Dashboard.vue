@@ -2252,8 +2252,8 @@ const doCheckOut = async () => {
   try {
     await attendanceApi.checkOut({})
     // 下班签到成功后，同步服务器状态
-    serverAttendanceStatus.value = 'paused'
-    attendanceStatus.value = 'paused'
+    serverAttendanceStatus.value = 'rest'
+    attendanceStatus.value = 'rest'
     alert('下班签到成功')
   } catch (e) {
     alert(e.response?.data?.error || '下班签到失败')
