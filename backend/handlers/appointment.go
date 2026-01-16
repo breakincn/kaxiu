@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"kabao/config"
 	"kabao/models"
 	"log"
@@ -139,7 +140,11 @@ func GetCardAppointment(c *gin.Context) {
 		First(&appointment).Error
 
 	if err != nil {
-		log.Printf("未找到预约: %v", err)
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Printf("查询预约失败: %v", err)
+		} else {
+			log.Printf("未找到预约: user_id=%d, merchant_id=%d", card.UserID, card.MerchantID)
+		}
 		cooldownUntil, cooldownErr := getCooldownUntil(card.UserID, card.MerchantID)
 		if cooldownErr != nil {
 			log.Printf("查询冷却时间失败: %v", cooldownErr)
