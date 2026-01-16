@@ -1115,6 +1115,8 @@ const technicianCurrentStatusText = computed(() => {
   const st = technicianCurrentStatus.value
   if (st === 'idle') return '空闲'
   if (st === 'paused') return '暂停'
+  if (st === 'busy') return '忙碌'
+  if (st === 'rest') return '未鉴到 休息中'
   if (st === 'service_pending_presettlement') return '服务 待预结单'
   if (st === 'service_pending_settlement') return '服务 待结单'
   return st || '-'
