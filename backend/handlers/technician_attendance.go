@@ -78,7 +78,8 @@ func TechnicianCheckIn(c *gin.Context) {
 	}
 
 	var attendance models.TechnicianAttendance
-	err := config.DB.Where("merchant_id = ? AND technician_id = ?", merchantID, techID).First(&attendance).Error
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	err := config.DB.Where("merchant_id = ? AND technician_id = ? AND created_at >= ?", merchantID, techID, start).First(&attendance).Error
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -244,12 +245,16 @@ func UpdateTechnicianServiceStatus(c *gin.Context) {
 		return
 	}
 
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
 	var out models.TechnicianAttendance
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 		var attendance models.TechnicianAttendance
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("merchant_id = ? AND technician_id = ?", merchantID, techID).
+			Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, techID, start).
+			Order("id DESC").
 			First(&attendance).Error; err != nil {
 			return err
 		}
@@ -371,7 +376,9 @@ func GetCurrentTechnicianAttendance(c *gin.Context) {
 	}
 
 	var attendance models.TechnicianAttendance
-	err := config.DB.Where("merchant_id = ? AND technician_id = ?", merchantID, technicianID).
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	err := config.DB.Where("merchant_id = ? AND technician_id = ? AND created_at >= ?", merchantID, technicianID, start).
 		Order("created_at DESC").
 		First(&attendance).Error
 	

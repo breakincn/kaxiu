@@ -672,6 +672,7 @@
                   :class="canManualUpdateStatus ? 'w-32' : 'w-44'"
                   :disabled="!canManualUpdateStatus"
                 >
+                  <option value="not_checked_in" disabled>未签到</option>
                   <option value="idle">空闲</option>
                   <option value="paused" :disabled="!canManualUpdateStatus">暂停</option>
                   <option value="service_pending_presettlement" disabled>服务 待预结单</option>
@@ -1089,8 +1090,8 @@ const showBusinessStatusModal = ref(false)
 
 const attendanceLoading = ref(false)
 const attendanceUpdating = ref(false)
-const attendanceStatus = ref('idle') // 用户在下拉框中选择的状态
-const serverAttendanceStatus = ref('idle') // 服务器中的真实状态
+const attendanceStatus = ref('not_checked_in') // 用户在下拉框中选择的状态
+const serverAttendanceStatus = ref('not_checked_in') // 服务器中的真实状态
 const setNextPausedLoading = ref(false)
 
 const serviceSessions = ref([])
@@ -1113,6 +1114,7 @@ const technicianCurrentStatus = computed(() => {
 
 const technicianCurrentStatusText = computed(() => {
   const st = technicianCurrentStatus.value
+  if (st === 'not_checked_in') return '未签到'
   if (st === 'idle') return '空闲'
   if (st === 'paused') return '暂停'
   if (st === 'busy') return '忙碌'
@@ -2232,10 +2234,9 @@ const doCheckIn = async () => {
   attendanceLoading.value = true
   try {
     await attendanceApi.checkIn({})
-    // 签到成功后，同步服务器状态
-    serverAttendanceStatus.value = 'idle'
-    attendanceStatus.value = 'idle'
     alert('签到成功')
+    // 重新获取最新状态
+    await fetchCurrentAttendanceStatus()
   } catch (e) {
     alert(e.response?.data?.error || '签到失败')
   } finally {
@@ -2327,18 +2328,25 @@ const fetchServiceSessions = async () => {
 
 const fetchCurrentAttendanceStatus = async () => {
   if (!isTechnicianAuth()) return
+  console.log('fetchCurrentAttendanceStatus: 开始获取技师状态')
   try {
     const res = await attendanceApi.getCurrentStatus()
     const attendance = res.data?.data
+    console.log('fetchCurrentAttendanceStatus: 接口返回', attendance)
     if (attendance && attendance.status) {
       serverAttendanceStatus.value = attendance.status
       // 初始化时也设置下拉框的状态为服务器状态
       attendanceStatus.value = attendance.status
       console.log('从服务器恢复技师状态:', attendance.status)
+    } else {
+      serverAttendanceStatus.value = 'not_checked_in'
+      attendanceStatus.value = 'not_checked_in'
+      console.log('接口返回空或无status，置为未签到')
     }
   } catch (e) {
-    console.error('获取技师状态失败:', e)
-    // 保持默认的 'idle' 状态
+    serverAttendanceStatus.value = 'not_checked_in'
+    attendanceStatus.value = 'not_checked_in'
+    console.error('获取技师状态失败，置为未签到:', e)
   }
 }
 
