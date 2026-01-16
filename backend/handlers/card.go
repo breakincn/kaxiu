@@ -1094,6 +1094,7 @@ func ScanVerifyCard(c *gin.Context) {
 			usage = models.Usage{
 				CardID:             card.ID,
 				MerchantID:         card.MerchantID,
+				ProjectID:          verifyCode.ProjectID,
 				UsedTimes:          1,
 				UsedAt:             &usedAt,
 				VerifyCode:         verifyCode.Code,
@@ -1136,6 +1137,7 @@ func ScanVerifyCard(c *gin.Context) {
 				MerchantID:             merchantID,
 				UserID:                 card.UserID,
 				CardID:                 card.ID,
+				ProjectID:              verifyCode.ProjectID,
 				InitialUsageID:         usage.ID,
 				VerifyCode:             verifyCode.Code,
 				Status:                 status,

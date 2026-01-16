@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"kabao/config"
 	"kabao/models"
 	"net/http"
@@ -44,13 +45,14 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 	}
 
 	type sessLite struct {
-		ID           uint       `gorm:"column:id"`
-		InitialUsageID uint      `gorm:"column:initial_usage_id"`
-		Status       string     `gorm:"column:status"`
-		RoomID       *uint      `gorm:"column:room_id"`
-		TechnicianID *uint      `gorm:"column:technician_id"`
-		PrecheckAt   *time.Time `gorm:"column:precheck_at"`
-		UpdatedAt   *time.Time `gorm:"column:updated_at"`
+		ID                 uint       `gorm:"column:id"`
+		InitialUsageID     uint       `gorm:"column:initial_usage_id"`
+		ProjectID          *uint      `gorm:"column:project_id"`
+		Status             string     `gorm:"column:status"`
+		RoomID             *uint      `gorm:"column:room_id"`
+		TechnicianID       *uint      `gorm:"column:technician_id"`
+		PrecheckAt         *time.Time `gorm:"column:precheck_at"`
+		UpdatedAt          *time.Time `gorm:"column:updated_at"`
 		RoomSelectDeadlineAt *time.Time `gorm:"column:room_select_deadline_at"`
 		RoomLockedAt         *time.Time `gorm:"column:room_locked_at"`
 	}
@@ -58,7 +60,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions").
-		Select("id, initial_usage_id, status, room_id, technician_id, precheck_at, updated_at, room_select_deadline_at, room_locked_at").
+		Select("id, initial_usage_id, project_id, status, room_id, technician_id, precheck_at, updated_at, room_select_deadline_at, room_locked_at").
 		Where("initial_usage_id IN ?", ids).
 		Find(&sessions).Error; err != nil {
 		return
@@ -71,6 +73,48 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 			continue
 		}
 		byUsageID[s.InitialUsageID] = s
+	}
+
+	// 若 usage.Project 为空，尝试用 service_session.project_id 兜底补齐
+	needProjectIDs := make([]uint, 0, len(sessions))
+	for i := range *usages {
+		u := &(*usages)[i]
+		if u.ProjectID != nil || u.Project != nil {
+			continue
+		}
+		if s, ok := byUsageID[u.ID]; ok {
+			if s.ProjectID != nil && *s.ProjectID > 0 {
+				pid := *s.ProjectID
+				u.ProjectID = &pid
+				needProjectIDs = append(needProjectIDs, pid)
+				if u.ID == 77 {
+					fmt.Printf("[DEBUG] usage.id=77 found service_session.project_id=%d, set usage.ProjectID\n", pid)
+				}
+			}
+		}
+	}
+
+	byProjectID := make(map[uint]*models.MerchantProject)
+	if len(needProjectIDs) > 0 {
+		var projects []models.MerchantProject
+		if err := config.DB.Where("id IN ?", needProjectIDs).Find(&projects).Error; err == nil {
+			for i := range projects {
+				p := projects[i]
+				byProjectID[p.ID] = &projects[i]
+			}
+		}
+		for i := range *usages {
+			u := &(*usages)[i]
+			if u.Project != nil || u.ProjectID == nil {
+				continue
+			}
+			if p, ok := byProjectID[*u.ProjectID]; ok {
+				u.Project = p
+				if u.ID == 77 {
+					fmt.Printf("[DEBUG] usage.id=77 set usage.Project.name=%s\n", p.Name)
+				}
+			}
+		}
 	}
 
 	roomIDs := make([]uint, 0, len(sessions))

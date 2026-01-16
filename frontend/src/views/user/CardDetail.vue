@@ -307,6 +307,10 @@
             </template>
           </div>
 
+          <div v-if="selectedUsage && getUsageProjectText(selectedUsage)" class="mt-2 text-center text-sm text-gray-600">
+            {{ getUsageProjectText(selectedUsage) }}
+          </div>
+
           <div v-if="!isPrecheckModal && selectedUsage" class="mt-4 text-center text-xs" :class="getFinishExpireTextClass(selectedUsage)">
             有效期至 {{ formatFinishExpireTime(selectedUsage) }}
           </div>
@@ -1168,14 +1172,16 @@ const getUsageProjectText = (usage) => {
   const pFromUsage = usage?.project
   if (pFromUsage && pFromUsage.name) {
     const duration = Number(pFromUsage.duration || 0)
-    return duration > 0 ? `${pFromUsage.name}（${duration}分钟）` : pFromUsage.name
+    const txt = duration > 0 ? `${pFromUsage.name}（${duration}分钟）` : pFromUsage.name
+    return txt ? `项目：${txt}` : ''
   }
   const pid = usage?.project_id
   if (!pid) return ''
   const p = (card.value.projects || []).find(p => Number(p.id) === Number(pid))
   if (!p) return ''
   const duration = Number(p.duration || 0)
-  return duration > 0 ? `${p.name}（${duration}分钟）` : p.name
+  const txt = duration > 0 ? `${p.name}（${duration}分钟）` : p.name
+  return txt ? `项目：${txt}` : ''
 }
 
 const doGenerateVerifyCode = async (projectId) => {
