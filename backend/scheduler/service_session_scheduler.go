@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	schedulerTickInterval = 3 * time.Second
-	schedulerBatchLimit   = 200
-	staffSelectingTimeout = 5 * time.Minute
+	schedulerTickInterval  = 3 * time.Second
+	schedulerBatchLimit    = 200
+	staffSelectingTimeout  = 5 * time.Minute
 	precheckPendingTimeout = 15 * time.Minute
 	// 房间会话超时时间, 房间会话30分钟内没选技师、没开始服务则超时,自动取消房间锁定
 	sessionAbandonTimeout = 30 * time.Minute
@@ -286,11 +286,16 @@ func releaseTechnicianIfNeeded(tx *gorm.DB, s *models.ServiceSession, now time.T
 		return nil
 	}
 	var att models.TechnicianAttendance
-	if err := tx.
+	res := tx.
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
-		First(&att).Error; err != nil {
-		return err
+		Limit(1).
+		Find(&att)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil
 	}
 
 	updates := map[string]interface{}{
