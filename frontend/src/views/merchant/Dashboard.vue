@@ -633,7 +633,7 @@
               :disabled="attendanceLoading"
               @click="doCheckIn"
               class="px-4 py-2 rounded-lg text-sm font-medium"
-              :class="attendanceLoading ? 'bg-gray-100 text-gray-400' : 'bg-primary text-white'"
+              :class="attendanceLoading ? 'bg-gray-100 text-gray-400' : (serverAttendanceStatus === 'idle' || serverAttendanceStatus === 'paused' || serverAttendanceStatus === 'busy') ? 'bg-green-500 text-white' : 'bg-primary text-white'"
             >
               上班签到
             </button>
@@ -641,7 +641,7 @@
               :disabled="attendanceLoading"
               @click="doCheckOut"
               class="px-4 py-2 rounded-lg text-sm font-medium"
-              :class="attendanceLoading ? 'bg-gray-100 text-gray-400' : 'bg-slate-600 text-white'"
+              :class="attendanceLoading ? 'bg-gray-100 text-gray-400' : (serverAttendanceStatus === 'idle' || serverAttendanceStatus === 'paused' || serverAttendanceStatus === 'busy') ? 'bg-primary text-white' : 'bg-slate-600 text-white'"
             >
               下班签到
             </button>
@@ -2243,6 +2243,11 @@ const doCheckIn = async () => {
 
 const doCheckOut = async () => {
   if (!isTechnicianAuth()) return
+  
+  // 添加确认弹窗
+  const confirmed = confirm('确认要下班签到吗？')
+  if (!confirmed) return
+  
   attendanceLoading.value = true
   try {
     await attendanceApi.checkOut({})
