@@ -12,7 +12,7 @@ import (
 func GetCardUsages(c *gin.Context) {
 	cardID := c.Param("id")
 	var usages []models.Usage
-	config.DB.Preload("Merchant").Preload("Technician").Preload("Project").Where("card_id = ?", cardID).Order("used_at DESC").Find(&usages)
+	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Preload("Project").Where("card_id = ?", cardID).Order("used_at DESC").Find(&usages)
 	enrichUsagesWithServiceSession(&usages)
 	autoFixUsages(&usages)
 	c.JSON(http.StatusOK, gin.H{"data": usages})
@@ -21,7 +21,7 @@ func GetCardUsages(c *gin.Context) {
 func GetMerchantUsages(c *gin.Context) {
 	merchantID := c.Param("id")
 	var usages []models.Usage
-	config.DB.Preload("Card").Preload("Card.User").Preload("Technician").Preload("Merchant").Preload("Project").Where("merchant_id = ?", merchantID).Order("used_at DESC").Find(&usages)
+	config.DB.Preload("Card").Preload("Card.User").Preload("Technician").Preload("Technician.ServiceRole").Preload("Merchant").Preload("Project").Where("merchant_id = ?", merchantID).Order("used_at DESC").Find(&usages)
 	enrichUsagesWithServiceSession(&usages)
 	autoFixUsages(&usages)
 	c.JSON(http.StatusOK, gin.H{"data": usages})
@@ -99,7 +99,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 	byTechID := make(map[uint]*models.Technician, len(techIDs))
 	if len(techIDs) > 0 {
 		var techs []models.Technician
-		if err := config.DB.Where("id IN ?", techIDs).Find(&techs).Error; err == nil {
+		if err := config.DB.Preload("ServiceRole").Where("id IN ?", techIDs).Find(&techs).Error; err == nil {
 			for i := range techs {
 				t := techs[i]
 				byTechID[t.ID] = &techs[i]
