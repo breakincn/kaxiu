@@ -291,13 +291,13 @@
           <!-- 房间号与客服人员信息 -->
           <div v-if="selectedUsage && (selectedUsage.service_room || selectedUsage.service_technician)" class="mt-3 text-center text-sm text-gray-600">
             <template v-if="selectedUsage.service_room && selectedUsage.service_technician">
-              {{ selectedUsage.service_room.name || selectedUsage.service_room.code }}：{{ selectedUsage.service_technician.account }}:{{ selectedUsage.service_technician.name }}
+              房间: {{ selectedUsage.service_room.name || selectedUsage.service_room.code }}  {{ selectedUsage.service_technician.service_role?.name || '技师' }}: {{ selectedUsage.service_technician.account }} {{ selectedUsage.service_technician.name }}
             </template>
             <template v-else-if="selectedUsage.service_room">
-              {{ selectedUsage.service_room.name || selectedUsage.service_room.code }}
+              房间: {{ selectedUsage.service_room.name || selectedUsage.service_room.code }}
             </template>
             <template v-else-if="selectedUsage.service_technician">
-              {{ selectedUsage.service_technician.account }}:{{ selectedUsage.service_technician.name }}
+              {{ selectedUsage.service_technician.service_role?.name || '技师' }}: {{ selectedUsage.service_technician.account }} {{ selectedUsage.service_technician.name }}
             </template>
           </div>
 

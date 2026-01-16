@@ -26,7 +26,7 @@ func UserGetServiceSession(c *gin.Context) {
 
 	id := c.Param("id")
 	var s models.ServiceSession
-	if err := config.DB.Preload("Room").Preload("Technician").Where("id = ? AND user_id = ?", id, userID).First(&s).Error; err != nil {
+	if err := config.DB.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").Where("id = ? AND user_id = ?", id, userID).First(&s).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "会话不存在"})
 		return
 	}
