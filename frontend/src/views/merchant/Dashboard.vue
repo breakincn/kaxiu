@@ -321,6 +321,8 @@
             <div class="flex-1">
               <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
+              <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
+              <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             </div>
             <div class="text-right">
@@ -359,6 +361,8 @@
             <div class="flex-1">
               <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
+              <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
+              <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.finished_at) }}</div>
             </div>
             <div class="text-right">
@@ -1335,6 +1339,38 @@ const getVerifyOperatorInfo = (usage) => {
   }
   
   return operatorInfo.join(' / ')
+}
+
+const getUsageServiceStatusText = (usage) => {
+  if (!usage) return '-'
+
+  // 已结单
+  if ((usage.status === 'success' && usage.finished_at) || usage.service_session_status === 'finished') {
+    return '已结单'
+  }
+
+  // 待预结单
+  if (usage.service_session_status === 'precheck_pending') {
+    return '待预结单'
+  }
+
+  // 结单超时（超过12小时仍未结单）
+  if (usage.used_at && !usage.finished_at) {
+    const usedAt = new Date(usage.used_at)
+    if (!Number.isNaN(usedAt.getTime())) {
+      const diffMs = Date.now() - usedAt.getTime()
+      if (diffMs > 12 * 60 * 60 * 1000) {
+        return '结单超时'
+      }
+    }
+  }
+
+  // 有服务单但未完成，统一归为待结单
+  if (usage.service_session_status) {
+    return '待结单'
+  }
+
+  return '-'
 }
 
 const fetchMerchant = async () => {

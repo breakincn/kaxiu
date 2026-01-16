@@ -264,7 +264,7 @@ const onDecoded = async (decodedText) => {
 
 onMounted(() => {
   const mode = String(route.query.mode || 'verify')
-  pageTitle.value = mode === 'finish' ? '扫码结单' : '扫码核销'
+  pageTitle.value = mode === 'finish' ? '今日结单记录' : '今日核销记录'
 
   const token = getMerchantToken()
   const id = getMerchantId()
