@@ -158,6 +158,12 @@
 			<div v-if="verifyQrDataUrl" class="mt-4 flex justify-center">
 				<img :src="verifyQrDataUrl" alt="核销二维码" class="w-48 h-48" />
 			</div>
+			
+			<!-- 当前核销次数 -->
+			<div v-if="card && verifyQrDataUrl" class="mt-3 text-center text-sm text-gray-700 font-medium">
+				第{{ card.total_times - card.remain_times + 1 }}次核销
+			</div>
+			
 			<div v-if="verifyCodeProject" class="text-center text-gray-800 text-sm mt-3 font-medium">
 				{{ verifyCodeProject.name }}
 				<span v-if="verifyCodeProject.duration" class="text-gray-500">（{{ verifyCodeProject.duration }}分钟）</span>
