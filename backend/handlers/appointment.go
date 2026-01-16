@@ -6,7 +6,6 @@ import (
 	"kabao/models"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -410,39 +409,6 @@ func CancelAppointment(c *gin.Context) {
 	}
 	config.DB.Preload("User").Preload("Merchant").First(&appointment, id)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
-}
-
-func CancelOverdueAppointments(c *gin.Context) {
-	merchantIDStr := c.Query("merchant_id")
-	var merchantID uint64
-	var err error
-	if merchantIDStr != "" {
-		merchantID, err = strconv.ParseUint(merchantIDStr, 10, 64)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "merchant_id 参数错误"})
-			return
-		}
-	}
-
-	now := time.Now()
-	deadline := now.Add(-35 * time.Minute)
-
-	q := config.DB.Model(&models.Appointment{}).
-		Where("status IN ('pending','confirmed') AND appointment_time IS NOT NULL AND appointment_time <= ?", deadline)
-	if merchantIDStr != "" {
-		q = q.Where("merchant_id = ?", merchantID)
-	}
-
-	result := q.Updates(map[string]interface{}{
-		"status":      "canceled",
-		"canceled_at": now,
-	})
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "批量取消失败"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"canceled": result.RowsAffected}})
 }
 
 func GetQueueStatus(c *gin.Context) {
