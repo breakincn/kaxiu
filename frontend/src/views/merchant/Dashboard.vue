@@ -1520,7 +1520,7 @@ const fetchQueueStatus = async () => {
 }
 
 const fetchPendingDirectPurchases = async () => {
-  if (!merchant.value.support_direct_sale) {
+  if (!canDirectSaleManage.value || !merchant.value.support_direct_sale) {
     pendingDirectPurchases.value = 0
     return
   }
