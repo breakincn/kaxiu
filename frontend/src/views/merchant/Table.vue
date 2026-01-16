@@ -34,7 +34,10 @@
         <div v-if="loading" class="text-center text-gray-400 py-10">加载中...</div>
 
         <div v-else class="mt-4">
-          <div v-if="activeTab === 'rooms'">
+          <div v-if="!activeTab" class="text-center text-gray-400 py-10">
+            请选择上方标签查看内容
+          </div>
+          <div v-else-if="activeTab === 'rooms'">
             <div v-if="rooms.length === 0" class="text-center text-gray-400 py-10">暂无房间</div>
             <div v-else class="space-y-3">
               <div v-for="it in rooms" :key="it.room.id" class="border border-gray-100 rounded-xl p-4 bg-white">
@@ -121,7 +124,9 @@ import { merchantApi } from '../../api'
 
 const router = useRouter()
 
-const activeTab = ref('rooms')
+// 从localStorage恢复选中的标签，默认为空（不默认选择）
+const savedTab = localStorage.getItem('tableActiveTab')
+const activeTab = ref(savedTab || '')
 const loading = ref(false)
 const rooms = ref([])
 const staff = ref([])
@@ -141,6 +146,8 @@ const goBack = () => {
 
 const selectTab = async (t) => {
   activeTab.value = t
+  // 保存到localStorage
+  localStorage.setItem('tableActiveTab', t)
   await load()
 }
 
@@ -272,6 +279,11 @@ const load = async () => {
 }
 
 onMounted(async () => {
+  // 如果没有保存的标签，默认选择房间
+  if (!activeTab.value) {
+    activeTab.value = 'rooms'
+    localStorage.setItem('tableActiveTab', 'rooms')
+  }
   await load()
   // 启动定时器，每秒更新一次
   timer = setInterval(updateCurrentTime, 1000)
