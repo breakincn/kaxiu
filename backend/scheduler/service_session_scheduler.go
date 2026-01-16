@@ -48,6 +48,16 @@ func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Tim
 		"room_locked_at":          nil,
 		"room_select_deadline_at": nil,
 	}
+	
+	// 释放技师状态
+	if s.TechnicianID != nil && *s.TechnicianID > 0 {
+		if err := tx.Model(&models.TechnicianAttendance{}).
+			Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+			Updates(map[string]interface{}{"status": "idle"}).Error; err != nil {
+			return err
+		}
+	}
+	
 	return tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND status IN ('room_selecting','room_locked','staff_selecting')", s.ID).
 		Updates(updates).Error
