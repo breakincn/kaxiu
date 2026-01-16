@@ -336,3 +336,53 @@ func ListAvailableTechnicians(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
+
+func GetCurrentTechnicianAttendance(c *gin.Context) {
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+	
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, _ := merchantIDAny.(uint)
+	if merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var technicianID uint
+	if authType == "staff" {
+		technicianIDAny, ok := c.Get("technician_id")
+		if !ok {
+			c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可查看"})
+			return
+		}
+		v, _ := technicianIDAny.(uint)
+		technicianID = v
+		if technicianID == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可查看"})
+			return
+		}
+	} else {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可查看"})
+		return
+	}
+
+	var attendance models.TechnicianAttendance
+	err := config.DB.Where("merchant_id = ? AND technician_id = ?", merchantID, technicianID).
+		Order("created_at DESC").
+		First(&attendance).Error
+	
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusOK, gin.H{"data": nil})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": attendance})
+}

@@ -255,7 +255,8 @@ export const attendanceApi = {
   checkIn: (data) => api.post('/merchant/technician/checkin', data),
   checkOut: (data) => api.post('/merchant/technician/checkout', data),
   updateStatus: (data) => api.put('/merchant/technician/status', data),
-  listAvailableTechnicians: () => api.get('/merchant/technicians/available')
+  listAvailableTechnicians: () => api.get('/merchant/technicians/available'),
+  getCurrentStatus: () => api.get('/merchant/technician/attendance')
 }
 
 export const serviceSessionApi = {

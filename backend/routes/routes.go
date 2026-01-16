@@ -168,6 +168,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.POST("/technician/checkout", handlers.TechnicianCheckOut)
 	auth.PUT("/technician/status", handlers.UpdateTechnicianServiceStatus)
 	auth.GET("/technicians/available", handlers.ListAvailableTechnicians)
+	auth.GET("/technician/attendance", handlers.GetCurrentTechnicianAttendance)
 
 	// 服务会话（先提供查询，后续补齐核销创建/选房/选人/预结单/加钟）
 	auth.GET("/service-sessions", handlers.ListServiceSessions)

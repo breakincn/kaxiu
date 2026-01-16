@@ -1085,7 +1085,8 @@ const showBusinessStatusModal = ref(false)
 
 const attendanceLoading = ref(false)
 const attendanceUpdating = ref(false)
-const attendanceStatus = ref('idle')
+const attendanceStatus = ref('idle') // 用户在下拉框中选择的状态
+const serverAttendanceStatus = ref('idle') // 服务器中的真实状态
 const setNextPausedLoading = ref(false)
 
 const serviceSessions = ref([])
@@ -1099,8 +1100,8 @@ const technicianCurrentStatus = computed(() => {
   if (!techId) return null
   const sess = serviceSessions.value.find(s => s.technician_id === techId && ['precheck_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(s.status))
   if (!sess) {
-    // 没有活跃会话，返回签到状态 idle/paused
-    return attendanceStatus.value
+    // 没有活跃会话，返回服务器中的签到状态 idle/paused
+    return serverAttendanceStatus.value
   }
   if (sess.status === 'precheck_pending' && !sess.precheck_at) return 'service_pending_presettlement'
   return 'service_pending_settlement'
@@ -1116,13 +1117,16 @@ const technicianCurrentStatusText = computed(() => {
 })
 
 const canManualUpdateStatus = computed(() => {
-  // 按最新要求：仅在“空闲”时允许手动更新为“暂停”
-  return technicianCurrentStatus.value === 'idle'
+  // 允许在"空闲"时手动更新，也允许在"暂停"时手动更新到任何状态
+  const currentStatus = technicianCurrentStatus.value
+  const selectedStatus = attendanceStatus.value
+  return currentStatus === 'idle' || currentStatus === 'paused'
 })
 
 const statusSelectValue = computed({
   get() {
-    return String(technicianCurrentStatus.value || '')
+    // 显示用户选择的状态，而不是服务器状态
+    return String(attendanceStatus.value || '')
   },
   set(v) {
     // 仅在可手动更新时，允许选择 paused
@@ -2146,6 +2150,11 @@ onMounted(async () => {
   fetchAppointments()
   loadCardTemplates() // 加载卡片模板
   
+  // 如果是技师登录，获取当前签到状态
+  if (isTechnicianAuth()) {
+    await fetchCurrentAttendanceStatus()
+  }
+  
   // 根据最终的 currentTab 加载对应的数据
   if (currentTab.value === 'queue') {
     fetchAppointments()
@@ -2185,6 +2194,8 @@ const doCheckIn = async () => {
   attendanceLoading.value = true
   try {
     await attendanceApi.checkIn({})
+    // 签到成功后，同步服务器状态
+    serverAttendanceStatus.value = 'idle'
     attendanceStatus.value = 'idle'
     alert('签到成功')
   } catch (e) {
@@ -2199,6 +2210,8 @@ const doCheckOut = async () => {
   attendanceLoading.value = true
   try {
     await attendanceApi.checkOut({})
+    // 下班签到成功后，同步服务器状态
+    serverAttendanceStatus.value = 'paused'
     attendanceStatus.value = 'paused'
     alert('下班签到成功')
   } catch (e) {
@@ -2213,6 +2226,8 @@ const updateAttendanceStatus = async () => {
   attendanceUpdating.value = true
   try {
     await attendanceApi.updateStatus({ status: attendanceStatus.value })
+    // 更新成功后，同步服务器状态
+    serverAttendanceStatus.value = attendanceStatus.value
     alert('状态已更新')
   } catch (e) {
     alert(e.response?.data?.error || '更新失败')
@@ -2227,6 +2242,9 @@ const setNextStatusPaused = async () => {
   setNextPausedLoading.value = true
   try {
     await attendanceApi.updateStatus({ status: 'paused' })
+    // 更新成功后，同步服务器状态
+    serverAttendanceStatus.value = 'paused'
+    attendanceStatus.value = 'paused'
     alert('已设置：结单后自动暂停')
   } catch (e) {
     alert(e.response?.data?.error || '设置失败')
@@ -2261,6 +2279,23 @@ const fetchServiceSessions = async () => {
     serviceSessions.value = []
   } finally {
     sessionLoading.value = false
+  }
+}
+
+const fetchCurrentAttendanceStatus = async () => {
+  if (!isTechnicianAuth()) return
+  try {
+    const res = await attendanceApi.getCurrentStatus()
+    const attendance = res.data?.data
+    if (attendance && attendance.status) {
+      serverAttendanceStatus.value = attendance.status
+      // 初始化时也设置下拉框的状态为服务器状态
+      attendanceStatus.value = attendance.status
+      console.log('从服务器恢复技师状态:', attendance.status)
+    }
+  } catch (e) {
+    console.error('获取技师状态失败:', e)
+    // 保持默认的 'idle' 状态
   }
 }
 
