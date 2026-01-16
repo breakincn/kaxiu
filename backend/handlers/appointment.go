@@ -44,7 +44,7 @@ func getCooldownUntil(userID uint, merchantID uint) (*time.Time, error) {
 		Limit(1).
 		First(&lastCanceled).Error
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
 		return nil, err
