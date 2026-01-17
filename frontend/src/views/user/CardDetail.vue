@@ -233,7 +233,10 @@
                 <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
                 <span class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</span>
               </div>
-              <div v-if="usage?.status === 'in_progress' && getUsageServiceStartAtText(usage)" class="text-gray-400 text-sm mt-0.5">
+              <div v-if="isUsageSessionFinishedButUsageInProgress(usage) && getUsageServiceEndAtTextForFinishedSession(usage)" class="text-gray-400 text-sm mt-0.5">
+                服务结束：{{ getUsageServiceEndAtTextForFinishedSession(usage) }}
+              </div>
+              <div v-else-if="usage?.status === 'in_progress' && getUsageServiceStartAtText(usage)" class="text-gray-400 text-sm mt-0.5">
                 服务开始：{{ getUsageServiceStartAtText(usage) }}
               </div>
               <div v-if="usage?.status === 'in_progress' && getUsageServiceRemainText(usage)" class="text-gray-400 text-sm mt-0.5 font-mono">
@@ -247,6 +250,9 @@
               </div>
             </div>
             <div class="text-right flex-shrink-0 ml-3">
+              <div v-if="isUsageSessionFinishedButUsageInProgress(usage)" class="text-sm font-medium text-gray-800">
+                完成
+              </div>
               <div :class="getUsageStatusClass(usage)" class="text-sm font-medium">
                 {{ getUsageStatusText(usage) }}
               </div>
@@ -557,6 +563,7 @@ const getUsageStatusText = (usage) => {
     const now = nowForFinish.value
     const expireAt = getFinishExpireAtUnix(usage) * 1000
     if (expireAt && now > expireAt) return '完成'
+    if (sessStatus === 'finished') return '未上钟 待手动下钟'
     if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
     if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) return '待选客服'
     if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
@@ -575,11 +582,11 @@ const getUsageStatusClass = (usage) => {
   if (s === 'in_progress') {
     const now = nowForFinish.value
     const expireAt = getFinishExpireAtUnix(usage) * 1000
-    if (expireAt && now > expireAt) return ''
     const supportCS = Boolean(card.value?.merchant?.support_customer_service)
     const supportRoom = Boolean(card.value?.merchant?.support_room)
     const sessStatus = String(usage?.service_session_status || '').trim()
     const precheckedAt = usage?.service_session_start_confirmed_at
+    if (sessStatus === 'finished') return 'text-blue-500'
     if (supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
     if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) return 'text-orange-500'
     if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
@@ -589,7 +596,21 @@ const getUsageStatusClass = (usage) => {
     return 'text-blue-500'
   }
   if (s === 'success') return ''
-  return 'text-red-500'
+  if (s === 'failed') return 'text-red-500'
+  return ''
+}
+
+const isUsageSessionFinishedButUsageInProgress = (usage) => {
+  const usageStatus = String(usage?.status || '').trim()
+  const sessStatus = String(usage?.service_session_status || '').trim()
+  return usageStatus === 'in_progress' && sessStatus === 'finished'
+}
+
+const getUsageServiceEndAtTextForFinishedSession = (usage) => {
+  if (!isUsageSessionFinishedButUsageInProgress(usage)) return ''
+  const v = usage?.service_session_updated_at
+  if (!v) return ''
+  return formatDateTime(v)
 }
 
 const stopVerifyStatusPoll = () => {
