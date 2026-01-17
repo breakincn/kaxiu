@@ -840,7 +840,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, onActivated, watch, nextTick, computed } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
-import { ensureMerchantPermissionsLoaded, merchantApi, appointmentApi, shopApi, attendanceApi, serviceSessionApi } from '../../api'
+import { ensureMerchantPermissionsLoaded, merchantApi, appointmentApi, shopApi, attendanceApi, serviceSessionApi, usageApi } from '../../api'
 import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission, getMerchantActiveAuth, getMerchantId, getTechnicianShopSlug } from '../../utils/auth'
 import { replaceTerms } from '../../utils/terms'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
