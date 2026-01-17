@@ -1135,7 +1135,11 @@ const canManualUpdateStatus = computed(() => {
 
 const statusSelectValue = computed({
   get() {
-    // 显示用户选择的状态，而不是服务器状态
+    // 可手动更新时：显示用户选择的状态
+    // 不可手动更新(下拉框 disabled)时：显示真实的当前状态，避免与“当前状态”文案不一致
+    if (!canManualUpdateStatus.value) {
+      return String(technicianCurrentStatus.value || '')
+    }
     return String(attendanceStatus.value || '')
   },
   set(v) {
