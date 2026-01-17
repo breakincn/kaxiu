@@ -320,6 +320,7 @@
           <div v-for="usage in todayUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
             <div class="flex-1">
               <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
+              <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
@@ -360,6 +361,7 @@
           <div v-for="usage in todayFinishedUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
             <div class="flex-1">
               <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
+              <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
@@ -1343,6 +1345,11 @@ const getVerifyOperatorInfo = (usage) => {
   }
   
   return operatorInfo.join(' / ')
+}
+
+const getUsageTrackingNumber = (usage) => {
+  if (!usage?.id) return ''
+  return String(usage.id).padStart(9, '0')
 }
 
 const getUsageServiceStatusText = (usage) => {

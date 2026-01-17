@@ -226,6 +226,9 @@
           >
             <div class="min-w-0">
               <div class="text-gray-800">核销次数: {{ usage.used_times }}</div>
+              <div class="text-gray-400 text-sm mt-0.5">
+                单号：{{ getUsageTrackingNumber(usage) }}
+              </div>
               <div class="flex items-center gap-2">
                 <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
                 <span class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</span>
@@ -716,6 +719,11 @@ const getUsageServiceRemainText = (usage) => {
   const pad2 = (n) => String(n).padStart(2, '0')
   if (hours > 0) return `${hours}小时${pad2(minutes)}分${pad2(seconds)}秒`
   return `${minutes}分${pad2(seconds)}秒`
+}
+
+const getUsageTrackingNumber = (usage) => {
+  if (!usage?.id) return ''
+  return String(usage.id).padStart(9, '0')
 }
 
 const getFinishExpireAtUnix = (usage) => {
