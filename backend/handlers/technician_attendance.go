@@ -160,9 +160,12 @@ func TechnicianCheckOut(c *gin.Context) {
 	}
 
 	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
 	var attendance models.TechnicianAttendance
-	if err := config.DB.Where("merchant_id = ? AND technician_id = ?", merchantID, techID).First(&attendance).Error; err != nil {
+	if err := config.DB.Where("merchant_id = ? AND technician_id = ? AND created_at >= ?", merchantID, techID, start).
+		Order("created_at DESC").
+		First(&attendance).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "未签到"})
 		return
 	}
