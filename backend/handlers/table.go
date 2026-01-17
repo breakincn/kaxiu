@@ -90,77 +90,90 @@ func TableRooms(c *gin.Context) {
 		Now            time.Time              `json:"now"`
 	}
 
-	out := make([]roomItem, 0, len(rooms))
-	for _, r := range rooms {
-		it := roomItem{Room: r, Occupied: false, Session: nil, Technician: nil, TechnicianRole: nil, StartedAt: nil, FinishAt: nil, RoomLockedAt: nil, UpdatedAt: nil, UsedAt: nil, RoomSelectDeadlineAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, Status: "idle", PhaseText: "", PhaseClass: "", StartRemainSeconds: 0, ManualFinishRemainSeconds: 0, RoomSelectRemainSeconds: 0, Now: now}
-		s, ok := byRoom[r.ID]
-		if ok {
-			it.Occupied = true
-			it.Status = s.Status
-			it.Session = &s
-			if s.Technician != nil {
-				it.Technician = s.Technician
-				it.TechnicianRole = &s.Technician.ServiceRole
-			}
-			it.StartedAt = s.StartedAt
-			it.RoomLockedAt = s.RoomLockedAt
-			it.UpdatedAt = s.UpdatedAt
-			it.RoomSelectDeadlineAt = s.RoomSelectDeadlineAt
-			finishAt := s.ScheduledFinishAt
-			if finishAt == nil && s.StartedAt != nil && s.DurationMinutes > 0 {
-				t := s.StartedAt.Add(time.Duration(s.DurationMinutes) * time.Minute)
-				finishAt = &t
-			}
-			it.FinishAt = finishAt
-			if s.StartedAt != nil {
-				it.ElapsedSeconds = int64(now.Sub(*s.StartedAt).Seconds())
-				if it.ElapsedSeconds < 0 {
-					it.ElapsedSeconds = 0
-				}
-			}
-			if finishAt != nil {
-				it.RemainSeconds = int64(finishAt.Sub(now).Seconds())
-				if it.RemainSeconds < 0 {
-					it.RemainSeconds = 0
-				}
+	// 查询商户信息以获取自定义术语
+			var merchant models.Merchant
+			if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取商户信息失败"})
+				return
 			}
 
-			if s.Status == "start_pending" && s.StartConfirmedAt == nil && s.UpdatedAt != nil {
-				startDeadline := s.UpdatedAt.Add(startPendingTimeout)
-				startRemain := int64(startDeadline.Sub(now).Seconds())
-				if startRemain < 0 {
-					startRemain = 0
-				}
-				it.StartRemainSeconds = startRemain
+			// 获取自定义起单术语，默认为"起单"
+			startTerm := "起单"
+			if merchant.StartTerm != "" {
+				startTerm = merchant.StartTerm
+			}
 
-				u, okU := usageByID[s.InitialUsageID]
-				manualRemain := int64(0)
-				if okU && u.UsedAt != nil {
-					it.UsedAt = u.UsedAt
-					manualDeadline := u.UsedAt.Add(manualFinishTimeout)
-					manualRemain = int64(manualDeadline.Sub(now).Seconds())
-					if manualRemain < 0 {
-						manualRemain = 0
+			out := make([]roomItem, 0, len(rooms))
+			for _, r := range rooms {
+				it := roomItem{Room: r, Occupied: false, Session: nil, Technician: nil, TechnicianRole: nil, StartedAt: nil, FinishAt: nil, RoomLockedAt: nil, UpdatedAt: nil, UsedAt: nil, RoomSelectDeadlineAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, Status: "idle", PhaseText: "", PhaseClass: "", StartRemainSeconds: 0, ManualFinishRemainSeconds: 0, RoomSelectRemainSeconds: 0, Now: now}
+				s, ok := byRoom[r.ID]
+				if ok {
+					it.Occupied = true
+					it.Status = s.Status
+					it.Session = &s
+					if s.Technician != nil {
+						it.Technician = s.Technician
+						it.TechnicianRole = &s.Technician.ServiceRole
+					}
+					it.StartedAt = s.StartedAt
+					it.RoomLockedAt = s.RoomLockedAt
+					it.UpdatedAt = s.UpdatedAt
+					it.RoomSelectDeadlineAt = s.RoomSelectDeadlineAt
+					finishAt := s.ScheduledFinishAt
+					if finishAt == nil && s.StartedAt != nil && s.DurationMinutes > 0 {
+						t := s.StartedAt.Add(time.Duration(s.DurationMinutes) * time.Minute)
+						finishAt = &t
+					}
+					it.FinishAt = finishAt
+					if s.StartedAt != nil {
+						it.ElapsedSeconds = int64(now.Sub(*s.StartedAt).Seconds())
+						if it.ElapsedSeconds < 0 {
+							it.ElapsedSeconds = 0
+						}
+					}
+					if finishAt != nil {
+						it.RemainSeconds = int64(finishAt.Sub(now).Seconds())
+						if it.RemainSeconds < 0 {
+							it.RemainSeconds = 0
+						}
+					}
+
+					if s.Status == "start_pending" && s.StartConfirmedAt == nil && s.UpdatedAt != nil {
+						startDeadline := s.UpdatedAt.Add(startPendingTimeout)
+						startRemain := int64(startDeadline.Sub(now).Seconds())
+						if startRemain < 0 {
+							startRemain = 0
+						}
+						it.StartRemainSeconds = startRemain
+
+						u, okU := usageByID[s.InitialUsageID]
+						manualRemain := int64(0)
+						if okU && u.UsedAt != nil {
+							it.UsedAt = u.UsedAt
+							manualDeadline := u.UsedAt.Add(manualFinishTimeout)
+							manualRemain = int64(manualDeadline.Sub(now).Seconds())
+							if manualRemain < 0 {
+								manualRemain = 0
+							}
+						}
+						it.ManualFinishRemainSeconds = manualRemain
+
+						if now.Before(startDeadline) {
+							it.PhaseText = "待" + startTerm
+							it.PhaseClass = "start_pending"
+						} else {
+							if manualRemain > 0 {
+								it.PhaseText = startTerm + "超时,进入手动结单"
+								it.PhaseClass = "manual_finish"
+							} else {
+								it.PhaseText = "超时未结单,结单失败"
+								it.PhaseClass = "finish_failed"
+							}
+						}
 					}
 				}
-				it.ManualFinishRemainSeconds = manualRemain
-
-				if now.Before(startDeadline) {
-					it.PhaseText = "待起单"
-					it.PhaseClass = "start_pending"
-				} else {
-					if manualRemain > 0 {
-						it.PhaseText = "起单超时,进入手动结单"
-						it.PhaseClass = "manual_finish"
-					} else {
-						it.PhaseText = "超时未结单,结单失败"
-						it.PhaseClass = "finish_failed"
-					}
-				}
+				out = append(out, it)
 			}
-		}
-		out = append(out, it)
-	}
 
 	c.JSON(http.StatusOK, gin.H{"data": out})
 }
