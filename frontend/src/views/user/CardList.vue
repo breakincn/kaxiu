@@ -92,7 +92,7 @@
                 <p class="text-gray-500 text-xs mt-0.5">{{ item.card_type }}</p>
               </div>
               <div class="bg-gray-100 px-2.5 py-0.5 rounded-full">
-                <span class="text-xs font-medium">NO: G12345678981189</span>
+                <span class="text-xs font-medium">NO: {{ item.card_no }}</span>
               </div>
             </div>
 
