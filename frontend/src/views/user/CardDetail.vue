@@ -274,7 +274,7 @@
 
           <div v-if="isPrecheckModal" class="mt-2 text-center text-gray-600 text-sm">
             <template v-if="usagePrecheckDone">
-              起单完成，进入服务
+              {{ replaceTerms('起单完成，进入服务', card?.merchant) }}
             </template>
             <template v-else>
               请向工作人员出示此码，由工作人员扫码进入服务
@@ -468,6 +468,8 @@ import { cardApi, usageApi, noticeApi, appointmentApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
 
+import { replaceTerms } from '../../utils/terms'
+
 const router = useRouter()
 const route = useRoute()
 
@@ -521,11 +523,11 @@ const precheckCode = computed(() => {
 
 const usageQrTitle = computed(() => {
   if (isPrecheckModal.value && usagePrecheckDone.value) return '即将进入服务'
-  return isPrecheckModal.value ? '起单二维码' : '结单二维码'
+  return replaceTerms(isPrecheckModal.value ? '起单二维码' : '结单二维码', card.value?.merchant)
 })
 
 const usageQrAlt = computed(() => {
-  return isPrecheckModal.value ? '起单二维码' : '结单二维码'
+  return replaceTerms(isPrecheckModal.value ? '起单二维码' : '结单二维码', card.value?.merchant)
 })
 
 let usageLongPressTimer = null
@@ -547,9 +549,9 @@ const getUsageStatusText = (usage) => {
     if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) return '待选客服'
     if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
       const dl = getPrecheckDeadlineAtMs(usage)
-      if (dl && now < dl) return '待起单'
+      if (dl && now < dl) return replaceTerms('待起单', card.value?.merchant)
     }
-    return '待结单'
+    return replaceTerms('待结单', card.value?.merchant)
   }
   if (s === 'success') return '完成'
   if (s === 'failed') return '失败'

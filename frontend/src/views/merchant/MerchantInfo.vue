@@ -177,6 +177,38 @@
       </div>
     </div>
 
+    <div class="px-4 mt-4">
+      <div class="bg-white rounded-xl p-4 shadow-sm">
+        <div class="flex items-center gap-2 mb-4">
+          <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+          <span class="font-medium text-gray-800">起单/结单设置</span>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <label class="text-xs text-gray-500 mb-1 block">起单 当前使用名词</label>
+            <input
+              v-model="form.start_term"
+              type="text"
+              placeholder="默认：起单（如：上钟/开台/上课）"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-primary text-sm"
+            />
+          </div>
+          <div>
+            <label class="text-xs text-gray-500 mb-1 block">结单 当前使用名词</label>
+            <input
+              v-model="form.finish_term"
+              type="text"
+              placeholder="默认：结单（如：下钟/结台/下课）"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-primary text-sm"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 保存按钮 -->
     <div class="px-4 mt-6">
       <button
@@ -213,7 +245,9 @@ const form = ref({
   province: '',
   city: '',
   district: '',
-  address: ''
+  address: '',
+  start_term: '',
+  finish_term: ''
 })
 
 const goBack = () => {
@@ -266,6 +300,8 @@ const fetchMerchantInfo = async () => {
     form.value.city = data.city || ''
     form.value.district = data.district || ''
     form.value.address = data.address || ''
+    form.value.start_term = data.start_term || ''
+    form.value.finish_term = data.finish_term || ''
   } catch (err) {
     console.error('获取商户信息失败:', err)
   }

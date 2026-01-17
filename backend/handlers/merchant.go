@@ -515,6 +515,8 @@ func UpdateMerchantInfo(c *gin.Context) {
 		City           *string `json:"city"`
 		District       *string `json:"district"`
 		Address        *string `json:"address"`
+		StartTerm      *string `json:"start_term"`
+		FinishTerm     *string `json:"finish_term"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -557,6 +559,12 @@ func UpdateMerchantInfo(c *gin.Context) {
 	}
 	if input.Address != nil {
 		updates["address"] = strings.TrimSpace(*input.Address)
+	}
+	if input.StartTerm != nil {
+		updates["start_term"] = strings.TrimSpace(*input.StartTerm)
+	}
+	if input.FinishTerm != nil {
+		updates["finish_term"] = strings.TrimSpace(*input.FinishTerm)
 	}
 
 	if len(updates) == 0 {

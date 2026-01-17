@@ -24,10 +24,10 @@
             <option value="room_selecting">选房中</option>
             <option value="room_locked">房间已锁定</option>
             <option value="staff_selecting">选人中</option>
-            <option value="start_pending">待起单</option>
+            <option value="start_pending">{{ replaceTerms('待起单') }}</option>
             <option value="delay_pending">延迟中</option>
             <option value="serving">进行中</option>
-            <option value="auto_finishing">待自动结单</option>
+            <option value="auto_finishing">{{ replaceTerms('待自动结单') }}</option>
             <option value="finished">已完成</option>
             <option value="canceled">已取消</option>
           </select>
@@ -108,6 +108,7 @@ import { serviceSessionApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import { getMerchantId, hasMerchantPermission, isTechnicianAuth, getTechnicianId } from '../../utils/auth'
 import ServiceSessionItem from '../../components/ServiceSessionItem.vue'
+import { replaceTerms } from '../../utils/terms'
 
 const router = useRouter()
 

@@ -70,6 +70,7 @@ import { cardApi } from '../../api'
 import PwaInstallGuide from '../../components/PwaInstallGuide.vue'
 
 import { getMerchantId, getMerchantToken } from '../../utils/auth'
+import { replaceTerms } from '../../utils/terms'
 
 const router = useRouter()
 const route = useRoute()
@@ -220,10 +221,10 @@ const onDecoded = async (decodedText) => {
     }
     resultSuccess.value = true
     if (action === 'finish') {
-      resultText.value = '结单成功！'
+      resultText.value = replaceTerms('结单成功！')
     } else if (action === 'start') {
       const sid = res?.data?.data?.session_id
-      resultText.value = `起单成功！服务单#${sid ?? '-'}，已开始计时。`
+      resultText.value = replaceTerms(`起单成功！服务单#${sid ?? '-'}，已开始计时。`)
     } else {
       const remainTimes = res?.data?.data?.remain_times
       resultText.value = `核销成功！剩余次数: ${remainTimes ?? '-'}`

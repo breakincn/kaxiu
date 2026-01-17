@@ -58,6 +58,7 @@
 <script setup>
 import { computed } from 'vue'
 import { formatDateTime } from '../utils/dateFormat'
+import { replaceTerms } from '../utils/terms'
 
 const props = defineProps({
   session: {
@@ -84,10 +85,10 @@ const getStatusText = (status) => {
     room_selecting: '选房中',
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
-    start_pending: '待起单',
+    start_pending: replaceTerms('待起单'),
     delay_pending: '延迟中',
     serving: '进行中',
-    auto_finishing: '待自动结单',
+    auto_finishing: replaceTerms('待自动结单'),
     finished: '已完成',
     canceled: '已取消'
   }

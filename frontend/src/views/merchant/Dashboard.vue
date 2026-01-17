@@ -147,7 +147,7 @@
             : 'border-transparent text-gray-500'
         ]"
       >
-        扫码结单
+        {{ replaceTerms('扫码结单', merchant) }}
       </button>
       <button
         v-if="showNoticeTab"
@@ -349,13 +349,13 @@
           @click="goScanFinish"
           class="w-full py-3 bg-primary text-white rounded-lg font-medium"
         >
-          扫码结单
+          {{ replaceTerms('扫码结单', merchant) }}
         </button>
       </div>
 
       <!-- 今日结单记录 -->
       <div class="bg-white rounded-xl p-4 shadow-sm mt-4">
-        <h3 class="font-medium text-gray-800 mb-4">今日结单记录</h3>
+        <h3 class="font-medium text-gray-800 mb-4">{{ replaceTerms('今日结单记录', merchant) }}</h3>
         <div v-if="todayFinishedUsages.length > 0" class="space-y-3">
           <div v-for="usage in todayFinishedUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
             <div class="flex-1">
@@ -366,12 +366,12 @@
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.finished_at) }}</div>
             </div>
             <div class="text-right">
-              <div class="text-gray-700 text-sm">结单 {{ usage.used_times }} 次</div>
+              <div class="text-gray-700 text-sm">{{ replaceTerms('结单', merchant) }} {{ usage.used_times }} 次</div>
             </div>
           </div>
         </div>
         <div v-else class="text-center text-gray-400 py-4">
-          今日暂无结单
+          {{ replaceTerms('今日暂无结单', merchant) }}
         </div>
       </div>
     </div>
@@ -661,7 +661,7 @@
                   class="px-4 py-2 rounded-lg text-sm font-medium"
                   :class="setNextPausedLoading ? 'bg-gray-100 text-gray-400' : 'bg-orange-600 text-white'"
                 >
-                  结单后暂停
+                  {{ replaceTerms('结单后暂停', merchant) }}
                 </button>
               </template>
 
@@ -675,8 +675,8 @@
                   <option value="not_checked_in" disabled>未签到</option>
                   <option value="idle">空闲</option>
                   <option value="paused" :disabled="!canManualUpdateStatus">暂停</option>
-                  <option value="service_pending_presettlement" disabled>服务 待起单</option>
-                  <option value="service_pending_settlement" disabled>服务 待结单</option>
+                  <option value="service_pending_presettlement" disabled>{{ replaceTerms('服务 待起单', merchant) }}</option>
+                  <option value="service_pending_settlement" disabled>{{ replaceTerms('服务 待结单', merchant) }}</option>
                 </select>
 
                 <button
@@ -840,11 +840,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted, onActivated, watch, nextTick, computed } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
-import { ensureMerchantPermissionsLoaded, merchantApi, cardApi, appointmentApi, noticeApi, usageApi, shopApi, roomApi, attendanceApi, serviceSessionApi } from '../../api'
+import { ensureMerchantPermissionsLoaded, merchantApi } from '../../api'
+import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission, getMerchantActiveAuth, getTechnicianShopSlug } from '../../utils/auth'
+import { replaceTerms } from '../../utils/terms'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
-
-import { getMerchantId, hasMerchantPermission } from '../../utils/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -1119,8 +1119,8 @@ const technicianCurrentStatusText = computed(() => {
   if (st === 'paused') return '暂停'
   if (st === 'busy') return '忙碌'
   if (st === 'rest') return '未鉴到 休息中'
-  if (st === 'service_pending_presettlement') return '服务 待起单'
-  if (st === 'service_pending_settlement') return '服务 待结单'
+  if (st === 'service_pending_presettlement') return replaceTerms('服务 待起单', merchant.value)
+  if (st === 'service_pending_settlement') return replaceTerms('服务 待结单', merchant.value)
   return st || '-'
 })
 
@@ -1335,10 +1335,10 @@ const getVerifyOperatorInfo = (usage) => {
   if (usage.status === 'success' && usage.finished_at && merchant.value?.support_customer_service) {
     if (usage.technician_id && usage.technician) {
       // 技师结单
-      operatorInfo.push(`结单：${usage.technician.name || usage.technician.account || '技师'}`)
+      operatorInfo.push(`${replaceTerms('结单', merchant.value)}：${usage.technician.name || usage.technician.account || '技师'}`)
     } else if (!usage.technician_id && usage.merchant) {
       // 商户老板结单
-      operatorInfo.push(`结单：${usage.merchant.name || '店铺'}`)
+      operatorInfo.push(`${replaceTerms('结单', merchant.value)}：${usage.merchant.name || '店铺'}`)
     }
   }
   
@@ -1350,12 +1350,12 @@ const getUsageServiceStatusText = (usage) => {
 
   // 已结单
   if ((usage.status === 'success' && usage.finished_at) || usage.service_session_status === 'finished') {
-    return '已结单'
+    return replaceTerms('已结单', merchant.value)
   }
 
   // 待起单
   if (usage.service_session_status === 'start_pending') {
-    return '待起单'
+    return replaceTerms('待起单', merchant.value)
   }
 
   // 结单超时（超过12小时仍未结单）
@@ -1364,14 +1364,14 @@ const getUsageServiceStatusText = (usage) => {
     if (!Number.isNaN(usedAt.getTime())) {
       const diffMs = Date.now() - usedAt.getTime()
       if (diffMs > 12 * 60 * 60 * 1000) {
-        return '结单超时'
+        return replaceTerms('结单超时', merchant.value)
       }
     }
   }
 
   // 有服务单但未完成，统一归为待结单
   if (usage.service_session_status) {
-    return '待结单'
+    return replaceTerms('待结单', merchant.value)
   }
 
   return '-'
@@ -2289,7 +2289,7 @@ const setNextStatusPaused = async () => {
     // 更新成功后，同步服务器状态
     serverAttendanceStatus.value = 'paused'
     attendanceStatus.value = 'paused'
-    alert('已设置：结单后自动暂停')
+    alert(replaceTerms('已设置：结单后自动暂停', merchant.value))
   } catch (e) {
     alert(e.response?.data?.error || '设置失败')
   } finally {
@@ -2302,10 +2302,10 @@ const getSessionStatusText = (status) => {
     room_selecting: '选房中',
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
-    start_pending: '待起单',
+    start_pending: replaceTerms('待起单', merchant.value),
     delay_pending: '延迟中',
     serving: '进行中',
-    auto_finishing: '待自动结单',
+    auto_finishing: replaceTerms('待自动结单', merchant.value),
     finished: '已完成',
     canceled: '已取消'
   }

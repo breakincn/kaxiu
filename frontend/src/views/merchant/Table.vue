@@ -121,6 +121,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
+import { replaceTerms } from '../../utils/terms'
 
 const router = useRouter()
 
@@ -222,10 +223,10 @@ const sessionStatusText = (st) => {
   if (s === 'room_selecting') return '选房中'
   if (s === 'room_locked') return '房间已锁定'
   if (s === 'staff_selecting') return '选人中'
-  if (s === 'start_pending') return '待起单'
+  if (s === 'start_pending') return replaceTerms('待起单')
   if (s === 'delay_pending') return '延迟中'
   if (s === 'serving') return '服务中'
-  if (s === 'auto_finishing') return '待自动结单'
+  if (s === 'auto_finishing') return replaceTerms('待自动结单')
   if (s === 'finished') return '已完成'
   if (s === 'canceled') return '已取消'
   return s || '-'
@@ -239,8 +240,8 @@ const badgeText = (it) => {
   if (sess) {
     const sst = String(sess.status || '').trim()
     const startConfirmedAt = sess.start_confirmed_at
-    if (sst === 'start_pending' && !startConfirmedAt) return '服务 待起单'
-    return '服务 待结单'
+    if (sst === 'start_pending' && !startConfirmedAt) return replaceTerms('服务 待起单')
+    return replaceTerms('服务 待结单')
   }
 
   // 签到状态：仅保留空闲/暂停
@@ -253,8 +254,8 @@ const badgeClass = (it) => {
   const txt = badgeText(it)
   if (txt === '未签到') return 'bg-gray-100 text-gray-500'
   if (txt === '空闲') return 'bg-green-50 text-green-600'
-  if (txt === '服务 待起单') return 'bg-red-50 text-red-600'
-  if (txt === '服务 待结单') return 'bg-orange-50 text-orange-600'
+  if (txt === replaceTerms('服务 待起单')) return 'bg-red-50 text-red-600'
+  if (txt === replaceTerms('服务 待结单')) return 'bg-orange-50 text-orange-600'
   if (txt === '暂停') return 'bg-blue-50 text-blue-600'
   return 'bg-blue-50 text-blue-600'
 }

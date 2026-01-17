@@ -262,6 +262,9 @@ const handleLogin = async () => {
       localStorage.setItem('technicianMerchantName', res.data.merchant.name)
       localStorage.setItem('technicianMerchantPhone', res.data.merchant.phone)
 
+      localStorage.setItem('technicianStartTerm', res.data.merchant.start_term || '')
+      localStorage.setItem('technicianFinishTerm', res.data.merchant.finish_term || '')
+
       sessionStorage.setItem('technicianId', res.data.technician.id)
       sessionStorage.setItem('technicianName', res.data.technician.name || '')
       sessionStorage.setItem('technicianCode', res.data.technician.code || '')
@@ -279,6 +282,9 @@ const handleLogin = async () => {
       localStorage.setItem('merchantId', res.data.merchant.id)
       localStorage.setItem('merchantName', res.data.merchant.name)
       localStorage.setItem('merchantPhone', res.data.merchant.phone)
+
+      localStorage.setItem('merchantStartTerm', res.data.merchant.start_term || '')
+      localStorage.setItem('merchantFinishTerm', res.data.merchant.finish_term || '')
 
       sessionStorage.removeItem('technicianId')
       sessionStorage.removeItem('technicianName')
