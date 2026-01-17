@@ -840,8 +840,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted, onActivated, watch, nextTick, computed } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
-import { ensureMerchantPermissionsLoaded, merchantApi } from '../../api'
-import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission, getMerchantActiveAuth, getTechnicianShopSlug } from '../../utils/auth'
+import { ensureMerchantPermissionsLoaded, merchantApi, appointmentApi, shopApi, attendanceApi } from '../../api'
+import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission, getMerchantActiveAuth, getMerchantId, getTechnicianShopSlug } from '../../utils/auth'
 import { replaceTerms } from '../../utils/terms'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
