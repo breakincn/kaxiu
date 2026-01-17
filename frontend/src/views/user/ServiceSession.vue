@@ -145,17 +145,17 @@ const nextStepText = computed(() => {
 })
 
 const statusText = (s) => {
-  const m = {
+  const statusMap = {
     room_selecting: '选房中',
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
-    precheck_pending: '待预结单',
+    start_pending: '待起单',
     delay_pending: '延迟中',
     serving: '进行中',
     auto_finishing: '待自动结单',
     finished: '已完成'
   }
-  return m[s] || s || '-'
+  return statusMap[s] || s || '-'
 }
 
 const goBack = () => router.back()

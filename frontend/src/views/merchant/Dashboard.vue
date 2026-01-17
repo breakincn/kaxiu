@@ -675,7 +675,7 @@
                   <option value="not_checked_in" disabled>未签到</option>
                   <option value="idle">空闲</option>
                   <option value="paused" :disabled="!canManualUpdateStatus">暂停</option>
-                  <option value="service_pending_presettlement" disabled>服务 待预结单</option>
+                  <option value="service_pending_presettlement" disabled>服务 待起单</option>
                   <option value="service_pending_settlement" disabled>服务 待结单</option>
                 </select>
 
@@ -1103,12 +1103,12 @@ const technicianCurrentStatus = computed(() => {
   if (!isTechnicianAuth()) return null
   const techId = getTechnicianId()
   if (!techId) return null
-  const sess = serviceSessions.value.find(s => s.technician_id === techId && ['precheck_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(s.status))
+  const sess = serviceSessions.value.find(s => s.technician_id === techId && ['start_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(s.status))
   if (!sess) {
     // 没有活跃会话，返回服务器中的签到状态 idle/paused
     return serverAttendanceStatus.value
   }
-  if (sess.status === 'precheck_pending' && !sess.precheck_at) return 'service_pending_presettlement'
+  if (sess.status === 'start_pending' && !sess.start_confirmed_at) return 'service_pending_presettlement'
   return 'service_pending_settlement'
 })
 
@@ -1119,7 +1119,7 @@ const technicianCurrentStatusText = computed(() => {
   if (st === 'paused') return '暂停'
   if (st === 'busy') return '忙碌'
   if (st === 'rest') return '未鉴到 休息中'
-  if (st === 'service_pending_presettlement') return '服务 待预结单'
+  if (st === 'service_pending_presettlement') return '服务 待起单'
   if (st === 'service_pending_settlement') return '服务 待结单'
   return st || '-'
 })
@@ -1353,9 +1353,9 @@ const getUsageServiceStatusText = (usage) => {
     return '已结单'
   }
 
-  // 待预结单
-  if (usage.service_session_status === 'precheck_pending') {
-    return '待预结单'
+  // 待起单
+  if (usage.service_session_status === 'start_pending') {
+    return '待起单'
   }
 
   // 结单超时（超过12小时仍未结单）
@@ -2298,18 +2298,18 @@ const setNextStatusPaused = async () => {
 }
 
 const getSessionStatusText = (status) => {
-  const m = {
+  const statusTextMap = {
     room_selecting: '选房中',
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
-    precheck_pending: '待预结单',
+    start_pending: '待起单',
     delay_pending: '延迟中',
     serving: '进行中',
     auto_finishing: '待自动结单',
     finished: '已完成',
     canceled: '已取消'
   }
-  return m[status] || status || '-'
+  return statusTextMap[status] || status || '-'
 }
 
 const fetchServiceSessions = async () => {

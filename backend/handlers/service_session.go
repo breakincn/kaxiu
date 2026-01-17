@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func handleServiceSessionPrecheckScan(c *gin.Context, raw string) bool {
+func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 	code := strings.TrimSpace(raw)
 	if !strings.HasPrefix(code, "SS:") {
 		return false
@@ -49,7 +49,7 @@ func handleServiceSessionPrecheckScan(c *gin.Context, raw string) bool {
 			}
 		}
 		if techID == nil {
-			c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可预结单"})
+			c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可起单"})
 			return true
 		}
 	}
@@ -85,12 +85,12 @@ func handleServiceSessionPrecheckScan(c *gin.Context, raw string) bool {
 		}
 
 		if s.Status == "finished" || s.Status == "canceled" {
-			return apiErr{status: http.StatusBadRequest, msg: "会话状态不可预结单"}
+			return apiErr{status: http.StatusBadRequest, msg: "会话状态不可起单"}
 		}
 
-		startAt := now.Add(time.Duration(s.DelaySeconds) * time.Second)
+		startAt := now.Add(time.Duration(s.StartDelaySeconds) * time.Second)
 		updates := map[string]interface{}{
-			"precheck_at":        now,
+			"start_confirmed_at": now,
 			"scheduled_start_at": startAt,
 			"status":             "delay_pending",
 		}
@@ -124,7 +124,7 @@ func handleServiceSessionPrecheckScan(c *gin.Context, raw string) bool {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
-		"action":     "precheck",
+		"action":     "start",
 		"session_id": out.ID,
 		"session":    out,
 	}})
@@ -140,7 +140,7 @@ func assignRoomIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 		r := rooms[i]
 		var cnt int64
 		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','precheck_pending','delay_pending','serving','auto_finishing')", s.MerchantID, r.ID).
+			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing')", s.MerchantID, r.ID).
 			Count(&cnt).Error; err != nil {
 			return err
 		}
@@ -309,7 +309,7 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		}
 		updates := map[string]interface{}{
 			"technician_id": input.TechnicianID,
-			"status":        "precheck_pending",
+			"status":        "start_pending",
 		}
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err

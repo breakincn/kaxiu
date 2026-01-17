@@ -145,7 +145,7 @@ func UserListAvailableRooms(c *gin.Context) {
 		r := rooms[i]
 		var cnt int64
 		config.DB.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','precheck_pending','delay_pending','serving','auto_finishing')", s.MerchantID, r.ID).
+			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing')", s.MerchantID, r.ID).
 			Count(&cnt)
 		if cnt == 0 {
 			available = append(available, r)
@@ -204,7 +204,7 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 
 		var cnt int64
 		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','precheck_pending','delay_pending','serving','auto_finishing')", s.MerchantID, room.ID).
+			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing')", s.MerchantID, room.ID).
 			Count(&cnt).Error; err != nil {
 			return err
 		}
@@ -224,7 +224,7 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 				}
 				var c2 int64
 				if err := tx.Model(&models.ServiceSession{}).
-					Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','precheck_pending','delay_pending','serving','auto_finishing')", s.MerchantID, r.ID).
+					Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing')", s.MerchantID, r.ID).
 					Count(&c2).Error; err != nil {
 					return err
 				}
@@ -293,7 +293,7 @@ func UserListAvailableTechnicians(c *gin.Context) {
 
 	now := time.Now()
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	activeSessionStatuses := []string{"room_locked", "staff_selecting", "precheck_pending", "delay_pending", "serving", "auto_finishing"}
+	activeSessionStatuses := []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
 	var list []models.TechnicianAttendance
 	config.DB.
 		Model(&models.TechnicianAttendance{}).
@@ -359,7 +359,7 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
 			Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
 			Where("technician_attendances.merchant_id = ? AND technician_attendances.technician_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", s.MerchantID, input.TechnicianID, start).
-			Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, []string{"room_locked", "staff_selecting", "precheck_pending", "delay_pending", "serving", "auto_finishing"}).
+			Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}).
 			Where("t.is_active = ?", true).
 			Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 			First(&att).Error; err != nil {
@@ -372,7 +372,7 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
 			"technician_id": input.TechnicianID,
-			"status":        "precheck_pending",
+			"status":        "start_pending",
 		}).Error; err != nil {
 			return err
 		}

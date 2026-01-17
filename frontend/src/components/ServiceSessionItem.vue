@@ -79,34 +79,34 @@ const canExtend = computed(() => {
 })
 
 const getStatusText = (status) => {
-  const map = {
+  const statusMap = {
     created: '已创建',
     room_selecting: '选房中',
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
-    precheck_pending: '待预结单',
+    start_pending: '待起单',
     delay_pending: '延迟中',
     serving: '进行中',
     auto_finishing: '待自动结单',
     finished: '已完成',
     canceled: '已取消'
   }
-  return map[status] || status
+  return statusMap[status] || status
 }
 
 const getStatusClass = (status) => {
-  const map = {
+  const statusClassMap = {
     created: 'bg-gray-100 text-gray-600',
     room_selecting: 'bg-yellow-100 text-yellow-600',
     room_locked: 'bg-orange-100 text-orange-600',
     staff_selecting: 'bg-blue-100 text-blue-600',
-    precheck_pending: 'bg-purple-100 text-purple-600',
+    start_pending: 'bg-purple-100 text-purple-600',
     delay_pending: 'bg-indigo-100 text-indigo-600',
     serving: 'bg-green-100 text-green-600',
     auto_finishing: 'bg-red-100 text-red-600',
     finished: 'bg-gray-100 text-gray-500',
     canceled: 'bg-red-100 text-red-500'
   }
-  return map[status] || 'bg-gray-100 text-gray-600'
+  return statusClassMap[status] || 'bg-gray-100 text-gray-600'
 }
 </script>

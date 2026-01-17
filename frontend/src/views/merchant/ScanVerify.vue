@@ -221,16 +221,16 @@ const onDecoded = async (decodedText) => {
     resultSuccess.value = true
     if (action === 'finish') {
       resultText.value = '结单成功！'
-    } else if (action === 'precheck') {
+    } else if (action === 'start') {
       const sid = res?.data?.data?.session_id
-      resultText.value = `预结单成功！服务单#${sid ?? '-'}，已开始计时。`
+      resultText.value = `起单成功！服务单#${sid ?? '-'}，已开始计时。`
     } else {
       const remainTimes = res?.data?.data?.remain_times
       resultText.value = `核销成功！剩余次数: ${remainTimes ?? '-'}`
     }
 
     // 回到 dashboard 并切到对应 tab
-    const backTab = action === 'precheck' ? 'service' : (mode === 'finish' ? 'finish' : 'verify')
+    const backTab = action === 'start' ? 'service' : (mode === 'finish' ? 'finish' : 'verify')
     console.log('扫码成功，将在30秒后跳转到', backTab, 'tab')
     
     // 清除之前的定时器（如果有）

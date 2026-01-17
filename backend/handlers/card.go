@@ -788,7 +788,7 @@ func VerifyCard(c *gin.Context) {
 			VerifyCode:             verifyCode.Code,
 			Status:                 status,
 			RoomSelectDeadlineAt:   roomSelectDeadlineAt,
-			DelaySeconds:           60,
+			StartDelaySeconds:      60,
 			DurationMinutes:        durationMinutes,
 			AutoFinishDelaySeconds: 60,
 			AutoIdleAfterSeconds:   180,
@@ -996,8 +996,8 @@ func ScanVerifyCard(c *gin.Context) {
 		return
 	}
 
-	// B方案：预结单二维码（SS:<session_id>）走服务会话预结单逻辑
-	if handled := handleServiceSessionPrecheckScan(c, code); handled {
+	// B方案：起单二维码（SS:<session_id>）走服务会话起单逻辑
+	if handled := handleServiceSessionStartScan(c, code); handled {
 		return
 	}
 
@@ -1142,7 +1142,7 @@ func ScanVerifyCard(c *gin.Context) {
 				VerifyCode:             verifyCode.Code,
 				Status:                 status,
 				RoomSelectDeadlineAt:   roomSelectDeadlineAt,
-				DelaySeconds:           60,
+				StartDelaySeconds:      60,
 				DurationMinutes:        durationMinutes,
 				AutoFinishDelaySeconds: 60,
 				AutoIdleAfterSeconds:   180,

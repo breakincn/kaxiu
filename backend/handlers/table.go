@@ -9,10 +9,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var tableActiveSessionStatuses = []string{"room_locked", "staff_selecting", "precheck_pending", "delay_pending", "serving", "auto_finishing"}
+var tableActiveSessionStatuses = []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
 
 const (
-	precheckPendingTimeout = 15 * time.Minute
+	startPendingTimeout = 15 * time.Minute
 	manualFinishTimeout    = 12 * time.Hour
 )
 
@@ -84,7 +84,7 @@ func TableRooms(c *gin.Context) {
 		Status         string                 `json:"status"`
 		PhaseText      string                 `json:"phase_text"`
 		PhaseClass     string                 `json:"phase_class"`
-		PrecheckRemainSeconds    int64         `json:"precheck_remain_seconds"`
+		StartRemainSeconds       int64         `json:"start_remain_seconds"`
 		ManualFinishRemainSeconds int64        `json:"manual_finish_remain_seconds"`
 		RoomSelectRemainSeconds  int64         `json:"room_select_remain_seconds"`
 		Now            time.Time              `json:"now"`
@@ -92,7 +92,7 @@ func TableRooms(c *gin.Context) {
 
 	out := make([]roomItem, 0, len(rooms))
 	for _, r := range rooms {
-		it := roomItem{Room: r, Occupied: false, Session: nil, Technician: nil, TechnicianRole: nil, StartedAt: nil, FinishAt: nil, RoomLockedAt: nil, UpdatedAt: nil, UsedAt: nil, RoomSelectDeadlineAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, Status: "idle", PhaseText: "", PhaseClass: "", PrecheckRemainSeconds: 0, ManualFinishRemainSeconds: 0, RoomSelectRemainSeconds: 0, Now: now}
+		it := roomItem{Room: r, Occupied: false, Session: nil, Technician: nil, TechnicianRole: nil, StartedAt: nil, FinishAt: nil, RoomLockedAt: nil, UpdatedAt: nil, UsedAt: nil, RoomSelectDeadlineAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, Status: "idle", PhaseText: "", PhaseClass: "", StartRemainSeconds: 0, ManualFinishRemainSeconds: 0, RoomSelectRemainSeconds: 0, Now: now}
 		s, ok := byRoom[r.ID]
 		if ok {
 			it.Occupied = true
@@ -125,13 +125,13 @@ func TableRooms(c *gin.Context) {
 				}
 			}
 
-			if s.Status == "precheck_pending" && s.PrecheckAt == nil && s.UpdatedAt != nil {
-				precheckDeadline := s.UpdatedAt.Add(precheckPendingTimeout)
-				precheckRemain := int64(precheckDeadline.Sub(now).Seconds())
-				if precheckRemain < 0 {
-					precheckRemain = 0
+			if s.Status == "start_pending" && s.StartConfirmedAt == nil && s.UpdatedAt != nil {
+				startDeadline := s.UpdatedAt.Add(startPendingTimeout)
+				startRemain := int64(startDeadline.Sub(now).Seconds())
+				if startRemain < 0 {
+					startRemain = 0
 				}
-				it.PrecheckRemainSeconds = precheckRemain
+				it.StartRemainSeconds = startRemain
 
 				u, okU := usageByID[s.InitialUsageID]
 				manualRemain := int64(0)
@@ -145,12 +145,12 @@ func TableRooms(c *gin.Context) {
 				}
 				it.ManualFinishRemainSeconds = manualRemain
 
-				if now.Before(precheckDeadline) {
-					it.PhaseText = "待预结单"
-					it.PhaseClass = "precheck_pending"
+				if now.Before(startDeadline) {
+					it.PhaseText = "待起单"
+					it.PhaseClass = "start_pending"
 				} else {
 					if manualRemain > 0 {
-						it.PhaseText = "预结单超时,进入手动结单"
+						it.PhaseText = "起单超时,进入手动结单"
 						it.PhaseClass = "manual_finish"
 					} else {
 						it.PhaseText = "超时未结单,结单失败"
@@ -243,7 +243,7 @@ func TableStaff(c *gin.Context) {
 		ServiceStatus       string                       `json:"service_status"`
 		PhaseText           string                       `json:"phase_text"`
 		PhaseClass          string                       `json:"phase_class"`
-		PrecheckRemainSeconds    int64                   `json:"precheck_remain_seconds"`
+		StartRemainSeconds       int64                   `json:"start_remain_seconds"`
 		ManualFinishRemainSeconds int64                  `json:"manual_finish_remain_seconds"`
 		CheckedIn           bool                         `json:"checked_in"`
 		CheckedInAt         *time.Time                   `json:"checked_in_at"`
@@ -258,7 +258,7 @@ func TableStaff(c *gin.Context) {
 
 	out := make([]staffItem, 0, len(techs))
 	for _, t := range techs {
-		it := staffItem{Technician: t, Attendance: nil, CurrentSession: nil, Room: nil, ServiceStatus: "not_checked_in", PhaseText: "", PhaseClass: "", PrecheckRemainSeconds: 0, ManualFinishRemainSeconds: 0, CheckedIn: false, CheckedInAt: nil, ServiceStartAt: nil, ServiceFinishAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, NextAvailableAt: nil, NextAvailableInSecs: 0, Now: now}
+		it := staffItem{Technician: t, Attendance: nil, CurrentSession: nil, Room: nil, ServiceStatus: "not_checked_in", PhaseText: "", PhaseClass: "", StartRemainSeconds: 0, ManualFinishRemainSeconds: 0, CheckedIn: false, CheckedInAt: nil, ServiceStartAt: nil, ServiceFinishAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, NextAvailableAt: nil, NextAvailableInSecs: 0, Now: now}
 
 		if a, ok := attByTech[t.ID]; ok {
 			it.Attendance = &a
@@ -302,13 +302,13 @@ func TableStaff(c *gin.Context) {
 				}
 			}
 
-			if s.Status == "precheck_pending" && s.PrecheckAt == nil && s.UpdatedAt != nil {
-				precheckDeadline := s.UpdatedAt.Add(precheckPendingTimeout)
-				precheckRemain := int64(precheckDeadline.Sub(now).Seconds())
-				if precheckRemain < 0 {
-					precheckRemain = 0
+			if s.Status == "start_pending" && s.StartConfirmedAt == nil && s.UpdatedAt != nil {
+				startDeadline := s.UpdatedAt.Add(startPendingTimeout)
+				startRemain := int64(startDeadline.Sub(now).Seconds())
+				if startRemain < 0 {
+					startRemain = 0
 				}
-				it.PrecheckRemainSeconds = precheckRemain
+				it.StartRemainSeconds = startRemain
 
 				u, okU := usageByID[s.InitialUsageID]
 				manualRemain := int64(0)
@@ -321,12 +321,12 @@ func TableStaff(c *gin.Context) {
 				}
 				it.ManualFinishRemainSeconds = manualRemain
 
-				if now.Before(precheckDeadline) {
-					it.PhaseText = "待预结单"
-					it.PhaseClass = "precheck_pending"
+				if now.Before(startDeadline) {
+					it.PhaseText = "待起单"
+					it.PhaseClass = "start_pending"
 				} else {
 					if manualRemain > 0 {
-						it.PhaseText = "预结单超时,进入手动结单"
+						it.PhaseText = "起单超时,进入手动结单"
 						it.PhaseClass = "manual_finish"
 					} else {
 						it.PhaseText = "超时未结单,结单失败"

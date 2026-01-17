@@ -274,7 +274,7 @@
 
           <div v-if="isPrecheckModal" class="mt-2 text-center text-gray-600 text-sm">
             <template v-if="usagePrecheckDone">
-              预结单完成，进入服务
+              起单完成，进入服务
             </template>
             <template v-else>
               请向工作人员出示此码，由工作人员扫码进入服务
@@ -511,7 +511,7 @@ const sessionIdFromQuery = computed(() => {
 })
 
 const isPrecheckModal = computed(() => {
-  return qrMode.value === 'precheck'
+  return qrMode.value === 'start'
 })
 
 const precheckCode = computed(() => {
@@ -521,11 +521,11 @@ const precheckCode = computed(() => {
 
 const usageQrTitle = computed(() => {
   if (isPrecheckModal.value && usagePrecheckDone.value) return '即将进入服务'
-  return isPrecheckModal.value ? '预结单二维码' : '结单二维码'
+  return isPrecheckModal.value ? '起单二维码' : '结单二维码'
 })
 
 const usageQrAlt = computed(() => {
-  return isPrecheckModal.value ? '预结单二维码' : '结单二维码'
+  return isPrecheckModal.value ? '起单二维码' : '结单二维码'
 })
 
 let usageLongPressTimer = null
@@ -539,15 +539,15 @@ const getUsageStatusText = (usage) => {
     const supportCS = Boolean(card.value?.merchant?.support_customer_service)
     const supportRoom = Boolean(card.value?.merchant?.support_room)
     const sessStatus = String(usage?.service_session_status || '').trim()
-    const precheckedAt = usage?.service_session_precheck_at
+    const precheckedAt = usage?.service_session_start_confirmed_at
     const now = nowForFinish.value
     const expireAt = getFinishExpireAtUnix(usage) * 1000
     if (expireAt && now > expireAt) return '完成'
     if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
     if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) return '待选客服'
-    if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) {
+    if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
       const dl = getPrecheckDeadlineAtMs(usage)
-      if (dl && now < dl) return '待预结单'
+      if (dl && now < dl) return '待起单'
     }
     return '待结单'
   }
@@ -565,10 +565,10 @@ const getUsageStatusClass = (usage) => {
     const supportCS = Boolean(card.value?.merchant?.support_customer_service)
     const supportRoom = Boolean(card.value?.merchant?.support_room)
     const sessStatus = String(usage?.service_session_status || '').trim()
-    const precheckedAt = usage?.service_session_precheck_at
+    const precheckedAt = usage?.service_session_start_confirmed_at
     if (supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
     if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) return 'text-orange-500'
-    if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) {
+    if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
       const dl = getPrecheckDeadlineAtMs(usage)
       if (dl && now < dl) return 'text-red-500'
     }
@@ -700,7 +700,7 @@ const getUsageStatusCountdownText = (usage) => {
   const supportRoom = Boolean(card.value?.merchant?.support_room)
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = String(usage?.service_session_status || '').trim()
-  const precheckedAt = usage?.service_session_precheck_at
+  const precheckedAt = usage?.service_session_start_confirmed_at
   const now = nowForFinish.value
 
   // 待选房间倒计时（90秒）
@@ -728,8 +728,8 @@ const getUsageStatusCountdownText = (usage) => {
     }
   }
 
-  // 待预结单倒计时（15分钟）
-  if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) {
+  // 待起单倒计时（15分钟）
+  if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
     const dl = getPrecheckDeadlineAtMs(usage)
     if (dl) {
       const diff = dl - now
@@ -763,7 +763,7 @@ const getUsageStatusCountdownClass = (usage) => {
   const supportRoom = Boolean(card.value?.merchant?.support_room)
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = String(usage?.service_session_status || '').trim()
-  const precheckedAt = usage?.service_session_precheck_at
+  const precheckedAt = usage?.service_session_start_confirmed_at
 
   // 待选房间倒计时（橙色）
   if (supportRoom && sessStatus === 'room_selecting' && usage?.room_select_deadline_at) {
@@ -775,8 +775,8 @@ const getUsageStatusCountdownClass = (usage) => {
     return 'text-orange-500'
   }
 
-  // 待预结单倒计时（红色）
-  if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) {
+  // 待起单倒计时（红色）
+  if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
     return 'text-red-500'
   }
 
@@ -840,8 +840,8 @@ const trySwitchUsageQrToFinish = async () => {
   const latest = (usages.value || []).find(u => String(u?.service_session_id || '') === sid)
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = String(latest?.service_session_status || '').trim()
-  const precheckedAt = latest?.service_session_precheck_at
-  if (supportCS && sessStatus === 'precheck_pending' && !precheckedAt) return
+  const precheckedAt = latest?.service_session_start_confirmed_at
+  if (supportCS && sessStatus === 'start_pending' && !precheckedAt) return
   stopUsageQrPoll()
 
   usagePrecheckDone.value = true
@@ -860,17 +860,17 @@ const openUsageQrModal = async (usage) => {
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessID = usage?.service_session_id
   const sessStatus = String(usage?.service_session_status || '').trim()
-  const precheckedAt = usage?.service_session_precheck_at
+  const precheckedAt = usage?.service_session_start_confirmed_at
 
-  // 仅当当前 usage 匹配 query.session_id 且确实处于待预结单时，才显示预结单二维码
+  // 仅当当前 usage 匹配 query.session_id 且确实处于待起单时，才显示起单二维码
   if (
     supportCS &&
     sessionIdFromQuery.value &&
     String(sessID || '') === String(sessionIdFromQuery.value) &&
-    sessStatus === 'precheck_pending' &&
+    sessStatus === 'start_pending' &&
     !precheckedAt
   ) {
-    qrMode.value = 'precheck'
+    qrMode.value = 'start'
     qrSessionId.value = String(sessID)
     selectedUsage.value = usage
     showUsageQrModal.value = true
@@ -878,7 +878,7 @@ const openUsageQrModal = async (usage) => {
     usagePrecheckDone.value = false
     usageQrPollSessionId = String(sessID)
     usageQrPollTimer = setInterval(() => {
-      if (!showUsageQrModal.value || qrMode.value !== 'precheck') {
+      if (!showUsageQrModal.value || qrMode.value !== 'start') {
         stopUsageQrPoll()
         return
       }
@@ -895,8 +895,8 @@ const openUsageQrModal = async (usage) => {
     }
     return
   }
-  if (supportCS && sessID && sessStatus === 'precheck_pending' && !precheckedAt) {
-    qrMode.value = 'precheck'
+  if (supportCS && sessID && sessStatus === 'start_pending' && !precheckedAt) {
+    qrMode.value = 'start'
     qrSessionId.value = String(sessID)
     selectedUsage.value = usage
     showUsageQrModal.value = true
@@ -904,7 +904,7 @@ const openUsageQrModal = async (usage) => {
     usagePrecheckDone.value = false
     usageQrPollSessionId = String(sessID)
     usageQrPollTimer = setInterval(() => {
-      if (!showUsageQrModal.value || qrMode.value !== 'precheck') {
+      if (!showUsageQrModal.value || qrMode.value !== 'start') {
         stopUsageQrPoll()
         return
       }

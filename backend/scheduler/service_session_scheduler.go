@@ -14,7 +14,7 @@ const (
 	schedulerTickInterval  = 3 * time.Second
 	schedulerBatchLimit    = 200
 	staffSelectingTimeout  = 5 * time.Minute
-	precheckPendingTimeout = 15 * time.Minute
+	startPendingTimeout    = 15 * time.Minute
 	// 房间会话超时时间, 房间会话30分钟内没选技师、没开始服务则超时,自动取消房间锁定
 	sessionAbandonTimeout = 30 * time.Minute
 )
@@ -28,7 +28,7 @@ func finishAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, finishedAt t
 		"room_select_deadline_at": nil,
 	}
 	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status = ?", s.ID, "precheck_pending").
+		Where("id = ? AND status = ?", s.ID, "start_pending").
 		Updates(updates).Error; err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func runOnce(db *gorm.DB) error {
 
 	var sessions []models.ServiceSession
 	err := db.
-		Where("status IN ('room_selecting','room_locked','staff_selecting','precheck_pending','delay_pending','serving','auto_finishing','finished')").
+		Where("status IN ('room_selecting','room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing','finished')").
 		Order("id asc").
 		Limit(schedulerBatchLimit).
 		Find(&sessions).Error
@@ -140,20 +140,20 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				return autoAssignRoom(tx, &s, now)
 			}
 			return nil
-		case "precheck_pending":
-			// 新规则：待预结单超时后不取消、不释放资源，仅进入手动结单阶段展示。
+		case "start_pending":
+			// 新规则：待起单超时后不取消、不释放资源，仅进入手动结单阶段展示。
 			// 但当达到“服务完成时间”且仍未手动结单（usage仍in_progress）时，立即释放房间与技师。
-			if s.PrecheckAt != nil {
+			if s.StartConfirmedAt != nil {
 				return nil
 			}
 			if s.UpdatedAt == nil {
 				return nil
 			}
-			precheckDeadline := s.UpdatedAt.Add(precheckPendingTimeout)
-			if now.Before(precheckDeadline) {
+			startDeadline := s.UpdatedAt.Add(startPendingTimeout)
+			if now.Before(startDeadline) {
 				return nil
 			}
-			base := precheckDeadline
+			base := startDeadline
 			duration := s.DurationMinutes
 			if duration <= 0 {
 				duration = 50
@@ -231,7 +231,7 @@ func autoAssignRoom(tx *gorm.DB, s *models.ServiceSession, now time.Time) error 
 		r := rooms[i]
 		var cnt int64
 		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','precheck_pending','delay_pending','serving','auto_finishing')", s.MerchantID, r.ID).
+			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing')", s.MerchantID, r.ID).
 			Count(&cnt).Error; err != nil {
 			return err
 		}

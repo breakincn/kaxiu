@@ -24,7 +24,7 @@
             <option value="room_selecting">选房中</option>
             <option value="room_locked">房间已锁定</option>
             <option value="staff_selecting">选人中</option>
-            <option value="precheck_pending">待预结单</option>
+            <option value="start_pending">待起单</option>
             <option value="delay_pending">延迟中</option>
             <option value="serving">进行中</option>
             <option value="auto_finishing">待自动结单</option>
