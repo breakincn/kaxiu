@@ -230,6 +230,15 @@
                 <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
                 <span class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</span>
               </div>
+              <div v-if="usage?.status === 'in_progress' && getUsageServiceStartAtText(usage)" class="text-gray-400 text-sm mt-0.5">
+                服务开始：{{ getUsageServiceStartAtText(usage) }}
+              </div>
+              <div v-if="usage?.status === 'in_progress' && getUsageServiceRemainText(usage)" class="text-gray-400 text-sm mt-0.5 font-mono">
+                剩余时间：{{ getUsageServiceRemainText(usage) }}
+              </div>
+              <div v-if="usage?.status === 'success' && usage?.finished_at" class="text-gray-400 text-sm mt-0.5">
+                服务结束：{{ formatDateTime(usage.finished_at) }}
+              </div>
               <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageProjectText(usage) }}
               </div>
@@ -653,6 +662,60 @@ const getUsageSessionUpdatedAtMs = (usage) => {
   if (!v) return 0
   const ms = new Date(v).getTime()
   return Number.isFinite(ms) ? ms : 0
+}
+
+const getUsageSessionStartConfirmedAtMs = (usage) => {
+  const v = usage?.service_session_start_confirmed_at
+  if (!v) return 0
+  const ms = new Date(v).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
+const getUsageServiceDurationMinutes = (usage) => {
+  const fromProject = Number(usage?.project?.duration || 0)
+  if (Number.isFinite(fromProject) && fromProject > 0) return fromProject
+  return 50
+}
+
+const getUsageServiceStartAtMs = (usage) => {
+  const confirmedAtMs = getUsageSessionStartConfirmedAtMs(usage)
+  if (confirmedAtMs) return confirmedAtMs
+
+  // 若未扫码起单，则按后端调度逻辑推算：updated_at + 15min + 60s
+  const sessUpdatedAtMs = getUsageSessionUpdatedAtMs(usage)
+  if (sessUpdatedAtMs) return sessUpdatedAtMs + 15 * 60 * 1000 + 60 * 1000
+
+  // 无服务会话信息时退化：以核销时间作为服务开始时间
+  const usedAtMs = getUsageUsedAtMs(usage)
+  if (usedAtMs) return usedAtMs
+  return 0
+}
+
+const getUsageServiceStartAtText = (usage) => {
+  if (String(usage?.status || '').trim() !== 'in_progress') return ''
+  const ms = getUsageServiceStartAtMs(usage)
+  if (!ms) return ''
+  return formatDateTime(new Date(ms))
+}
+
+const getUsageServiceRemainText = (usage) => {
+  if (String(usage?.status || '').trim() !== 'in_progress') return ''
+  const startAtMs = getUsageServiceStartAtMs(usage)
+  if (!startAtMs) return ''
+
+  const durationMinutes = getUsageServiceDurationMinutes(usage)
+  const finishAtMs = startAtMs + durationMinutes * 60 * 1000
+  const now = nowForFinish.value
+  const diff = finishAtMs - now
+  if (diff <= 0) return ''
+
+  const totalSeconds = Math.floor(diff / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const pad2 = (n) => String(n).padStart(2, '0')
+  if (hours > 0) return `${hours}小时${pad2(minutes)}分${pad2(seconds)}秒`
+  return `${minutes}分${pad2(seconds)}秒`
 }
 
 const getFinishExpireAtUnix = (usage) => {
@@ -1447,9 +1510,9 @@ const getWeekDay = (dateStr) => {
 // 计算倒计时（秒）
 const calculateCountdown = () => {
   if (!appointment.value || !appointment.value.appointment_time) return 0
-  const appointmentTime = new Date(appointment.value.appointment_time).getTime()
-  const now = Date.now()
-  return Math.floor((appointmentTime - now) / 1000)
+  const appointmentTimeMs = new Date(appointment.value.appointment_time).getTime()
+  const nowMs = Date.now()
+  return Math.floor((appointmentTimeMs - nowMs) / 1000)
 }
 
 // 更新倒计时
