@@ -21,8 +21,8 @@
         </div>
         <div class="space-y-3.5">
           <div class="flex justify-between">
-            <span class="text-gray-500">商户名称</span>
-            <span class="text-gray-800">{{ card.merchant?.name }}</span>
+            <span class="text-gray-500">卡号</span>
+            <span class="text-gray-800">{{ card.card_no }}</span>
           </div>
           <div class="flex justify-between">
             <span class="text-gray-500">卡类型</span>
