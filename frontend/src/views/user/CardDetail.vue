@@ -253,7 +253,7 @@
               <div v-if="isUsageSessionFinishedButUsageInProgress(usage)" class="text-sm font-medium text-gray-800">
                 完成
               </div>
-              <div :class="getUsageStatusClass(usage)" class="text-sm font-medium">
+              <div v-if="!isUsageSessionFinishedButUsageInProgress(usage)" :class="getUsageStatusClass(usage)" class="text-sm font-medium">
                 {{ getUsageStatusText(usage) }}
               </div>
               <div v-if="getUsageStatusCountdownText(usage)" class="text-xs mt-0.5 font-mono" :class="getUsageStatusCountdownClass(usage)">
