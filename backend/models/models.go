@@ -35,6 +35,7 @@ type Merchant struct {
 	QueueStartNo             int    `json:"queue_start_no" gorm:"default:1;comment:叫号起始号码"`
 	SupportDirectSale        bool   `json:"support_direct_sale" gorm:"default:false;comment:是否支持直购售卡（0-不支持，1-支持）"`
 	SupportCustomerService   bool   `json:"support_customer_service" gorm:"default:false;comment:是否开启设置客服/技师账号（0-不支持，1-支持）"`
+	SupportOrderComplete     bool   `json:"support_order_complete" gorm:"default:false;comment:是否开启结单功能（0-不开启，1-开启）"`
 	TechnicianAlias          string `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
 	StartTerm               string `json:"start_term" gorm:"size:20;default:'';comment:起单显示名词（可为空）"`
 	FinishTerm              string `json:"finish_term" gorm:"size:20;default:'';comment:结单显示名词（可为空）"`

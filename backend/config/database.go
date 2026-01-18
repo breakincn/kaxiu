@@ -122,6 +122,9 @@ func InitDB() {
 	// 添加字段注释
 	addFieldComments()
 
+	// 添加 support_order_complete 字段到 merchants 表
+	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `support_order_complete` BOOLEAN DEFAULT FALSE COMMENT '是否开启结单功能（0-不开启，1-开启）'")
+
 	log.Println("数据库初始化成功")
 
 	// 初始化商户注册邀请码（幂等）
