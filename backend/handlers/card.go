@@ -870,101 +870,8 @@ func FinishVerifyCard(c *gin.Context) {
 		return
 	}
 
-	var usage models.Usage
-	var verifyCode models.VerifyCode
-	var merchant models.Merchant
-	var finishedAt time.Time
-
-	err := config.DB.Transaction(func(tx *gorm.DB) error {
-		now := time.Now()
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", input.Code).First(&verifyCode).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return apiErr{status: http.StatusNotFound, msg: "核销码不存在"}
-			}
-			return err
-		}
-		if !verifyCode.Used {
-			return apiErr{status: http.StatusBadRequest, msg: "该核销码尚未核销"}
-		}
-		if verifyCode.UsedAt == nil {
-			return apiErr{status: http.StatusBadRequest, msg: "核销记录异常"}
-		}
-		if now.Sub(*verifyCode.UsedAt) > 12*time.Hour {
-			return apiErr{status: http.StatusBadRequest, msg: "该核销记录已超过可结单时间"}
-		}
-		if err := tx.First(&merchant, merchantID).Error; err != nil {
-			return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
-		}
-		if !merchant.SupportCustomerService {
-			return apiErr{status: http.StatusBadRequest, msg: "该商户无需结单"}
-		}
-		avgMinutes := 15
-
-		// 找到对应使用记录（同卡同码，取最新）
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("merchant_id = ? AND card_id = ? AND verify_code = ?", merchantID, verifyCode.CardID, verifyCode.Code).
-			Order("id desc").
-			First(&usage).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return apiErr{status: http.StatusNotFound, msg: "找不到核销记录"}
-			}
-			return err
-		}
-
-		if usage.Status == "success" {
-			return apiErr{status: http.StatusBadRequest, msg: "该记录已结单"}
-		}
-		if usage.Status != "in_progress" {
-			return apiErr{status: http.StatusBadRequest, msg: "该记录不可结单"}
-		}
-		if usage.UsedAt == nil {
-			return apiErr{status: http.StatusBadRequest, msg: "核销记录异常"}
-		}
-		if now.Sub(*usage.UsedAt) < time.Duration(avgMinutes)*time.Minute {
-			return apiErr{status: http.StatusBadRequest, msg: "未到结单时间"}
-		}
-		if now.Sub(*usage.UsedAt) > 12*time.Hour {
-			return apiErr{status: http.StatusBadRequest, msg: "该核销记录已超过可结单时间"}
-		}
-
-		finishedAt = now
-		updates := map[string]interface{}{
-			"finished_at": finishedAt,
-			"status":      "success",
-		}
-		// 如果是技师账号，记录技师ID
-		if hasTechnicianID {
-			updates["technician_id"] = techID
-		}
-		// 从服务会话获取房间ID
-		var session models.ServiceSession
-		if err := tx.Where("initial_usage_id = ?", usage.ID).First(&session).Error; err == nil {
-			if session.RoomID != nil && *session.RoomID > 0 {
-				updates["room_id"] = *session.RoomID
-			}
-		}
-		return tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(updates).Error
-	})
-	if err != nil {
-		var ae apiErr
-		if errors.As(err, &ae) {
-			c.JSON(ae.status, gin.H{"error": ae.msg})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	config.DB.Preload("Technician").First(&usage, usage.ID)
-	c.JSON(http.StatusOK, gin.H{
-		"message": "结单成功",
-		"data": gin.H{
-			"usage_id":      usage.ID,
-			"card_id":       usage.CardID,
-			"finished_at":   finishedAt.Format("2006-01-02 15:04:05"),
-			"technician_id": usage.TechnicianID,
-		},
-	})
+	// 已取消手动结单(下钟)能力：仅支持起单后自动结单。
+	c.JSON(http.StatusBadRequest, gin.H{"error": "已取消手动结单，请等待系统自动结单"})
 }
 
 func ScanVerifyCard(c *gin.Context) {
@@ -1156,76 +1063,9 @@ func ScanVerifyCard(c *gin.Context) {
 			return nil
 		}
 
-		// 已核销：尝试结单
-		// 商户老板号拥有全部权限，技师账号需要检查结单权限
-		if authType != "merchant" {
-			okFinish, err := middleware.HasPermission(c, "merchant.card.finish")
-			if err != nil {
-				return err
-			}
-			if !okFinish {
-				return apiErr{status: http.StatusForbidden, msg: "无结单权限"}
-			}
-		}
-		if !merchant.SupportCustomerService {
-			return apiErr{status: http.StatusBadRequest, msg: "该商户无需结单"}
-		}
-		if verifyCode.UsedAt == nil {
-			return apiErr{status: http.StatusBadRequest, msg: "核销记录异常"}
-		}
-		if now.Sub(*verifyCode.UsedAt) > 12*time.Hour {
-			return apiErr{status: http.StatusBadRequest, msg: "该核销记录已超过可结单时间"}
-		}
-		avgMinutes := 15
-
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("merchant_id = ? AND card_id = ? AND verify_code = ?", merchantID, verifyCode.CardID, verifyCode.Code).
-			Order("id desc").
-			First(&usage).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return apiErr{status: http.StatusNotFound, msg: "找不到核销记录"}
-			}
-			return err
-		}
-		if usage.Status == "success" {
-			return apiErr{status: http.StatusBadRequest, msg: "该记录已结单"}
-		}
-		if usage.Status != "in_progress" {
-			return apiErr{status: http.StatusBadRequest, msg: "该记录不可结单"}
-		}
-		if usage.UsedAt == nil {
-			return apiErr{status: http.StatusBadRequest, msg: "核销记录异常"}
-		}
-		if now.Sub(*usage.UsedAt) < time.Duration(avgMinutes)*time.Minute {
-			return apiErr{status: http.StatusBadRequest, msg: "未到结单时间"}
-		}
-		if now.Sub(*usage.UsedAt) > 12*time.Hour {
-			return apiErr{status: http.StatusBadRequest, msg: "该核销记录已超过可结单时间"}
-		}
-
-		finishedAt = now
-		action = "finish"
-		updates := map[string]interface{}{
-			"finished_at": finishedAt,
-			"status":      "success",
-		}
-		// 如果是技师账号，记录技师ID
-		if authType == "staff" {
-			techIDAny, ok := c.Get("technician_id")
-			if ok {
-				if techID, hasTechnicianID := techIDAny.(uint); hasTechnicianID && techID > 0 {
-					updates["technician_id"] = techID
-				}
-			}
-		}
-		// 从服务会话获取房间ID
-		var session models.ServiceSession
-		if err := tx.Where("initial_usage_id = ?", usage.ID).First(&session).Error; err == nil {
-			if session.RoomID != nil && *session.RoomID > 0 {
-				updates["room_id"] = *session.RoomID
-			}
-		}
-		return tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(updates).Error
+		// 已取消手动结单(下钟)能力：扫码仅支持核销/起单，不再支持对已核销记录进行结单。
+		action = "verify"
+		return apiErr{status: http.StatusBadRequest, msg: "已取消手动结单，请等待系统自动结单"}
 	})
 	if err != nil {
 		var ae apiErr

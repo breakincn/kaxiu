@@ -141,8 +141,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 			return nil
 		case "start_pending":
-			// 新规则：待起单超时后不取消、不释放资源，仅进入手动结单阶段展示。
-			// 但当达到“服务完成时间”且仍未手动结单（usage仍in_progress）时，立即释放房间与技师。
+			// 待起单超时：不再支持“手动结单”。超时后仅允许用户重新选择工作人员并重新起单。
 			if s.StartConfirmedAt != nil {
 				return nil
 			}
@@ -153,26 +152,28 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if now.Before(startDeadline) {
 				return nil
 			}
-			base := startDeadline
-			duration := s.DurationMinutes
-			if duration <= 0 {
-				duration = 50
+
+			updates := map[string]interface{}{
+				"status":                "staff_selecting",
+				"technician_id":         nil,
+				"start_timeout_count":   gorm.Expr("start_timeout_count + ?", 1),
+				"start_timeout_last_at": now,
 			}
-			serviceFinishAt := base.Add(60*time.Second + time.Duration(duration)*time.Minute + 60*time.Second)
-			if now.Before(serviceFinishAt) {
-				return nil
-			}
-			if s.InitialUsageID == 0 {
-				return finishAndReleaseSession(tx, &s, serviceFinishAt)
-			}
-			var u models.Usage
-			if err := tx.Select("id,status").First(&u, s.InitialUsageID).Error; err != nil {
+			if err := tx.Model(&models.ServiceSession{}).
+				Where("id = ? AND status = ? AND start_confirmed_at IS NULL", s.ID, "start_pending").
+				Updates(updates).Error; err != nil {
 				return err
 			}
-			if u.Status != "in_progress" {
-				return finishAndReleaseSession(tx, &s, serviceFinishAt)
+
+			// 释放技师状态
+			if s.TechnicianID != nil && *s.TechnicianID > 0 {
+				if err := tx.Model(&models.TechnicianAttendance{}).
+					Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+					Updates(map[string]interface{}{"status": "idle"}).Error; err != nil {
+					return err
+				}
 			}
-			return finishAndReleaseSession(tx, &s, serviceFinishAt)
+			return nil
 		case "delay_pending":
 			if s.ScheduledStartAt != nil && !now.Before(*s.ScheduledStartAt) {
 				updates := map[string]interface{}{

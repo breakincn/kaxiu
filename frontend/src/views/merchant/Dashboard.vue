@@ -896,10 +896,7 @@ const showVerifyTab = computed(() => {
 })
 
 const showFinishTab = computed(() => {
-  // 有结单权限
-  console.log('showFinishTab:', canFinishVerify.value)
-  // 若同时拥有核销+结单权限，则只显示扫码核销页（结单走扫码智能逻辑）
-  return canFinishVerify.value && !canVerify.value
+	return false
 })
 
 const showNoticeTab = computed(() => {
@@ -1182,7 +1179,7 @@ const goScanVerify = () => {
 }
 
 const goScanFinish = () => {
-  router.push('/merchant/scan-verify?mode=finish')
+	router.push('/merchant/scan-verify')
 }
 
 const showExtendModal = (session) => {

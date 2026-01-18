@@ -12,6 +12,8 @@ type ServiceSession struct {
 	VerifyCode     string `json:"verify_code" gorm:"size:50;index;default:'';comment:首次核销码"`
 	RoomID         *uint  `json:"room_id" gorm:"index;comment:房间ID"`
 	TechnicianID   *uint  `json:"technician_id" gorm:"index;comment:工作人员ID"`
+	StartTimeoutCount  int        `json:"start_timeout_count" gorm:"column:start_timeout_count;default:0"`
+	StartTimeoutLastAt *time.Time `json:"start_timeout_last_at" gorm:"column:start_timeout_last_at;type:datetime(3)"`
 
 	Status string `json:"status" gorm:"size:30;default:created;comment:状态（created-已创建，room_selecting-选房中，room_locked-房间已锁定，staff_selecting-选人中，start_pending-待起单，delay_pending-延迟中，serving-服务中，auto_finishing-待自动结单，finished-已完成，canceled-已取消）"`
 

@@ -13,7 +13,6 @@ var tableActiveSessionStatuses = []string{"room_locked", "staff_selecting", "sta
 
 const (
 	startPendingTimeout = 15 * time.Minute
-	manualFinishTimeout    = 12 * time.Hour
 )
 
 func TableRooms(c *gin.Context) {
@@ -33,27 +32,6 @@ func TableRooms(c *gin.Context) {
 		Where("merchant_id = ? AND room_id IS NOT NULL AND status IN ?", merchantID, tableActiveSessionStatuses).
 		Order("id desc").
 		Find(&sessions)
-
-	usageIDs := make([]uint, 0, len(sessions))
-	for i := range sessions {
-		if sessions[i].InitialUsageID > 0 {
-			usageIDs = append(usageIDs, sessions[i].InitialUsageID)
-		}
-	}
-	type usageLite struct {
-		ID     uint       `gorm:"column:id"`
-		UsedAt *time.Time `gorm:"column:used_at"`
-		Status string     `gorm:"column:status"`
-	}
-	usageByID := map[uint]usageLite{}
-	if len(usageIDs) > 0 {
-		var ul []usageLite
-		config.DB.Table("usages").Select("id, used_at, status").Where("id IN ?", usageIDs).Find(&ul)
-		for i := range ul {
-			u := ul[i]
-			usageByID[u.ID] = u
-		}
-	}
 
 	byRoom := map[uint]models.ServiceSession{}
 	for _, s := range sessions {
@@ -77,7 +55,6 @@ func TableRooms(c *gin.Context) {
 		FinishAt       *time.Time             `json:"finish_at"`
 		RoomLockedAt   *time.Time             `json:"room_locked_at"`
 		UpdatedAt      *time.Time             `json:"updated_at"`
-		UsedAt         *time.Time             `json:"used_at"`
 		RoomSelectDeadlineAt *time.Time       `json:"room_select_deadline_at"`
 		ElapsedSeconds int64                  `json:"elapsed_seconds"`
 		RemainSeconds  int64                  `json:"remain_seconds"`
@@ -85,7 +62,6 @@ func TableRooms(c *gin.Context) {
 		PhaseText      string                 `json:"phase_text"`
 		PhaseClass     string                 `json:"phase_class"`
 		StartRemainSeconds       int64         `json:"start_remain_seconds"`
-		ManualFinishRemainSeconds int64        `json:"manual_finish_remain_seconds"`
 		RoomSelectRemainSeconds  int64         `json:"room_select_remain_seconds"`
 		Now            time.Time              `json:"now"`
 	}
@@ -105,7 +81,7 @@ func TableRooms(c *gin.Context) {
 
 			out := make([]roomItem, 0, len(rooms))
 			for _, r := range rooms {
-				it := roomItem{Room: r, Occupied: false, Session: nil, Technician: nil, TechnicianRole: nil, StartedAt: nil, FinishAt: nil, RoomLockedAt: nil, UpdatedAt: nil, UsedAt: nil, RoomSelectDeadlineAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, Status: "idle", PhaseText: "", PhaseClass: "", StartRemainSeconds: 0, ManualFinishRemainSeconds: 0, RoomSelectRemainSeconds: 0, Now: now}
+				it := roomItem{Room: r, Occupied: false, Session: nil, Technician: nil, TechnicianRole: nil, StartedAt: nil, FinishAt: nil, RoomLockedAt: nil, UpdatedAt: nil, RoomSelectDeadlineAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, Status: "idle", PhaseText: "", PhaseClass: "", StartRemainSeconds: 0, RoomSelectRemainSeconds: 0, Now: now}
 				s, ok := byRoom[r.ID]
 				if ok {
 					it.Occupied = true
@@ -146,29 +122,12 @@ func TableRooms(c *gin.Context) {
 						}
 						it.StartRemainSeconds = startRemain
 
-						u, okU := usageByID[s.InitialUsageID]
-						manualRemain := int64(0)
-						if okU && u.UsedAt != nil {
-							it.UsedAt = u.UsedAt
-							manualDeadline := u.UsedAt.Add(manualFinishTimeout)
-							manualRemain = int64(manualDeadline.Sub(now).Seconds())
-							if manualRemain < 0 {
-								manualRemain = 0
-							}
-						}
-						it.ManualFinishRemainSeconds = manualRemain
-
 						if now.Before(startDeadline) {
 							it.PhaseText = "待" + startTerm
 							it.PhaseClass = "start_pending"
 						} else {
-							if manualRemain > 0 {
-								it.PhaseText = startTerm + "超时,进入手动结单"
-								it.PhaseClass = "manual_finish"
-							} else {
-								it.PhaseText = "超时未结单,结单失败"
-								it.PhaseClass = "finish_failed"
-							}
+							it.PhaseText = "上钟超时 重新选择客服"
+							it.PhaseClass = "start_timeout"
 						}
 					}
 				}
@@ -217,27 +176,6 @@ func TableStaff(c *gin.Context) {
 		Order("id desc").
 		Find(&sessions)
 
-	usageIDs := make([]uint, 0, len(sessions))
-	for i := range sessions {
-		if sessions[i].InitialUsageID > 0 {
-			usageIDs = append(usageIDs, sessions[i].InitialUsageID)
-		}
-	}
-	type usageLite struct {
-		ID     uint       `gorm:"column:id"`
-		UsedAt *time.Time `gorm:"column:used_at"`
-		Status string     `gorm:"column:status"`
-	}
-	usageByID := map[uint]usageLite{}
-	if len(usageIDs) > 0 {
-		var ul []usageLite
-		config.DB.Table("usages").Select("id, used_at, status").Where("id IN ?", usageIDs).Find(&ul)
-		for i := range ul {
-			u := ul[i]
-			usageByID[u.ID] = u
-		}
-	}
-
 	sessionByTech := map[uint]models.ServiceSession{}
 	for _, s := range sessions {
 		if s.TechnicianID == nil {
@@ -257,7 +195,6 @@ func TableStaff(c *gin.Context) {
 		PhaseText           string                       `json:"phase_text"`
 		PhaseClass          string                       `json:"phase_class"`
 		StartRemainSeconds       int64                   `json:"start_remain_seconds"`
-		ManualFinishRemainSeconds int64                  `json:"manual_finish_remain_seconds"`
 		CheckedIn           bool                         `json:"checked_in"`
 		CheckedInAt         *time.Time                   `json:"checked_in_at"`
 		ServiceStartAt      *time.Time                   `json:"service_start_at"`
@@ -271,7 +208,7 @@ func TableStaff(c *gin.Context) {
 
 	out := make([]staffItem, 0, len(techs))
 	for _, t := range techs {
-		it := staffItem{Technician: t, Attendance: nil, CurrentSession: nil, Room: nil, ServiceStatus: "not_checked_in", PhaseText: "", PhaseClass: "", StartRemainSeconds: 0, ManualFinishRemainSeconds: 0, CheckedIn: false, CheckedInAt: nil, ServiceStartAt: nil, ServiceFinishAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, NextAvailableAt: nil, NextAvailableInSecs: 0, Now: now}
+		it := staffItem{Technician: t, Attendance: nil, CurrentSession: nil, Room: nil, ServiceStatus: "not_checked_in", PhaseText: "", PhaseClass: "", StartRemainSeconds: 0, CheckedIn: false, CheckedInAt: nil, ServiceStartAt: nil, ServiceFinishAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, NextAvailableAt: nil, NextAvailableInSecs: 0, Now: now}
 
 		if a, ok := attByTech[t.ID]; ok {
 			it.Attendance = &a
@@ -323,28 +260,12 @@ func TableStaff(c *gin.Context) {
 				}
 				it.StartRemainSeconds = startRemain
 
-				u, okU := usageByID[s.InitialUsageID]
-				manualRemain := int64(0)
-				if okU && u.UsedAt != nil {
-					manualDeadline := u.UsedAt.Add(manualFinishTimeout)
-					manualRemain = int64(manualDeadline.Sub(now).Seconds())
-					if manualRemain < 0 {
-						manualRemain = 0
-					}
-				}
-				it.ManualFinishRemainSeconds = manualRemain
-
 				if now.Before(startDeadline) {
 					it.PhaseText = "待起单"
 					it.PhaseClass = "start_pending"
 				} else {
-					if manualRemain > 0 {
-						it.PhaseText = "起单超时,进入手动结单"
-						it.PhaseClass = "manual_finish"
-					} else {
-						it.PhaseText = "超时未结单,结单失败"
-						it.PhaseClass = "finish_failed"
-					}
+					it.PhaseText = "上钟超时 重新选择客服"
+					it.PhaseClass = "start_timeout"
 				}
 			}
 		}

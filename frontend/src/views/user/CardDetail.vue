@@ -329,12 +329,7 @@
             {{ getUsageProjectText(selectedUsage) }}
           </div>
 
-          <div v-if="!isPrecheckModal && selectedUsage" class="mt-4 text-center text-xs" :class="getFinishExpireTextClass(selectedUsage)">
-            有效期至 {{ formatFinishExpireTime(selectedUsage) }}
-          </div>
-          <div v-if="!isPrecheckModal && selectedUsage && getFinishExpireTextClass(selectedUsage) === 'text-red-500' && getFinishCountdownText(selectedUsage)" class="mt-1 text-center text-xs text-red-500">
-            离失效还有 {{ getFinishCountdownText(selectedUsage) }}
-          </div>
+          
         </div>
       </div>
     </div>
@@ -541,11 +536,11 @@ const precheckCode = computed(() => {
 
 const usageQrTitle = computed(() => {
   if (isPrecheckModal.value && usagePrecheckDone.value) return '即将进入服务'
-  return replaceTerms(isPrecheckModal.value ? '起单二维码' : '结单二维码', card.value?.merchant)
+  return replaceTerms('起单二维码', card.value?.merchant)
 })
 
 const usageQrAlt = computed(() => {
-  return replaceTerms(isPrecheckModal.value ? '起单二维码' : '结单二维码', card.value?.merchant)
+  return replaceTerms('起单二维码', card.value?.merchant)
 })
 
 let usageLongPressTimer = null
@@ -560,15 +555,20 @@ const getUsageStatusText = (usage) => {
     const supportRoom = Boolean(card.value?.merchant?.support_room)
     const sessStatus = String(usage?.service_session_status || '').trim()
     const precheckedAt = usage?.service_session_start_confirmed_at
-    const now = nowForFinish.value
-    const expireAt = getFinishExpireAtUnix(usage) * 1000
-    if (expireAt && now > expireAt) return '完成'
-    if (sessStatus === 'finished') return '未上钟 待手动下钟'
+    if (sessStatus === 'finished') return '完成'
     if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
-    if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) return '待选客服'
+    if (supportCS && sessStatus === 'room_locked') return '待选客服'
+    if (supportCS && sessStatus === 'staff_selecting') {
+      const cnt = Number(usage?.start_timeout_count || 0)
+      if (cnt > 0) return '上钟超时 重新选择客服'
+      return '待选客服'
+    }
     if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
       const dl = getPrecheckDeadlineAtMs(usage)
       if (dl && now < dl) return replaceTerms('待起单', card.value?.merchant)
+    }
+    if (supportCS && sessStatus === 'start_pending' && !precheckedAt && getPrecheckDeadlineAtMs(usage) && now >= getPrecheckDeadlineAtMs(usage)) {
+      return '上钟超时 重新选择客服'
     }
     return replaceTerms('待结单', card.value?.merchant)
   }
@@ -580,18 +580,24 @@ const getUsageStatusText = (usage) => {
 const getUsageStatusClass = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s === 'in_progress') {
-    const now = nowForFinish.value
-    const expireAt = getFinishExpireAtUnix(usage) * 1000
     const supportCS = Boolean(card.value?.merchant?.support_customer_service)
     const supportRoom = Boolean(card.value?.merchant?.support_room)
     const sessStatus = String(usage?.service_session_status || '').trim()
     const precheckedAt = usage?.service_session_start_confirmed_at
-    if (sessStatus === 'finished') return 'text-blue-500'
+    if (sessStatus === 'finished') return 'text-gray-600'
     if (supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
-    if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) return 'text-orange-500'
+    if (supportCS && sessStatus === 'room_locked') return 'text-orange-500'
+    if (supportCS && sessStatus === 'staff_selecting') {
+      const cnt = Number(usage?.start_timeout_count || 0)
+      if (cnt > 0) return 'text-red-500'
+      return 'text-orange-500'
+    }
     if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
       const dl = getPrecheckDeadlineAtMs(usage)
       if (dl && now < dl) return 'text-red-500'
+    }
+    if (supportCS && sessStatus === 'start_pending' && !precheckedAt && getPrecheckDeadlineAtMs(usage) && now >= getPrecheckDeadlineAtMs(usage)) {
+      return 'text-red-500'
     }
     return 'text-blue-500'
   }
@@ -600,18 +606,9 @@ const getUsageStatusClass = (usage) => {
   return ''
 }
 
-const isUsageSessionFinishedButUsageInProgress = (usage) => {
-  const usageStatus = String(usage?.status || '').trim()
-  const sessStatus = String(usage?.service_session_status || '').trim()
-  return usageStatus === 'in_progress' && sessStatus === 'finished'
-}
+const isUsageSessionFinishedButUsageInProgress = () => false
 
-const getUsageServiceEndAtTextForFinishedSession = (usage) => {
-  if (!isUsageSessionFinishedButUsageInProgress(usage)) return ''
-  const v = usage?.service_session_updated_at
-  if (!v) return ''
-  return formatDateTime(v)
-}
+const getUsageServiceEndAtTextForFinishedSession = () => ''
 
 const stopVerifyStatusPoll = () => {
   if (verifyStatusPollTimer) {
@@ -729,7 +726,7 @@ const getUsageServiceRemainText = (usage) => {
 
   const durationMinutes = getUsageServiceDurationMinutes(usage)
   const finishAtMs = startAtMs + durationMinutes * 60 * 1000
-  const now = nowForFinish.value
+  const now = nowTick.value
   const diff = finishAtMs - now
   if (diff <= 0) return ''
 
@@ -747,43 +744,26 @@ const getUsageTrackingNumber = (usage) => {
   return String(usage.id).padStart(9, '0')
 }
 
-const getFinishExpireAtUnix = (usage) => {
-  const usedAtMs = getUsageUsedAtMs(usage)
-  if (!usedAtMs) return 0
-  return Math.floor(usedAtMs / 1000) + 12 * 60 * 60
-}
-
 const getPrecheckDeadlineAtMs = (usage) => {
   const ms = getUsageSessionUpdatedAtMs(usage)
   if (!ms) return 0
   return ms + 15 * 60 * 1000
 }
 
-const formatFinishExpireTime = (usage) => {
-  const ts = getFinishExpireAtUnix(usage)
-  return ts ? formatExpireTime(ts) : ''
-}
+const nowTick = ref(Date.now())
+let nowTickTimer = null
 
-const getFinishAvailableAtMs = (usage) => {
-  const usedAtMs = getUsageUsedAtMs(usage)
-  if (!usedAtMs) return 0
-  return usedAtMs + 15 * 60 * 1000
-}
-
-const nowForFinish = ref(Date.now())
-let finishNowTimer = null
-
-const startFinishNowTimer = () => {
-  if (finishNowTimer) return
-  finishNowTimer = setInterval(() => {
-    nowForFinish.value = Date.now()
+const startNowTickTimer = () => {
+  if (nowTickTimer) return
+  nowTickTimer = setInterval(() => {
+    nowTick.value = Date.now()
   }, 1000)
 }
 
-const stopFinishNowTimer = () => {
-  if (finishNowTimer) {
-    clearInterval(finishNowTimer)
-    finishNowTimer = null
+const stopNowTickTimer = () => {
+  if (nowTickTimer) {
+    clearInterval(nowTickTimer)
+    nowTickTimer = null
   }
 }
 
@@ -795,7 +775,7 @@ const getUsageStatusCountdownText = (usage) => {
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_start_confirmed_at
-  const now = nowForFinish.value
+  const now = nowTick.value
 
   // 待选房间倒计时（90秒）
   if (supportRoom && sessStatus === 'room_selecting' && usage?.room_select_deadline_at) {
@@ -836,18 +816,7 @@ const getUsageStatusCountdownText = (usage) => {
     }
   }
 
-  // 结单超时倒计时（12小时）
-  const expireAt = getFinishExpireAtUnix(usage) * 1000
-  if (!expireAt) return ''
-  const diff = expireAt - now
-  if (diff <= 0) return ''
-  const totalSeconds = Math.floor(diff / 1000)
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-  if (hours > 0) return `${hours}小时${minutes}分${seconds}秒`
-  if (minutes > 0) return `${minutes}分${seconds}秒`
-  return `${seconds}秒`
+  return ''
 }
 
 const getUsageStatusCountdownClass = (usage) => {
@@ -875,45 +844,6 @@ const getUsageStatusCountdownClass = (usage) => {
   }
 
   return 'text-blue-500'
-}
-
-const getFinishExpireTextClass = (usage) => {
-  const availableAt = getFinishAvailableAtMs(usage)
-  if (!availableAt) return 'text-gray-400'
-  const now = nowForFinish.value
-  if (now >= availableAt + 60 * 60 * 1000) return 'text-red-500'
-  if (now >= availableAt) return 'text-green-500'
-  return 'text-gray-400'
-}
-
-const getFinishCountdownText = (usage) => {
-  const finishExpireAt = getFinishExpireAtUnix(usage) * 1000
-  if (!finishExpireAt) return ''
-  const now = nowForFinish.value
-  const diff = finishExpireAt - now
-  if (diff <= 0) return ''
-  const totalSeconds = Math.floor(diff / 1000)
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-  if (hours > 0) {
-    return `${hours}小时${minutes}分${seconds}秒`
-  } else if (minutes > 0) {
-    return `${minutes}分${seconds}秒`
-  } else {
-    return `${seconds}秒`
-  }
-}
-
-const canShowUsageQr = (usage) => {
-  if (!usage) return false
-  const status = String(usage.status || '').trim()
-  if (status !== 'in_progress') return false
-  const code = String(usage.verify_code || '').trim()
-  if (!code) return false
-  const finishExpireAt = getFinishExpireAtUnix(usage)
-  if (!finishExpireAt) return false
-  return Math.floor(Date.now() / 1000) <= finishExpireAt
 }
 
 let usageQrPollTimer = null
@@ -947,7 +877,7 @@ const trySwitchUsageQrToFinish = async () => {
 
 const openUsageQrModal = async (usage) => {
   stopUsageQrPoll()
-  qrMode.value = 'finish'
+  qrMode.value = 'start'
   qrSessionId.value = ''
   usagePrecheckDone.value = false
 
@@ -1016,21 +946,7 @@ const openUsageQrModal = async (usage) => {
     return
   }
 
-  if (!canShowUsageQr(usage)) return
-  selectedUsage.value = usage
-  showUsageQrModal.value = true
-  usageQrDataUrl.value = ''
-  nowForFinish.value = Date.now()
-  startFinishNowTimer()
-  try {
-    usageQrDataUrl.value = await QRCode.toDataURL(String(usage.verify_code).trim(), {
-      margin: 1,
-      scale: 8,
-      errorCorrectionLevel: 'M'
-    })
-  } catch (_) {
-    // ignore
-  }
+  return
 }
 
 const closeUsageQrModal = () => {
@@ -1038,7 +954,7 @@ const closeUsageQrModal = () => {
   showUsageQrModal.value = false
   selectedUsage.value = null
   usageQrDataUrl.value = ''
-  qrMode.value = 'finish'
+  qrMode.value = 'start'
   qrSessionId.value = ''
   usagePrecheckDone.value = false
 }
@@ -1072,16 +988,30 @@ const onUsageTouchStart = (e, usage) => {
       const supportCS = Boolean(card.value?.merchant?.support_customer_service)
       const sessStatus = String(latest?.service_session_status || '').trim()
       const sessID = latest?.service_session_id
+      const precheckedAt = latest?.service_session_start_confirmed_at
 
       if (sessID) {
         if (supportRoom && sessStatus === 'room_selecting') {
           router.push({ path: `/user/service-sessions/${sessID}`, query: { next_step: 'room_select' } })
           return
         }
-        if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) {
-          router.push({ path: `/user/service-sessions/${sessID}`, query: { next_step: 'staff_select' } })
-          return
-        }
+			if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) {
+				router.push({
+					path: `/user/service-sessions/${sessID}`,
+					query: { next_step: 'staff_select', usage_id: String(latest?.id || ''), can_revoke: latest?.can_revoke ? '1' : '0' }
+				})
+				return
+			}
+			if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
+				const dl = getPrecheckDeadlineAtMs(latest)
+				if (dl && Date.now() >= dl) {
+					router.push({
+						path: `/user/service-sessions/${sessID}`,
+						query: { next_step: 'staff_select', usage_id: String(latest?.id || ''), can_revoke: latest?.can_revoke ? '1' : '0' }
+					})
+					return
+				}
+			}
       }
 
       openUsageQrModal(latest)
@@ -1722,7 +1652,7 @@ const scrollToNotice = async () => {
 
 onMounted(async () => {
   await fetchCard()
-  startFinishNowTimer()
+  startNowTickTimer()
   // 如果有预约，启动倒计时
   if (appointment.value) {
     startCountdownTimer()
@@ -1733,7 +1663,7 @@ onUnmounted(() => {
   stopUsageQrPoll()
   stopCountdownTimer()
   stopVerifyStatusPoll()
-  stopFinishNowTimer()
+  stopNowTickTimer()
   if (verifyExpireTimer) {
     clearTimeout(verifyExpireTimer)
     verifyExpireTimer = null

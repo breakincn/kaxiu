@@ -69,9 +69,6 @@
                         <span v-if="it.phase_class === 'start_pending'" class="ml-2 text-red-500 font-mono">
                           {{ calculateRemainTime(it.updated_at, 15 * 60) }}
                         </span>
-                        <span v-else-if="it.phase_class === 'manual_finish'" class="ml-2 text-blue-600 font-mono">
-                          {{ calculateRemainTime(it.used_at, 12 * 60 * 60) }}
-                        </span>
                         <span v-else-if="it.phase_class === 'room_selecting'" class="ml-2 text-blue-600 font-mono">
                           {{ calculateRemainTime(it.room_select_deadline_at) }}
                         </span>

@@ -51,6 +51,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		Status             string     `gorm:"column:status"`
 		RoomID             *uint      `gorm:"column:room_id"`
 		TechnicianID       *uint      `gorm:"column:technician_id"`
+		StartTimeoutCount  int        `gorm:"column:start_timeout_count"`
 		StartConfirmedAt   *time.Time `gorm:"column:start_confirmed_at"`
 		UpdatedAt          *time.Time `gorm:"column:updated_at"`
 		RoomSelectDeadlineAt *time.Time `gorm:"column:room_select_deadline_at"`
@@ -60,7 +61,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions").
-		Select("id, initial_usage_id, project_id, status, room_id, technician_id, start_confirmed_at, updated_at, room_select_deadline_at, room_locked_at").
+		Select("id, initial_usage_id, project_id, status, room_id, technician_id, start_timeout_count, start_confirmed_at, updated_at, room_select_deadline_at, room_locked_at").
 		Where("initial_usage_id IN ?", ids).
 		Find(&sessions).Error; err != nil {
 		return
@@ -159,6 +160,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 			u.ServiceSessionStatus = s.Status
 			u.ServiceSessionStartConfirmedAt = s.StartConfirmedAt
 			u.ServiceSessionUpdatedAt = s.UpdatedAt
+			u.StartTimeoutCount = s.StartTimeoutCount
 			u.RoomSelectDeadlineAt = s.RoomSelectDeadlineAt
 			u.RoomLockedAt = s.RoomLockedAt
 			if s.RoomID != nil {
@@ -173,6 +175,37 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 			}
 		}
 	}
+
+	// 计算撤销能力（仅用户展示字段，不落库）
+	now := time.Now()
+	for i := range *usages {
+		u := &(*usages)[i]
+		u.CanRevoke = false
+		u.RevokeDeadlineAt = nil
+		if u.UsedAt == nil {
+			continue
+		}
+		if u.Merchant.SupportCustomerService == false {
+			continue
+		}
+		if u.Status != "in_progress" {
+			continue
+		}
+		// 起单成功/结单成功不可撤销
+		if u.ServiceSessionStartConfirmedAt != nil {
+			continue
+		}
+		dl := u.UsedAt.Add(12 * time.Hour)
+		u.RevokeDeadlineAt = &dl
+		if !now.Before(dl) {
+			continue
+		}
+		// 仅当起单超时累计达到2次，才允许撤销
+		if u.StartTimeoutCount < 2 {
+			continue
+		}
+		u.CanRevoke = true
+	}
 }
 
 // autoFixUsages 对超过12小时的使用记录自动置为完成并清空技师ID
@@ -183,18 +216,48 @@ func autoFixUsages(usages *[]models.Usage) {
 		if u.UsedAt == nil || u.Status == "failed" {
 			continue
 		}
-		if u.Merchant.SupportCustomerService {
+		// 超过12小时：自动置为完成，并清空服务人员
+		if now.Sub(*u.UsedAt) <= 12*time.Hour {
 			continue
 		}
-		// 超过12小时，自动置为完成并清空技师ID
-		if now.Sub(*u.UsedAt) > 12*time.Hour {
-			if u.Status != "success" || u.TechnicianID != nil {
-				// 优先使用项目时长，如果没有则用默认15分钟
-				durationMinutes := 15
-				if u.Project != nil && u.Project.Duration > 0 {
-					durationMinutes = u.Project.Duration
+
+		// 支持客服流程：仅当始终未起单（start_confirmed_at 为空）时，12小时后自动完成，且不计入客服业绩（technician_id 置空）。
+		if u.Merchant.SupportCustomerService {
+			var s struct {
+				ID               uint       `gorm:"column:id"`
+				Status           string     `gorm:"column:status"`
+				RoomID           *uint      `gorm:"column:room_id"`
+				TechnicianID     *uint      `gorm:"column:technician_id"`
+				StartConfirmedAt *time.Time `gorm:"column:start_confirmed_at"`
+			}
+			err := config.DB.Table("service_sessions").
+				Select("id,status,room_id,technician_id,start_confirmed_at").
+				Where("initial_usage_id = ?", u.ID).
+				Order("id desc").
+				First(&s).Error
+			if err == nil {
+				if s.StartConfirmedAt != nil {
+					continue
 				}
-				finishedAt := u.UsedAt.Add(time.Duration(durationMinutes+5) * time.Minute)
+				finishedAt := u.UsedAt.Add(12 * time.Hour)
+				// 若会话仍保留技师，释放技师状态（避免 busy 残留）
+				if s.TechnicianID != nil && *s.TechnicianID > 0 {
+					_ = config.DB.Model(&models.TechnicianAttendance{}).
+						Where("merchant_id = ? AND technician_id = ? AND status = ?", u.MerchantID, *s.TechnicianID, "busy").
+						Updates(map[string]interface{}{"status": "idle"}).Error
+				}
+				// 结束会话并释放资源（房间/技师）
+				config.DB.Table("service_sessions").
+					Where("id = ? AND status NOT IN ('finished','canceled')", s.ID).
+					Updates(map[string]interface{}{
+						"status":                  "finished",
+						"finished_at":             finishedAt,
+						"technician_id":           nil,
+						"room_id":                 nil,
+						"room_locked_at":          nil,
+						"room_select_deadline_at": nil,
+					})
+
 				config.DB.Model(u).Updates(map[string]interface{}{
 					"status":        "success",
 					"technician_id": nil,
@@ -203,7 +266,37 @@ func autoFixUsages(usages *[]models.Usage) {
 				u.Status = "success"
 				u.TechnicianID = nil
 				u.FinishedAt = &finishedAt
+				continue
 			}
+			// 未找到会话也视为可自动完成
+			finishedAt := u.UsedAt.Add(12 * time.Hour)
+			config.DB.Model(u).Updates(map[string]interface{}{
+				"status":        "success",
+				"technician_id": nil,
+				"finished_at":   finishedAt,
+			})
+			u.Status = "success"
+			u.TechnicianID = nil
+			u.FinishedAt = &finishedAt
+			continue
+		}
+
+		// 非客服流程：保留历史逻辑（超过12小时自动完成）
+		if u.Status != "success" || u.TechnicianID != nil {
+			// 优先使用项目时长，如果没有则用默认15分钟
+			durationMinutes := 15
+			if u.Project != nil && u.Project.Duration > 0 {
+				durationMinutes = u.Project.Duration
+			}
+			finishedAt := u.UsedAt.Add(time.Duration(durationMinutes+5) * time.Minute)
+			config.DB.Model(u).Updates(map[string]interface{}{
+				"status":        "success",
+				"technician_id": nil,
+				"finished_at":   finishedAt,
+			})
+			u.Status = "success"
+			u.TechnicianID = nil
+			u.FinishedAt = &finishedAt
 		}
 	}
 }

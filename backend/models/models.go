@@ -124,6 +124,9 @@ type Usage struct {
 	RoomLockedAt            *time.Time `json:"room_locked_at" gorm:"-"`
 	ServiceRoom             *Room      `json:"service_room" gorm:"-"`
 	ServiceTechnician       *Technician `json:"service_technician" gorm:"-"`
+	StartTimeoutCount       int        `json:"start_timeout_count" gorm:"-"`
+	RevokeDeadlineAt        *time.Time `json:"revoke_deadline_at" gorm:"-"`
+	CanRevoke               bool       `json:"can_revoke" gorm:"-"`
 
 	Card       Card             `json:"card" gorm:"foreignKey:CardID"`
 	Merchant   Merchant         `json:"merchant" gorm:"foreignKey:MerchantID"`

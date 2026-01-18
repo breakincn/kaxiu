@@ -226,12 +226,12 @@ export const cardApi = {
   generateVerifyCode: (cardId, data) => api.post(`/user/cards/${cardId}/verify-code`, data),
   verifyCard: (code) => api.post('/merchant/verify', { code }),
   scanVerify: (code) => api.post('/merchant/verify/scan', { code }),
-  finishVerify: (code) => api.post('/merchant/verify/finish', { code }),
   getTodayVerify: (merchantId) => api.get(`/merchant/merchants/${merchantId}/today-verify`)
 }
 
 export const usageApi = {
   getCardUsages: (cardId) => api.get(`/user/cards/${cardId}/usages`),
+  revokeUsage: (usageId) => api.put(`/user/usages/${usageId}/revoke`),
   getMerchantUsages: (merchantId) => api.get(`/merchant/merchants/${merchantId}/usages`)
 }
 

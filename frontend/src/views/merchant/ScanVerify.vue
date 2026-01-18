@@ -209,20 +209,10 @@ const onDecoded = async (decodedText) => {
 
   verifying.value = true
   try {
-    const mode = String(route.query.mode || 'verify')
-    let res
-    let action = 'verify'
-    if (mode === 'finish') {
-      res = await cardApi.finishVerify(code)
-      action = 'finish'
-    } else {
-      res = await cardApi.scanVerify(code)
-      action = res?.data?.data?.action || 'verify'
-    }
+    const res = await cardApi.scanVerify(code)
+    const action = res?.data?.data?.action || 'verify'
     resultSuccess.value = true
-    if (action === 'finish') {
-      resultText.value = replaceTerms('结单成功！')
-    } else if (action === 'start') {
+    if (action === 'start') {
       const sid = res?.data?.data?.session_id
       resultText.value = replaceTerms(`起单成功！服务单#${sid ?? '-'}，已开始计时。`)
     } else {
@@ -231,7 +221,7 @@ const onDecoded = async (decodedText) => {
     }
 
     // 回到 dashboard 并切到对应 tab
-    const backTab = action === 'start' ? 'service' : (mode === 'finish' ? 'finish' : 'verify')
+    const backTab = action === 'start' ? 'service' : 'verify'
     console.log('扫码成功，将在30秒后跳转到', backTab, 'tab')
     
     // 清除之前的定时器（如果有）
@@ -264,8 +254,7 @@ const onDecoded = async (decodedText) => {
 }
 
 onMounted(() => {
-  const mode = String(route.query.mode || 'verify')
-  pageTitle.value = mode === 'finish' ? '今日结单记录' : '今日核销记录'
+  pageTitle.value = '今日核销记录'
 
   const token = getMerchantToken()
   const id = getMerchantId()
