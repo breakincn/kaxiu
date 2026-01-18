@@ -555,6 +555,7 @@ const getUsageStatusText = (usage) => {
     const supportRoom = Boolean(card.value?.merchant?.support_room)
     const sessStatus = String(usage?.service_session_status || '').trim()
     const precheckedAt = usage?.service_session_start_confirmed_at
+    const now = nowTick.value
     if (sessStatus === 'finished') return '完成'
     if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
     if (supportCS && sessStatus === 'room_locked') return '待选客服'
@@ -584,6 +585,7 @@ const getUsageStatusClass = (usage) => {
     const supportRoom = Boolean(card.value?.merchant?.support_room)
     const sessStatus = String(usage?.service_session_status || '').trim()
     const precheckedAt = usage?.service_session_start_confirmed_at
+    const now = nowTick.value
     if (sessStatus === 'finished') return 'text-gray-600'
     if (supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
     if (supportCS && sessStatus === 'room_locked') return 'text-orange-500'
