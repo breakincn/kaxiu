@@ -352,9 +352,10 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			return apiErr{status: http.StatusBadRequest, msg: "请先选择房间"}
 		}
 
-		var att models.TechnicianAttendance
+		// 避免对带 JOIN 的查询直接加 FOR UPDATE，MySQL/InnoDB 可能扩大锁范围并导致锁等待。
+		// 先无锁选出候选记录，再按主键加锁二次校验。
+		var candidate models.TechnicianAttendance
 		if err := tx.
-			Clauses(clause.Locking{Strength: "UPDATE"}).
 			Model(&models.TechnicianAttendance{}).
 			Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
 			Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
@@ -362,6 +363,14 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}).
 			Where("t.is_active = ?", true).
 			Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
+			First(&candidate).Error; err != nil {
+			return apiErr{status: http.StatusBadRequest, msg: "工作人员不可选"}
+		}
+
+		var att models.TechnicianAttendance
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL AND status = ?", candidate.ID, s.MerchantID, input.TechnicianID, start, "idle").
 			First(&att).Error; err != nil {
 			return apiErr{status: http.StatusBadRequest, msg: "工作人员不可选"}
 		}

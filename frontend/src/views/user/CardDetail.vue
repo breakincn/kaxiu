@@ -236,10 +236,10 @@
               <div v-if="isUsageSessionFinishedButUsageInProgress(usage) && getUsageServiceEndAtTextForFinishedSession(usage)" class="text-gray-400 text-sm mt-0.5">
                 服务结束：{{ getUsageServiceEndAtTextForFinishedSession(usage) }}
               </div>
-              <div v-else-if="usage?.status === 'in_progress' && getUsageServiceStartAtText(usage)" class="text-gray-400 text-sm mt-0.5">
+              <div v-else-if="usage?.status === 'in_progress' && shouldShowServiceStartTime(usage) && getUsageServiceStartAtText(usage)" class="text-gray-400 text-sm mt-0.5">
                 服务开始：{{ getUsageServiceStartAtText(usage) }}
               </div>
-              <div v-if="usage?.status === 'in_progress' && getUsageServiceRemainText(usage)" class="text-gray-400 text-sm mt-0.5 font-mono">
+              <div v-if="shouldShowServiceRemainTime(usage) && getUsageServiceRemainText(usage)" class="text-gray-400 text-sm mt-0.5 font-mono">
                 剩余时间：{{ getUsageServiceRemainText(usage) }}
               </div>
               <div v-if="usage?.status === 'success' && usage?.finished_at" class="text-gray-400 text-sm mt-0.5">
@@ -721,8 +721,39 @@ const getUsageServiceStartAtText = (usage) => {
   return formatDateTime(new Date(ms))
 }
 
+const shouldShowServiceStartTime = (usage) => {
+  if (String(usage?.status || '').trim() !== 'in_progress') return false
+  
+  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+  const sessStatus = String(usage?.service_session_status || '').trim()
+  const precheckedAt = usage?.service_session_start_confirmed_at
+  
+  // 如果支持客服且处于待起单状态且未确认起单，则不显示服务开始时间
+  // 因为此时显示的是预估时间，不是实际开始时间
+  if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
+    return false
+  }
+  
+  return true
+}
+
+const shouldShowServiceRemainTime = (usage) => {
+  if (String(usage?.status || '').trim() !== 'in_progress') return false
+  
+  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+  const sessStatus = String(usage?.service_session_status || '').trim()
+  const precheckedAt = usage?.service_session_start_confirmed_at
+  
+  // 如果支持客服且处于待起单状态且未确认起单，则不显示剩余时间
+  if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
+    return false
+  }
+  
+  return true
+}
+
 const getUsageServiceRemainText = (usage) => {
-  if (String(usage?.status || '').trim() !== 'in_progress') return ''
+  if (!shouldShowServiceRemainTime(usage)) return ''
   const startAtMs = getUsageServiceStartAtMs(usage)
   if (!startAtMs) return ''
 
