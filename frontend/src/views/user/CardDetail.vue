@@ -559,6 +559,10 @@ const getUsageStatusText = (usage) => {
     if (sessStatus === 'finished') return '完成'
     if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
     if (supportCS && sessStatus === 'room_locked') return '待选客服'
+    // 会话已取消但 usage 仍在进行中：视为上钟超时，需重新选择客服
+    if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
+      return '上钟超时 重新选择客服'
+    }
     // 上钟超时统一优先判断（避免兜底到待结单）
     if (supportCS) {
       const cnt = Number(usage?.start_timeout_count || 0)
@@ -598,6 +602,10 @@ const getUsageStatusClass = (usage) => {
     if (sessStatus === 'finished') return 'text-gray-600'
     if (supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
     if (supportCS && sessStatus === 'room_locked') return 'text-orange-500'
+    // 会话已取消但 usage 仍在进行中：视为上钟超时
+    if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
+      return 'text-red-500'
+    }
     // 上钟超时统一优先判断（避免兜底到待结单样式）
     if (supportCS) {
       const cnt = Number(usage?.start_timeout_count || 0)
@@ -751,6 +759,11 @@ const shouldShowServiceStartTime = (usage) => {
   if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
     return false
   }
+
+  // 会话已取消但 usage 仍在进行中：不显示预估开始时间
+  if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
+    return false
+  }
   
   return true
 }
@@ -764,6 +777,11 @@ const shouldShowServiceRemainTime = (usage) => {
   
   // 如果支持客服且处于待起单状态且未确认起单，则不显示剩余时间
   if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
+    return false
+  }
+
+  // 会话已取消但 usage 仍在进行中：不显示剩余时间
+  if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
     return false
   }
   
@@ -927,6 +945,19 @@ const trySwitchUsageQrToFinish = async () => {
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = String(latest?.service_session_status || '').trim()
   const precheckedAt = latest?.service_session_start_confirmed_at
+  if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
+    stopUsageQrPoll()
+    closeUsageQrModal()
+    alert('上钟超时，请重新选择客服')
+    const sessID = latest?.service_session_id
+    if (sessID) {
+      router.push({
+        path: `/user/service-sessions/${sessID}`,
+        query: { next_step: 'staff_select', usage_id: String(latest?.id || ''), can_revoke: latest?.can_revoke ? '1' : '0' }
+      })
+    }
+    return
+  }
   if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
     const dl = getPrecheckDeadlineAtMs(latest)
     if (dl && Date.now() >= dl) {
@@ -963,6 +994,15 @@ const openUsageQrModal = async (usage) => {
   const sessID = usage?.service_session_id
   const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_start_confirmed_at
+
+  // 会话已取消但 usage 仍在进行中：起单二维码失效，直接引导去选客服
+  if (supportCS && sessID && sessStatus === 'canceled' && !precheckedAt) {
+    await router.push({
+      path: `/user/service-sessions/${sessID}`,
+      query: { next_step: 'staff_select', usage_id: String(usage?.id || ''), can_revoke: usage?.can_revoke ? '1' : '0' }
+    })
+    return
+  }
 
   // 上钟超时后起单二维码失效，直接引导去选客服
   if (supportCS && sessID && sessStatus === 'start_pending' && !precheckedAt) {
@@ -1098,7 +1138,7 @@ const onUsageTouchStart = (e, usage) => {
       if (supportCS && sessID) {
         const cnt = Number(latest?.start_timeout_count || 0)
         const precheckDl = getPrecheckDeadlineAtMs(latest)
-        const isStartTimeout = (cnt > 0 && (sessStatus === 'staff_selecting' || sessStatus === 'start_pending')) || (sessStatus === 'start_pending' && !precheckedAt && precheckDl && Date.now() >= precheckDl)
+        const isStartTimeout = (cnt > 0 && (sessStatus === 'staff_selecting' || sessStatus === 'start_pending')) || (sessStatus === 'start_pending' && !precheckedAt && precheckDl && Date.now() >= precheckDl) || (sessStatus === 'canceled' && !precheckedAt)
         if (isStartTimeout) {
           router.push({
             path: `/user/service-sessions/${sessID}`,
