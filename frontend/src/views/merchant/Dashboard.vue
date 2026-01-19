@@ -1361,6 +1361,20 @@ const getUsageServiceStatusText = (usage) => {
     return replaceTerms('已结单', merchant.value)
   }
 
+  // 优先按服务单状态展示（避免将待选房间等阶段误显示为“待结单/待下钟”）
+  if (usage.service_session_status) {
+    const s = usage.service_session_status
+    if (s === 'room_selecting') return '待选房间'
+    if (s === 'room_locked') return '房间已锁定'
+    if (s === 'staff_selecting') return replaceTerms('待选客服', merchant.value)
+    if (s === 'start_pending') return replaceTerms('待起单', merchant.value)
+    if (s === 'delay_pending') return replaceTerms('待起单', merchant.value)
+    if (s === 'serving') return replaceTerms('服务中', merchant.value)
+    if (s === 'auto_finishing') return replaceTerms('待自动结单', merchant.value)
+    if (s === 'created') return '已创建'
+    if (s === 'canceled') return '已取消'
+  }
+
   // 待起单
   if (usage.service_session_status === 'start_pending') {
     return replaceTerms('待起单', merchant.value)
@@ -1375,11 +1389,6 @@ const getUsageServiceStatusText = (usage) => {
         return replaceTerms('结单超时', merchant.value)
       }
     }
-  }
-
-  // 有服务单但未完成，统一归为待结单
-  if (usage.service_session_status) {
-    return replaceTerms('待结单', merchant.value)
   }
 
   return '-'
