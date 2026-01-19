@@ -46,93 +46,93 @@ func TableRooms(c *gin.Context) {
 
 	now := time.Now()
 	type roomItem struct {
-		Room           models.Room            `json:"room"`
-		Occupied       bool                   `json:"occupied"`
-		Session        *models.ServiceSession `json:"session"`
-		Technician     *models.Technician     `json:"technician"`
-		TechnicianRole *models.ServiceRole    `json:"technician_role"`
-		StartedAt      *time.Time             `json:"started_at"`
-		FinishAt       *time.Time             `json:"finish_at"`
-		RoomLockedAt   *time.Time             `json:"room_locked_at"`
-		UpdatedAt      *time.Time             `json:"updated_at"`
-		RoomSelectDeadlineAt *time.Time       `json:"room_select_deadline_at"`
-		ElapsedSeconds int64                  `json:"elapsed_seconds"`
-		RemainSeconds  int64                  `json:"remain_seconds"`
-		Status         string                 `json:"status"`
-		PhaseText      string                 `json:"phase_text"`
-		PhaseClass     string                 `json:"phase_class"`
-		StartRemainSeconds       int64         `json:"start_remain_seconds"`
-		RoomSelectRemainSeconds  int64         `json:"room_select_remain_seconds"`
-		Now            time.Time              `json:"now"`
+		Room                    models.Room            `json:"room"`
+		Occupied                bool                   `json:"occupied"`
+		Session                 *models.ServiceSession `json:"session"`
+		Technician              *models.Technician     `json:"technician"`
+		TechnicianRole          *models.ServiceRole    `json:"technician_role"`
+		StartedAt               *time.Time             `json:"started_at"`
+		FinishAt                *time.Time             `json:"finish_at"`
+		RoomLockedAt            *time.Time             `json:"room_locked_at"`
+		UpdatedAt               *time.Time             `json:"updated_at"`
+		RoomSelectDeadlineAt    *time.Time             `json:"room_select_deadline_at"`
+		ElapsedSeconds          int64                  `json:"elapsed_seconds"`
+		RemainSeconds           int64                  `json:"remain_seconds"`
+		Status                  string                 `json:"status"`
+		PhaseText               string                 `json:"phase_text"`
+		PhaseClass              string                 `json:"phase_class"`
+		StartRemainSeconds      int64                  `json:"start_remain_seconds"`
+		RoomSelectRemainSeconds int64                  `json:"room_select_remain_seconds"`
+		Now                     time.Time              `json:"now"`
 	}
 
 	// 查询商户信息以获取自定义术语
-			var merchant models.Merchant
-			if err := config.DB.First(&merchant, merchantID).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取商户信息失败"})
-				return
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取商户信息失败"})
+		return
+	}
+
+	// 获取自定义起单术语，默认为"起单"
+	startTerm := "起单"
+	if merchant.StartTerm != "" {
+		startTerm = merchant.StartTerm
+	}
+
+	out := make([]roomItem, 0, len(rooms))
+	for _, r := range rooms {
+		it := roomItem{Room: r, Occupied: false, Session: nil, Technician: nil, TechnicianRole: nil, StartedAt: nil, FinishAt: nil, RoomLockedAt: nil, UpdatedAt: nil, RoomSelectDeadlineAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, Status: "idle", PhaseText: "", PhaseClass: "", StartRemainSeconds: 0, RoomSelectRemainSeconds: 0, Now: now}
+		s, ok := byRoom[r.ID]
+		if ok {
+			it.Occupied = true
+			it.Status = s.Status
+			it.Session = &s
+			if s.Technician != nil {
+				it.Technician = s.Technician
+				it.TechnicianRole = &s.Technician.ServiceRole
 			}
-
-			// 获取自定义起单术语，默认为"起单"
-			startTerm := "起单"
-			if merchant.StartTerm != "" {
-				startTerm = merchant.StartTerm
+			it.StartedAt = s.StartedAt
+			it.RoomLockedAt = s.RoomLockedAt
+			it.UpdatedAt = s.UpdatedAt
+			it.RoomSelectDeadlineAt = s.RoomSelectDeadlineAt
+			finishAt := s.ScheduledFinishAt
+			if finishAt == nil && s.StartedAt != nil && s.DurationMinutes > 0 {
+				t := s.StartedAt.Add(time.Duration(s.DurationMinutes) * time.Minute)
+				finishAt = &t
 			}
-
-			out := make([]roomItem, 0, len(rooms))
-			for _, r := range rooms {
-				it := roomItem{Room: r, Occupied: false, Session: nil, Technician: nil, TechnicianRole: nil, StartedAt: nil, FinishAt: nil, RoomLockedAt: nil, UpdatedAt: nil, RoomSelectDeadlineAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, Status: "idle", PhaseText: "", PhaseClass: "", StartRemainSeconds: 0, RoomSelectRemainSeconds: 0, Now: now}
-				s, ok := byRoom[r.ID]
-				if ok {
-					it.Occupied = true
-					it.Status = s.Status
-					it.Session = &s
-					if s.Technician != nil {
-						it.Technician = s.Technician
-						it.TechnicianRole = &s.Technician.ServiceRole
-					}
-					it.StartedAt = s.StartedAt
-					it.RoomLockedAt = s.RoomLockedAt
-					it.UpdatedAt = s.UpdatedAt
-					it.RoomSelectDeadlineAt = s.RoomSelectDeadlineAt
-					finishAt := s.ScheduledFinishAt
-					if finishAt == nil && s.StartedAt != nil && s.DurationMinutes > 0 {
-						t := s.StartedAt.Add(time.Duration(s.DurationMinutes) * time.Minute)
-						finishAt = &t
-					}
-					it.FinishAt = finishAt
-					if s.StartedAt != nil {
-						it.ElapsedSeconds = int64(now.Sub(*s.StartedAt).Seconds())
-						if it.ElapsedSeconds < 0 {
-							it.ElapsedSeconds = 0
-						}
-					}
-					if finishAt != nil {
-						it.RemainSeconds = int64(finishAt.Sub(now).Seconds())
-						if it.RemainSeconds < 0 {
-							it.RemainSeconds = 0
-						}
-					}
-
-					if s.Status == "start_pending" && s.StartConfirmedAt == nil && s.UpdatedAt != nil {
-						startDeadline := s.UpdatedAt.Add(startPendingTimeout)
-						startRemain := int64(startDeadline.Sub(now).Seconds())
-						if startRemain < 0 {
-							startRemain = 0
-						}
-						it.StartRemainSeconds = startRemain
-
-						if now.Before(startDeadline) {
-							it.PhaseText = "待" + startTerm
-							it.PhaseClass = "start_pending"
-						} else {
-							it.PhaseText = "上钟超时 重新选择客服"
-							it.PhaseClass = "start_timeout"
-						}
-					}
+			it.FinishAt = finishAt
+			if s.StartedAt != nil {
+				it.ElapsedSeconds = int64(now.Sub(*s.StartedAt).Seconds())
+				if it.ElapsedSeconds < 0 {
+					it.ElapsedSeconds = 0
 				}
-				out = append(out, it)
 			}
+			if finishAt != nil {
+				it.RemainSeconds = int64(finishAt.Sub(now).Seconds())
+				if it.RemainSeconds < 0 {
+					it.RemainSeconds = 0
+				}
+			}
+
+			if s.Status == "start_pending" && s.StartConfirmedAt == nil && s.UpdatedAt != nil {
+				startDeadline := s.UpdatedAt.Add(startPendingTimeout)
+				startRemain := int64(startDeadline.Sub(now).Seconds())
+				if startRemain < 0 {
+					startRemain = 0
+				}
+				it.StartRemainSeconds = startRemain
+
+				if now.Before(startDeadline) {
+					it.PhaseText = "待" + startTerm
+					it.PhaseClass = "start_pending"
+				} else {
+					it.PhaseText = startTerm + "超时 重新选择客服"
+					it.PhaseClass = "start_timeout"
+				}
+			}
+		}
+		out = append(out, it)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"data": out})
 }
@@ -194,7 +194,7 @@ func TableStaff(c *gin.Context) {
 		ServiceStatus       string                       `json:"service_status"`
 		PhaseText           string                       `json:"phase_text"`
 		PhaseClass          string                       `json:"phase_class"`
-		StartRemainSeconds       int64                   `json:"start_remain_seconds"`
+		StartRemainSeconds  int64                        `json:"start_remain_seconds"`
 		CheckedIn           bool                         `json:"checked_in"`
 		CheckedInAt         *time.Time                   `json:"checked_in_at"`
 		ServiceStartAt      *time.Time                   `json:"service_start_at"`
