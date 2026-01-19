@@ -252,6 +252,9 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 			return nil
 		case "delay_pending":
+			if s.StartConfirmedAt == nil {
+				return nil
+			}
 			if s.ScheduledStartAt != nil && !now.Before(*s.ScheduledStartAt) {
 				updates := map[string]interface{}{
 					"status":     "serving",
@@ -263,20 +266,30 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 						updates["scheduled_finish_at"] = finishAt
 					}
 				}
-				return tx.Model(&models.ServiceSession{}).Where("id = ? AND status = ?", s.ID, "delay_pending").Updates(updates).Error
+				return tx.Model(&models.ServiceSession{}).
+					Where("id = ? AND status = ? AND start_confirmed_at IS NOT NULL", s.ID, "delay_pending").
+					Updates(updates).Error
 			}
 			return nil
 		case "serving":
+			if s.StartConfirmedAt == nil {
+				return nil
+			}
 			if s.ScheduledFinishAt != nil && now.After(*s.ScheduledFinishAt) {
 				finishAt := s.ScheduledFinishAt.Add(time.Duration(s.AutoFinishDelaySeconds) * time.Second)
 				updates := map[string]interface{}{
 					"status":      "auto_finishing",
 					"finished_at": finishAt,
 				}
-				return tx.Model(&models.ServiceSession{}).Where("id = ? AND status = ?", s.ID, "serving").Updates(updates).Error
+				return tx.Model(&models.ServiceSession{}).
+					Where("id = ? AND status = ? AND start_confirmed_at IS NOT NULL", s.ID, "serving").
+					Updates(updates).Error
 			}
 			return nil
 		case "auto_finishing":
+			if s.StartConfirmedAt == nil {
+				return nil
+			}
 			if s.FinishedAt != nil && !now.Before(*s.FinishedAt) {
 				return finalizeSession(tx, &s, now)
 			}
@@ -327,13 +340,18 @@ func autoAssignRoom(tx *gorm.DB, s *models.ServiceSession, now time.Time) error 
 }
 
 func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
+	if s.StartConfirmedAt == nil {
+		return nil
+	}
 	updates := map[string]interface{}{
 		"status": "finished",
 	}
 	if s.FinishedAt == nil {
 		updates["finished_at"] = now
 	}
-	if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND status = ?", s.ID, "auto_finishing").Updates(updates).Error; err != nil {
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND status = ? AND start_confirmed_at IS NOT NULL", s.ID, "auto_finishing").
+		Updates(updates).Error; err != nil {
 		return err
 	}
 

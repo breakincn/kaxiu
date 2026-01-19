@@ -559,14 +559,15 @@ const getUsageStatusText = (usage) => {
     if (sessStatus === 'finished') return '完成'
     if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
     if (supportCS && sessStatus === 'room_locked') return '待选客服'
-    if (supportCS && sessStatus === 'staff_selecting') {
+    // 上钟超时统一优先判断（避免兜底到待结单）
+    if (supportCS) {
       const cnt = Number(usage?.start_timeout_count || 0)
-      if (cnt > 0) return '上钟超时 重新选择客服'
-      return '待选客服'
+      if (cnt > 0 && (sessStatus === 'staff_selecting' || sessStatus === 'start_pending')) {
+        return '上钟超时 重新选择客服'
+      }
     }
-    if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
-      const cnt = Number(usage?.start_timeout_count || 0)
-      if (cnt > 0) return '上钟超时 重新选择客服'
+    if (supportCS && sessStatus === 'staff_selecting') {
+      return '待选客服'
     }
     if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
       const dl = getPrecheckDeadlineAtMs(usage)
@@ -574,6 +575,10 @@ const getUsageStatusText = (usage) => {
     }
     if (supportCS && sessStatus === 'start_pending' && !precheckedAt && getPrecheckDeadlineAtMs(usage) && now >= getPrecheckDeadlineAtMs(usage)) {
       return '上钟超时 重新选择客服'
+    }
+    // 未上钟成功（未确认起单）时，永远不要进入“待下钟/待结单”兜底
+    if (supportCS && !precheckedAt) {
+      return replaceTerms('待起单', card.value?.merchant)
     }
     return replaceTerms('待结单', card.value?.merchant)
   }
@@ -593,9 +598,14 @@ const getUsageStatusClass = (usage) => {
     if (sessStatus === 'finished') return 'text-gray-600'
     if (supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
     if (supportCS && sessStatus === 'room_locked') return 'text-orange-500'
-    if (supportCS && sessStatus === 'staff_selecting') {
+    // 上钟超时统一优先判断（避免兜底到待结单样式）
+    if (supportCS) {
       const cnt = Number(usage?.start_timeout_count || 0)
-      if (cnt > 0) return 'text-red-500'
+      if (cnt > 0 && (sessStatus === 'staff_selecting' || sessStatus === 'start_pending')) {
+        return 'text-red-500'
+      }
+    }
+    if (supportCS && sessStatus === 'staff_selecting') {
       return 'text-orange-500'
     }
     if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
@@ -603,6 +613,10 @@ const getUsageStatusClass = (usage) => {
       if (dl && now < dl) return 'text-red-500'
     }
     if (supportCS && sessStatus === 'start_pending' && !precheckedAt && getPrecheckDeadlineAtMs(usage) && now >= getPrecheckDeadlineAtMs(usage)) {
+      return 'text-red-500'
+    }
+    // 未上钟成功（未确认起单）时，永远不要进入“待下钟/待结单”蓝色兜底
+    if (supportCS && !precheckedAt) {
       return 'text-red-500'
     }
     return 'text-blue-500'
