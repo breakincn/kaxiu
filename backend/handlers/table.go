@@ -11,10 +11,6 @@ import (
 
 var tableActiveSessionStatuses = []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
 
-const (
-	startPendingTimeout = 15 * time.Minute
-)
-
 func TableRooms(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
@@ -115,7 +111,7 @@ func TableRooms(c *gin.Context) {
 			}
 
 			if s.Status == "start_pending" && s.StartConfirmedAt == nil && s.UpdatedAt != nil {
-				startDeadline := s.UpdatedAt.Add(startPendingTimeout)
+				startDeadline := s.UpdatedAt.Add(config.StartPendingTimeout())
 				startRemain := int64(startDeadline.Sub(now).Seconds())
 				if startRemain < 0 {
 					startRemain = 0
@@ -253,7 +249,7 @@ func TableStaff(c *gin.Context) {
 			}
 
 			if s.Status == "start_pending" && s.StartConfirmedAt == nil && s.UpdatedAt != nil {
-				startDeadline := s.UpdatedAt.Add(startPendingTimeout)
+				startDeadline := s.UpdatedAt.Add(config.StartPendingTimeout())
 				startRemain := int64(startDeadline.Sub(now).Seconds())
 				if startRemain < 0 {
 					startRemain = 0

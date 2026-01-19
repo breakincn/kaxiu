@@ -15,7 +15,6 @@ const (
 	schedulerTickInterval  = 3 * time.Second
 	schedulerBatchLimit    = 200
 	staffSelectingTimeout  = 5 * time.Minute
-	startPendingTimeout    = 15 * time.Minute
 	// 房间会话超时时间, 房间会话30分钟内没选技师、没开始服务则超时,自动取消房间锁定
 	sessionAbandonTimeout = 30 * time.Minute
 )
@@ -225,7 +224,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if s.UpdatedAt == nil {
 				return nil
 			}
-			startDeadline := s.UpdatedAt.Add(startPendingTimeout)
+			startDeadline := s.UpdatedAt.Add(config.StartPendingTimeout())
 			if now.Before(startDeadline) {
 				return nil
 			}
