@@ -576,9 +576,7 @@ const getUsageStatusText = (usage) => {
     if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
       const dl = getPrecheckDeadlineAtMs(usage)
       if (dl && now < dl) return replaceTerms('待起单', card.value?.merchant)
-    }
-    if (supportCS && sessStatus === 'start_pending' && !precheckedAt && getPrecheckDeadlineAtMs(usage) && now >= getPrecheckDeadlineAtMs(usage)) {
-      return '上钟超时 重新选择客服'
+      if (dl && now >= dl) return '上钟超时 重新选择客服'
     }
     // 未上钟成功（未确认起单）时，永远不要进入“待下钟/待结单”兜底
     if (supportCS && !precheckedAt) {
@@ -893,6 +891,8 @@ const getUsageStatusCountdownText = (usage) => {
         const seconds = totalSeconds % 60
         return `${minutes}分${seconds}秒`
       }
+      // 超时后不显示倒计时
+      return ''
     }
   }
 
