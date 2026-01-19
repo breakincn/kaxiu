@@ -292,6 +292,11 @@ func UserListAvailableTechnicians(c *gin.Context) {
 	}
 
 	now := time.Now()
+	if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前没有空闲客服，3分钟后可再次选择客服"})
+		return
+	}
+
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	activeSessionStatuses := []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
 	var list []models.TechnicianAttendance
@@ -305,7 +310,7 @@ func UserListAvailableTechnicians(c *gin.Context) {
 		Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, activeSessionStatuses).
 		Where("t.is_active = ?", true).
 		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
-		Order("technician_attendances.updated_at desc").
+		Order("technician_attendances.updated_at asc").
 		Find(&list)
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
@@ -342,6 +347,9 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 		}
 		if s.Status != "staff_selecting" && s.Status != "room_locked" {
 			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可选工作人员"}
+		}
+		if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
+			return apiErr{status: http.StatusBadRequest, msg: "当前没有空闲客服，3分钟后可再次选择客服"}
 		}
 
 		var merchant models.Merchant

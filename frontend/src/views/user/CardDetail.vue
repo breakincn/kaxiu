@@ -824,6 +824,17 @@ const getUsageStatusCountdownText = (usage) => {
 
   // 待选客服倒计时（5分钟）
   if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') && usage?.room_locked_at) {
+    // 冷却期提示（无空闲客服）
+    if (usage?.staff_select_cooldown_until) {
+      const dl = new Date(usage.staff_select_cooldown_until).getTime()
+      const diff = dl - now
+      if (diff > 0) {
+        const totalSeconds = Math.floor(diff / 1000)
+        const minutes = Math.floor(totalSeconds / 60)
+        const seconds = totalSeconds % 60
+        return `${minutes}分${seconds}秒后可再次选择客服`
+      }
+    }
     const lockedTime = new Date(usage.room_locked_at).getTime()
     const deadline = lockedTime + 5 * 60 * 1000 // 5分钟
     const diff = deadline - now
@@ -831,7 +842,7 @@ const getUsageStatusCountdownText = (usage) => {
       const totalSeconds = Math.floor(diff / 1000)
       const minutes = Math.floor(totalSeconds / 60)
       const seconds = totalSeconds % 60
-      return `${minutes}分${seconds}秒`
+      return `${minutes}分${seconds}秒后自动分配客服`
     }
   }
 
@@ -1022,6 +1033,20 @@ const onUsageTouchStart = (e, usage) => {
       const sessStatus = String(latest?.service_session_status || '').trim()
       const sessID = latest?.service_session_id
       const precheckedAt = latest?.service_session_start_confirmed_at
+
+      // 选客服冷却期：提示并不跳转
+      const cooldownUntil = latest?.staff_select_cooldown_until
+      if (cooldownUntil) {
+        const dl = new Date(cooldownUntil).getTime()
+        if (!Number.isNaN(dl) && Date.now() < dl) {
+          const left = Math.max(0, dl - Date.now())
+          const totalSeconds = Math.floor(left / 1000)
+          const minutes = Math.floor(totalSeconds / 60)
+          const seconds = totalSeconds % 60
+          alert(`当前没有空闲客服，${minutes}分${seconds}秒后可再次选择客服`)
+          return
+        }
+      }
 
       if (sessID) {
         if (supportRoom && sessStatus === 'room_selecting') {

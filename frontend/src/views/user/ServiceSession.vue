@@ -71,7 +71,12 @@
         <div class="text-lg font-bold text-primary">{{ session.room.name }}</div>
       </div>
 
-      <div v-if="canChooseTechnician" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+      <div v-if="isStaffSelectCooling" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+        <div class="font-medium text-gray-800 mb-3">选择工作人员</div>
+        <div class="text-gray-500 text-sm">{{ staffSelectCooldownText }}</div>
+      </div>
+
+      <div v-else-if="canChooseTechnician" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="font-medium text-gray-800 mb-3">选择工作人员</div>
 
         <div v-if="techLoading" class="text-gray-500 text-sm">加载工作人员中...</div>
@@ -131,6 +136,16 @@ const extendMinutes = ref(null)
 
 const revokeLoading = ref(false)
 
+const nowTick = ref(Date.now())
+let nowTickTimer = null
+
+const startNowTickTimer = () => {
+  if (nowTickTimer) return
+  nowTickTimer = setInterval(() => {
+    nowTick.value = Date.now()
+  }, 1000)
+}
+
 const usageIdForRevoke = computed(() => {
   const v = String(route.query.usage_id || '').trim()
   return v
@@ -143,6 +158,27 @@ const canRevoke = computed(() => {
 
 const sessionId = computed(() => String(route.params.id || ''))
 
+const staffSelectCooldownLeftMs = computed(() => {
+  const dl = session.value?.staff_select_cooldown_until
+  if (!dl) return 0
+  const ms = new Date(dl).getTime()
+  if (Number.isNaN(ms)) return 0
+  return Math.max(0, ms - nowTick.value)
+})
+
+const isStaffSelectCooling = computed(() => {
+  return staffSelectCooldownLeftMs.value > 0
+})
+
+const staffSelectCooldownText = computed(() => {
+  const ms = staffSelectCooldownLeftMs.value
+  if (!ms) return ''
+  const totalSeconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `当前没有空闲客服，${minutes}分${seconds}秒后可再次选择客服`
+})
+
 const needsRoom = computed(() => {
   if (!session.value) return false
   return session.value.status === 'room_selecting'
@@ -150,6 +186,7 @@ const needsRoom = computed(() => {
 
 const canChooseTechnician = computed(() => {
   if (!session.value) return false
+  if (isStaffSelectCooling.value) return false
   return session.value.status === 'staff_selecting' || session.value.status === 'room_locked'
 })
 
@@ -247,6 +284,7 @@ const loadTechnicians = async () => {
     technicians.value = res.data?.data || []
   } catch (e) {
     technicians.value = []
+    errorText.value = e.response?.data?.error || ''
   } finally {
     techLoading.value = false
   }
@@ -313,6 +351,7 @@ const doExtend = async () => {
 }
 
 onMounted(async () => {
+  startNowTickTimer()
   await refresh()
 })
 </script>

@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"errors"
 	"kabao/config"
 	"kabao/models"
 	"log"
@@ -63,6 +64,63 @@ func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Tim
 		Updates(updates).Error
 }
 
+func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) (bool, error) {
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	activeSessionStatuses := []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
+
+	type candLite struct {
+		ID           uint `gorm:"column:id"`
+		TechnicianID uint `gorm:"column:technician_id"`
+	}
+
+	var cand candLite
+	err := tx.
+		Model(&models.TechnicianAttendance{}).
+		Select("technician_attendances.id, technician_attendances.technician_id").
+		Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
+		Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
+		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", s.MerchantID, start).
+		Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, activeSessionStatuses).
+		Where("t.is_active = ?", true).
+		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
+		Order("technician_attendances.updated_at asc").
+		Limit(1).
+		First(&cand).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	var att models.TechnicianAttendance
+	if err := tx.
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL AND status = ?", cand.ID, s.MerchantID, cand.TechnicianID, start, "idle").
+		First(&att).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	if err := tx.Model(&models.TechnicianAttendance{}).Where("id = ?", att.ID).Update("status", "busy").Error; err != nil {
+		return false, err
+	}
+
+	updates := map[string]interface{}{
+		"technician_id":               cand.TechnicianID,
+		"status":                      "start_pending",
+		"staff_select_cooldown_until": nil,
+	}
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND technician_id IS NULL AND status IN ('room_locked','staff_selecting')", s.ID).
+		Updates(updates).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func StartServiceSessionScheduler() {
 	go func() {
 		ticker := time.NewTicker(schedulerTickInterval)
@@ -115,8 +173,14 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 
 		switch s.Status {
 		case "room_locked", "staff_selecting":
-			// 选人超时释放房间（仅限：有房间、已锁定房间、未选择工作人员）
+			// 选客服超时：
+			// - 5分钟内：等待用户选择
+			// - 5分钟后：自动分配空闲最久的客服
+			// - 若无空闲客服：进入3分钟冷却，冷却后用户可再次选择
 			if s.RoomID == nil || s.TechnicianID != nil || s.RoomLockedAt == nil {
+				return nil
+			}
+			if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
 				return nil
 			}
 			var merchant models.Merchant
@@ -130,8 +194,21 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if now.Before(deadline) {
 				return nil
 			}
-			// 5分钟超时后直接取消会话，彻底释放房间
-			return cancelAndReleaseSession(tx, &s, now)
+			ok, err := autoAssignTechnicianIfPossible(tx, &s, now)
+			if err != nil {
+				return err
+			}
+			if ok {
+				return nil
+			}
+			dl := now.Add(3 * time.Minute)
+			updates := map[string]interface{}{
+				"status":                      "staff_selecting",
+				"staff_select_cooldown_until": &dl,
+			}
+			return tx.Model(&models.ServiceSession{}).
+				Where("id = ? AND technician_id IS NULL AND status IN ('room_locked','staff_selecting')", s.ID).
+				Updates(updates).Error
 		case "room_selecting":
 			if s.RoomSelectDeadlineAt != nil && now.After(*s.RoomSelectDeadlineAt) {
 				if s.TechnicianID == nil && s.StartedAt == nil && s.CreatedAt != nil && now.Sub(*s.CreatedAt) >= sessionAbandonTimeout {

@@ -122,6 +122,9 @@ func InitDB() {
 	// 添加字段注释
 	addFieldComments()
 
+	// service_sessions: 选客服无空闲时冷却截止时间
+	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `staff_select_cooldown_until` datetime(3) NULL COMMENT '选客服无空闲时冷却截止时间'")
+
 	// 添加 support_order_complete 字段到 merchants 表
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `support_order_complete` BOOLEAN DEFAULT FALSE COMMENT '是否开启结单功能（0-不开启，1-开启）'")
 

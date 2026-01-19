@@ -14,6 +14,7 @@ type ServiceSession struct {
 	TechnicianID   *uint  `json:"technician_id" gorm:"index;comment:工作人员ID"`
 	StartTimeoutCount  int        `json:"start_timeout_count" gorm:"column:start_timeout_count;default:0"`
 	StartTimeoutLastAt *time.Time `json:"start_timeout_last_at" gorm:"column:start_timeout_last_at;type:datetime(3)"`
+	StaffSelectCooldownUntil *time.Time `json:"staff_select_cooldown_until" gorm:"column:staff_select_cooldown_until;type:datetime(3);comment:选客服无空闲时冷却截止时间"`
 
 	Status string `json:"status" gorm:"size:30;default:created;comment:状态（created-已创建，room_selecting-选房中，room_locked-房间已锁定，staff_selecting-选人中，start_pending-待起单，delay_pending-延迟中，serving-服务中，auto_finishing-待自动结单，finished-已完成，canceled-已取消）"`
 
