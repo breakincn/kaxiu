@@ -256,6 +256,14 @@
               <div v-if="!isUsageSessionFinishedButUsageInProgress(usage)" :class="getUsageStatusClass(usage)" class="text-sm font-medium">
                 {{ getUsageStatusText(usage) }}
               </div>
+              <button
+                v-if="isUsageStartTimeout(usage) && usage?.can_revoke"
+                class="mt-1 px-2 py-1 text-xs border border-red-400 text-red-500 rounded disabled:opacity-50"
+                :disabled="revokeLoading"
+                @click.stop="doRevokeUsage(usage)"
+              >
+                {{ revokeLoading ? '撤销中...' : '撤销核销' }}
+              </button>
               <div v-if="getUsageStatusCountdownText(usage)" class="text-xs mt-0.5 font-mono" :class="getUsageStatusCountdownClass(usage)">
                 {{ getUsageStatusCountdownText(usage) }}
               </div>
@@ -548,6 +556,22 @@ let usageTouchStartX = 0
 let usageTouchStartY = 0
 let usageTouchMoved = false
 
+const revokeLoading = ref(false)
+
+const isUsageStartTimeout = (usage) => {
+  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+  if (!supportCS) return false
+  const sessStatus = String(usage?.service_session_status || '').trim()
+  const precheckedAt = usage?.service_session_start_confirmed_at
+  const cnt = Number(usage?.start_timeout_count || 0)
+  const precheckDl = getPrecheckDeadlineAtMs(usage)
+  return (
+    (cnt > 0 && (sessStatus === 'staff_selecting' || sessStatus === 'start_pending')) ||
+    (sessStatus === 'start_pending' && !precheckedAt && precheckDl && Date.now() >= precheckDl) ||
+    (sessStatus === 'canceled' && !precheckedAt)
+  )
+}
+
 const getUsageStatusText = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s === 'in_progress') {
@@ -724,10 +748,13 @@ const getUsageServiceDurationMinutes = (usage) => {
   return 50
 }
 
-const getStartPendingTimeoutMs = () => {
-  const secs = Number(card.value?.start_pending_timeout_seconds || 0)
-  if (!Number.isFinite(secs) || secs <= 0) return 0
-  return secs * 1000
+const getStartPendingTimeoutMs = (usage) => {
+  const fromSession = Number(usage?.service_session_start_pending_timeout_seconds || 0)
+  if (Number.isFinite(fromSession) && fromSession > 0) return fromSession * 1000
+
+  const fromCard = Number(card.value?.start_pending_timeout_seconds || 0)
+  if (!Number.isFinite(fromCard) || fromCard <= 0) return 0
+  return fromCard * 1000
 }
 
 const getUsageServiceStartAtMs = (usage) => {
@@ -736,7 +763,7 @@ const getUsageServiceStartAtMs = (usage) => {
 
   // 若未扫码起单，则按后端调度逻辑推算：updated_at + 15min + 60s
   const sessUpdatedAtMs = getUsageSessionUpdatedAtMs(usage)
-  const startPendingTimeoutMs = getStartPendingTimeoutMs()
+  const startPendingTimeoutMs = getStartPendingTimeoutMs(usage)
   if (sessUpdatedAtMs && startPendingTimeoutMs) return sessUpdatedAtMs + startPendingTimeoutMs + 60 * 1000
 
   // 无服务会话信息时退化：以核销时间作为服务开始时间
@@ -821,7 +848,7 @@ const getUsageTrackingNumber = (usage) => {
 const getPrecheckDeadlineAtMs = (usage) => {
   const ms = getUsageSessionUpdatedAtMs(usage)
   if (!ms) return 0
-  const startPendingTimeoutMs = getStartPendingTimeoutMs()
+  const startPendingTimeoutMs = getStartPendingTimeoutMs(usage)
   if (!startPendingTimeoutMs) return 0
   return ms + startPendingTimeoutMs
 }
@@ -865,8 +892,8 @@ const getUsageStatusCountdownText = (usage) => {
     }
   }
 
-  // 待选客服倒计时（5分钟）
-  if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') && usage?.room_locked_at) {
+  // 待选客服倒计时：不在卡详情页展示（避免误导为“自动分配循环”）
+  if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) {
     // 冷却期提示（无空闲客服）
     if (usage?.staff_select_cooldown_until) {
       const dl = new Date(usage.staff_select_cooldown_until).getTime()
@@ -878,15 +905,7 @@ const getUsageStatusCountdownText = (usage) => {
         return `${minutes}分${seconds}秒后可再次选择客服`
       }
     }
-    const lockedTime = new Date(usage.room_locked_at).getTime()
-    const deadline = lockedTime + 5 * 60 * 1000 // 5分钟
-    const diff = deadline - now
-    if (diff > 0) {
-      const totalSeconds = Math.floor(diff / 1000)
-      const minutes = Math.floor(totalSeconds / 60)
-      const seconds = totalSeconds % 60
-      return `${minutes}分${seconds}秒后自动分配客服`
-    }
+    return ''
   }
 
   // 待起单倒计时（15分钟）
@@ -958,13 +977,6 @@ const trySwitchUsageQrToFinish = async () => {
     stopUsageQrPoll()
     closeUsageQrModal()
     alert('上钟超时，请重新选择客服')
-    const sessID = latest?.service_session_id
-    if (sessID) {
-      router.push({
-        path: `/user/service-sessions/${sessID}`,
-        query: { next_step: 'staff_select', usage_id: String(latest?.id || ''), can_revoke: latest?.can_revoke ? '1' : '0' }
-      })
-    }
     return
   }
   if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
@@ -973,13 +985,6 @@ const trySwitchUsageQrToFinish = async () => {
       stopUsageQrPoll()
       closeUsageQrModal()
       alert('上钟超时，请重新选择客服')
-      const sessID = latest?.service_session_id
-      if (sessID) {
-        router.push({
-          path: `/user/service-sessions/${sessID}`,
-          query: { next_step: 'staff_select', usage_id: String(latest?.id || ''), can_revoke: latest?.can_revoke ? '1' : '0' }
-        })
-      }
       return
     }
     return
@@ -1004,23 +1009,17 @@ const openUsageQrModal = async (usage) => {
   const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_start_confirmed_at
 
-  // 会话已取消但 usage 仍在进行中：起单二维码失效，直接引导去选客服
+  // 会话已取消但 usage 仍在进行中：起单二维码失效（不自动跳转，改为长按记录进入重新选客服）
   if (supportCS && sessID && sessStatus === 'canceled' && !precheckedAt) {
-    await router.push({
-      path: `/user/service-sessions/${sessID}`,
-      query: { next_step: 'staff_select', usage_id: String(usage?.id || ''), can_revoke: usage?.can_revoke ? '1' : '0' }
-    })
+    alert('上钟超时，请长按该记录重新选择客服')
     return
   }
 
-  // 上钟超时后起单二维码失效，直接引导去选客服
+  // 上钟超时后起单二维码失效（不自动跳转，改为长按记录进入重新选客服）
   if (supportCS && sessID && sessStatus === 'start_pending' && !precheckedAt) {
     const dl = getPrecheckDeadlineAtMs(usage)
     if (dl && Date.now() >= dl) {
-      await router.push({
-        path: `/user/service-sessions/${sessID}`,
-        query: { next_step: 'staff_select', usage_id: String(usage?.id || ''), can_revoke: usage?.can_revoke ? '1' : '0' }
-      })
+      alert('上钟超时，请长按该记录重新选择客服')
       return
     }
   }
@@ -1145,10 +1144,7 @@ const onUsageTouchStart = (e, usage) => {
 
       // 上钟超时：二维码应失效，直接进入重新选择客服
       if (supportCS && sessID) {
-        const cnt = Number(latest?.start_timeout_count || 0)
-        const precheckDl = getPrecheckDeadlineAtMs(latest)
-        const isStartTimeout = (cnt > 0 && (sessStatus === 'staff_selecting' || sessStatus === 'start_pending')) || (sessStatus === 'start_pending' && !precheckedAt && precheckDl && Date.now() >= precheckDl) || (sessStatus === 'canceled' && !precheckedAt)
-        if (isStartTimeout) {
+        if (isUsageStartTimeout(latest)) {
           router.push({
             path: `/user/service-sessions/${sessID}`,
             query: { next_step: 'staff_select', usage_id: String(latest?.id || ''), can_revoke: latest?.can_revoke ? '1' : '0' }
@@ -1174,6 +1170,31 @@ const onUsageTouchStart = (e, usage) => {
       openUsageQrModal(latest)
     })()
   }, 550)
+}
+
+const doRevokeUsage = async (usage) => {
+  if (revokeLoading.value) return
+  if (!usage?.can_revoke) return
+  const usageId = String(usage?.id || '').trim()
+  if (!usageId) return
+  const ok = window.confirm('确认撤销该次核销？撤销后将返还次数，如需继续消费需重新核销。')
+  if (!ok) return
+
+  revokeLoading.value = true
+  try {
+    const res = await usageApi.revokeUsage(usageId)
+    const remain = res?.data?.data?.remain_times
+    await fetchCard()
+    if (Number.isFinite(Number(remain))) {
+      alert(`撤销成功，剩余次数：${remain}`)
+    } else {
+      alert('撤销成功')
+    }
+  } catch (e) {
+    alert(e.response?.data?.error || '撤销失败')
+  } finally {
+    revokeLoading.value = false
+  }
 }
 
 const onUsageTouchMove = (e) => {

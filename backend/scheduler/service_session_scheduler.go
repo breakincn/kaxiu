@@ -17,7 +17,18 @@ const (
 	staffSelectingTimeout  = 5 * time.Minute
 	// 房间会话超时时间, 房间会话30分钟内没选技师、没开始服务则超时,自动取消房间锁定
 	sessionAbandonTimeout = 30 * time.Minute
+	autoStartPendingTimeoutSeconds = 15 * 60
 )
+
+func getStartPendingTimeoutForSession(s *models.ServiceSession) time.Duration {
+	if s == nil {
+		return config.StartPendingTimeout()
+	}
+	if s.StartPendingTimeoutSeconds > 0 {
+		return time.Duration(s.StartPendingTimeoutSeconds) * time.Second
+	}
+	return config.StartPendingTimeout()
+}
 
 func finishAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, finishedAt time.Time) error {
 	updates := map[string]interface{}{
@@ -111,6 +122,8 @@ func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now t
 		"technician_id":               cand.TechnicianID,
 		"status":                      "start_pending",
 		"staff_select_cooldown_until": nil,
+		"staff_select_entered_at":     nil,
+		"start_pending_timeout_seconds": autoStartPendingTimeoutSeconds,
 	}
 	if err := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND technician_id IS NULL AND status IN ('room_locked','staff_selecting')", s.ID).
@@ -182,6 +195,10 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
 				return nil
 			}
+			// 必须在用户进入选择客服页后才允许开始5分钟自动分配计时
+			if s.StaffSelectEnteredAt == nil {
+				return nil
+			}
 			var merchant models.Merchant
 			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 				return err
@@ -189,7 +206,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if !merchant.SupportRoom {
 				return nil
 			}
-			deadline := s.RoomLockedAt.Add(staffSelectingTimeout)
+			deadline := s.StaffSelectEnteredAt.Add(staffSelectingTimeout)
 			if now.Before(deadline) {
 				return nil
 			}
@@ -224,7 +241,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if s.UpdatedAt == nil {
 				return nil
 			}
-			startDeadline := s.UpdatedAt.Add(config.StartPendingTimeout())
+			startDeadline := s.UpdatedAt.Add(getStartPendingTimeoutForSession(&s))
 			if now.Before(startDeadline) {
 				return nil
 			}
@@ -232,6 +249,8 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			updates := map[string]interface{}{
 				"status":                "staff_selecting",
 				"technician_id":         nil,
+				"staff_select_entered_at": nil,
+				"start_pending_timeout_seconds": 0,
 				"start_timeout_count":   gorm.Expr("start_timeout_count + ?", 1),
 				"start_timeout_last_at": now,
 			}

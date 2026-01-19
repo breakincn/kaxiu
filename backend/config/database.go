@@ -124,6 +124,10 @@ func InitDB() {
 
 	// service_sessions: 选客服无空闲时冷却截止时间
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `staff_select_cooldown_until` datetime(3) NULL COMMENT '选客服无空闲时冷却截止时间'")
+	// service_sessions: 用户进入选择客服页时间（以拉取可选客服列表为准）
+	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `staff_select_entered_at` datetime(3) NULL COMMENT '用户进入选择客服页时间（以拉取可选客服列表为准）'")
+	// service_sessions: 待起单超时秒数（0表示使用系统默认）
+	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `start_pending_timeout_seconds` int NOT NULL DEFAULT 0 COMMENT '待起单超时秒数（0表示使用系统默认）'")
 
 	// 添加 support_order_complete 字段到 merchants 表
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `support_order_complete` BOOLEAN DEFAULT FALSE COMMENT '是否开启结单功能（0-不开启，1-开启）'")

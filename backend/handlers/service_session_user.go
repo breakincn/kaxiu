@@ -291,7 +291,16 @@ func UserListAvailableTechnicians(c *gin.Context) {
 		return
 	}
 
+	// 记录用户进入选择客服页的时间：以“拉取可选客服列表”为准，仅首次写入
 	now := time.Now()
+	if s.Status == "staff_selecting" || s.Status == "room_locked" {
+		if s.StaffSelectEnteredAt == nil {
+			config.DB.Model(&models.ServiceSession{}).
+				Where("id = ? AND user_id = ? AND staff_select_entered_at IS NULL AND status IN ('staff_selecting','room_locked')", s.ID, userID).
+				Update("staff_select_entered_at", now)
+			s.StaffSelectEnteredAt = &now
+		}
+	}
 	if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "当前没有空闲客服，3分钟后可再次选择客服"})
 		return
@@ -390,6 +399,9 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
 			"technician_id": input.TechnicianID,
 			"status":        "start_pending",
+			"staff_select_entered_at": nil,
+			"staff_select_cooldown_until": nil,
+			"start_pending_timeout_seconds": 15 * 60,
 		}).Error; err != nil {
 			return err
 		}

@@ -32,15 +32,6 @@
         <div v-if="nextStepText" class="mt-3 p-3 bg-primary-light border border-gray-100 rounded-lg text-sm text-primary">
           {{ nextStepText }}
         </div>
-
-			<button
-				v-if="canRevoke"
-				class="w-full mt-4 py-3 border-2 border-red-400 text-red-500 font-medium rounded-lg hover:bg-red-50 disabled:opacity-50"
-				:disabled="revokeLoading"
-				@click="doRevoke"
-			>
-				{{ revokeLoading ? '撤销中...' : '撤销核销' }}
-			</button>
       </div>
 
       <div v-if="needsRoom" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
@@ -115,7 +106,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { userServiceSessionApi, usageApi } from '../../api'
+import { userServiceSessionApi } from '../../api'
 import { replaceTerms } from '../../utils/terms'
 
 const route = useRoute()
@@ -134,7 +125,6 @@ const roomAutoAdjustedMsg = ref('')
 const errorText = ref('')
 const extendMinutes = ref(null)
 
-const revokeLoading = ref(false)
 
 const nowTick = ref(Date.now())
 let nowTickTimer = null
@@ -146,15 +136,6 @@ const startNowTickTimer = () => {
   }, 1000)
 }
 
-const usageIdForRevoke = computed(() => {
-  const v = String(route.query.usage_id || '').trim()
-  return v
-})
-
-const canRevoke = computed(() => {
-  const v = String(route.query.can_revoke || '').trim()
-  return v === '1' && usageIdForRevoke.value
-})
 
 const sessionId = computed(() => String(route.params.id || ''))
 
@@ -219,29 +200,6 @@ const statusText = (s) => {
 
 const goBack = () => router.back()
 
-const doRevoke = async () => {
-  if (!canRevoke.value) return
-  if (!usageIdForRevoke.value) return
-  const ok = window.confirm('确认撤销该次核销？撤销后将返还次数，如需继续消费需重新核销。')
-  if (!ok) return
-
-  revokeLoading.value = true
-  errorText.value = ''
-  try {
-    const res = await usageApi.revokeUsage(usageIdForRevoke.value)
-    const remain = res?.data?.data?.remain_times
-    const cardId = session.value?.card_id
-    if (cardId) {
-      await router.replace({ path: `/user/cards/${cardId}`, query: { revoked: '1', remain_times: String(remain || '') } })
-    } else {
-      await router.back()
-    }
-  } catch (e) {
-    errorText.value = e.response?.data?.error || '撤销失败'
-  } finally {
-    revokeLoading.value = false
-  }
-}
 
 const refresh = async () => {
   errorText.value = ''

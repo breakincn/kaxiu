@@ -54,6 +54,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		StartTimeoutCount  int        `gorm:"column:start_timeout_count"`
 		StartConfirmedAt   *time.Time `gorm:"column:start_confirmed_at"`
 		UpdatedAt          *time.Time `gorm:"column:updated_at"`
+		StartPendingTimeoutSeconds int `gorm:"column:start_pending_timeout_seconds"`
 		RoomSelectDeadlineAt *time.Time `gorm:"column:room_select_deadline_at"`
 		RoomLockedAt         *time.Time `gorm:"column:room_locked_at"`
 		StaffSelectCooldownUntil *time.Time `gorm:"column:staff_select_cooldown_until"`
@@ -62,7 +63,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions").
-		Select("id, initial_usage_id, project_id, status, room_id, technician_id, start_timeout_count, start_confirmed_at, updated_at, room_select_deadline_at, room_locked_at, staff_select_cooldown_until").
+		Select("id, initial_usage_id, project_id, status, room_id, technician_id, start_timeout_count, start_confirmed_at, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until").
 		Where("initial_usage_id IN ?", ids).
 		Find(&sessions).Error; err != nil {
 		return
@@ -161,6 +162,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 			u.ServiceSessionStatus = s.Status
 			u.ServiceSessionStartConfirmedAt = s.StartConfirmedAt
 			u.ServiceSessionUpdatedAt = s.UpdatedAt
+			u.ServiceSessionStartPendingTimeoutSeconds = s.StartPendingTimeoutSeconds
 			u.StartTimeoutCount = s.StartTimeoutCount
 			u.RoomSelectDeadlineAt = s.RoomSelectDeadlineAt
 			u.RoomLockedAt = s.RoomLockedAt

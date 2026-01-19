@@ -14,14 +14,12 @@ import (
 var tableActiveSessionStatuses = []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
 
 func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
-	deadline := now.Add(-config.StartPendingTimeout())
-
 	// 仅处理“待起单”且已超时、还绑着技师的会话
 	var ids []uint
 	if err := config.DB.
 		Model(&models.ServiceSession{}).
 		Select("id").
-		Where("merchant_id = ? AND status = 'start_pending' AND start_confirmed_at IS NULL AND technician_id IS NOT NULL AND updated_at IS NOT NULL AND updated_at <= ?", merchantID, deadline).
+		Where("merchant_id = ? AND status = 'start_pending' AND start_confirmed_at IS NULL AND technician_id IS NOT NULL AND updated_at IS NOT NULL", merchantID).
 		Limit(200).
 		Pluck("id", &ids).Error; err != nil {
 		return
@@ -39,7 +37,11 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 			if s.Status != "start_pending" || s.StartConfirmedAt != nil || s.UpdatedAt == nil {
 				continue
 			}
-			startDeadline := s.UpdatedAt.Add(config.StartPendingTimeout())
+			timeout := config.StartPendingTimeout()
+			if s.StartPendingTimeoutSeconds > 0 {
+				timeout = time.Duration(s.StartPendingTimeoutSeconds) * time.Second
+			}
+			startDeadline := s.UpdatedAt.Add(timeout)
 			if now.Before(startDeadline) {
 				continue
 			}
@@ -48,6 +50,8 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 			updates := map[string]interface{}{
 				"status":                "staff_selecting",
 				"technician_id":         nil,
+				"staff_select_entered_at": nil,
+				"start_pending_timeout_seconds": 0,
 				"start_timeout_count":   gorm.Expr("start_timeout_count + ?", 1),
 				"start_timeout_last_at": now,
 			}

@@ -15,6 +15,8 @@ type ServiceSession struct {
 	StartTimeoutCount  int        `json:"start_timeout_count" gorm:"column:start_timeout_count;default:0"`
 	StartTimeoutLastAt *time.Time `json:"start_timeout_last_at" gorm:"column:start_timeout_last_at;type:datetime(3)"`
 	StaffSelectCooldownUntil *time.Time `json:"staff_select_cooldown_until" gorm:"column:staff_select_cooldown_until;type:datetime(3);comment:选客服无空闲时冷却截止时间"`
+	StaffSelectEnteredAt *time.Time `json:"staff_select_entered_at" gorm:"column:staff_select_entered_at;type:datetime(3);comment:用户进入选择客服页时间（以拉取可选客服列表为准）"`
+	StartPendingTimeoutSeconds int `json:"start_pending_timeout_seconds" gorm:"column:start_pending_timeout_seconds;default:0;comment:待起单超时秒数（0表示使用系统默认）"`
 
 	Status string `json:"status" gorm:"size:30;default:created;comment:状态（created-已创建，room_selecting-选房中，room_locked-房间已锁定，staff_selecting-选人中，start_pending-待起单，delay_pending-延迟中，serving-服务中，auto_finishing-待自动结单，finished-已完成，canceled-已取消）"`
 
