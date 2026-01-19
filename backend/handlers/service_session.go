@@ -312,7 +312,7 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 			"status":        "start_pending",
 			"staff_select_entered_at": nil,
 			"staff_select_cooldown_until": nil,
-			"start_pending_timeout_seconds": 15 * 60,
+			"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
 		}
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err

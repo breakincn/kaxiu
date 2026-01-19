@@ -761,7 +761,7 @@ const getUsageServiceStartAtMs = (usage) => {
   const confirmedAtMs = getUsageSessionStartConfirmedAtMs(usage)
   if (confirmedAtMs) return confirmedAtMs
 
-  // 若未扫码起单，则按后端调度逻辑推算：updated_at + 15min + 60s
+  // 若未扫码起单，则按后端调度逻辑推算：updated_at + start_pending_timeout_seconds + 60s
   const sessUpdatedAtMs = getUsageSessionUpdatedAtMs(usage)
   const startPendingTimeoutMs = getStartPendingTimeoutMs(usage)
   if (sessUpdatedAtMs && startPendingTimeoutMs) return sessUpdatedAtMs + startPendingTimeoutMs + 60 * 1000
@@ -908,7 +908,7 @@ const getUsageStatusCountdownText = (usage) => {
     return ''
   }
 
-  // 待起单倒计时（15分钟）
+  // 待起单倒计时
   if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
     const dl = getPrecheckDeadlineAtMs(usage)
     if (dl) {

@@ -17,7 +17,6 @@ const (
 	staffSelectingTimeout  = 5 * time.Minute
 	// 房间会话超时时间, 房间会话30分钟内没选技师、没开始服务则超时,自动取消房间锁定
 	sessionAbandonTimeout = 30 * time.Minute
-	autoStartPendingTimeoutSeconds = 15 * 60
 )
 
 func getStartPendingTimeoutForSession(s *models.ServiceSession) time.Duration {
@@ -123,7 +122,7 @@ func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now t
 		"status":                      "start_pending",
 		"staff_select_cooldown_until": nil,
 		"staff_select_entered_at":     nil,
-		"start_pending_timeout_seconds": autoStartPendingTimeoutSeconds,
+		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
 	}
 	if err := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND technician_id IS NULL AND status IN ('room_locked','staff_selecting')", s.ID).
