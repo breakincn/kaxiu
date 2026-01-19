@@ -328,7 +328,10 @@ export const shopApi = {
   getDirectPurchases: () => api.get('/user/direct-purchases'),
   
   // 商户营业状态
-  toggleBusinessStatus: (data) => api.put('/merchant/business-status', data)
+  toggleBusinessStatus: (data) => api.put('/merchant/business-status', data),
+  
+  // 配置信息
+  getConfig: () => api.get('/merchant/config')
 }
 
 export default api

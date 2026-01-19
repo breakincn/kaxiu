@@ -96,6 +96,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.PUT("/technician-alias", handlers.UpdateTechnicianAlias)
 	auth.PUT("/business-status", middleware.RequirePermission("merchant.business_status.manage"), handlers.ToggleMerchantBusinessStatus)
 	auth.GET("/permissions", handlers.GetMyPermissions)
+	auth.GET("/config", handlers.GetConfig)
 	// 搜索用户
 	auth.GET("/users/search", handlers.MerchantSearchUsers)
 

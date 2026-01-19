@@ -67,7 +67,7 @@
                           {{ it.phase_text }}
                         </span>
                         <span v-if="it.phase_class === 'start_pending'" class="ml-2 text-red-500 font-mono">
-                          {{ calculateRemainTime(it.updated_at, 15 * 60) }}
+                          {{ calculateRemainTime(it.updated_at, config.startPendingTimeoutSeconds || 180) }}
                         </span>
                         <span v-else-if="it.phase_class === 'room_selecting'" class="ml-2 text-blue-600 font-mono">
                           {{ calculateRemainTime(it.room_select_deadline_at) }}
@@ -131,6 +131,7 @@ const rooms = ref([])
 const staff = ref([])
 const currentTime = ref(new Date())
 const merchant = ref({})
+const config = ref({})
 
 // 定时器
 let timer = null
@@ -152,6 +153,16 @@ const fetchMerchant = async () => {
     merchant.value = res.data?.data || {}
   } catch (e) {
     console.error('加载商户信息失败:', e)
+  }
+}
+
+const fetchConfig = async () => {
+  try {
+    const res = await merchantApi.getConfig()
+    config.value = res.data?.data || {}
+  } catch (e) {
+    console.error('加载配置失败:', e)
+    config.value = { startPendingTimeoutSeconds: 180 } // 默认3分钟
   }
 }
 
@@ -296,6 +307,7 @@ onMounted(async () => {
     localStorage.setItem('tableActiveTab', 'rooms')
   }
   await fetchMerchant()
+  await fetchConfig()
   await load()
   // 启动定时器，每秒更新一次
   timer = setInterval(updateCurrentTime, 1000)
