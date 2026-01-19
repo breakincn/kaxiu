@@ -724,13 +724,20 @@ const getUsageServiceDurationMinutes = (usage) => {
   return 50
 }
 
+const getStartPendingTimeoutMs = () => {
+  const secs = Number(card.value?.start_pending_timeout_seconds || 0)
+  if (!Number.isFinite(secs) || secs <= 0) return 0
+  return secs * 1000
+}
+
 const getUsageServiceStartAtMs = (usage) => {
   const confirmedAtMs = getUsageSessionStartConfirmedAtMs(usage)
   if (confirmedAtMs) return confirmedAtMs
 
   // 若未扫码起单，则按后端调度逻辑推算：updated_at + 15min + 60s
   const sessUpdatedAtMs = getUsageSessionUpdatedAtMs(usage)
-  if (sessUpdatedAtMs) return sessUpdatedAtMs + 15 * 60 * 1000 + 60 * 1000
+  const startPendingTimeoutMs = getStartPendingTimeoutMs()
+  if (sessUpdatedAtMs && startPendingTimeoutMs) return sessUpdatedAtMs + startPendingTimeoutMs + 60 * 1000
 
   // 无服务会话信息时退化：以核销时间作为服务开始时间
   const usedAtMs = getUsageUsedAtMs(usage)
@@ -814,7 +821,9 @@ const getUsageTrackingNumber = (usage) => {
 const getPrecheckDeadlineAtMs = (usage) => {
   const ms = getUsageSessionUpdatedAtMs(usage)
   if (!ms) return 0
-  return ms + 15 * 60 * 1000
+  const startPendingTimeoutMs = getStartPendingTimeoutMs()
+  if (!startPendingTimeoutMs) return 0
+  return ms + startPendingTimeoutMs
 }
 
 const nowTick = ref(Date.now())

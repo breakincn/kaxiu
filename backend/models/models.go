@@ -90,6 +90,8 @@ type Card struct {
 	EndDate        *time.Time `json:"end_date" gorm:"type:date;comment:有效期结束日期"`
 	CreatedAt      *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
+	StartPendingTimeoutSeconds int64 `json:"start_pending_timeout_seconds" gorm:"-"`
+
 	User     User              `json:"user" gorm:"foreignKey:UserID"`
 	Merchant Merchant          `json:"merchant" gorm:"foreignKey:MerchantID"`
 	Projects []MerchantProject `json:"projects" gorm:"-"`

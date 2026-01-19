@@ -81,6 +81,8 @@ func GetCard(c *gin.Context) {
 		return
 	}
 
+	card.StartPendingTimeoutSeconds = int64(config.StartPendingTimeout().Seconds())
+
 	// 查询卡片关联项目
 	var projects []models.MerchantProject
 	config.DB.Raw(`

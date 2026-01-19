@@ -66,8 +66,8 @@
                         <span class="font-medium" :class="it.phase_class === 'start_pending' ? 'text-red-500' : (it.phase_class === 'finish_failed' ? 'text-red-500' : 'text-blue-600')">
                           {{ it.phase_text }}
                         </span>
-                        <span v-if="it.phase_class === 'start_pending'" class="ml-2 text-red-500 font-mono">
-                          {{ calculateRemainTime(it.updated_at, config.startPendingTimeoutSeconds || 900) }}
+                        <span v-if="it.phase_class === 'start_pending' && config.startPendingTimeoutSeconds" class="ml-2 text-red-500 font-mono">
+                          {{ calculateRemainTime(it.updated_at, config.startPendingTimeoutSeconds) }}
                         </span>
                         <span v-else-if="it.phase_class === 'room_selecting'" class="ml-2 text-blue-600 font-mono">
                           {{ calculateRemainTime(it.room_select_deadline_at) }}
@@ -162,7 +162,7 @@ const fetchConfig = async () => {
     config.value = res.data?.data || {}
   } catch (e) {
     console.error('加载配置失败:', e)
-    config.value = { startPendingTimeoutSeconds: 900 } // 默认15分钟
+    config.value = {}
   }
 }
 

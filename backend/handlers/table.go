@@ -7,15 +7,73 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var tableActiveSessionStatuses = []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
+
+func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
+	deadline := now.Add(-config.StartPendingTimeout())
+
+	// 仅处理“待起单”且已超时、还绑着技师的会话
+	var ids []uint
+	if err := config.DB.
+		Model(&models.ServiceSession{}).
+		Select("id").
+		Where("merchant_id = ? AND status = 'start_pending' AND start_confirmed_at IS NULL AND technician_id IS NOT NULL AND updated_at IS NOT NULL AND updated_at <= ?", merchantID, deadline).
+		Limit(200).
+		Pluck("id", &ids).Error; err != nil {
+		return
+	}
+	if len(ids) == 0 {
+		return
+	}
+
+	_ = config.DB.Transaction(func(tx *gorm.DB) error {
+		for _, id := range ids {
+			var s models.ServiceSession
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", id, merchantID).First(&s).Error; err != nil {
+				continue
+			}
+			if s.Status != "start_pending" || s.StartConfirmedAt != nil || s.UpdatedAt == nil {
+				continue
+			}
+			startDeadline := s.UpdatedAt.Add(config.StartPendingTimeout())
+			if now.Before(startDeadline) {
+				continue
+			}
+
+			oldTechID := s.TechnicianID
+			updates := map[string]interface{}{
+				"status":                "staff_selecting",
+				"technician_id":         nil,
+				"start_timeout_count":   gorm.Expr("start_timeout_count + ?", 1),
+				"start_timeout_last_at": now,
+			}
+			if err := tx.Model(&models.ServiceSession{}).
+				Where("id = ? AND status = ? AND start_confirmed_at IS NULL", s.ID, "start_pending").
+				Updates(updates).Error; err != nil {
+				continue
+			}
+
+			if oldTechID != nil && *oldTechID > 0 {
+				_ = tx.Model(&models.TechnicianAttendance{}).
+					Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *oldTechID, "busy").
+					Updates(map[string]interface{}{"status": "idle"}).Error
+			}
+		}
+		return nil
+	})
+}
 
 func TableRooms(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
 		return
 	}
+
+	lazyReleaseStartPendingTimeout(merchantID, time.Now())
 
 	var rooms []models.Room
 	config.DB.Where("merchant_id = ?", merchantID).Order("id asc").Find(&rooms)
@@ -138,6 +196,8 @@ func TableStaff(c *gin.Context) {
 	if !ok {
 		return
 	}
+
+	lazyReleaseStartPendingTimeout(merchantID, time.Now())
 
 	// 专业客服（排除店长/前台）
 	var techs []models.Technician
