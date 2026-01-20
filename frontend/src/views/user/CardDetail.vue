@@ -811,20 +811,10 @@ const shouldShowServiceStartTime = (usage) => {
 const shouldShowServiceRemainTime = (usage) => {
   if (String(usage?.status || '').trim() !== 'in_progress') return false
   
-  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
-  const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_start_confirmed_at
   
-  // 如果支持客服且处于待起单状态且未确认起单，则不显示剩余时间
-  if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
-    return false
-  }
-
-  // 会话已取消但 usage 仍在进行中：不显示剩余时间
-  if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
-    return false
-  }
-  
+  // 仅在已扫码起单确认后才显示剩余时间（避免未上钟前显示预估时间）
+  if (!precheckedAt) return false
   return true
 }
 
