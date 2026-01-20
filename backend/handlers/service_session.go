@@ -15,6 +15,21 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+func technicianServiceStatusText(status string) string {
+	switch strings.TrimSpace(status) {
+	case "idle":
+		return "空闲"
+	case "busy":
+		return "服务中"
+	case "paused":
+		return "暂停服务"
+	case "rest":
+		return "下班"
+	default:
+		return "未知状态"
+	}
+}
+
 func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 	code := strings.TrimSpace(raw)
 	if !strings.HasPrefix(code, "SS:") {
@@ -84,6 +99,28 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			return apiErr{status: http.StatusBadRequest, msg: "未选择工作人员"}
 		}
 
+		// 起单前校验：只有当专业客服(技师)为“空闲”才允许起单
+		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		var att models.TechnicianAttendance
+		attRes := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, *s.TechnicianID, start).
+			Order("id desc").
+			Limit(1).
+			Find(&att)
+		if attRes.Error != nil {
+			return attRes.Error
+		}
+		if attRes.RowsAffected == 0 {
+			return apiErr{status: http.StatusBadRequest, msg: "你目前在未签到中，待服务完成后才可重新起单(上钟)"}
+		}
+		if att.Status != "idle" {
+			if att.Status == "paused" {
+				return apiErr{status: http.StatusBadRequest, msg: "你目前在暂停服务中，请更新服务状态为空闲才可继续起单(上钟)"}
+			}
+			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新起单(上钟)", technicianServiceStatusText(att.Status))}
+		}
+
 		if s.Status == "finished" || s.Status == "canceled" {
 			return apiErr{status: http.StatusBadRequest, msg: "会话状态不可起单"}
 		}
@@ -98,10 +135,15 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			return err
 		}
 
-		if err := tx.Model(&models.TechnicianAttendance{}).
-			Where("merchant_id = ? AND technician_id = ?", merchantID, *s.TechnicianID).
-			Updates(map[string]interface{}{"status": "busy"}).Error; err != nil {
-			return err
+		// 起单成功后占用技师：仅允许 idle -> busy，避免并发重复起单
+		res := tx.Model(&models.TechnicianAttendance{}).
+			Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, *s.TechnicianID, "idle").
+			Updates(map[string]interface{}{"status": "busy"})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return apiErr{status: http.StatusBadRequest, msg: "你目前在服务中，待服务完成后才可重新起单(上钟)"}
 		}
 
 		if err := tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error; err != nil {
