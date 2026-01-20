@@ -21,6 +21,13 @@ export const getMerchantId = () => {
     : localStorage.getItem('merchantId')
 }
 
+const getMerchantPermissionKeysStorageKey = () => {
+  const active = getMerchantActiveAuth()
+  const merchantId = getMerchantId() || ''
+  const staffId = active === 'staff' ? (sessionStorage.getItem('technicianId') || '') : ''
+  return `merchantPermissionKeys:${active}:${merchantId}:${staffId}`
+}
+
 export const getTechnicianShopSlug = () => {
   return sessionStorage.getItem('technicianShopSlug') || ''
 }
@@ -60,7 +67,7 @@ export const clearMerchantAuth = () => {
 
 export const getMerchantPermissionKeys = () => {
   try {
-    const raw = sessionStorage.getItem('merchantPermissionKeys')
+    const raw = sessionStorage.getItem(getMerchantPermissionKeysStorageKey()) || sessionStorage.getItem('merchantPermissionKeys')
     if (!raw) return []
     const arr = JSON.parse(raw)
     return Array.isArray(arr) ? arr : []
@@ -71,10 +78,12 @@ export const getMerchantPermissionKeys = () => {
 
 export const setMerchantPermissionKeys = (keys) => {
   const arr = Array.isArray(keys) ? keys : []
-  sessionStorage.setItem('merchantPermissionKeys', JSON.stringify(arr))
+  sessionStorage.setItem(getMerchantPermissionKeysStorageKey(), JSON.stringify(arr))
+  sessionStorage.removeItem('merchantPermissionKeys')
 }
 
 export const clearMerchantPermissionKeys = () => {
+  sessionStorage.removeItem(getMerchantPermissionKeysStorageKey())
   sessionStorage.removeItem('merchantPermissionKeys')
 }
 
