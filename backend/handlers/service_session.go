@@ -55,19 +55,21 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 
 	authTypeAny, _ := c.Get("auth_type")
 	authType, _ := authTypeAny.(string)
-	var techID *uint
-	if authType == "staff" {
-		techIDAny, ok := c.Get("technician_id")
-		if ok {
-			if v, ok := techIDAny.(uint); ok && v > 0 {
-				techID = &v
-			}
-		}
-		if techID == nil {
-			c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可起单"})
-			return true
-		}
+	if authType != "staff" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可起单"})
+		return true
 	}
+	techIDAny, ok := c.Get("technician_id")
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可起单"})
+		return true
+	}
+	techIDVal, ok := techIDAny.(uint)
+	if !ok || techIDVal == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可起单"})
+		return true
+	}
+	techID := &techIDVal
 
 	now := time.Now()
 	var out models.ServiceSession
@@ -91,7 +93,10 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			}
 		}
 
-		if techID != nil {
+		if s.TechnicianID != nil && *s.TechnicianID > 0 && *s.TechnicianID != *techID {
+			return apiErr{status: http.StatusBadRequest, msg: "该单已选择其他人员服务"}
+		}
+		if s.TechnicianID == nil {
 			s.TechnicianID = techID
 		}
 
