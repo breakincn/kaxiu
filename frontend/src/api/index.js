@@ -175,6 +175,9 @@ export const merchantApi = {
   // 当前账号权限
   getMyPermissions: () => api.get('/merchant/permissions'),
 
+  // 配置信息（用于前端看板/超时等配置展示）
+  getConfig: () => api.get('/merchant/config'),
+
   // 技师（客服类型账号）自身
   getCurrentTechnician: () => api.get('/merchant/technician/me'),
   bindTechnicianPhone: (phone, code) => api.post('/merchant/technician/bind-phone', { phone, code }),
