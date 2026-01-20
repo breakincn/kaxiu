@@ -769,7 +769,23 @@ const getUsageSessionStartConfirmedAtMs = (usage) => {
   return Number.isFinite(ms) ? ms : 0
 }
 
+const getUsageSessionStartedAtMs = (usage) => {
+  const v = usage?.service_session_started_at
+  if (!v) return 0
+  const ms = new Date(v).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
+const getUsageSessionScheduledFinishAtMs = (usage) => {
+  const v = usage?.service_session_scheduled_finish_at
+  if (!v) return 0
+  const ms = new Date(v).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
 const getUsageServiceDurationMinutes = (usage) => {
+  const fromSession = Number(usage?.service_session_duration_minutes || 0)
+  if (Number.isFinite(fromSession) && fromSession > 0) return fromSession
   const fromProject = Number(usage?.project?.duration || 0)
   if (Number.isFinite(fromProject) && fromProject > 0) return fromProject
   return 50
@@ -788,6 +804,9 @@ const getUsageServiceStartAtMs = (usage) => {
   const confirmedAtMs = getUsageSessionStartConfirmedAtMs(usage)
   if (confirmedAtMs) return confirmedAtMs
 
+  const startedAtMs = getUsageSessionStartedAtMs(usage)
+  if (startedAtMs) return startedAtMs
+
   // 若未扫码起单，则按后端调度逻辑推算：updated_at + start_pending_timeout_seconds + 60s
   const sessUpdatedAtMs = getUsageSessionUpdatedAtMs(usage)
   const startPendingTimeoutMs = getStartPendingTimeoutMs(usage)
@@ -796,6 +815,21 @@ const getUsageServiceStartAtMs = (usage) => {
   // 无服务会话信息时退化：以核销时间作为服务开始时间
   const usedAtMs = getUsageUsedAtMs(usage)
   if (usedAtMs) return usedAtMs
+  return 0
+}
+
+const getUsageServiceFinishAtMs = (usage) => {
+  const finishAtMs = getUsageSessionScheduledFinishAtMs(usage)
+  if (finishAtMs) return finishAtMs
+
+  const startedAtMs = getUsageSessionStartedAtMs(usage)
+  const durationMinutes = getUsageServiceDurationMinutes(usage)
+  if (startedAtMs && durationMinutes > 0) return startedAtMs + durationMinutes * 60 * 1000
+
+  // 兼容旧逻辑：按“起单确认/预估开始时间 + 时长”推算
+  const startAtMs = getUsageServiceStartAtMs(usage)
+  if (!startAtMs) return 0
+  if (durationMinutes > 0) return startAtMs + durationMinutes * 60 * 1000
   return 0
 }
 
@@ -839,11 +873,8 @@ const shouldShowServiceRemainTime = (usage) => {
 
 const getUsageServiceRemainText = (usage) => {
   if (!shouldShowServiceRemainTime(usage)) return ''
-  const startAtMs = getUsageServiceStartAtMs(usage)
-  if (!startAtMs) return ''
-
-  const durationMinutes = getUsageServiceDurationMinutes(usage)
-  const finishAtMs = startAtMs + durationMinutes * 60 * 1000
+  const finishAtMs = getUsageServiceFinishAtMs(usage)
+  if (!finishAtMs) return ''
   const now = nowTick.value
   const diff = finishAtMs - now
   if (diff <= 0) return ''

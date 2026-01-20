@@ -186,8 +186,9 @@ const formatDuration = (secs) => {
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)
   const ss = Math.floor(s % 60)
-  if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`
-  return `${m}m${String(ss).padStart(2, '0')}s`
+  const pad2 = (n) => String(n).padStart(2, '0')
+  if (h > 0) return `${h}小时${pad2(m)}分${pad2(ss)}秒`
+  return `${m}分${pad2(ss)}秒`
 }
 
 const calculateRemainTime = (endTime, durationSeconds = null) => {
@@ -206,15 +207,16 @@ const calculateRemainTime = (endTime, durationSeconds = null) => {
   const now = currentTime.value
   const diffMs = deadline - now
   const diffSeconds = Math.floor(diffMs / 1000)
-  
-  if (diffSeconds <= 0) return '0m0s'
+
+  const pad2 = (n) => String(n).padStart(2, '0')
+  if (diffSeconds <= 0) return `0分${pad2(0)}秒`
   
   const h = Math.floor(diffSeconds / 3600)
   const m = Math.floor((diffSeconds % 3600) / 60)
   const s = diffSeconds % 60
   
-  if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`
-  return `${m}m${String(s).padStart(2, '0')}s`
+  if (h > 0) return `${h}小时${pad2(m)}分${pad2(s)}秒`
+  return `${m}分${pad2(s)}秒`
 }
 
 const calculateElapsedTime = (startTime) => {

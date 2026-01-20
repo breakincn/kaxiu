@@ -122,6 +122,9 @@ type Usage struct {
 	ServiceSessionID        *uint      `json:"service_session_id" gorm:"-"`
 	ServiceSessionStatus    string     `json:"service_session_status" gorm:"-"`
 	ServiceSessionStartConfirmedAt *time.Time `json:"service_session_start_confirmed_at" gorm:"-"`
+	ServiceSessionStartedAt *time.Time `json:"service_session_started_at" gorm:"-"`
+	ServiceSessionScheduledFinishAt *time.Time `json:"service_session_scheduled_finish_at" gorm:"-"`
+	ServiceSessionDurationMinutes int `json:"service_session_duration_minutes" gorm:"-"`
 	ServiceSessionUpdatedAt *time.Time `json:"service_session_updated_at" gorm:"-"`
 	ServiceSessionStartPendingTimeoutSeconds int `json:"service_session_start_pending_timeout_seconds" gorm:"-"`
 	RoomSelectDeadlineAt    *time.Time `json:"room_select_deadline_at" gorm:"-"`
