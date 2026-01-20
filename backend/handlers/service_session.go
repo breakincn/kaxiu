@@ -112,13 +112,25 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			return attRes.Error
 		}
 		if attRes.RowsAffected == 0 {
-			return apiErr{status: http.StatusBadRequest, msg: "你目前在未签到中，待服务完成后才可重新起单(上钟)"}
+			startTerm := "起单"
+			if merchant.StartTerm != "" {
+				startTerm = merchant.StartTerm
+			}
+			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在未签到中，待服务完成后才可重新%s", startTerm)}
 		}
 		if att.Status != "idle" {
 			if att.Status == "paused" {
-				return apiErr{status: http.StatusBadRequest, msg: "你目前在暂停服务中，请更新服务状态为空闲才可继续起单(上钟)"}
+				startTerm := "起单"
+				if merchant.StartTerm != "" {
+					startTerm = merchant.StartTerm
+				}
+				return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在暂停服务中，请更新服务状态为空闲才可继续%s", startTerm)}
 			}
-			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新起单(上钟)", technicianServiceStatusText(att.Status))}
+			startTerm := "起单"
+			if merchant.StartTerm != "" {
+				startTerm = merchant.StartTerm
+			}
+			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新%s", technicianServiceStatusText(att.Status), startTerm)}
 		}
 
 		if s.Status == "finished" || s.Status == "canceled" {
@@ -143,7 +155,11 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
-			return apiErr{status: http.StatusBadRequest, msg: "你目前在服务中，待服务完成后才可重新起单(上钟)"}
+			startTerm := "起单"
+			if merchant.StartTerm != "" {
+				startTerm = merchant.StartTerm
+			}
+			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在服务中，待服务完成后才可重新%s", startTerm)}
 		}
 
 		if err := tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error; err != nil {
