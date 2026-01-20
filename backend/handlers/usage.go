@@ -58,12 +58,13 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		RoomSelectDeadlineAt *time.Time `gorm:"column:room_select_deadline_at"`
 		RoomLockedAt         *time.Time `gorm:"column:room_locked_at"`
 		StaffSelectCooldownUntil *time.Time `gorm:"column:staff_select_cooldown_until"`
+		StaffSelectEnteredAt *time.Time `gorm:"column:staff_select_entered_at"`
 	}
 
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions").
-		Select("id, initial_usage_id, project_id, status, room_id, technician_id, start_timeout_count, start_confirmed_at, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until").
+		Select("id, initial_usage_id, project_id, status, room_id, technician_id, start_timeout_count, start_confirmed_at, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until, staff_select_entered_at").
 		Where("initial_usage_id IN ?", ids).
 		Find(&sessions).Error; err != nil {
 		return
@@ -167,6 +168,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 			u.RoomSelectDeadlineAt = s.RoomSelectDeadlineAt
 			u.RoomLockedAt = s.RoomLockedAt
 			u.StaffSelectCooldownUntil = s.StaffSelectCooldownUntil
+			u.StaffSelectEnteredAt = s.StaffSelectEnteredAt
 			if s.RoomID != nil {
 				if r, okR := byRoomID[*s.RoomID]; okR {
 					u.ServiceRoom = r

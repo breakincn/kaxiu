@@ -293,14 +293,6 @@ func UserListAvailableTechnicians(c *gin.Context) {
 
 	// 记录用户进入选择客服页的时间：以“拉取可选客服列表”为准，仅首次写入
 	now := time.Now()
-	if s.Status == "staff_selecting" || s.Status == "room_locked" {
-		if s.StaffSelectEnteredAt == nil {
-			config.DB.Model(&models.ServiceSession{}).
-				Where("id = ? AND user_id = ? AND staff_select_entered_at IS NULL AND status IN ('staff_selecting','room_locked')", s.ID, userID).
-				Update("staff_select_entered_at", now)
-			s.StaffSelectEnteredAt = &now
-		}
-	}
 	if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "当前没有空闲客服，3分钟后可再次选择客服"})
 		return
@@ -321,6 +313,16 @@ func UserListAvailableTechnicians(c *gin.Context) {
 		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 		Order("technician_attendances.updated_at asc").
 		Find(&list)
+
+	// 仅当确实存在可选客服时，才开始5分钟自动分配计时（避免无空闲客服时提前计时）
+	if (s.Status == "staff_selecting" || s.Status == "room_locked") && s.StaffSelectEnteredAt == nil {
+		if len(list) > 0 {
+			config.DB.Model(&models.ServiceSession{}).
+				Where("id = ? AND user_id = ? AND staff_select_entered_at IS NULL AND status IN ('staff_selecting','room_locked')", s.ID, userID).
+				Update("staff_select_entered_at", now)
+			s.StaffSelectEnteredAt = &now
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
 

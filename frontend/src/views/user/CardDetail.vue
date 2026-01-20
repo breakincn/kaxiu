@@ -870,6 +870,32 @@ const stopNowTickTimer = () => {
   }
 }
 
+let autoAssignPollTimer = null
+const stopAutoAssignPoll = () => {
+  if (autoAssignPollTimer) {
+    clearInterval(autoAssignPollTimer)
+    autoAssignPollTimer = null
+  }
+}
+
+const startAutoAssignPollIfNeeded = () => {
+  const m = autoAssignCountdownMap.value || {}
+  const hasAny = Object.keys(m).length > 0
+  if (!hasAny) {
+    stopAutoAssignPoll()
+    return
+  }
+  if (autoAssignPollTimer) return
+  autoAssignPollTimer = setInterval(() => {
+    const m2 = autoAssignCountdownMap.value || {}
+    if (Object.keys(m2).length === 0) {
+      stopAutoAssignPoll()
+      return
+    }
+    fetchUsages()
+  }, 2000)
+}
+
 const getUsageStatusCountdownText = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s !== 'in_progress') return ''
@@ -906,6 +932,21 @@ const getUsageStatusCountdownText = (usage) => {
       }
     }
     return ''
+  }
+
+  // 上钟超时后重新选择客服：如果已经开始计时（staff_select_entered_at）则展示5分钟自动分配倒计时
+  if (supportCS && isUsageStartTimeout(usage)) {
+    const enteredAtMs = usage?.staff_select_entered_at ? new Date(usage.staff_select_entered_at).getTime() : 0
+    if (!enteredAtMs || Number.isNaN(enteredAtMs)) return ''
+    const deadline = enteredAtMs + 5 * 60 * 1000
+    const diff = deadline - now
+    if (diff > 0) {
+      const totalSeconds = Math.floor(diff / 1000)
+      const minutes = Math.floor(totalSeconds / 60)
+      const seconds = totalSeconds % 60
+      return `${minutes}分${seconds}秒后自动分配客服`
+    }
+    return '正在自动分配客服...'
   }
 
   // 待起单倒计时
@@ -956,6 +997,18 @@ const getUsageStatusCountdownClass = (usage) => {
 
 let usageQrPollTimer = null
 let usageQrPollSessionId = ''
+
+let autoAssignedQrCloseTimer = null
+const scheduleAutoCloseUsageQrModal = () => {
+  if (autoAssignedQrCloseTimer) {
+    clearTimeout(autoAssignedQrCloseTimer)
+    autoAssignedQrCloseTimer = null
+  }
+  autoAssignedQrCloseTimer = setTimeout(() => {
+    autoAssignedQrCloseTimer = null
+    closeUsageQrModal()
+  }, 5000)
+}
 
 const stopUsageQrPoll = () => {
   if (usageQrPollTimer) {
@@ -1089,12 +1142,67 @@ const openUsageQrModal = async (usage) => {
 
 const closeUsageQrModal = () => {
   stopUsageQrPoll()
+  if (autoAssignedQrCloseTimer) {
+    clearTimeout(autoAssignedQrCloseTimer)
+    autoAssignedQrCloseTimer = null
+  }
   showUsageQrModal.value = false
   selectedUsage.value = null
   usageQrDataUrl.value = ''
   qrMode.value = 'start'
   qrSessionId.value = ''
   usagePrecheckDone.value = false
+}
+
+// 记录“上钟超时后，已开始计时等待用户选技师”的记录：usageId -> enteredAtMs
+const autoAssignCountdownMap = ref({})
+
+const recordAutoAssignCountdownIfNeeded = (u) => {
+  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+  if (!supportCS) return
+  if (!isUsageStartTimeout(u)) return
+  if (!u?.id) return
+  if (!u?.staff_select_entered_at) return
+
+  const enteredAtMs = new Date(u.staff_select_entered_at).getTime()
+  if (Number.isNaN(enteredAtMs) || enteredAtMs <= 0) return
+  const key = String(u.id)
+  if (!autoAssignCountdownMap.value[key]) {
+    autoAssignCountdownMap.value[key] = enteredAtMs
+		startAutoAssignPollIfNeeded()
+  }
+}
+
+const maybeAutoOpenPrecheckQrAfterAssigned = async () => {
+  if (showUsageQrModal.value) return
+  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+  if (!supportCS) return
+
+  const list = usages.value || []
+  const now = nowTick.value
+
+  for (const u of list) {
+    if (!u?.id) continue
+    const key = String(u.id)
+    const enteredAtMs = Number(autoAssignCountdownMap.value[key] || 0)
+    if (!enteredAtMs) continue
+
+    const deadline = enteredAtMs + 5 * 60 * 1000
+    // 未到5分钟：即使用户手动选了技师导致回到 start_pending，也不自动弹窗（保持原逻辑）
+    if (now < deadline) continue
+
+    const sessStatus = String(u?.service_session_status || '').trim()
+    const precheckedAt = u?.service_session_start_confirmed_at
+    if (sessStatus === 'start_pending' && !precheckedAt && Boolean(u?.service_technician) && Boolean(u?.service_session_id)) {
+      // 认为是系统自动分配成功：自动弹出待上钟二维码，并在5秒后自动关闭
+      delete autoAssignCountdownMap.value[key]
+      await openUsageQrModal(u)
+      if (showUsageQrModal.value) {
+        scheduleAutoCloseUsageQrModal()
+      }
+      return
+    }
+  }
 }
 
 const clearUsageLongPress = () => {
@@ -1280,6 +1388,25 @@ const fetchUsages = async () => {
   try {
     const res = await usageApi.getCardUsages(route.params.id)
     usages.value = res.data.data || []
+
+		// 记录“已开始计时等待用户选技师”的 usage
+		try {
+			for (const u of (usages.value || [])) {
+				recordAutoAssignCountdownIfNeeded(u)
+			}
+		} catch (_) {
+			// ignore
+		}
+
+		// 每次刷新使用记录后，尝试检测“自动分配成功”并自动弹出待上钟二维码（5秒自动关闭）
+		try {
+			await maybeAutoOpenPrecheckQrAfterAssigned()
+		} catch (_) {
+			// ignore
+		}
+
+		// 可能存在计时任务，确保轮询启动；若已无计时任务则停止
+		startAutoAssignPollIfNeeded()
   } catch (err) {
     console.error('获取使用记录失败:', err)
   }
@@ -1838,10 +1965,10 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  stopUsageQrPoll()
+  stopAutoAssignPoll()
+  stopNowTickTimer()
   stopCountdownTimer()
   stopVerifyStatusPoll()
-  stopNowTickTimer()
   if (verifyExpireTimer) {
     clearTimeout(verifyExpireTimer)
     verifyExpireTimer = null
