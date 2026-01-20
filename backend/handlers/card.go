@@ -779,7 +779,12 @@ func VerifyCard(c *gin.Context) {
 			nextStep = "staff_select"
 		}
 
-		durationMinutes := 50
+		// 读取项目真实时长，避免硬编码 50 分钟
+		var project models.MerchantProject
+		durationMinutes := 50 // 默认值兜底
+		if err := config.DB.Where("id = ? AND merchant_id = ?", verifyCode.ProjectID, merchantID).First(&project).Error; err == nil && project.Duration > 0 {
+			durationMinutes = project.Duration
+		}
 
 		session := models.ServiceSession{
 			MerchantID:             merchantID,
@@ -1040,7 +1045,12 @@ func ScanVerifyCard(c *gin.Context) {
 				nextStep = "staff_select"
 			}
 
-			durationMinutes := 50
+			// 读取项目真实时长，避免硬编码 50 分钟
+			var project models.MerchantProject
+			durationMinutes := 50 // 默认值兜底
+			if err := config.DB.Where("id = ? AND merchant_id = ?", verifyCode.ProjectID, merchantID).First(&project).Error; err == nil && project.Duration > 0 {
+				durationMinutes = project.Duration
+			}
 
 			session := models.ServiceSession{
 				MerchantID:             merchantID,
