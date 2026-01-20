@@ -77,6 +77,12 @@ const route = useRoute()
 
 const pageTitle = ref('扫码')
 
+const mode = ref('verify')
+
+const isStartOnlyMode = () => {
+  return String(mode.value || '').trim() === 'start'
+}
+
 const starting = ref(false)
 const verifying = ref(false)
 const hasStarted = ref(false)
@@ -207,6 +213,13 @@ const onDecoded = async (decodedText) => {
   const code = (decodedText || '').trim()
   if (!code) return
 
+  // 起单专用模式：仅允许 SS:<session_id>
+  if (isStartOnlyMode() && !code.startsWith('SS:')) {
+    resultSuccess.value = false
+    resultText.value = replaceTerms('请扫描起单码')
+    return
+  }
+
   verifying.value = true
   try {
     const res = await cardApi.scanVerify(code)
@@ -221,7 +234,7 @@ const onDecoded = async (decodedText) => {
     }
 
     // 回到 dashboard 并切到对应 tab
-    const backTab = action === 'start' ? 'service' : 'verify'
+    const backTab = action === 'start' ? 'service' : (route.query.tab || 'verify')
     console.log('扫码成功，将在30秒后跳转到', backTab, 'tab')
     
     // 清除之前的定时器（如果有）
@@ -242,14 +255,16 @@ const onDecoded = async (decodedText) => {
     resultText.value = errorMsg
 
     // 直接跳回 dashboard 并带上错误信息（避免 back + replace 导致 Dashboard 不刷新）
-    router.replace({ path: '/merchant', query: { error: errorMsg, tab: route.query.tab || 'verify' } })
+    const backTab = isStartOnlyMode() ? 'service' : (route.query.tab || 'verify')
+    router.replace({ path: '/merchant', query: { error: errorMsg, tab: backTab } })
   } finally {
     verifying.value = false
   }
 }
 
 onMounted(() => {
-  pageTitle.value = '今日核销记录'
+  mode.value = String(route.query.mode || 'verify')
+  pageTitle.value = isStartOnlyMode() ? replaceTerms('扫码起单') : replaceTerms('扫码核销')
 
   const token = getMerchantToken()
   const id = getMerchantId()

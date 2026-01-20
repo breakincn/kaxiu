@@ -650,6 +650,16 @@
           </div>
         </div>
 
+        <div v-if="isTechnicianAuth() && !canVerify && canFinishVerify" class="mt-4">
+          <button
+            type="button"
+            @click="goScanStartOnly"
+            class="w-full py-3 bg-primary text-white rounded-lg font-medium"
+          >
+            {{ replaceTerms('扫码起单', merchant) }}
+          </button>
+        </div>
+
         <div v-if="isTechnicianAuth()" class="mt-3">
           <div class="flex items-center justify-between">
             <div class="text-sm text-gray-600">
@@ -929,6 +939,10 @@ const selectTab = (tab) => {
 }
 
 const getDefaultTab = () => {
+  // 技师（工作人员）仅有“结单权限”（无核销权限）时，默认展示“服务”页，并提供扫码起单入口
+  if (isTechnicianAuth() && !canVerify.value && canFinishVerify.value && showServiceTab.value) {
+    return 'service'
+  }
   if (showQueueTab.value) {
     return 'queue'
   } else if (showVerifyTab.value) {
@@ -1186,11 +1200,16 @@ const getCardTypeLabel = (type) => {
 }
 
 const goScanVerify = () => {
-  router.push('/merchant/scan-verify')
+  router.push({ path: '/merchant/scan-verify', query: { mode: 'verify' } })
 }
 
+// 兼容旧模板引用：当前 finish tab 未启用，但需要保留方法以避免编译报错
 const goScanFinish = () => {
-	router.push('/merchant/scan-verify')
+  goScanVerify()
+}
+
+const goScanStartOnly = () => {
+  router.push({ path: '/merchant/scan-verify', query: { mode: 'start', tab: 'service' } })
 }
 
 const showExtendModal = (session) => {
@@ -1234,7 +1253,7 @@ const onTopScanClick = () => {
   // - 同时有核销+结单：进入智能模式（优先核销，满足条件才结单）
   // - 只有核销：进入核销模式
   if (!canVerify.value && canFinishVerify.value) {
-    goScanFinish()
+    goScanStartOnly()
     return
   }
   goScanVerify()

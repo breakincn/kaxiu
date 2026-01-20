@@ -910,6 +910,23 @@ func ScanVerifyCard(c *gin.Context) {
 		return
 	}
 
+	// 仅“结单权限”账号（无核销权限）只能扫码起单（SS:<session_id>），禁止扫码核销。
+	// 说明：路由层允许 RequireAnyPermission(verify, finish)，这里做更细粒度校验。
+	if !strings.HasPrefix(code, "SS:") {
+		// 商户老板号默认拥有全部权限，不做限制
+		if authType != "merchant" {
+			okVerify, err := middleware.HasPermission(c, "merchant.card.verify")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "权限检查失败"})
+				return
+			}
+			if !okVerify {
+				c.JSON(http.StatusForbidden, gin.H{"error": "无核销权限"})
+				return
+			}
+		}
+	}
+
 	// B方案：起单二维码（SS:<session_id>）走服务会话起单逻辑
 	if handled := handleServiceSessionStartScan(c, code); handled {
 		return
