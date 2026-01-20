@@ -2,9 +2,10 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 const host = typeof window !== 'undefined' ? window.location.host : ''
 const pathname = typeof window !== 'undefined' ? window.location.pathname : ''
-// 生产环境通过域名判断，开发环境通过路径前缀判断
-const isMerchantApp = (host === 'kabao.shop' || host.endsWith('.kabao.shop')) || 
-                      (pathname.startsWith('/merchant') || pathname.startsWith('/platform-admin'))
+const isTechnicianLoginPath = (p) => /^\/s\/[^/]+\/login$/.test(String(p || ''))
+// 生产环境通过域名判断，开发环境通过路径前缀判断（包含技师登录路径）
+const isMerchantApp = (host === 'kabao.shop' || host.endsWith('.kabao.shop')) ||
+                      (pathname.startsWith('/merchant') || pathname.startsWith('/platform-admin') || isTechnicianLoginPath(pathname))
 
 const userRoutes = [
   {
