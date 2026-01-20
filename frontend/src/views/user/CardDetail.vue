@@ -912,11 +912,11 @@ const getUsageStatusCountdownText = (usage) => {
       const totalSeconds = Math.floor(diff / 1000)
       const minutes = Math.floor(totalSeconds / 60)
       const seconds = totalSeconds % 60
-      return `${minutes}分${seconds}秒`
+      return `${minutes}分${seconds}秒后自动分配房间`
     }
   }
 
-  // 待选客服倒计时：不在卡详情页展示（避免误导为“自动分配循环”）
+  // 待选客服倒计时
   if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) {
     // 冷却期提示（无空闲客服）
     if (usage?.staff_select_cooldown_until) {
@@ -929,7 +929,24 @@ const getUsageStatusCountdownText = (usage) => {
         return `${minutes}分${seconds}秒后可再次选择客服`
       }
     }
-    return ''
+
+    // 自动分配客服倒计时（5分钟）
+    // 优先使用 staff_select_entered_at（用户进入选择客服页的时间），否则使用 room_locked_at（锁房时间）
+    const baseMs = usage?.staff_select_entered_at
+      ? new Date(usage.staff_select_entered_at).getTime()
+      : usage?.room_locked_at
+      ? new Date(usage.room_locked_at).getTime()
+      : 0
+    if (!baseMs || Number.isNaN(baseMs)) return ''
+    const deadline = baseMs + 5 * 60 * 1000
+    const diff = deadline - now
+    if (diff > 0) {
+      const totalSeconds = Math.floor(diff / 1000)
+      const minutes = Math.floor(totalSeconds / 60)
+      const seconds = totalSeconds % 60
+      return `${minutes}分${seconds}秒后自动分配客服`
+    }
+    return '正在自动分配客服...'
   }
 
   // 上钟超时后重新选择客服：如果已经开始计时（staff_select_entered_at）则展示5分钟自动分配倒计时
@@ -956,7 +973,7 @@ const getUsageStatusCountdownText = (usage) => {
         const totalSeconds = Math.floor(diff / 1000)
         const minutes = Math.floor(totalSeconds / 60)
         const seconds = totalSeconds % 60
-        return `${minutes}分${seconds}秒`
+        return `${minutes}分${seconds}秒后重新选择客服`
       }
       // 超时后不显示倒计时
       return ''
