@@ -566,12 +566,15 @@ const isUsageStartTimeout = (usage) => {
   const precheckedAt = usage?.service_session_start_confirmed_at
   const cnt = Number(usage?.start_timeout_count || 0)
   const precheckDl = getPrecheckDeadlineAtMs(usage)
+  const hasTech = Boolean(usage?.service_technician)
+  // 已经选定/自动分配了客服：不再视为上钟超时
+  if (hasTech) return false
   const roomReleasedByCancel = supportRoom && sessStatus === 'canceled' && !precheckedAt && !usage?.service_room && !usage?.service_technician
   if (roomReleasedByCancel) return false
   return (
-    (cnt > 0 && (sessStatus === 'staff_selecting' || sessStatus === 'start_pending')) ||
+    (cnt > 0 && sessStatus === 'staff_selecting') ||
     (sessStatus === 'start_pending' && !precheckedAt && precheckDl && Date.now() >= precheckDl) ||
-    (sessStatus === 'canceled' && !precheckedAt)
+    (sessStatus === 'canceled' && !precheckedAt && !hasTech)
   )
 }
 
@@ -593,19 +596,27 @@ const getUsageStatusText = (usage) => {
       if (supportRoom && !usage?.service_room && !usage?.service_technician) {
         return '服务超时重新选择房间'
       }
+      // 已经选定/自动分配了客服：应回到待起单
+      if (usage?.service_technician) {
+        return replaceTerms('待起单', card.value?.merchant)
+      }
       return '上钟超时 重新选择客服'
     }
     // 上钟超时统一优先判断（避免兜底到待结单）
     if (supportCS) {
       const cnt = Number(usage?.start_timeout_count || 0)
-      if (cnt > 0 && (sessStatus === 'staff_selecting' || sessStatus === 'start_pending')) {
+      if (cnt > 0 && sessStatus === 'staff_selecting' && !usage?.service_technician) {
         return '上钟超时 重新选择客服'
       }
     }
     if (supportCS && sessStatus === 'staff_selecting') {
+      // 已经选定/自动分配了客服：应回到待起单
+      if (usage?.service_technician) return replaceTerms('待起单', card.value?.merchant)
       return '待选客服'
     }
     if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
+      // 已经选定/自动分配了客服：无论倒计时是否到点，都应回到“待起单”状态
+      if (usage?.service_technician) return replaceTerms('待起单', card.value?.merchant)
       const dl = getPrecheckDeadlineAtMs(usage)
       if (dl && now < dl) return replaceTerms('待起单', card.value?.merchant)
       if (dl && now >= dl) return '上钟超时 重新选择客服'
@@ -634,12 +645,16 @@ const getUsageStatusClass = (usage) => {
     if (supportCS && sessStatus === 'room_locked') return 'text-orange-500'
     // 会话已取消但 usage 仍在进行中：视为上钟超时
     if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
+      // 已经选定/自动分配了客服：不再视为上钟超时
+      if (usage?.service_technician) {
+        return 'text-red-500'
+      }
       return 'text-red-500'
     }
     // 上钟超时统一优先判断（避免兜底到待结单样式）
     if (supportCS) {
       const cnt = Number(usage?.start_timeout_count || 0)
-      if (cnt > 0 && (sessStatus === 'staff_selecting' || sessStatus === 'start_pending')) {
+      if (cnt > 0 && sessStatus === 'staff_selecting') {
         return 'text-red-500'
       }
     }
@@ -1041,7 +1056,7 @@ const trySwitchUsageQrToFinish = async () => {
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = String(latest?.service_session_status || '').trim()
   const precheckedAt = latest?.service_session_start_confirmed_at
-  if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
+  if (supportCS && sessStatus === 'canceled' && !precheckedAt && !latest?.service_technician) {
     stopUsageQrPoll()
     closeUsageQrModal()
     alert('上钟超时，请重新选择客服')
@@ -1077,8 +1092,8 @@ const openUsageQrModal = async (usage) => {
   const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_start_confirmed_at
 
-  // 会话已取消但 usage 仍在进行中：起单二维码失效（不自动跳转，改为长按记录进入重新选客服）
-  if (supportCS && sessID && sessStatus === 'canceled' && !precheckedAt) {
+    // 会话已取消但 usage 仍在进行中：起单二维码失效（不自动跳转，改为长按记录进入重新选客服）
+  if (supportCS && sessID && sessStatus === 'canceled' && !precheckedAt && !usage?.service_technician) {
     alert('上钟超时，请长按该记录重新选择客服')
     return
   }
