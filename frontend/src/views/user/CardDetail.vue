@@ -961,7 +961,11 @@ const getUsageStatusCountdownText = (usage) => {
       const seconds = totalSeconds % 60
       return `${minutes}分${seconds}秒后自动分配客服`
     }
-    return '正在自动分配客服...'
+    // 只有当用户已进入选客服页（staff_select_entered_at 有值）时才显示"正在自动分配客服"
+    if (usage?.staff_select_entered_at) {
+      return '正在自动分配客服...'
+    }
+    return ''
   }
 
   // 上钟超时后重新选择客服：如果已经开始计时（staff_select_entered_at）则展示5分钟自动分配倒计时
