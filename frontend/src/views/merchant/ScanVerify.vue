@@ -240,14 +240,9 @@ const onDecoded = async (decodedText) => {
     resultSuccess.value = false
     const errorMsg = err.response?.data?.error || '扫码失败'
     resultText.value = errorMsg
-    
-    // 立即返回前一页，并通过路由参数传递错误信息
-    router.back()
-    
-    // 短暂延迟后跳转到带错误参数的页面
-    setTimeout(() => {
-      router.replace({ path: '/merchant', query: { error: errorMsg, tab: route.query.tab || 'verify' } })
-    }, 100)
+
+    // 直接跳回 dashboard 并带上错误信息（避免 back + replace 导致 Dashboard 不刷新）
+    router.replace({ path: '/merchant', query: { error: errorMsg, tab: route.query.tab || 'verify' } })
   } finally {
     verifying.value = false
   }

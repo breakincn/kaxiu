@@ -1081,6 +1081,17 @@ watch(
   }
 )
 
+watch(
+  () => route.query.error,
+  (v) => {
+    if (!v) return
+    const tabParam = route.query.tab
+    showErrorModalWithMessage(String(v))
+    // 清除URL中的错误参数，避免重复显示；保留 tab
+    router.replace({ path: '/merchant', query: { tab: tabParam || 'queue' } })
+  }
+)
+
 const cardTemplates = ref([])
 
 const showBusinessStatusModal = ref(false)
