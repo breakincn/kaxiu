@@ -591,7 +591,7 @@ const getUsageStatusText = (usage) => {
     // - 否则：视为上钟超时，需重新选择客服
     if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
       if (supportRoom && !usage?.service_room && !usage?.service_technician) {
-        return '超时未选择客服，请重新选择房间'
+        return '服务超时重新选择房间'
       }
       return '上钟超时 重新选择客服'
     }
