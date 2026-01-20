@@ -650,16 +650,6 @@
           </div>
         </div>
 
-        <div v-if="isTechnicianAuth() && !canVerify && canFinishVerify" class="mt-4">
-          <button
-            type="button"
-            @click="goScanStartOnly"
-            class="w-full py-3 bg-primary text-white rounded-lg font-medium"
-          >
-            {{ replaceTerms('扫码起单', merchant) }}
-          </button>
-        </div>
-
         <div v-if="isTechnicianAuth()" class="mt-3">
           <div class="flex items-center justify-between">
             <div class="text-sm text-gray-600">
@@ -939,10 +929,6 @@ const selectTab = (tab) => {
 }
 
 const getDefaultTab = () => {
-  // 技师（工作人员）仅有“结单权限”（无核销权限）时，默认展示“服务”页，并提供扫码起单入口
-  if (isTechnicianAuth() && !canVerify.value && canFinishVerify.value && showServiceTab.value) {
-    return 'service'
-  }
   if (showQueueTab.value) {
     return 'queue'
   } else if (showVerifyTab.value) {
@@ -1208,10 +1194,6 @@ const goScanFinish = () => {
   goScanVerify()
 }
 
-const goScanStartOnly = () => {
-  router.push({ path: '/merchant/scan-verify', query: { mode: 'start', tab: 'service' } })
-}
-
 const showExtendModal = (session) => {
   extendSession.value = session
   extendMinutes.value = null
@@ -1253,7 +1235,7 @@ const onTopScanClick = () => {
   // - 同时有核销+结单：进入智能模式（优先核销，满足条件才结单）
   // - 只有核销：进入核销模式
   if (!canVerify.value && canFinishVerify.value) {
-    goScanStartOnly()
+    router.push({ path: '/merchant/table', query: { tab: 'staff' } })
     return
   }
   goScanVerify()
@@ -2098,6 +2080,12 @@ onMounted(async () => {
     canVerify: canVerify.value,
     canFinishVerify: canFinishVerify.value
   })
+
+  // 技师账号仅有结单权限（无核销权限）时：直接进入扫码起单的看板页（客服 tab）
+  if (isTechnicianAuth() && !canVerify.value && canFinishVerify.value) {
+    router.replace({ path: '/merchant/table', query: { tab: 'staff' } })
+    return
+  }
   
   // 检查查询参数，自动切换到指定Tab（优先级高于 localStorage）
   const tabParam = route.query.tab

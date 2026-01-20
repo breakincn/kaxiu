@@ -79,6 +79,17 @@ const pageTitle = ref('扫码')
 
 const mode = ref('verify')
 
+const getReturnPath = () => {
+  const p = String(route.query.return_path || '').trim()
+  return p || '/merchant'
+}
+
+const getReturnTab = () => {
+  const t = String(route.query.tab || '').trim()
+  if (t) return t
+  return isStartOnlyMode() ? 'staff' : 'verify'
+}
+
 const isStartOnlyMode = () => {
   return String(mode.value || '').trim() === 'start'
 }
@@ -234,7 +245,7 @@ const onDecoded = async (decodedText) => {
     }
 
     // 回到 dashboard 并切到对应 tab
-    const backTab = action === 'start' ? 'service' : (route.query.tab || 'verify')
+    const backTab = action === 'start' ? getReturnTab() : getReturnTab()
     console.log('扫码成功，将在30秒后跳转到', backTab, 'tab')
     
     // 清除之前的定时器（如果有）
@@ -245,7 +256,8 @@ const onDecoded = async (decodedText) => {
     jumpTimer = setTimeout(() => {
       console.log('正在执行跳转到 merchant 页面，tab:', backTab)
       console.log('当前时间:', new Date().toLocaleTimeString())
-      router.replace({ path: '/merchant', query: { tab: backTab } })
+      const returnPath = getReturnPath()
+      router.replace({ path: returnPath, query: { tab: backTab } })
     }, 1000) // 延迟1秒后跳转页面
     
     console.log('定时器已设置，将在', new Date(Date.now() + 30000).toLocaleTimeString(), '执行跳转')
@@ -255,8 +267,9 @@ const onDecoded = async (decodedText) => {
     resultText.value = errorMsg
 
     // 直接跳回 dashboard 并带上错误信息（避免 back + replace 导致 Dashboard 不刷新）
-    const backTab = isStartOnlyMode() ? 'service' : (route.query.tab || 'verify')
-    router.replace({ path: '/merchant', query: { error: errorMsg, tab: backTab } })
+    const backTab = getReturnTab()
+    const returnPath = getReturnPath()
+    router.replace({ path: returnPath, query: { error: errorMsg, tab: backTab } })
   } finally {
     verifying.value = false
   }

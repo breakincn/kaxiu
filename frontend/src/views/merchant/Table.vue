@@ -83,6 +83,15 @@
           <div v-else>
             <div v-if="staff.length === 0" class="text-center text-gray-400 py-10">暂无专业客服</div>
             <div v-else class="space-y-3">
+              <div v-if="startOnlyMode" class="bg-white rounded-xl shadow-sm p-4">
+                <button
+                  type="button"
+                  class="w-full py-3 bg-primary text-white rounded-lg font-medium"
+                  @click="goScanStartOnly"
+                >
+                  {{ replaceTerms('扫码起单', merchant) }}
+                </button>
+              </div>
               <div v-for="it in staff" :key="it.technician.id" class="border border-gray-100 rounded-xl p-4">
                 <div class="flex items-start justify-between gap-3">
                   <div>
@@ -115,13 +124,14 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { merchantApi } from '../../api'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ensureMerchantPermissionsLoaded, merchantApi } from '../../api'
 import { replaceTerms } from '../../utils/terms'
-import { getMerchantId } from '../../utils/auth'
+import { getMerchantId, hasMerchantPermission } from '../../utils/auth'
 
 const router = useRouter()
+const route = useRoute()
 
 // 从localStorage恢复选中的标签，默认为空（不默认选择）
 const savedTab = localStorage.getItem('tableActiveTab')
@@ -133,6 +143,10 @@ const currentTime = ref(new Date())
 const merchant = ref({})
 const config = ref({})
 
+const canVerify = computed(() => hasMerchantPermission('merchant.card.verify'))
+const canFinish = computed(() => hasMerchantPermission('merchant.card.finish'))
+const startOnlyMode = computed(() => !canVerify.value && canFinish.value)
+
 // 定时器
 let timer = null
 
@@ -143,6 +157,17 @@ const updateCurrentTime = () => {
 
 const goBack = () => {
   router.back()
+}
+
+const goScanStartOnly = () => {
+  router.push({
+    path: '/merchant/scan-verify',
+    query: {
+      mode: 'start',
+      return_path: '/merchant/table',
+      tab: 'staff'
+    }
+  })
 }
 
 const fetchMerchant = async () => {
@@ -305,6 +330,22 @@ const load = async () => {
 }
 
 onMounted(async () => {
+  // 确保权限已加载（startOnlyMode 依赖 permission_keys）
+  await ensureMerchantPermissionsLoaded()
+
+  // query tab 优先级最高
+  const tabParam = String(route.query.tab || '').trim()
+  if (tabParam === 'rooms' || tabParam === 'staff') {
+    activeTab.value = tabParam
+    localStorage.setItem('tableActiveTab', tabParam)
+  }
+
+  // 仅结单权限账号：默认显示客服 tab（扫码起单入口在该 tab）
+  if (!tabParam && startOnlyMode.value) {
+    activeTab.value = 'staff'
+    localStorage.setItem('tableActiveTab', 'staff')
+  }
+
   // 如果没有保存的标签，默认选择房间
   if (!activeTab.value) {
     activeTab.value = 'rooms'
