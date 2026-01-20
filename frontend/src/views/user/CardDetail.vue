@@ -567,8 +567,9 @@ const isUsageStartTimeout = (usage) => {
   const cnt = Number(usage?.start_timeout_count || 0)
   const precheckDl = getPrecheckDeadlineAtMs(usage)
   const hasTech = Boolean(usage?.service_technician)
-  // 已经选定/自动分配了客服：不再视为上钟超时
-  if (hasTech) return false
+  // 已经选定/自动分配了客服：通常不再视为上钟超时
+  // 但 start_pending 超时场景仍应成立（否则倒计时结束后状态不会变化）
+  if (hasTech && sessStatus !== 'start_pending') return false
   const roomReleasedByCancel = supportRoom && sessStatus === 'canceled' && !precheckedAt && !usage?.service_room && !usage?.service_technician
   if (roomReleasedByCancel) return false
   return (
@@ -615,14 +616,17 @@ const getUsageStatusText = (usage) => {
       return '待选客服'
     }
     if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
-      // 已经选定/自动分配了客服：无论倒计时是否到点，都应回到“待起单”状态
-      if (usage?.service_technician) return replaceTerms('待起单', card.value?.merchant)
       const dl = getPrecheckDeadlineAtMs(usage)
       if (dl && now < dl) return replaceTerms('待起单', card.value?.merchant)
       if (dl && now >= dl) return '上钟超时 重新选择客服'
     }
     // 未上钟成功（未确认起单）时，永远不要进入“待下钟/待结单”兜底
     if (supportCS && !precheckedAt) {
+      // start_pending 且已超时：应立刻显示“上钟超时 重新选择客服”（无需刷新页面）
+      if (sessStatus === 'start_pending') {
+        const dl = getPrecheckDeadlineAtMs(usage)
+        if (dl && now >= dl) return '上钟超时 重新选择客服'
+      }
       return replaceTerms('待起单', card.value?.merchant)
     }
     return replaceTerms('待结单', card.value?.merchant)
