@@ -726,10 +726,10 @@
           <div>
             <div class="font-medium text-gray-800">房间管理</div>
             <div v-if="pendingStartSession" class="text-gray-700 text-sm mt-1">
-              待上钟 房间: {{ pendingStartRoomText }}
+              待上钟 房间号: {{ pendingStartRoomText }}
             </div>
             <div v-if="pendingStartSession" class="text-gray-700 text-sm mt-1 font-mono">
-              单号: {{ formatSessionNo(pendingStartSession.id) }}
+              单号: {{ formatSessionNo(pendingStartSession.initial_usage_id || pendingStartSession.id) }}
             </div>
             <div class="text-gray-500 text-sm mt-1">用于核销后房间占用与调度</div>
           </div>
@@ -1151,7 +1151,9 @@ const pendingStartSession = computed(() => {
   if (!isTechnicianAuth()) return null
   const techId = getTechnicianId()
   if (!techId) return null
-  const sess = serviceSessions.value.find(s => s.technician_id === techId && s.status === 'start_pending' && !s.start_confirmed_at)
+  const sess = serviceSessions.value
+    .filter(s => s.technician_id === techId && s.status === 'start_pending' && !s.start_confirmed_at)
+    .sort((a, b) => b.id - a.id)[0]
   return sess || null
 })
 
