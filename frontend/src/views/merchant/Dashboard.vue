@@ -747,11 +747,14 @@
         <div class="flex items-center justify-between">
           <div>
             <div class="font-medium text-gray-800">房间管理</div>
-            <div v-if="pendingStartSession" class="text-gray-700 text-sm mt-1">
-              待上钟 房间号: {{ pendingStartRoomText }}
+            <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1">
+              {{ roomManagePhaseText }} 房间号: {{ roomManageRoomText }}
             </div>
-            <div v-if="pendingStartSession" class="text-gray-700 text-sm mt-1 font-mono">
-              单号: {{ formatSessionNo(pendingStartSession.initial_usage_id || pendingStartSession.id) }}
+            <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1 font-mono">
+              单号: {{ formatSessionNo(roomManageTrackingId) }}
+            </div>
+            <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1">
+              项目: {{ roomManageProjectName }}
             </div>
             <div class="text-gray-500 text-sm mt-1">用于核销后房间占用与调度</div>
           </div>
@@ -1178,6 +1181,49 @@ const pendingStartSession = computed(() => {
     .filter(s => s.technician_id === techId && s.status === 'start_pending' && !s.start_confirmed_at)
     .sort((a, b) => b.id - a.id)[0]
   return sess || null
+})
+
+const roomManageSession = computed(() => {
+  if (!isTechnicianAuth()) return null
+  const techId = getTechnicianId()
+  if (!techId) return null
+  const activeStatuses = ['start_pending', 'delay_pending', 'serving', 'auto_finishing']
+  const sess = serviceSessions.value
+    .filter(s => s.technician_id === techId && activeStatuses.includes(s.status))
+    .sort((a, b) => b.id - a.id)[0]
+  return sess || null
+})
+
+const roomManagePhaseText = computed(() => {
+  const s = roomManageSession.value
+  if (!s) return ''
+  if (s.status === 'start_pending' && !s.start_confirmed_at) return '待上钟'
+  return '服务中'
+})
+
+const roomManageRoomText = computed(() => {
+  const s = roomManageSession.value
+  if (!s) return '-'
+  const roomName = s.room?.name
+  if (roomName) return roomName
+  if (s.room_id) return String(s.room_id)
+  return '-'
+})
+
+const roomManageTrackingId = computed(() => {
+  const s = roomManageSession.value
+  if (!s) return null
+  return s.initial_usage_id || s.id
+})
+
+const roomManageProjectName = computed(() => {
+  const s = roomManageSession.value
+  if (!s) return '-'
+  const usageId = s.initial_usage_id
+  if (!usageId) return '-'
+  const list = [].concat(todayUsages.value || [], todayStartUsages.value || [], todayFinishedUsages.value || [])
+  const usage = list.find(u => u && u.id === usageId)
+  return usage?.project?.name || '-'
 })
 
 const pendingStartRoomText = computed(() => {
