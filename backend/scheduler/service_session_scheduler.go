@@ -15,8 +15,8 @@ const (
 	schedulerTickInterval  = 3 * time.Second
 	schedulerBatchLimit    = 200
 	staffSelectingTimeout  = 5 * time.Minute
-	// 房间会话超时时间, 房间会话30分钟内没选技师、没开始服务则超时,自动取消房间锁定
-	sessionAbandonTimeout = 30 * time.Minute
+	// 房间会话超时时间, 房间会话60分钟内没选技师、没开始服务则超时,自动取消房间锁定
+	sessionAbandonTimeout = 60 * time.Minute
 )
 
 func getStartPendingTimeoutForSession(s *models.ServiceSession) time.Duration {

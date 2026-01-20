@@ -241,6 +241,7 @@ export const usageApi = {
 export const userServiceSessionApi = {
   getSession: (id) => api.get(`/user/service-sessions/${id}`),
   listRooms: (id) => api.get(`/user/service-sessions/${id}/rooms`),
+  resume: (id) => api.post(`/user/service-sessions/${id}/resume`),
   chooseRoom: (id, data) => api.post(`/user/service-sessions/${id}/room`, data),
   listTechnicians: (id) => api.get(`/user/service-sessions/${id}/technicians`),
   chooseTechnician: (id, data) => api.post(`/user/service-sessions/${id}/technician`, data),

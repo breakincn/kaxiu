@@ -561,10 +561,13 @@ const revokeLoading = ref(false)
 const isUsageStartTimeout = (usage) => {
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   if (!supportCS) return false
+  const supportRoom = Boolean(card.value?.merchant?.support_room)
   const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_start_confirmed_at
   const cnt = Number(usage?.start_timeout_count || 0)
   const precheckDl = getPrecheckDeadlineAtMs(usage)
+  const roomReleasedByCancel = supportRoom && sessStatus === 'canceled' && !precheckedAt && !usage?.service_room && !usage?.service_technician
+  if (roomReleasedByCancel) return false
   return (
     (cnt > 0 && (sessStatus === 'staff_selecting' || sessStatus === 'start_pending')) ||
     (sessStatus === 'start_pending' && !precheckedAt && precheckDl && Date.now() >= precheckDl) ||
@@ -583,8 +586,13 @@ const getUsageStatusText = (usage) => {
     if (sessStatus === 'finished') return '完成'
     if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
     if (supportCS && sessStatus === 'room_locked') return '待选客服'
-    // 会话已取消但 usage 仍在进行中：视为上钟超时，需重新选择客服
+    // 会话已取消但 usage 仍在进行中：
+    // - 若房间/客服均已释放：视为“超时未选择客服”，需重新选择房间
+    // - 否则：视为上钟超时，需重新选择客服
     if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
+      if (supportRoom && !usage?.service_room && !usage?.service_technician) {
+        return '超时未选择客服，请重新选择房间'
+      }
       return '上钟超时 重新选择客服'
     }
     // 上钟超时统一优先判断（避免兜底到待结单）
@@ -1252,6 +1260,14 @@ const onUsageTouchStart = (e, usage) => {
 
       // 上钟超时：二维码应失效，直接进入重新选择客服
       if (supportCS && sessID) {
+        // 会话取消且房间已释放：应重新选择房间
+        if (supportRoom && sessStatus === 'canceled' && !precheckedAt && !latest?.service_room && !latest?.service_technician) {
+          router.push({
+            path: `/user/service-sessions/${sessID}`,
+            query: { next_step: 'room_select' }
+          })
+          return
+        }
         if (isUsageStartTimeout(latest)) {
           router.push({
             path: `/user/service-sessions/${sessID}`,

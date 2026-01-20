@@ -108,6 +108,83 @@ func UserGetVerifyCodeStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": resp})
 }
 
+func UserResumeServiceSession(c *gin.Context) {
+	userIDAny, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	userID, _ := userIDAny.(uint)
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	sid := c.Param("id")
+	now := time.Now()
+
+	var out models.ServiceSession
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		var s models.ServiceSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", sid, userID).First(&s).Error; err != nil {
+			return err
+		}
+		if s.Status != "canceled" {
+			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可恢复"}
+		}
+
+		var merchant models.Merchant
+		if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+			return err
+		}
+
+		newStatus := "staff_selecting"
+		updates := map[string]interface{}{
+			"status":                      newStatus,
+			"technician_id":               nil,
+			"staff_select_cooldown_until": nil,
+			"staff_select_entered_at":     nil,
+			"start_pending_timeout_seconds": 0,
+			"updated_at":                  now,
+		}
+
+		if merchant.SupportRoom {
+			if s.RoomID == nil {
+				newStatus = "room_selecting"
+				updates["status"] = newStatus
+				updates["room_select_deadline_at"] = nil
+				updates["room_locked_at"] = nil
+			} else {
+				updates["room_select_deadline_at"] = nil
+			}
+		} else {
+			updates["room_id"] = nil
+			updates["room_locked_at"] = nil
+			updates["room_select_deadline_at"] = nil
+		}
+
+		if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND user_id = ? AND status = ?", s.ID, userID, "canceled").Updates(updates).Error; err != nil {
+			return err
+		}
+		return tx.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").First(&out, s.ID).Error
+	})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "会话不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": out})
+}
+
 func UserListAvailableRooms(c *gin.Context) {
 	userIDAny, ok := c.Get("user_id")
 	if !ok {

@@ -201,6 +201,20 @@ const statusText = (s) => {
 const goBack = () => router.back()
 
 
+const resumeIfCanceled = async () => {
+  if (!session.value) return false
+  if (session.value.status !== 'canceled') return false
+  try {
+    const res = await userServiceSessionApi.resume(sessionId.value)
+    session.value = res.data?.data || session.value
+    return true
+  } catch (e) {
+    errorText.value = e.response?.data?.error || '服务单恢复失败'
+    return false
+  }
+}
+
+
 const refresh = async () => {
   errorText.value = ''
   roomAutoAdjustedMsg.value = ''
@@ -208,6 +222,12 @@ const refresh = async () => {
   try {
     const res = await userServiceSessionApi.getSession(sessionId.value)
     session.value = res.data?.data || null
+
+    // 若服务单已取消：自动恢复后再继续按状态加载
+    if (await resumeIfCanceled()) {
+      const res2 = await userServiceSessionApi.getSession(sessionId.value)
+      session.value = res2.data?.data || session.value
+    }
 
     // 根据状态加载列表
     if (needsRoom.value) {
@@ -253,6 +273,33 @@ const chooseRoom = async (roomId) => {
   errorText.value = ''
   roomAutoAdjustedMsg.value = ''
   try {
+    // 防止页面展示的状态与后端实际状态不一致：提交前先同步一次最新会话状态
+    try {
+      const sres = await userServiceSessionApi.getSession(sessionId.value)
+      session.value = sres.data?.data || session.value
+    } catch (_) {
+      // ignore
+    }
+
+    // 若会话已取消，先尝试恢复，再继续
+    if (await resumeIfCanceled()) {
+      try {
+        const sres2 = await userServiceSessionApi.getSession(sessionId.value)
+        session.value = sres2.data?.data || session.value
+      } catch (_) {
+        // ignore
+      }
+    }
+
+    // 若当前已不在选房状态，直接刷新页面按最新状态展示（避免 400）
+    if (session.value?.status !== 'room_selecting') {
+      const msg = '当前状态不可选房'
+      errorText.value = msg
+      alert(msg)
+      await refresh()
+      return
+    }
+
     const res = await userServiceSessionApi.chooseRoom(sessionId.value, { room_id: roomId })
     const data = res.data || {}
     session.value = data.data || null
@@ -261,7 +308,10 @@ const chooseRoom = async (roomId) => {
     }
     await refresh()
   } catch (e) {
-    errorText.value = e.response?.data?.error || '选房失败'
+    const msg = e.response?.data?.error || '选房失败'
+    errorText.value = msg
+    alert(msg)
+    await refresh()
   } finally {
     actionLoading.value = false
   }
