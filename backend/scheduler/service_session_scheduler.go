@@ -176,8 +176,12 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&s, session.ID).Error; err != nil {
 			return err
 		}
-		if s.TechnicianID == nil && s.StartedAt == nil && s.CreatedAt != nil {
-			if now.Sub(*s.CreatedAt) >= sessionAbandonTimeout {
+		baseAt := s.UpdatedAt
+		if baseAt == nil {
+			baseAt = s.CreatedAt
+		}
+		if s.TechnicianID == nil && s.StartedAt == nil && baseAt != nil {
+			if now.Sub(*baseAt) >= sessionAbandonTimeout {
 				return cancelAndReleaseSession(tx, &s, now)
 			}
 		}
@@ -226,7 +230,11 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				Updates(updates).Error
 		case "room_selecting":
 			if s.RoomSelectDeadlineAt != nil && now.After(*s.RoomSelectDeadlineAt) {
-				if s.TechnicianID == nil && s.StartedAt == nil && s.CreatedAt != nil && now.Sub(*s.CreatedAt) >= sessionAbandonTimeout {
+				baseAt := s.UpdatedAt
+				if baseAt == nil {
+					baseAt = s.CreatedAt
+				}
+				if s.TechnicianID == nil && s.StartedAt == nil && baseAt != nil && now.Sub(*baseAt) >= sessionAbandonTimeout {
 					return cancelAndReleaseSession(tx, &s, now)
 				}
 				return autoAssignRoom(tx, &s, now)
