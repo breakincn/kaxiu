@@ -725,6 +725,12 @@
         <div class="flex items-center justify-between">
           <div>
             <div class="font-medium text-gray-800">房间管理</div>
+            <div v-if="pendingStartSession" class="text-gray-700 text-sm mt-1">
+              待上钟 房间: {{ pendingStartRoomText }}
+            </div>
+            <div v-if="pendingStartSession" class="text-gray-700 text-sm mt-1 font-mono">
+              单号: {{ formatSessionNo(pendingStartSession.id) }}
+            </div>
             <div class="text-gray-500 text-sm mt-1">用于核销后房间占用与调度</div>
           </div>
           <button
@@ -1140,6 +1146,29 @@ const setNextPausedLoading = ref(false)
 const serviceSessions = ref([])
 const sessionLoading = ref(false)
 const sessionStatusFilter = ref('')
+
+const pendingStartSession = computed(() => {
+  if (!isTechnicianAuth()) return null
+  const techId = getTechnicianId()
+  if (!techId) return null
+  const sess = serviceSessions.value.find(s => s.technician_id === techId && s.status === 'start_pending' && !s.start_confirmed_at)
+  return sess || null
+})
+
+const pendingStartRoomText = computed(() => {
+  const s = pendingStartSession.value
+  if (!s) return '-'
+  const roomName = s.room?.name
+  if (roomName) return roomName
+  if (s.room_id) return String(s.room_id)
+  return '-'
+})
+
+const formatSessionNo = (id) => {
+  const n = Number(id)
+  if (!Number.isFinite(n) || n <= 0) return '-'
+  return String(n).padStart(9, '0')
+}
 
 // 技师当前服务状态（用于显示）
 const technicianCurrentStatus = computed(() => {
