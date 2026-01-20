@@ -138,6 +138,18 @@
         扫码核销
       </button>
       <button
+        v-if="showStartTab"
+        @click="selectTab('start')"
+        :class="[
+          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          currentTab === 'start'
+            ? 'border-primary text-primary'
+            : 'border-transparent text-gray-500'
+        ]"
+      >
+        {{ replaceTerms('扫码起单', merchant) }}
+      </button>
+      <button
         v-if="showFinishTab"
         @click="selectTab('finish')"
         :class="[
@@ -340,6 +352,18 @@
         <div v-else class="text-center text-gray-400 py-4">
           今日暂无核销
         </div>
+      </div>
+    </div>
+
+    <!-- 扫码起单 -->
+    <div v-if="currentTab === 'start' && showStartTab" class="px-4 py-4">
+      <div class="bg-white rounded-xl p-4 shadow-sm">
+        <button
+          @click="goScanStart"
+          class="w-full py-3 bg-primary text-white rounded-lg font-medium"
+        >
+          {{ replaceTerms('扫码起单', merchant) }}
+        </button>
       </div>
     </div>
 
@@ -895,6 +919,11 @@ const showVerifyTab = computed(() => {
   return canVerify.value
 })
 
+const showStartTab = computed(() => {
+  // 仅结单权限（无核销权限）时显示“扫码起单/上钟”tab
+  return !canVerify.value && canFinishVerify.value
+})
+
 const showFinishTab = computed(() => {
 	return false
 })
@@ -929,6 +958,10 @@ const selectTab = (tab) => {
 }
 
 const getDefaultTab = () => {
+  // 技师（工作人员）仅有"结单权限"（无核销权限）时，默认展示"扫码起单/上钟"tab
+  if (isTechnicianAuth() && !canVerify.value && canFinishVerify.value) {
+    return 'start'
+  }
   if (showQueueTab.value) {
     return 'queue'
   } else if (showVerifyTab.value) {
@@ -1189,6 +1222,10 @@ const goScanVerify = () => {
   router.push({ path: '/merchant/scan-verify', query: { mode: 'verify' } })
 }
 
+const goScanStart = () => {
+  router.push({ path: '/merchant/scan-verify', query: { mode: 'start' } })
+}
+
 // 兼容旧模板引用：当前 finish tab 未启用，但需要保留方法以避免编译报错
 const goScanFinish = () => {
   goScanVerify()
@@ -1231,11 +1268,11 @@ const doExtendSession = async () => {
 const onTopScanClick = () => {
   if (Date.now() < suppressTopScanClickUntil.value) return
   // 顶部扫码入口也按同样规则：
-  // - 只有结单权限：进入结单模式（只结单，不核销）
+  // - 只有结单权限：进入起单模式（只起单，不核销）
   // - 同时有核销+结单：进入智能模式（优先核销，满足条件才结单）
   // - 只有核销：进入核销模式
   if (!canVerify.value && canFinishVerify.value) {
-    router.push({ path: '/merchant/table', query: { tab: 'staff' } })
+    goScanStart()
     return
   }
   goScanVerify()
@@ -2064,7 +2101,7 @@ onMounted(async () => {
   // 尝试从 localStorage 恢复上次选择的 tab
   try {
     const savedTab = localStorage.getItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY)
-    if (savedTab && ['queue', 'verify', 'finish', 'notice', 'cards', 'service'].includes(savedTab)) {
+    if (savedTab && ['queue', 'verify', 'start', 'finish', 'notice', 'cards', 'service'].includes(savedTab)) {
       selectTab(savedTab)
       console.log('从 localStorage 恢复 tab:', savedTab)
     }
@@ -2080,16 +2117,10 @@ onMounted(async () => {
     canVerify: canVerify.value,
     canFinishVerify: canFinishVerify.value
   })
-
-  // 技师账号仅有结单权限（无核销权限）时：直接进入扫码起单的看板页（客服 tab）
-  if (isTechnicianAuth() && !canVerify.value && canFinishVerify.value) {
-    router.replace({ path: '/merchant/table', query: { tab: 'staff' } })
-    return
-  }
   
   // 检查查询参数，自动切换到指定Tab（优先级高于 localStorage）
   const tabParam = route.query.tab
-  if (tabParam && ['queue', 'verify', 'finish', 'notice', 'cards', 'service'].includes(tabParam)) {
+  if (tabParam && ['queue', 'verify', 'start', 'finish', 'notice', 'cards', 'service'].includes(tabParam)) {
     selectTab(tabParam)
   }
 
@@ -2128,11 +2159,12 @@ onMounted(async () => {
   if (!tabParam) {
     // 如果已经从 localStorage 恢复了 tab，并且该 tab 有权限显示，则保持不变
     const restoredTab = currentTab.value
-    if (restoredTab && ['queue', 'verify', 'finish', 'notice', 'cards', 'service'].includes(restoredTab)) {
+    if (restoredTab && ['queue', 'verify', 'start', 'finish', 'notice', 'cards', 'service'].includes(restoredTab)) {
       // 检查恢复的 tab 是否有权限显示
       const canShowRestoredTab = 
         (restoredTab === 'queue' && showQueueTab.value) ||
         (restoredTab === 'verify' && showVerifyTab.value) ||
+        (restoredTab === 'start' && showStartTab.value) ||
         (restoredTab === 'finish' && showFinishTab.value) ||
         (restoredTab === 'notice' && showNoticeTab.value) ||
         (restoredTab === 'cards' && showCardsTab.value) ||
@@ -2178,6 +2210,20 @@ onMounted(async () => {
     } else if (currentTab.value === 'verify' && !showVerifyTab.value) {
       if (showQueueTab.value) {
         selectTab('queue')
+      } else if (showStartTab.value) {
+        selectTab('start')
+      } else if (showFinishTab.value) {
+        selectTab('finish')
+      } else if (showNoticeTab.value) {
+        selectTab('notice')
+      } else {
+        selectTab(showCardsTab.value ? 'cards' : 'queue')
+      }
+    } else if (currentTab.value === 'start' && !showStartTab.value) {
+      if (showQueueTab.value) {
+        selectTab('queue')
+      } else if (showVerifyTab.value) {
+        selectTab('verify')
       } else if (showFinishTab.value) {
         selectTab('finish')
       } else if (showNoticeTab.value) {

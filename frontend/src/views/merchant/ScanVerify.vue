@@ -87,7 +87,7 @@ const getReturnPath = () => {
 const getReturnTab = () => {
   const t = String(route.query.tab || '').trim()
   if (t) return t
-  return isStartOnlyMode() ? 'staff' : 'verify'
+  return isStartOnlyMode() ? 'start' : 'verify'
 }
 
 const isStartOnlyMode = () => {
