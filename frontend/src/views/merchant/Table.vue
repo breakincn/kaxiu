@@ -98,7 +98,7 @@
                       <div v-if="it.room">房间：{{ it.room.name }}</div>
                       <div v-if="it.service_start_at">开始：{{ formatTime(it.service_start_at) }}</div>
                       <div v-if="it.service_finish_at">结束：{{ formatTime(it.service_finish_at) }}</div>
-                      <div v-if="it.service_finish_at">剩余：{{ formatDuration(it.remain_seconds) }}</div>
+                      <div v-if="it.service_finish_at">剩余：{{ calculateRemainTime(it.service_finish_at) }}</div>
                       <div v-if="it.next_available_at">下次可服务：{{ formatTime(it.next_available_at) }}（{{ formatDuration(it.next_available_in_seconds) }}）</div>
                     </div>
                   </div>
@@ -264,6 +264,7 @@ const badgeText = (it) => {
     const sst = String(sess.status || '').trim()
     const startConfirmedAt = sess.start_confirmed_at
     if (sst === 'start_pending' && !startConfirmedAt) return replaceTerms('服务 待起单', merchant.value)
+    if (sst === 'auto_finishing') return replaceTerms('待自动下钟', merchant.value)
     return replaceTerms('服务 待结单', merchant.value)
   }
 
@@ -278,6 +279,7 @@ const badgeClass = (it) => {
   if (txt === '未签到') return 'bg-gray-100 text-gray-500'
   if (txt === '空闲') return 'bg-green-50 text-green-600'
   if (txt === replaceTerms('服务 待起单', merchant.value)) return 'bg-red-50 text-red-600'
+  if (txt === replaceTerms('待自动下钟', merchant.value)) return 'bg-red-50 text-red-600'
   if (txt === replaceTerms('服务 待结单', merchant.value)) return 'bg-orange-50 text-orange-600'
   if (txt === '暂停') return 'bg-blue-50 text-blue-600'
   return 'bg-blue-50 text-blue-600'
