@@ -365,6 +365,28 @@
           {{ replaceTerms('扫码起单', merchant) }}
         </button>
       </div>
+
+      <div class="bg-white rounded-xl p-4 shadow-sm mt-4">
+        <h3 class="font-medium text-gray-800 mb-4">{{ replaceTerms('今日起单记录', merchant) }}</h3>
+        <div v-if="todayStartUsages.length > 0" class="space-y-3">
+          <div v-for="usage in todayStartUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
+            <div class="flex-1">
+              <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
+              <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
+              <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
+              <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
+              <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
+              <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-gray-700 text-sm">核销 {{ usage.used_times }} 次</div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="text-center text-gray-400 py-4">
+          {{ replaceTerms('今日暂无起单', merchant) }}
+        </div>
+      </div>
     </div>
 
     <!-- 扫码结单 -->
@@ -1053,6 +1075,7 @@ const pendingAppointments = ref(0)
 const pendingDirectPurchases = ref(0)
 const appointments = ref([])
 const todayUsages = ref([])
+const todayStartUsages = ref([])
 const todayFinishedUsages = ref([])
 const notices = ref([])
 const currentTime = ref(Date.now())
@@ -1650,6 +1673,27 @@ const fetchTodayUsages = async () => {
     todayUsages.value = (res.data.data || []).filter(u => u.used_at && u.used_at.startsWith(today))
   } catch (err) {
     console.error('获取核销记录失败:', err)
+  }
+}
+
+const fetchTodayStartUsages = async () => {
+  try {
+    const res = await usageApi.getMerchantUsages(merchantId.value)
+    const today = new Date().toISOString().split('T')[0]
+    const currentTechnicianId = getTechnicianId()
+    if (!currentTechnicianId) {
+      todayStartUsages.value = []
+      return
+    }
+    todayStartUsages.value = (res.data.data || []).filter(u =>
+      u.used_at &&
+      u.used_at.startsWith(today) &&
+      u.technician_id === currentTechnicianId &&
+      !!u.service_session_status
+    )
+  } catch (err) {
+    console.error('获取起单记录失败:', err)
+    todayStartUsages.value = []
   }
 }
 
@@ -2313,6 +2357,8 @@ onMounted(async () => {
     startCountdownTimer()
   } else if (currentTab.value === 'verify') {
     fetchTodayUsages()
+  } else if (currentTab.value === 'start') {
+    fetchTodayStartUsages()
   } else if (currentTab.value === 'finish') {
     fetchTodayFinishedUsages()
   } else if (currentTab.value === 'cards') {
@@ -2485,6 +2531,8 @@ onActivated(() => {
   // 根据当前Tab刷新对应数据
   if (currentTab.value === 'verify') {
     fetchTodayUsages()
+  } else if (currentTab.value === 'start') {
+    fetchTodayStartUsages()
   } else if (currentTab.value === 'finish') {
     fetchTodayFinishedUsages()
   }
