@@ -592,6 +592,7 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		}
 		projectID = uint(pid)
 	}
+	log.Printf("GetAvailableTimeSlots: merchant_id=%s date=%s project_id=%d", merchantID, date, projectID)
 	loc, locErr := time.LoadLocation("Asia/Shanghai")
 	if locErr != nil {
 		loc = time.Local
@@ -634,6 +635,7 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		return
 	}
 	serviceMinutes := project.Duration
+	log.Printf("GetAvailableTimeSlots: project_id=%d duration=%d service_minutes=%d", projectID, project.Duration, serviceMinutes)
 	if serviceMinutes <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "项目时长无效"})
 		return
