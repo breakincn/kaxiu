@@ -283,7 +283,10 @@
         <div class="flex justify-between items-start mb-2">
           <div>
             <div class="font-medium text-gray-800">用户 ID: {{ appt.user?.nickname || appt.user_id }}</div>
-            <div class="text-gray-500 text-sm">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
+            <div class="text-gray-500 text-sm">
+              <span>{{ formatAppointmentTechnicianDisplay(appt) }}</span>
+              <span class="ml-2">预约时间: {{ formatDateTime(appt.appointment_time) }}</span>
+            </div>
             <!-- 待确认预约的倒计时 -->
             <div v-if="appt.status === 'pending' && getPendingCountdown(appt) !== null" :class="getPendingCountdownClass(appt)">
               {{ getPendingCountdownDisplay(appt) }}
@@ -2173,6 +2176,16 @@ const getPendingCountdownClass = (appt) => {
     return 'text-primary text-sm font-medium mt-1'
   }
   return 'text-gray-500 text-sm font-medium mt-1'
+}
+
+const formatAppointmentTechnicianDisplay = (appt) => {
+  if (!appt || !appt.technician) return '待分配'
+  const roleName = appt.technician?.service_role?.name || ''
+  const account = appt.technician?.account || appt.technician?.code || ''
+  const left = String(roleName || '').trim()
+  const right = String(account || '').trim()
+  const text = `${left} ${right}`.trim()
+  return text || '待分配'
 }
 
 // 计算预约倒计时（秒）

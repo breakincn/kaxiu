@@ -128,7 +128,7 @@ func GetMerchantAppointments(c *gin.Context) {
 	status := c.Query("status")
 
 	var appointments []models.Appointment
-	query := config.DB.Preload("User").Preload("Technician").Where("merchant_id = ?", merchantID)
+	query := config.DB.Preload("User").Preload("Technician").Preload("Technician.ServiceRole").Where("merchant_id = ?", merchantID)
 
 	if status != "" {
 		query = query.Where("status = ?", status)
