@@ -282,11 +282,8 @@
       <div v-for="appt in appointments" :key="appt.id" class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex justify-between items-start mb-2">
           <div>
-            <div class="font-medium text-gray-800">用户 ID: {{ appt.user?.nickname || appt.user_id }}</div>
-            <div class="text-gray-500 text-sm">
-              <span>{{ formatAppointmentTechnicianDisplay(appt) }}</span>
-              <span class="ml-2">预约时间: {{ formatDateTime(appt.appointment_time) }}</span>
-            </div>
+            <div class="font-medium text-gray-800">{{ appt.user?.nickname || appt.user_id }} <span class="ml-2 text-gray-500 text-sm font-normal">{{ formatAppointmentTechnicianDisplay(appt) }}</span></div>
+            <div class="text-gray-500 text-sm mt-1">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
             <!-- 待确认预约的倒计时 -->
             <div v-if="appt.status === 'pending' && getPendingCountdown(appt) !== null" :class="getPendingCountdownClass(appt)">
               {{ getPendingCountdownDisplay(appt) }}
