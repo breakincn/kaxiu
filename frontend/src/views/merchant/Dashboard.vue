@@ -223,6 +223,10 @@
               <div v-if="appt.status === 'pending' && getPendingCountdown(appt) !== null" :class="getPendingCountdownClass(appt)" class="mt-1">
                 {{ getPendingCountdownDisplay(appt) }}
               </div>
+              <!-- 已确认预约的服务开始倒计时 -->
+              <div v-if="appt.status === 'confirmed' && getAppointmentCountdown(appt) !== null && !isServiceTimeExpired(appt)" :class="getServiceCountdownClass(appt)" class="mt-1">
+                服务开始: {{ getServiceCountdownDisplay(appt) }}
+              </div>
             </div>
             <span :class="getStatusBadgeClass(appt)">
               {{ getStatusText(appt) }}
@@ -2230,6 +2234,46 @@ const getCountdownClass = (appt) => {
   if (countdown <= 600) {
     return 'text-primary text-sm font-medium mt-1'
   }
+  return 'text-gray-500 text-sm font-medium mt-1'
+}
+
+// 获取服务开始倒计时显示文本
+const getServiceCountdownDisplay = (appt) => {
+  const countdown = getAppointmentCountdown(appt)
+  if (countdown === null) return ''
+  
+  if (countdown <= 0) {
+    return '已开始'
+  }
+  
+  const totalSeconds = countdown
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  
+  if (hours > 0) {
+    return `${hours}小时${minutes}分钟${seconds}秒`
+  } else if (minutes > 0) {
+    return `${minutes}分钟${seconds}秒`
+  } else {
+    return `${seconds}秒`
+  }
+}
+
+// 获取服务开始倒计时颜色类（15分钟以内红色）
+const getServiceCountdownClass = (appt) => {
+  const countdown = getAppointmentCountdown(appt)
+  if (countdown === null) return 'text-gray-500 text-sm font-medium mt-1'
+  
+  if (countdown <= 0) {
+    return 'text-green-600 text-sm font-medium mt-1'
+  }
+  
+  // 15分钟以内（900秒）用红色显示
+  if (countdown <= 900) {
+    return 'text-red-500 text-sm font-medium mt-1'
+  }
+  
   return 'text-gray-500 text-sm font-medium mt-1'
 }
 
