@@ -219,8 +219,8 @@ func GetCardAppointment(c *gin.Context) {
 	log.Printf("查询预约: 卡片ID=%s, 用户ID=%d, 商户ID=%d", cardID, card.UserID, card.MerchantID)
 
 	var appointment models.Appointment
-	err := config.DB.Preload("Merchant").Preload("Technician").
-		Where("user_id = ? AND merchant_id = ? AND status IN ('pending', 'confirmed')", card.UserID, card.MerchantID).
+	err := config.DB.Preload("Merchant").Preload("Project").Preload("Technician").
+		Where("user_id = ? AND merchant_id = ? AND status IN ('pending', 'confirmed', 'failed')", card.UserID, card.MerchantID).
 		Order("appointment_time ASC").
 		First(&appointment).Error
 

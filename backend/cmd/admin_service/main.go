@@ -16,6 +16,8 @@ func main() {
 
 	// 启动服务会话调度器（自动分房/延迟开计时/自动结单/回收空闲）
 	scheduler.StartServiceSessionScheduler()
+	// 启动预约调度器（未选客服预约：10分钟后自动分配客服/失败原因写入）
+	scheduler.StartAppointmentScheduler()
 
 	r := gin.Default()
 	r.Use(cors.New(middleware.CORSMiddleware()))

@@ -177,8 +177,10 @@ type Appointment struct {
 	ProjectID       *uint      `json:"project_id" gorm:"index;comment:项目ID（merchant_projects表主键，可为空）"`
 	TechnicianID    *uint      `json:"technician_id" gorm:"index;comment:技师ID（technicians表主键，可为空）"`
 	AppointmentTime *time.Time `json:"appointment_time" gorm:"type:datetime(3);comment:预约时间"`
-	Status          string     `json:"status" gorm:"size:20;default:pending;comment:预约状态（pending-待确认，confirmed-已确认/排队中，finished-已完成，canceled-已取消）"`
+	Status          string     `json:"status" gorm:"size:20;default:pending;comment:预约状态（pending-待确认，confirmed-已确认/排队中，finished-已完成，canceled-已取消，failed-失败）"`
 	CanceledAt      *time.Time `json:"canceled_at" gorm:"type:datetime(3);comment:取消时间"`
+	FailedAt        *time.Time `json:"failed_at" gorm:"type:datetime(3);comment:失败时间（自动分配失败时填充）"`
+	FailedReason    string     `json:"failed_reason" gorm:"size:255;default:'';comment:失败原因（自动分配失败时说明）"`
 	CreatedAt       *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	User       User        `json:"user" gorm:"foreignKey:UserID"`

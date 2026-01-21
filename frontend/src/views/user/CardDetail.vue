@@ -1540,6 +1540,7 @@ const cooldownButtonText = computed(() => {
 
 const isAppointmentFailed = computed(() => {
   if (!appointment.value || !appointment.value.appointment_time) return false
+  if (appointment.value.status === 'failed') return true
   if (appointment.value.status !== 'pending' && appointment.value.status !== 'confirmed') return false
   const appointmentTimeMs = new Date(appointment.value.appointment_time).getTime()
   const nowMs = Date.now()
@@ -1553,7 +1554,7 @@ const cancelButtonDisabled = computed(() => {
 })
 
 const cancelButtonText = computed(() => {
-  if (isAppointmentFailed.value) return '预约失败'
+  if (isAppointmentFailed.value) return appointment.value?.failed_reason ? `预约失败：${appointment.value.failed_reason}` : '预约失败'
   return canceling.value ? '取消中...' : '取消预约'
 })
 
@@ -1772,6 +1773,11 @@ const confirmAppointment = async () => {
   if (!selectedAppointmentProjectId.value) {
     alert('请选择项目')
     return
+  }
+
+  if ((availableTechnicians.value || []).length > 0 && !selectedTechnicianId.value) {
+    const ok = window.confirm('你未选择客服，系统稍后将自动分配客服')
+    if (!ok) return
   }
 
   appointing.value = true
