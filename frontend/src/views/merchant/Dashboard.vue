@@ -377,7 +377,7 @@
               <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
               <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
-              <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
+              <div class="text-gray-500 text-sm mt-1">项目：{{ formatProjectNameWithDuration(usage.project) }}</div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             </div>
@@ -1221,8 +1221,18 @@ const roomManageProjectName = computed(() => {
   const s = roomManageSession.value
   if (!s) return '-'
   // 直接从 ServiceSession 中获取 Project 信息，不再依赖 Usage 数据
-  return s.project?.name || '-'
+  return formatProjectNameWithDuration(s.project)
 })
+
+// 格式化项目名称（加上时长）
+const formatProjectNameWithDuration = (project) => {
+  if (!project || !project.name) return '-'
+  const duration = Number(project.duration)
+  if (Number.isFinite(duration) && duration > 0) {
+    return `${project.name}（${duration}分钟）`
+  }
+  return project.name
+}
 
 const pendingStartRoomText = computed(() => {
   const s = pendingStartSession.value
