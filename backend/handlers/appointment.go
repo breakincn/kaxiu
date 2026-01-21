@@ -86,6 +86,18 @@ func isWithinBusinessIntervals(t time.Time, intervals []businessInterval) bool {
 	return false
 }
 
+func getAppointmentServiceMinutes(merchantID uint, appt models.Appointment) int {
+	if appt.ProjectID != nil && *appt.ProjectID > 0 {
+		var p models.MerchantProject
+		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ?", *appt.ProjectID, merchantID, true).First(&p).Error; err == nil {
+			if p.Duration > 0 {
+				return p.Duration
+			}
+		}
+	}
+	return 30
+}
+
 func cancelAppointmentWithTime(appointment *models.Appointment, canceledAt time.Time) error {
 	return config.DB.Model(appointment).Updates(map[string]interface{}{
 		"status":      "canceled",
@@ -283,6 +295,7 @@ func CreateAppointment(c *gin.Context) {
 	var input struct {
 		MerchantID      uint   `json:"merchant_id" binding:"required"`
 		UserID          uint   `json:"user_id" binding:"required"`
+		ProjectID       *uint  `json:"project_id"`
 		TechnicianID    *uint  `json:"technician_id"`
 		AppointmentTime string `json:"appointment_time" binding:"required"`
 	}
@@ -313,6 +326,22 @@ func CreateAppointment(c *gin.Context) {
 		var tech models.Technician
 		if err := config.DB.Where("id = ? AND merchant_id = ?", *input.TechnicianID, input.MerchantID).First(&tech).Error; err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的技师"})
+			return
+		}
+	}
+
+	var project models.MerchantProject
+	if input.ProjectID != nil {
+		if *input.ProjectID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
+			return
+		}
+		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ?", *input.ProjectID, input.MerchantID, true).First(&project).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
+			return
+		}
+		if project.Duration <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "项目时长无效"})
 			return
 		}
 	}
@@ -381,10 +410,21 @@ func CreateAppointment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "预约时间不在营业时间范围内"})
 		return
 	}
+	if input.ProjectID == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择项目"})
+		return
+	}
+	serviceMinutes := project.Duration
+	serviceEnd := appointmentTime.Add(time.Duration(serviceMinutes) * time.Minute)
+	if !isWithinBusinessIntervals(serviceEnd.Add(-1*time.Second), intervals) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "服务必须在营业时间内完成"})
+		return
+	}
 
 	appointment := models.Appointment{
 		MerchantID:      input.MerchantID,
 		UserID:          input.UserID,
+		ProjectID:       input.ProjectID,
 		TechnicianID:    input.TechnicianID,
 		AppointmentTime: &appointmentTime,
 		Status:          "pending",
@@ -398,7 +438,7 @@ func CreateAppointment(c *gin.Context) {
 
 	log.Printf("预约创建成功: ID=%d, 状态=%s", appointment.ID, appointment.Status)
 
-	config.DB.Preload("User").Preload("Merchant").Preload("Technician").First(&appointment, appointment.ID)
+	config.DB.Preload("User").Preload("Merchant").Preload("Project").Preload("Technician").First(&appointment, appointment.ID)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 
@@ -471,7 +511,7 @@ func FinishAppointment(c *gin.Context) {
 		return
 	}
 
-	serviceMinutes := 30
+	serviceMinutes := getAppointmentServiceMinutes(merchant.ID, appointment)
 
 	now := time.Now()
 	finishDeadline := appointment.AppointmentTime.Add(time.Duration(serviceMinutes+30) * time.Minute)
@@ -542,6 +582,16 @@ func GetQueueStatus(c *gin.Context) {
 func GetAvailableTimeSlots(c *gin.Context) {
 	merchantID := c.Param("id")
 	date := c.Query("date") // 格式: 2024-01-01
+	projectIDStr := strings.TrimSpace(c.Query("project_id"))
+	var projectID uint
+	if projectIDStr != "" {
+		pid, err := strconv.ParseUint(projectIDStr, 10, 64)
+		if err != nil || pid == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
+			return
+		}
+		projectID = uint(pid)
+	}
 	loc, locErr := time.LoadLocation("Asia/Shanghai")
 	if locErr != nil {
 		loc = time.Local
@@ -574,6 +624,20 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持预约明天"})
 		return
 	}
+	if projectID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择项目"})
+		return
+	}
+	var project models.MerchantProject
+	if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ?", projectID, merchant.ID, true).First(&project).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
+		return
+	}
+	serviceMinutes := project.Duration
+	if serviceMinutes <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "项目时长无效"})
+		return
+	}
 
 	// 懒更新：自动取消该商户已超时(>=35分钟)但未核销的预约，避免继续占用时间段
 	overdueDeadline := now.Add(-35 * time.Minute)
@@ -591,10 +655,6 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	config.DB.Preload("User").Where("merchant_id = ? AND appointment_time LIKE ? AND status IN ('pending', 'confirmed')",
 		merchantID, datePrefix).Order("appointment_time ASC").Find(&appointments)
 
-	// 生成可用时间段（营业时间 9:00-21:00）
-	// 说明：平均服务时长字段已移除；后续可根据“预约选择的项目时长”生成更精确的时间段
-	serviceMinutes := 30
-
 	// 解析日期
 	targetDate, _ := time.ParseInLocation("2006-01-02", date, loc)
 	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
@@ -603,15 +663,17 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		return
 	}
 
-	// 生成所有可能的时间段
+	// 生成所有可能的时间段（仅生成服务能在营业时间内完成的起始时刻）
 	var allSlots []string
 	for _, it := range intervals {
-		for t := it.Start; t.Before(it.End); t = t.Add(time.Duration(serviceMinutes) * time.Minute) {
+		// 最晚可开始时间 = 营业结束 - 服务时长
+		latestStart := it.End.Add(-time.Duration(serviceMinutes) * time.Minute)
+		for t := it.Start; !t.After(latestStart); t = t.Add(time.Duration(serviceMinutes) * time.Minute) {
 			allSlots = append(allSlots, t.Format("2006-01-02 15:04:05"))
 		}
 	}
 
-	// 标记已被占用的时间段
+	// 标记已被占用的时间段（按各自预约项目时长占用）
 	type TimeSlot struct {
 		Time      string `json:"time"`
 		Available bool   `json:"available"`
@@ -630,10 +692,12 @@ func GetAvailableTimeSlots(c *gin.Context) {
 				continue
 			}
 			aptTime := *apt.AppointmentTime
+			aptMinutes := getAppointmentServiceMinutes(merchant.ID, apt)
 
-			// 如果预约时间在当前时间段内，或者当前时间段在预约的服务时长内
-			if slotTime.Equal(aptTime) ||
-				(slotTime.After(aptTime) && slotTime.Before(aptTime.Add(time.Duration(serviceMinutes)*time.Minute))) {
+			aptEnd := aptTime.Add(time.Duration(aptMinutes) * time.Minute)
+			slotEnd := slotTime.Add(time.Duration(serviceMinutes) * time.Minute)
+			// 区间相交则冲突：[slotTime, slotEnd) 与 [aptTime, aptEnd)
+			if slotTime.Before(aptEnd) && aptTime.Before(slotEnd) {
 				available = false
 				if apt.User.Nickname != "" {
 					userName = apt.User.Nickname
@@ -644,11 +708,7 @@ func GetAvailableTimeSlots(c *gin.Context) {
 
 		// 仅返回可预约的时间段（排除已被预约/占用的时间段）
 		if available {
-			timeSlots = append(timeSlots, TimeSlot{
-				Time:      slot,
-				Available: available,
-				UserName:  userName,
-			})
+			timeSlots = append(timeSlots, TimeSlot{Time: slot, Available: true, UserName: userName})
 		}
 	}
 
@@ -657,7 +717,6 @@ func GetAvailableTimeSlots(c *gin.Context) {
 			"date":                  date,
 			"service_minutes":       serviceMinutes,
 			"time_slots":            timeSlots,
-			"existing_appointments": appointments,
 		},
 	})
 }

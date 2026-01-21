@@ -174,6 +174,7 @@ type Appointment struct {
 	ID              uint       `json:"id" gorm:"primaryKey;comment:预约ID"`
 	MerchantID      uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
 	UserID          uint       `json:"user_id" gorm:"index;comment:用户ID（外键关联users表）"`
+	ProjectID       *uint      `json:"project_id" gorm:"index;comment:项目ID（merchant_projects表主键，可为空）"`
 	TechnicianID    *uint      `json:"technician_id" gorm:"index;comment:技师ID（technicians表主键，可为空）"`
 	AppointmentTime *time.Time `json:"appointment_time" gorm:"type:datetime(3);comment:预约时间"`
 	Status          string     `json:"status" gorm:"size:20;default:pending;comment:预约状态（pending-待确认，confirmed-已确认/排队中，finished-已完成，canceled-已取消）"`
@@ -182,6 +183,7 @@ type Appointment struct {
 
 	User       User        `json:"user" gorm:"foreignKey:UserID"`
 	Merchant   Merchant    `json:"merchant" gorm:"foreignKey:MerchantID"`
+	Project    *MerchantProject `json:"project" gorm:"foreignKey:ProjectID"`
 	Technician *Technician `json:"technician" gorm:"foreignKey:TechnicianID"`
 }
 

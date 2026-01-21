@@ -420,15 +420,18 @@
           </div>
         </div>
 
-        <!-- 日期选择 -->
+        <!-- 项目选择（先选项目，再选时间） -->
         <div class="px-5 py-3 border-b">
-          <div class="flex gap-2">
-            <button
-              type="button"
-              class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors bg-primary text-white"
-            >
-              明天
-            </button>
+          <div class="text-sm font-medium text-gray-700 mb-2">选择项目</div>
+          <div v-if="!card.projects || card.projects.length === 0" class="text-gray-400 text-sm">暂无可选项目</div>
+          <div v-else class="space-y-2">
+            <label v-for="p in card.projects" :key="p.id" class="flex items-center gap-3">
+              <input type="radio" name="appt_project" :value="p.id" v-model="selectedAppointmentProjectId" />
+              <div class="flex-1">
+                <div class="text-gray-800">{{ p.name }}</div>
+                <div v-if="p.duration" class="text-gray-400 text-xs">时长 {{ p.duration }} 分钟</div>
+              </div>
+            </label>
           </div>
         </div>
 
@@ -445,16 +448,13 @@
               v-for="slot in timeSlots"
               :key="slot.time"
               @click="selectTimeSlot(slot)"
-              :disabled="!slot.available"
               :class="{
-                'bg-primary text-white': selectedTimeSlot === slot.time && slot.available,
-                'bg-gray-100 text-gray-400 cursor-not-allowed': !slot.available,
-                'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary': slot.available && selectedTimeSlot !== slot.time
+                'bg-primary text-white': selectedTimeSlot === slot.time,
+                'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary': selectedTimeSlot !== slot.time
               }"
               class="py-3 px-4 rounded-lg font-medium transition-all"
             >
               <div>{{ formatTime(slot.time) }}</div>
-              <div v-if="!slot.available" class="text-xs mt-1">已被预约</div>
             </button>
           </div>
         </div>
@@ -463,7 +463,7 @@
         <div class="px-5 py-4 border-t">
           <button
             @click="confirmAppointment"
-            :disabled="!selectedTimeSlot || appointing || (appointmentMode === 'technician' && !selectedTechnicianId)"
+            :disabled="!selectedAppointmentProjectId || !selectedTimeSlot || appointing || (appointmentMode === 'technician' && !selectedTechnicianId)"
             class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {{ appointing ? '预纤中...' : '确认预约' }}
@@ -475,7 +475,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { cardApi, usageApi, noticeApi, appointmentApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
@@ -1399,6 +1399,8 @@ const selectedTimeSlot = ref('')
 const timeSlots = ref([])
 const loadingSlots = ref(false)
 
+const selectedAppointmentProjectId = ref(null)
+
 const technicians = ref([])
 const loadingTechnicians = ref(false)
 const selectedTechnicianId = ref(null)
@@ -1666,9 +1668,10 @@ const showAppointmentModal = async () => {
   appointmentMode.value = 'time'
   selectedTechnicianId.value = null
   selectedDate.value = getTomorrowDate()
+  selectedAppointmentProjectId.value = null
   selectedTimeSlot.value = ''
+  timeSlots.value = []
   await loadTechnicians(card.value.merchant_id)
-  await loadTimeSlots(selectedDate.value)
 }
 
 // 关闭弹窗
@@ -1677,9 +1680,21 @@ const closeModal = () => {
   appointmentMode.value = 'time'
   selectedTechnicianId.value = null
   selectedDate.value = ''
+  selectedAppointmentProjectId.value = null
   selectedTimeSlot.value = ''
   timeSlots.value = []
 }
+
+const onAppointmentProjectChange = async () => {
+  selectedTimeSlot.value = ''
+  timeSlots.value = []
+  if (!selectedAppointmentProjectId.value) return
+  await loadTimeSlots(selectedDate.value)
+}
+
+watch(selectedAppointmentProjectId, () => {
+  onAppointmentProjectChange()
+})
 
 const loadTechnicians = async (merchantId) => {
   loadingTechnicians.value = true
@@ -1706,11 +1721,15 @@ const loadTimeSlots = async (date) => {
     console.error('商户ID不存在')
     return
   }
+  if (!selectedAppointmentProjectId.value) {
+    timeSlots.value = []
+    return
+  }
   
   loadingSlots.value = true
   try {
     console.log('正在获取时间段，商户ID:', card.value.merchant_id, '日期:', date)
-    const res = await appointmentApi.getAvailableTimeSlots(card.value.merchant_id, date)
+    const res = await appointmentApi.getAvailableTimeSlots(card.value.merchant_id, date, selectedAppointmentProjectId.value)
     console.log('获取时间段响应:', res.data)
     timeSlots.value = res.data.data.time_slots || []
 
@@ -1729,7 +1748,6 @@ const loadTimeSlots = async (date) => {
 
 // 选择时间段
 const selectTimeSlot = (slot) => {
-  if (!slot.available) return
   selectedTimeSlot.value = slot.time
 }
 
@@ -1745,6 +1763,11 @@ const formatTime = (timeStr) => {
 // 确认预约
 const confirmAppointment = async () => {
   if (!selectedTimeSlot.value || appointing.value) return
+
+  if (!selectedAppointmentProjectId.value) {
+    alert('请选择项目')
+    return
+  }
 
   if (appointmentMode.value === 'technician' && !selectedTechnicianId.value) {
     alert('请选择技师')
@@ -1763,6 +1786,7 @@ const confirmAppointment = async () => {
     await appointmentApi.createAppointment({
       merchant_id: card.value.merchant_id,
       user_id: parseInt(userId),
+      project_id: Number(selectedAppointmentProjectId.value),
       technician_id: appointmentMode.value === 'technician' ? selectedTechnicianId.value : null,
       appointment_time: selectedTimeSlot.value
     })
