@@ -219,7 +219,7 @@
           <div class="flex justify-between items-start">
             <div>
               <div class="font-medium text-gray-800">用户 ID: {{ appt.user?.nickname || appt.user_id }}</div>
-              <div v-if="getAppointmentProjectName(appt)" class="text-gray-500 text-sm mt-1">预约项目: {{ getAppointmentProjectName(appt) }}</div>
+              <div v-if="getAppointmentProjectDisplay(appt)" class="text-gray-500 text-sm mt-1">预约项目: {{ getAppointmentProjectDisplay(appt) }}</div>
               <div class="text-gray-500 text-sm mt-1">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
               <div v-if="appt.status === 'pending' && getPendingCountdown(appt) !== null" :class="getPendingCountdownClass(appt)" class="mt-1">
                 {{ getPendingCountdownDisplay(appt) }}
@@ -258,13 +258,12 @@
               >
                 未确认预约
               </button>
-              <button
+              <div
                 v-if="appt.status === 'confirmed'"
-                disabled
-                class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium opacity-70 cursor-not-allowed"
+                class="flex-1 py-2 text-primary text-sm font-medium text-center"
               >
                 已确认
-              </button>
+              </div>
             </template>
             <!-- 商户账号不显示任何按钮，仅做展示 -->
             <template v-else>
@@ -2190,6 +2189,17 @@ const getAppointmentProjectName = (appt) => {
   const name = appt?.project?.name || ''
   const trimmed = String(name || '').trim()
   return trimmed
+}
+
+const getAppointmentProjectDisplay = (appt) => {
+  const name = appt?.project?.name || ''
+  const duration = appt?.project?.duration
+  const nameTrimmed = String(name || '').trim()
+  if (!nameTrimmed) return ''
+  if (duration && duration > 0) {
+    return `${nameTrimmed}（${duration}分钟）`
+  }
+  return nameTrimmed
 }
 
 // 计算预约倒计时（秒）
