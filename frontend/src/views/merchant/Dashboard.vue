@@ -1811,7 +1811,17 @@ const fetchAppointments = async () => {
   }
   try {
     const res = await appointmentApi.getMerchantAppointments(merchantId.value)
-    appointments.value = (res.data.data || []).filter(a => a.status !== 'finished' && a.status !== 'canceled')
+    let list = (res.data.data || []).filter(a => a.status !== 'finished' && a.status !== 'canceled')
+    
+    // 技师登录时：只显示分配给自己的预约，不受管理权限影响
+    if (isTechnicianAuth()) {
+      const currentTechnicianId = getTechnicianId()
+      if (currentTechnicianId) {
+        list = list.filter(a => a.technician_id === currentTechnicianId)
+      }
+    }
+    
+    appointments.value = list
   } catch (err) {
     console.error('获取预约列表失败:', err)
   }
