@@ -219,6 +219,7 @@
           <div class="flex justify-between items-start">
             <div>
               <div class="font-medium text-gray-800">用户 ID: {{ appt.user?.nickname || appt.user_id }}</div>
+              <div v-if="getAppointmentProjectName(appt)" class="text-gray-500 text-sm mt-1">预约项目: {{ getAppointmentProjectName(appt) }}</div>
               <div class="text-gray-500 text-sm mt-1">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
               <div v-if="appt.status === 'pending' && getPendingCountdown(appt) !== null" :class="getPendingCountdownClass(appt)" class="mt-1">
                 {{ getPendingCountdownDisplay(appt) }}
@@ -260,7 +261,7 @@
               <button
                 v-if="appt.status === 'confirmed'"
                 disabled
-                class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
+                class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium opacity-70 cursor-not-allowed"
               >
                 已确认
               </button>
@@ -2183,6 +2184,12 @@ const formatAppointmentTechnicianDisplay = (appt) => {
   const right = String(account || '').trim()
   const text = `${left} ${right}`.trim()
   return text || '待分配'
+}
+
+const getAppointmentProjectName = (appt) => {
+  const name = appt?.project?.name || ''
+  const trimmed = String(name || '').trim()
+  return trimmed
 }
 
 // 计算预约倒计时（秒）
