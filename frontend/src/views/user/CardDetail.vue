@@ -90,7 +90,12 @@
         
         <div v-if="appointment" class="space-y-3">
           <div class="flex justify-between items-center">
-            <span class="text-gray-500">我的预约</span>
+            <div>
+              <span class="text-gray-500">我的预约</span>
+              <span class="ml-2 text-gray-600 text-sm">
+                客服：{{ appointment.technician ? appointment.technician.name : '待分配' }}
+              </span>
+            </div>
             <span :class="getAppointmentStatusClass(appointment.status)">
               {{ getAppointmentStatusText(appointment.status) }}
             </span>
