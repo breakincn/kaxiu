@@ -48,6 +48,10 @@ func getMerchantBusinessIntervalsForDate(merchant models.Merchant, date time.Tim
 		if !ok1 || !ok2 {
 			return
 		}
+		// 支持跨天：如 10:00 - 00:00 视为 10:00 - 24:00
+		if em == 0 {
+			em = 24 * 60
+		}
 		if em <= sm {
 			return
 		}
