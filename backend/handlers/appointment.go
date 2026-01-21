@@ -6,11 +6,81 @@ import (
 	"kabao/models"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+func parseHHMMToMinuteOfDay(s string) (int, bool) {
+	ss := strings.TrimSpace(s)
+	if ss == "" {
+		return 0, false
+	}
+	parts := strings.Split(ss, ":")
+	if len(parts) != 2 {
+		return 0, false
+	}
+	h, err1 := strconv.Atoi(parts[0])
+	m, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return 0, false
+	}
+	if h < 0 || h > 23 || m < 0 || m > 59 {
+		return 0, false
+	}
+	return h*60 + m, true
+}
+
+type businessInterval struct {
+	Start time.Time
+	End   time.Time
+}
+
+func getMerchantBusinessIntervalsForDate(merchant models.Merchant, date time.Time) ([]businessInterval, bool) {
+	intervals := make([]businessInterval, 0, 3)
+
+	add := func(startStr, endStr string) {
+		sm, ok1 := parseHHMMToMinuteOfDay(startStr)
+		em, ok2 := parseHHMMToMinuteOfDay(endStr)
+		if !ok1 || !ok2 {
+			return
+		}
+		if em <= sm {
+			return
+		}
+		start := time.Date(date.Year(), date.Month(), date.Day(), sm/60, sm%60, 0, 0, date.Location())
+		end := time.Date(date.Year(), date.Month(), date.Day(), em/60, em%60, 0, 0, date.Location())
+		if !end.After(start) {
+			return
+		}
+		intervals = append(intervals, businessInterval{Start: start, End: end})
+	}
+
+	allDayStart := strings.TrimSpace(merchant.AllDayStart)
+	allDayEnd := strings.TrimSpace(merchant.AllDayEnd)
+	if allDayStart != "" && allDayEnd != "" {
+		add(allDayStart, allDayEnd)
+		return intervals, len(intervals) > 0
+	}
+
+	add(merchant.MorningStart, merchant.MorningEnd)
+	add(merchant.AfternoonStart, merchant.AfternoonEnd)
+	add(merchant.EveningStart, merchant.EveningEnd)
+
+	return intervals, len(intervals) > 0
+}
+
+func isWithinBusinessIntervals(t time.Time, intervals []businessInterval) bool {
+	for _, it := range intervals {
+		if (t.Equal(it.Start) || t.After(it.Start)) && t.Before(it.End) {
+			return true
+		}
+	}
+	return false
+}
 
 func cancelAppointmentWithTime(appointment *models.Appointment, canceledAt time.Time) error {
 	return config.DB.Model(appointment).Updates(map[string]interface{}{
@@ -230,6 +300,11 @@ func CreateAppointment(c *gin.Context) {
 		return
 	}
 
+	loc, locErr := time.LoadLocation("Asia/Shanghai")
+	if locErr != nil {
+		loc = time.Local
+	}
+
 	if input.TechnicianID != nil {
 		var tech models.Technician
 		if err := config.DB.Where("id = ? AND merchant_id = ?", *input.TechnicianID, input.MerchantID).First(&tech).Error; err != nil {
@@ -279,9 +354,27 @@ func CreateAppointment(c *gin.Context) {
 
 	log.Printf("创建新预约: 用户ID=%d, 商户ID=%d, 时间=%s", input.UserID, input.MerchantID, input.AppointmentTime)
 
-	appointmentTime, err := time.ParseInLocation("2006-01-02 15:04:05", input.AppointmentTime, time.Local)
+	appointmentTime, err := time.ParseInLocation("2006-01-02 15:04:05", input.AppointmentTime, loc)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "预约时间格式错误"})
+		return
+	}
+
+	now := time.Now().In(loc)
+	tomorrowDate := now.Add(24 * time.Hour).Format("2006-01-02")
+	if appointmentTime.In(loc).Format("2006-01-02") != tomorrowDate {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持预约明天"})
+		return
+	}
+
+	targetDate, _ := time.ParseInLocation("2006-01-02", tomorrowDate, loc)
+	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "商户未设置营业时间"})
+		return
+	}
+	if !isWithinBusinessIntervals(appointmentTime, intervals) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "预约时间不在营业时间范围内"})
 		return
 	}
 
@@ -450,8 +543,10 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		loc = time.Local
 	}
 
+	now := time.Now().In(loc)
+	tomorrowDate := now.Add(24 * time.Hour).Format("2006-01-02")
 	if date == "" {
-		date = time.Now().In(loc).Format("2006-01-02")
+		date = tomorrowDate
 	}
 
 	// 验证日期格式
@@ -471,8 +566,12 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		return
 	}
 
+	if date != tomorrowDate {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持预约明天"})
+		return
+	}
+
 	// 懒更新：自动取消该商户已超时(>=35分钟)但未核销的预约，避免继续占用时间段
-	now := time.Now().In(loc)
 	overdueDeadline := now.Add(-35 * time.Minute)
 	config.DB.Model(&models.Appointment{}).
 		Where("merchant_id = ? AND status IN ('pending','confirmed') AND appointment_time IS NOT NULL AND appointment_time <= ?", merchantID, overdueDeadline).
@@ -492,35 +591,19 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	// 说明：平均服务时长字段已移除；后续可根据“预约选择的项目时长”生成更精确的时间段
 	serviceMinutes := 30
 
-	// 判断是否为今天
-	isToday := date == time.Now().In(loc).Format("2006-01-02")
-	var minStartTime time.Time
-	if isToday {
-		// 今天仅展示从当前时间之后的时间段，且需要满足：now + (30分钟 + 5分钟)
-		now := time.Now().In(loc)
-		minStartTime = now.Add(time.Duration(serviceMinutes)*time.Minute + 5*time.Minute)
-	}
-
 	// 解析日期
 	targetDate, _ := time.ParseInLocation("2006-01-02", date, loc)
-
-	// 营业时间: 9:00 - 21:00
-	startHour := 9
-	endHour := 21
+	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "商户未设置营业时间"})
+		return
+	}
 
 	// 生成所有可能的时间段
 	var allSlots []string
-	for hour := startHour; hour < endHour; hour++ {
-		for minute := 0; minute < 60; minute += serviceMinutes {
-			slotTime := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(),
-				hour, minute, 0, 0, loc)
-
-			// 如果是今天，仅展示满足最小开始时间后的时间段
-			if isToday && slotTime.Before(minStartTime) {
-				continue
-			}
-
-			allSlots = append(allSlots, slotTime.Format("2006-01-02 15:04:05"))
+	for _, it := range intervals {
+		for t := it.Start; t.Before(it.End); t = t.Add(time.Duration(serviceMinutes) * time.Minute) {
+			allSlots = append(allSlots, t.Format("2006-01-02 15:04:05"))
 		}
 	}
 

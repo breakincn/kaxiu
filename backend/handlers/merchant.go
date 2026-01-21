@@ -219,6 +219,29 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		return
 	}
 
+	if input.SupportAppointment != nil && *input.SupportAppointment {
+		allDayStart := strings.TrimSpace(merchant.AllDayStart)
+		allDayEnd := strings.TrimSpace(merchant.AllDayEnd)
+		morningStart := strings.TrimSpace(merchant.MorningStart)
+		morningEnd := strings.TrimSpace(merchant.MorningEnd)
+		afternoonStart := strings.TrimSpace(merchant.AfternoonStart)
+		afternoonEnd := strings.TrimSpace(merchant.AfternoonEnd)
+		eveningStart := strings.TrimSpace(merchant.EveningStart)
+		eveningEnd := strings.TrimSpace(merchant.EveningEnd)
+
+		hasBusinessTime := false
+		if allDayStart != "" && allDayEnd != "" {
+			hasBusinessTime = true
+		} else if (morningStart != "" && morningEnd != "") || (afternoonStart != "" && afternoonEnd != "") || (eveningStart != "" && eveningEnd != "") {
+			hasBusinessTime = true
+		}
+
+		if !hasBusinessTime {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "先设置营业时间，才能开启预约服务"})
+			return
+		}
+	}
+
 	updates := make(map[string]interface{})
 	if input.SupportAppointment != nil {
 		updates["support_appointment"] = *input.SupportAppointment

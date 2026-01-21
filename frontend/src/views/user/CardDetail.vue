@@ -424,16 +424,8 @@
         <div class="px-5 py-3 border-b">
           <div class="flex gap-2">
             <button
-              @click="selectDate('today')"
-              :class="selectedDate === getTodayDate() ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'"
-              class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors"
-            >
-              今天
-            </button>
-            <button
-              @click="selectDate('tomorrow')"
-              :class="selectedDate === getTomorrowDate() ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'"
-              class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors"
+              type="button"
+              class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors bg-primary text-white"
             >
               明天
             </button>
@@ -446,7 +438,7 @@
             加载中...
           </div>
           <div v-else-if="timeSlots.length === 0" class="text-center py-8 text-gray-400">
-            今日无可用时间段
+            明日无可用时间段
           </div>
           <div v-else class="grid grid-cols-2 gap-3">
             <button
@@ -1673,7 +1665,7 @@ const showAppointmentModal = async () => {
   showModal.value = true
   appointmentMode.value = 'time'
   selectedTechnicianId.value = null
-  selectedDate.value = getTodayDate()
+  selectedDate.value = getTomorrowDate()
   selectedTimeSlot.value = ''
   await loadTechnicians(card.value.merchant_id)
   await loadTimeSlots(selectedDate.value)
@@ -1701,23 +1693,11 @@ const loadTechnicians = async (merchantId) => {
   }
 }
 
-// 获取今天日期
-const getTodayDate = () => {
-  return new Date().toISOString().slice(0, 10)
-}
-
 // 获取明天日期
 const getTomorrowDate = () => {
   const tomorrow = new Date()
   tomorrow.setDate(tomorrow.getDate() + 1)
   return tomorrow.toISOString().slice(0, 10)
-}
-
-// 选择日期
-const selectDate = async (type) => {
-  selectedDate.value = type === 'today' ? getTodayDate() : getTomorrowDate()
-  selectedTimeSlot.value = ''
-  await loadTimeSlots(selectedDate.value)
 }
 
 // 加载可用时间段

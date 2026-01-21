@@ -111,6 +111,27 @@ const router = useRouter()
 const loading = ref(true)
 const saving = ref(false)
 
+const merchantBizTime = ref({
+  all_day_start: '',
+  all_day_end: '',
+  morning_start: '',
+  morning_end: '',
+  afternoon_start: '',
+  afternoon_end: '',
+  evening_start: '',
+  evening_end: ''
+})
+
+const hasBusinessTimeConfigured = () => {
+  const m = merchantBizTime.value || {}
+  const allDayOk = String(m.all_day_start || '').trim() !== '' && String(m.all_day_end || '').trim() !== ''
+  if (allDayOk) return true
+  const morningOk = String(m.morning_start || '').trim() !== '' && String(m.morning_end || '').trim() !== ''
+  const afternoonOk = String(m.afternoon_start || '').trim() !== '' && String(m.afternoon_end || '').trim() !== ''
+  const eveningOk = String(m.evening_start || '').trim() !== '' && String(m.evening_end || '').trim() !== ''
+  return morningOk || afternoonOk || eveningOk
+}
+
 const form = ref({
   support_appointment: false,
   support_queue: false,
@@ -143,6 +164,18 @@ const load = async () => {
   try {
     const res = await merchantApi.getCurrentMerchant()
     const m = res.data.data || {}
+
+    merchantBizTime.value = {
+      all_day_start: m.all_day_start || '',
+      all_day_end: m.all_day_end || '',
+      morning_start: m.morning_start || '',
+      morning_end: m.morning_end || '',
+      afternoon_start: m.afternoon_start || '',
+      afternoon_end: m.afternoon_end || '',
+      evening_start: m.evening_start || '',
+      evening_end: m.evening_end || ''
+    }
+
     form.value = {
       support_appointment: !!m.support_appointment,
       support_queue: !!m.support_queue,
@@ -168,6 +201,12 @@ const save = async () => {
   if (saving.value) return
   if (form.value.support_queue && (!form.value.queue_start_no || form.value.queue_start_no < 1)) {
     alert('叫号起始号码必须大于等于1')
+    return
+  }
+
+  if (form.value.support_appointment && !hasBusinessTimeConfigured()) {
+    alert('先设置营业时间，才能开启预约服务')
+    form.value.support_appointment = false
     return
   }
 
