@@ -235,7 +235,7 @@ export const cardApi = {
 export const usageApi = {
   getCardUsages: (cardId) => api.get(`/user/cards/${cardId}/usages`),
   revokeUsage: (usageId) => api.put(`/user/usages/${usageId}/revoke`),
-  getMerchantUsages: (merchantId) => api.get(`/merchant/merchants/${merchantId}/usages`)
+  getMerchantUsages: (merchantId, params) => api.get(`/merchant/merchants/${merchantId}/usages`, { params })
 }
 
 export const userServiceSessionApi = {

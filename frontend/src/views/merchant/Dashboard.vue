@@ -368,7 +368,10 @@
 
       <div class="bg-white rounded-xl p-4 shadow-sm mt-4">
         <h3 class="font-medium text-gray-800 mb-4">{{ replaceTerms('今日起单记录', merchant) }}</h3>
-        <div v-if="todayStartUsages.length > 0" class="space-y-3">
+        <div v-if="startUsagesLoading" class="text-center text-gray-400 py-4">
+          加载中...
+        </div>
+        <div v-else-if="todayStartUsages.length > 0" class="space-y-3">
           <div v-for="usage in todayStartUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
             <div class="flex-1">
               <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
@@ -1079,6 +1082,7 @@ const pendingDirectPurchases = ref(0)
 const appointments = ref([])
 const todayUsages = ref([])
 const todayStartUsages = ref([])
+const startUsagesLoading = ref(false)
 const todayFinishedUsages = ref([])
 const notices = ref([])
 const currentTime = ref(Date.now())
@@ -1723,25 +1727,34 @@ const fetchTodayUsages = async () => {
 }
 
 const fetchTodayStartUsages = async () => {
+  if (startUsagesLoading.value) return
+  startUsagesLoading.value = true
   try {
-    const res = await usageApi.getMerchantUsages(merchantId.value)
     const today = new Date().toISOString().split('T')[0]
     const currentTechnicianId = getTechnicianId()
     if (!currentTechnicianId) {
-      todayStartUsages.value = []
+      // 非技师账号/无法获取技师ID：保持旧数据不闪烁，但结束 loading
       return
     }
+    const res = await usageApi.getMerchantUsages(merchantId.value, {
+      date: today,
+      technician_id: currentTechnicianId,
+      only_with_session: 1,
+      limit: 50
+    })
+    // 后端已过滤，但这里仍做一次兜底，确保只显示“当前技师 + 今日 + 有会话”的记录
     todayStartUsages.value = (res.data.data || []).filter((u) => {
       if (!u || !u.used_at || !u.used_at.startsWith(today)) return false
-      // 客服流程里 usage.technician_id 可能为空，技师信息在 service_session 里
       const techId = u?.service_technician?.id || u?.technician_id
       if (Number(techId) !== Number(currentTechnicianId)) return false
-      // 起单/上钟记录必须关联服务会话
       return !!u.service_session_status
     })
   } catch (err) {
     console.error('获取起单记录失败:', err)
-    todayStartUsages.value = []
+    // 失败时保留旧数据，避免“暂无”闪烁
+  }
+  finally {
+    startUsagesLoading.value = false
   }
 }
 

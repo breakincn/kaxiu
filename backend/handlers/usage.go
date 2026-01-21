@@ -5,6 +5,7 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -22,7 +23,57 @@ func GetCardUsages(c *gin.Context) {
 func GetMerchantUsages(c *gin.Context) {
 	merchantID := c.Param("id")
 	var usages []models.Usage
-	config.DB.Preload("Card").Preload("Card.User").Preload("Technician").Preload("Technician.ServiceRole").Preload("Merchant").Preload("Project").Where("merchant_id = ?", merchantID).Order("used_at DESC").Find(&usages)
+
+	dateStr := c.Query("date")
+	technicianIDStr := c.Query("technician_id")
+	onlyWithSessionStr := c.Query("only_with_session")
+	limitStr := c.Query("limit")
+
+	query := config.DB.Model(&models.Usage{})
+	query = query.Where("usages.merchant_id = ?", merchantID)
+	query = query.Order("usages.used_at DESC")
+
+	// 是否需要 join service_sessions
+	needJoinSession := false
+	if onlyWithSessionStr == "1" || onlyWithSessionStr == "true" {
+		needJoinSession = true
+	}
+	if technicianIDStr != "" {
+		needJoinSession = true
+	}
+	if needJoinSession {
+		query = query.Joins("JOIN service_sessions ss ON ss.initial_usage_id = usages.id")
+		query = query.Group("usages.id")
+		if onlyWithSessionStr == "1" || onlyWithSessionStr == "true" {
+			// 已经 inner join，可不加额外 where；保留结构以便未来改为 left join 时仍可用
+		}
+		if technicianIDStr != "" {
+			if tid, err := strconv.ParseUint(technicianIDStr, 10, 64); err == nil && tid > 0 {
+				query = query.Where("ss.technician_id = ?", tid)
+			}
+		}
+	}
+
+	// date=YYYY-MM-DD：按 used_at 过滤当天（以服务器本地时区为准）
+	if dateStr != "" {
+		if d, err := time.ParseInLocation("2006-01-02", dateStr, time.Local); err == nil {
+			start := time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.Local)
+			end := start.Add(24 * time.Hour)
+			query = query.Where("usages.used_at >= ? AND usages.used_at < ?", start, end)
+		}
+	}
+
+	if limitStr != "" {
+		if n, err := strconv.Atoi(limitStr); err == nil && n > 0 {
+			if n > 200 {
+				n = 200
+			}
+			query = query.Limit(n)
+		}
+	}
+
+	query = query.Preload("Card").Preload("Card.User").Preload("Technician").Preload("Technician.ServiceRole").Preload("Merchant").Preload("Project")
+	query.Find(&usages)
 	enrichUsagesWithServiceSession(&usages)
 	autoFixUsages(&usages)
 	c.JSON(http.StatusOK, gin.H{"data": usages})
