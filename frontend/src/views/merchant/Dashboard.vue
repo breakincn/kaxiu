@@ -359,7 +359,7 @@
     <div v-if="currentTab === 'start' && showStartTab" class="px-4 py-4">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <!-- 未签到提示 -->
-        <div v-if="isTechnicianAuth() && serverAttendanceStatus === 'not_checked_in'" class="w-full py-3 bg-gray-100 text-gray-600 rounded-lg text-center">
+        <div v-if="isTechnicianNotCheckedIn" class="w-full py-3 bg-gray-100 text-gray-600 rounded-lg text-center">
           {{ replaceTerms('上班签到后 才可扫码起单', merchant) }}
         </div>
         <!-- 扫码起单按钮 -->
@@ -707,7 +707,7 @@
             <div class="text-sm text-gray-600">
               当前状态：<span class="font-medium">{{ technicianCurrentStatusText }}</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div v-if="!isTechnicianNotCheckedIn" class="flex items-center gap-2">
               <template v-if="technicianCurrentStatus === 'service_pending_settlement'">
                 <button
                   :disabled="setNextPausedLoading"
@@ -1256,6 +1256,10 @@ const formatSessionNo = (id) => {
 }
 
 // 技师当前服务状态（用于显示）
+const isTechnicianNotCheckedIn = computed(() => {
+  return isTechnicianAuth() && (serverAttendanceStatus.value === 'not_checked_in' || serverAttendanceStatus.value === 'rest')
+})
+
 const technicianCurrentStatus = computed(() => {
   if (!isTechnicianAuth()) return null
   const techId = getTechnicianId()
@@ -1275,7 +1279,7 @@ const technicianCurrentStatusText = computed(() => {
   if (st === 'idle') return '空闲'
   if (st === 'paused') return '暂停'
   if (st === 'busy') return '忙碌'
-  if (st === 'rest') return '未鉴到 休息中'
+  if (st === 'rest') return '未签到 休息中'
   if (st === 'service_pending_presettlement') return replaceTerms('服务 待起单', merchant.value)
   if (st === 'service_pending_settlement') return replaceTerms('服务 待结单', merchant.value)
   return st || '-'
