@@ -1220,11 +1220,8 @@ const roomManageTrackingId = computed(() => {
 const roomManageProjectName = computed(() => {
   const s = roomManageSession.value
   if (!s) return '-'
-  const usageId = s.initial_usage_id
-  if (!usageId) return '-'
-  const list = [].concat(todayUsages.value || [], todayStartUsages.value || [], todayFinishedUsages.value || [])
-  const usage = list.find(u => u && u.id === usageId)
-  return usage?.project?.name || '-'
+  // 直接从 ServiceSession 中获取 Project 信息，不再依赖 Usage 数据
+  return s.project?.name || '-'
 })
 
 const pendingStartRoomText = computed(() => {

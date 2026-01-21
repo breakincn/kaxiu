@@ -37,8 +37,9 @@ type ServiceSession struct {
 	CreatedAt *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt *time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
-	Room       *Room       `json:"room" gorm:"foreignKey:RoomID"`
-	Technician *Technician `json:"technician" gorm:"foreignKey:TechnicianID"`
+	Room       *Room            `json:"room" gorm:"foreignKey:RoomID"`
+	Technician *Technician      `json:"technician" gorm:"foreignKey:TechnicianID"`
+	Project    *MerchantProject `json:"project" gorm:"foreignKey:ProjectID"`
 }
 
 func (ServiceSession) TableName() string {

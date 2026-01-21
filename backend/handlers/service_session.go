@@ -235,7 +235,7 @@ func GetServiceSession(c *gin.Context) {
 
 	id := c.Param("id")
 	var s models.ServiceSession
-	if err := config.DB.Preload("Room").Preload("Technician").Where("id = ? AND merchant_id = ?", id, merchantID).First(&s).Error; err != nil {
+	if err := config.DB.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").Preload("Project").Where("id = ? AND merchant_id = ?", id, merchantID).First(&s).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "会话不存在"})
 		return
 	}
@@ -255,7 +255,7 @@ func ListServiceSessions(c *gin.Context) {
 	}
 
 	status := c.Query("status")
-	q := config.DB.Preload("Room").Preload("Technician").Where("merchant_id = ?", merchantID)
+	q := config.DB.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").Preload("Project").Where("merchant_id = ?", merchantID)
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}
