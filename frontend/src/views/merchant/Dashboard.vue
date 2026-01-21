@@ -230,34 +230,41 @@
           </div>
 
           <div class="flex gap-2 mt-3">
-            <button
-              v-if="appt.status === 'pending' && !isPendingExpired(appt)"
-              @click="confirmAppointment(appt.id)"
-              class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
-            >
-              确认预约
-            </button>
-            <button
-              v-if="appt.status === 'pending' && !isPendingExpired(appt)"
-              @click="cancelAppointment(appt.id)"
-              class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
-            >
-              取消
-            </button>
-            <button
-              v-if="appt.status === 'pending' && isPendingExpired(appt)"
-              disabled
-              class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
-            >
-              未确认预约
-            </button>
-            <button
-              v-if="appt.status === 'confirmed'"
-              disabled
-              class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
-            >
-              已确认
-            </button>
+            <!-- 技师登录才显示操作按钮；商户账号仅展示 -->
+            <template v-if="isTechnicianAuth()">
+              <button
+                v-if="appt.status === 'pending' && !isPendingExpired(appt)"
+                @click="confirmAppointment(appt.id)"
+                class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+              >
+                确认预约
+              </button>
+              <button
+                v-if="appt.status === 'pending' && !isPendingExpired(appt)"
+                @click="cancelAppointment(appt.id)"
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+              >
+                取消
+              </button>
+              <button
+                v-if="appt.status === 'pending' && isPendingExpired(appt)"
+                disabled
+                class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
+              >
+                未确认预约
+              </button>
+              <button
+                v-if="appt.status === 'confirmed'"
+                disabled
+                class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
+              >
+                已确认
+              </button>
+            </template>
+            <!-- 商户账号不显示任何按钮，仅做展示 -->
+            <template v-else>
+              <!-- 不渲染任何按钮 -->
+            </template>
           </div>
         </div>
       </div>
@@ -288,41 +295,48 @@
         </div>
         
         <div class="flex gap-2 mt-3">
-          <button
-            v-if="appt.status === 'pending' && !isPendingExpired(appt)"
-            @click="confirmAppointment(appt.id)"
-            class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
-          >
-            确认预约
-          </button>
-          <button
-            v-if="appt.status === 'pending' && isPendingExpired(appt)"
-            disabled
-            class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
-          >
-            未确认预约
-          </button>
-          <button
-            v-if="shouldShowFinishButton(appt) && !isWriteOffExpired(appt)"
-            @click="finishAppointment(appt.id)"
-            class="flex-1 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium"
-          >
-            完成服务 (扣次)
-          </button>
-          <button
-            v-if="appt.status === 'confirmed' && isWriteOffExpired(appt)"
-            disabled
-            class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
-          >
-            未核销
-          </button>
-          <button
-            v-if="appt.status !== 'finished' && appt.status !== 'canceled'"
-            @click="cancelAppointment(appt.id)"
-            class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
-          >
-            取消
-          </button>
+          <!-- 技师登录才显示操作按钮；商户账号仅展示 -->
+          <template v-if="isTechnicianAuth()">
+            <button
+              v-if="appt.status === 'pending' && !isPendingExpired(appt)"
+              @click="confirmAppointment(appt.id)"
+              class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+            >
+              确认预约
+            </button>
+            <button
+              v-if="appt.status === 'pending' && isPendingExpired(appt)"
+              disabled
+              class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
+            >
+              未确认预约
+            </button>
+            <button
+              v-if="shouldShowFinishButton(appt) && !isWriteOffExpired(appt)"
+              @click="finishAppointment(appt.id)"
+              class="flex-1 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium"
+            >
+              完成服务 (扣次)
+            </button>
+            <button
+              v-if="appt.status === 'confirmed' && isWriteOffExpired(appt)"
+              disabled
+              class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
+            >
+              未核销
+            </button>
+            <button
+              v-if="appt.status !== 'finished' && appt.status !== 'canceled'"
+              @click="cancelAppointment(appt.id)"
+              class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+            >
+              取消
+            </button>
+          </template>
+          <!-- 商户账号不显示任何按钮，仅做展示 -->
+          <template v-else>
+            <!-- 不渲染任何按钮 -->
+          </template>
         </div>
       </div>
 
