@@ -93,7 +93,7 @@
             <div>
               <span class="text-gray-500">我的预约</span>
               <span class="ml-2 text-gray-600 text-sm">
-                客服：{{ appointment.technician ? appointment.technician.name : '待分配' }}
+                {{ appointment.technician ? ((appointment.technician.service_role?.name || '客服') + '：' + appointment.technician.name) : '待分配' }}
               </span>
             </div>
             <span :class="getAppointmentStatusClass(appointment.status)">
@@ -105,7 +105,7 @@
               {{ formatDateTime(appointment.appointment_time) }}
             </div>
             <div class="text-right">
-              <div v-if="appointment.status === 'confirmed'" class="text-sm text-gray-600 mb-1">排队中</div>
+              <div v-if="appointment.status === 'confirmed'" class="text-sm text-gray-600 mb-1">距待开始</div>
               <div v-if="!isAppointmentPassed()" :class="getCountdownClass()" class="text-sm font-medium">
                 {{ getCountdownText() }}
               </div>
