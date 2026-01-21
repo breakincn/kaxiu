@@ -397,6 +397,60 @@ func ConfirmAppointment(c *gin.Context) {
 		return
 	}
 
+	// 权限检查
+	technicianIDAny, ok := c.Get("technician_id")
+	if ok {
+		// 技师登录：只能确认分配给自己的预约
+		if technicianID, ok := technicianIDAny.(uint); ok && technicianID > 0 {
+			if appointment.TechnicianID == nil || *appointment.TechnicianID != technicianID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "无权限：只能确认分配给自己的预约"})
+				return
+			}
+		}
+	} else {
+		// 商户登录：需要管理权限
+		merchantIDAny, ok := c.Get("merchant_id")
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+			return
+		}
+		merchantID, ok := merchantIDAny.(uint)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+			return
+		}
+		
+		// 检查预约是否属于当前商户
+		if appointment.MerchantID != merchantID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权限：不属于您的商户"})
+			return
+		}
+		
+		// 检查管理权限
+		if serviceRoleIDAny, ok := c.Get("service_role_id"); ok {
+			if serviceRoleID, ok := serviceRoleIDAny.(uint); ok {
+				var managePerm models.Permission
+				if err := config.DB.Where("`key` = ?", "merchant.appointment.manage").First(&managePerm).Error; err == nil {
+					var override models.MerchantRolePermissionOverride
+					err := config.DB.Where("merchant_id = ? AND service_role_id = ? AND permission_id = ?", merchantID, serviceRoleID, managePerm.ID).First(&override).Error
+					if err == nil {
+						if !override.Allowed {
+							c.JSON(http.StatusForbidden, gin.H{"error": "无权限：需要预约管理权限"})
+							return
+						}
+					} else {
+						var rolePerm models.RolePermission
+						err = config.DB.Where("service_role_id = ? AND permission_id = ? AND allowed = ?", serviceRoleID, managePerm.ID, true).First(&rolePerm).Error
+						if err != nil {
+							c.JSON(http.StatusForbidden, gin.H{"error": "无权限：需要预约管理权限"})
+							return
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if autoCanceled, autoCancelErr := autoCancelAppointmentIfOverdue(&appointment, time.Now()); autoCancelErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "自动取消预约失败"})
 		return
@@ -480,6 +534,34 @@ func CancelAppointment(c *gin.Context) {
 		return
 	}
 
+	// 权限检查
+	technicianIDAny, ok := c.Get("technician_id")
+	if ok {
+		// 技师登录：只能取消分配给自己的预约
+		if technicianID, ok := technicianIDAny.(uint); ok && technicianID > 0 {
+			if appointment.TechnicianID == nil || *appointment.TechnicianID != technicianID {
+				c.JSON(http.StatusForbidden, gin.H{"error": "无权限：只能取消分配给自己的预约"})
+				return
+			}
+		}
+	} else {
+		// 用户登录：只能取消自己的预约
+		userIDAny, ok := c.Get("user_id")
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+			return
+		}
+		userID, ok := userIDAny.(uint)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+			return
+		}
+		if appointment.UserID != userID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权限：只能取消自己的预约"})
+			return
+		}
+	}
+
 	// 只允许取消待确认或已确认的预约
 	if appointment.Status != "pending" && appointment.Status != "confirmed" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "只能取消待确认或已确认的预约"})
@@ -491,7 +573,7 @@ func CancelAppointment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "取消预约失败"})
 		return
 	}
-	config.DB.Preload("User").Preload("Merchant").First(&appointment, id)
+	config.DB.Preload("User").Preload("Merchant").Preload("Technician").First(&appointment, id)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 

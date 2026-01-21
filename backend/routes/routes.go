@@ -138,7 +138,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.GET("/merchants/:id/appointments", handlers.GetMerchantAppointments)
 	auth.GET("/merchants/:id/technicians", handlers.GetTechniciansByMerchantID)
 	auth.GET("/merchants/:id/available-slots", handlers.GetAvailableTimeSlots)
-	auth.PUT("/appointments/:id/confirm", middleware.RequirePermission("merchant.appointment.manage"), handlers.ConfirmAppointment)
+	auth.PUT("/appointments/:id/confirm", handlers.ConfirmAppointment)
 	auth.PUT("/appointments/:id/finish", middleware.RequirePermission("merchant.appointment.manage"), handlers.FinishAppointment)
 
 	// 技师自身
