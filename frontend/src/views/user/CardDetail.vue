@@ -78,8 +78,8 @@
       </div>
     </div>
 
-    <!-- 预约排队区域（如果支持且不在冷却中） -->
-    <div v-if="card.merchant?.support_appointment && !isInCooldown" class="px-4 mt-4">
+    <!-- 预约排队区域 -->
+    <div v-if="card.merchant?.support_appointment" class="px-4 mt-4">
       <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center gap-2 mb-3">
           <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -134,10 +134,10 @@
         <div v-else class="text-center">
           <button
             @click="showAppointmentModal"
-            :disabled="appointing || isInCooldown"
+            :disabled="appointing"
             class="w-full py-3 border-2 border-primary text-primary font-medium rounded-lg hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {{ isInCooldown ? cooldownButtonText : '我要预约' }}
+            我要预约
           </button>
         </div>
       </div>
@@ -472,7 +472,6 @@ const estimatedMinutes = ref(0)
 const countdown = ref(0)
 let countdownTimer = null
 
-const cooldownUntil = ref(null)
 
 const verifyCode = ref('')
 const codeExpireTime = ref('')
@@ -1497,7 +1496,6 @@ const fetchAppointment = async () => {
     const res = await appointmentApi.getCardAppointment(route.params.id)
     console.log('预约信息响应:', res.data)
     const data = res.data.data
-    cooldownUntil.value = data?.cooldown_until || null
 
     if (data?.appointment) {
       appointment.value = data.appointment
@@ -1520,23 +1518,6 @@ const fetchAppointment = async () => {
   }
 }
 
-const getCooldownRemainingSeconds = () => {
-  if (!cooldownUntil.value) return 0
-  const until = new Date(cooldownUntil.value).getTime()
-  const now = Date.now()
-  return Math.max(0, Math.floor((until - now) / 1000))
-}
-
-const isInCooldown = computed(() => {
-  return getCooldownRemainingSeconds() > 0
-})
-
-const cooldownButtonText = computed(() => {
-  const seconds = getCooldownRemainingSeconds()
-  if (seconds <= 0) return '我要预约'
-  const minutes = Math.ceil(seconds / 60)
-  return `冷却中（约${minutes}分钟后可预约）`
-})
 
 const isAppointmentFailed = computed(() => {
   if (!appointment.value || !appointment.value.appointment_time) return false

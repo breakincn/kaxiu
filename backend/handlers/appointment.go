@@ -122,25 +122,6 @@ func autoCancelAppointmentIfOverdue(appointment *models.Appointment, now time.Ti
 	return true, nil
 }
 
-func getCooldownUntil(userID uint, merchantID uint) (*time.Time, error) {
-	var lastCanceled models.Appointment
-	err := config.DB.
-		Where("user_id = ? AND merchant_id = ? AND status = 'canceled'", userID, merchantID).
-		Order("canceled_at DESC").
-		Limit(1).
-		First(&lastCanceled).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	if lastCanceled.CanceledAt == nil {
-		return nil, nil
-	}
-	until := lastCanceled.CanceledAt.Add(1 * time.Hour)
-	return &until, nil
-}
 
 func GetMerchantAppointments(c *gin.Context) {
 	merchantID := c.Param("id")
@@ -230,16 +211,10 @@ func GetCardAppointment(c *gin.Context) {
 		} else {
 			log.Printf("未找到预约: user_id=%d, merchant_id=%d", card.UserID, card.MerchantID)
 		}
-		cooldownUntil, cooldownErr := getCooldownUntil(card.UserID, card.MerchantID)
-		if cooldownErr != nil {
-			log.Printf("查询冷却时间失败: %v", cooldownErr)
-			cooldownUntil = nil
-		}
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{
 			"appointment":       nil,
 			"queue_before":      0,
 			"estimated_minutes": 0,
-			"cooldown_until":    cooldownUntil,
 		}})
 		return
 	}
@@ -254,12 +229,10 @@ func GetCardAppointment(c *gin.Context) {
 		return
 	}
 	if autoCanceled {
-		cooldownUntil := now.Add(1 * time.Hour)
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{
 			"appointment":       nil,
 			"queue_before":      0,
 			"estimated_minutes": 0,
-			"cooldown_until":    &cooldownUntil,
 		}})
 		return
 	}
@@ -276,17 +249,11 @@ func GetCardAppointment(c *gin.Context) {
 	var merchant models.Merchant
 	config.DB.First(&merchant, card.MerchantID)
 
-	cooldownUntil, cooldownErr := getCooldownUntil(card.UserID, card.MerchantID)
-	if cooldownErr != nil {
-		cooldownUntil = nil
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"appointment":       appointment,
 			"queue_before":      queueBefore,
 			"estimated_minutes": int(queueBefore) * 30,
-			"cooldown_until":    cooldownUntil,
 		},
 	})
 }
@@ -342,26 +309,6 @@ func CreateAppointment(c *gin.Context) {
 		}
 		if project.Duration <= 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "项目时长无效"})
-			return
-		}
-	}
-
-	// 检查取消后冷却(1小时)
-	var lastCanceled models.Appointment
-	lastCanceledErr := config.DB.
-		Where("user_id = ? AND merchant_id = ? AND status = 'canceled' AND canceled_at IS NOT NULL", input.UserID, input.MerchantID).
-		Order("canceled_at DESC").
-		Limit(1).
-		First(&lastCanceled).Error
-	if lastCanceledErr == nil && lastCanceled.CanceledAt != nil {
-		cooldownUntil := lastCanceled.CanceledAt.Add(1 * time.Hour)
-		if time.Now().Before(cooldownUntil) {
-			remaining := int64(time.Until(cooldownUntil).Seconds())
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":            "取消预约后1小时内不可再次预约",
-				"cooldown_until":   cooldownUntil,
-				"cooldown_seconds": remaining,
-			})
 			return
 		}
 	}
