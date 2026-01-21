@@ -386,9 +386,6 @@
             </div>
           </div>
         </div>
-        <div v-else class="text-center text-gray-400 py-4">
-          {{ replaceTerms('今日暂无起单', merchant) }}
-        </div>
       </div>
     </div>
 
