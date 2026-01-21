@@ -674,8 +674,86 @@
 
     <!-- 服务/会话 -->
     <div v-if="currentTab === 'service' && showServiceTab" class="px-4 py-4 space-y-4">
+      <div v-if="isTechnicianAuth()" class="flex gap-2 border-b bg-white rounded-xl overflow-hidden">
+        <button
+          @click="selectServiceSubTab('appointments')"
+          :class="[
+            'flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+            serviceSubTab === 'appointments'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-gray-500'
+          ]"
+        >
+          预约
+        </button>
+        <button
+          @click="selectServiceSubTab('attendance')"
+          :class="[
+            'flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+            serviceSubTab === 'attendance'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-gray-500'
+          ]"
+        >
+          服务
+        </button>
+      </div>
+
+      <div v-if="isTechnicianAuth() && serviceSubTab === 'appointments'" class="space-y-4">
+        <div v-if="appointments.length > 0" class="space-y-4">
+          <div v-for="appt in appointments" :key="appt.id" class="bg-white rounded-xl p-4 shadow-sm">
+            <div class="flex justify-between items-start">
+              <div>
+                <div class="font-medium text-gray-800">用户 ID: {{ appt.user?.nickname || appt.user_id }}</div>
+                <div class="text-gray-500 text-sm mt-1">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
+                <div v-if="appt.status === 'pending' && getPendingCountdown(appt) !== null" :class="getPendingCountdownClass(appt)" class="mt-1">
+                  {{ getPendingCountdownDisplay(appt) }}
+                </div>
+              </div>
+              <span :class="getStatusBadgeClass(appt)">
+                {{ getStatusText(appt) }}
+              </span>
+            </div>
+
+            <div class="flex gap-2 mt-3">
+              <button
+                v-if="appt.status === 'pending' && !isPendingExpired(appt)"
+                @click="confirmAppointment(appt.id)"
+                class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+              >
+                确认预约
+              </button>
+              <button
+                v-if="appt.status === 'pending' && !isPendingExpired(appt)"
+                @click="cancelAppointment(appt.id)"
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+              >
+                取消
+              </button>
+              <button
+                v-if="appt.status === 'pending' && isPendingExpired(appt)"
+                disabled
+                class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
+              >
+                未确认预约
+              </button>
+              <button
+                v-if="appt.status === 'confirmed'"
+                disabled
+                class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
+              >
+                已确认
+              </button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="text-center py-12 text-gray-400">
+          暂无预约
+        </div>
+      </div>
+
       <!-- 签到/状态 -->
-      <div class="bg-white rounded-xl p-4 shadow-sm">
+      <div v-if="!isTechnicianAuth() || serviceSubTab === 'attendance'" class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-center justify-between">
           <div>
             <div class="font-medium text-gray-800">工作人员签到</div>
@@ -749,7 +827,7 @@
       </div>
 
       <!-- 房间管理入口 -->
-      <div class="bg-white rounded-xl p-4 shadow-sm">
+      <div v-if="!isTechnicianAuth() || serviceSubTab === 'attendance'" class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-center justify-between">
           <div>
             <div class="font-medium text-gray-800">房间管理</div>
@@ -1169,6 +1247,15 @@ const cardTemplates = ref([])
 const showBusinessStatusModal = ref(false)
 
 // service tab: 签到
+
+const serviceSubTab = ref('appointments')
+
+const selectServiceSubTab = async (tab) => {
+  serviceSubTab.value = tab
+  if (tab === 'appointments') {
+    await fetchAppointments()
+  }
+}
 
 const attendanceLoading = ref(false)
 const attendanceUpdating = ref(false)
@@ -2175,6 +2262,11 @@ watch(currentTab, (tab) => {
   if (tab === 'queue') {
     fetchAppointments()
     startCountdownTimer()
+  } else if (tab === 'service') {
+    if (isTechnicianAuth()) {
+      serviceSubTab.value = 'appointments'
+      fetchAppointments()
+    }
   } else {
     stopCountdownTimer()
     if (tab === 'verify') {
