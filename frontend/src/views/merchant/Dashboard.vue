@@ -1731,12 +1731,14 @@ const fetchTodayStartUsages = async () => {
       todayStartUsages.value = []
       return
     }
-    todayStartUsages.value = (res.data.data || []).filter(u =>
-      u.used_at &&
-      u.used_at.startsWith(today) &&
-      u.technician_id === currentTechnicianId &&
-      !!u.service_session_status
-    )
+    todayStartUsages.value = (res.data.data || []).filter((u) => {
+      if (!u || !u.used_at || !u.used_at.startsWith(today)) return false
+      // 客服流程里 usage.technician_id 可能为空，技师信息在 service_session 里
+      const techId = u?.service_technician?.id || u?.technician_id
+      if (Number(techId) !== Number(currentTechnicianId)) return false
+      // 起单/上钟记录必须关联服务会话
+      return !!u.service_session_status
+    })
   } catch (err) {
     console.error('获取起单记录失败:', err)
     todayStartUsages.value = []
