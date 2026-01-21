@@ -102,6 +102,9 @@
           </div>
           <div class="flex justify-between items-center">
             <div :class="getAppointmentTimeClass()" class="font-medium text-lg">
+              <div v-if="getAppointmentProjectDisplay(appointment)" class="text-gray-500 text-sm font-normal mb-1">
+                预约项目: {{ getAppointmentProjectDisplay(appointment) }}
+              </div>
               {{ formatDateTime(appointment.appointment_time) }}
             </div>
             <div class="text-right">
@@ -1915,6 +1918,17 @@ const getCountdownText = () => {
   } else {
     return `${seconds}秒`
   }
+}
+
+const getAppointmentProjectDisplay = (appt) => {
+  const name = appt?.project?.name || ''
+  const duration = appt?.project?.duration
+  const nameTrimmed = String(name || '').trim()
+  if (!nameTrimmed) return ''
+  if (duration && duration > 0) {
+    return `${nameTrimmed}（${duration}分钟）`
+  }
+  return nameTrimmed
 }
 
 // 判断是否应该显示核销码区域
