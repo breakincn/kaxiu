@@ -2166,6 +2166,9 @@ watch(currentTab, (tab) => {
       verifyCodeInput.value = ''
       verifyResult.value = null
       fetchTodayUsages()
+    } else if (tab === 'start') {
+      // 上钟Tab显示今日上钟记录
+      fetchTodayStartUsages()
     } else if (tab === 'finish') {
       // 结单Tab显示今日结单记录
       fetchTodayFinishedUsages()
