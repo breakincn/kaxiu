@@ -121,7 +121,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			if merchant.StartTerm != "" {
 				startTerm = merchant.StartTerm
 			}
-			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在未签到中，待服务完成后才可重新%s", startTerm)}
+			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("未上班签到，扫码%s失败", startTerm)}
 		}
 		if att.Status != "idle" {
 			if att.Status == "paused" {

@@ -358,7 +358,13 @@
     <!-- 扫码起单 -->
     <div v-if="currentTab === 'start' && showStartTab" class="px-4 py-4">
       <div class="bg-white rounded-xl p-4 shadow-sm">
+        <!-- 未签到提示 -->
+        <div v-if="isTechnicianAuth() && serverAttendanceStatus === 'not_checked_in'" class="w-full py-3 bg-gray-100 text-gray-600 rounded-lg text-center">
+          {{ replaceTerms('上班签到后 才可扫码起单', merchant) }}
+        </div>
+        <!-- 扫码起单按钮 -->
         <button
+          v-else
           @click="goScanStart"
           class="w-full py-3 bg-primary text-white rounded-lg font-medium"
         >
