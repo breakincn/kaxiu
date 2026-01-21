@@ -657,6 +657,17 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	config.DB.Preload("User").Where("merchant_id = ? AND appointment_time LIKE ? AND status IN ('pending', 'confirmed')",
 		merchantID, datePrefix).Order("appointment_time ASC").Find(&appointments)
 
+	// 如果商户开启“客服”，则返回可选的专业客服列表（用于前端联动）
+	// 说明：历史数据 role_type 可能为空，因此仅排除运营客服 role_type=operational
+	var technicians []models.Technician
+	if merchant.SupportCustomerService {
+		config.DB.
+			Joins("JOIN service_roles sr ON sr.id = technicians.service_role_id").
+			Where("technicians.merchant_id = ? AND technicians.is_active = ? AND (sr.role_type IS NULL OR sr.role_type = '' OR sr.role_type <> ?)", merchantID, true, "operational").
+			Order("technicians.id desc").
+			Find(&technicians)
+	}
+
 	// 解析日期
 	targetDate, _ := time.ParseInLocation("2006-01-02", date, loc)
 	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
@@ -680,13 +691,21 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		Time      string `json:"time"`
 		Available bool   `json:"available"`
 		UserName  string `json:"user_name,omitempty"`
+		TechnicianIDs []uint `json:"technician_ids,omitempty"`
 	}
 
 	var timeSlots []TimeSlot
+	allTechIDs := make([]uint, 0)
+	if len(technicians) > 0 {
+		for _, t := range technicians {
+			allTechIDs = append(allTechIDs, t.ID)
+		}
+	}
 	for _, slot := range allSlots {
 		slotTime, _ := time.Parse("2006-01-02 15:04:05", slot)
 		available := true
 		userName := ""
+		availableTechIDs := make([]uint, 0)
 
 		// 检查这个时间段是否与现有预约冲突
 		for _, apt := range appointments {
@@ -700,17 +719,46 @@ func GetAvailableTimeSlots(c *gin.Context) {
 			slotEnd := slotTime.Add(time.Duration(serviceMinutes) * time.Minute)
 			// 区间相交则冲突：[slotTime, slotEnd) 与 [aptTime, aptEnd)
 			if slotTime.Before(aptEnd) && aptTime.Before(slotEnd) {
-				available = false
-				if apt.User.Nickname != "" {
-					userName = apt.User.Nickname
+				// 若该预约未指定技师，则占用全部技师/时间段
+				if apt.TechnicianID == nil {
+					available = false
+					if apt.User.Nickname != "" {
+						userName = apt.User.Nickname
+					}
+					break
 				}
-				break
+			}
+		}
+
+		// 若没有“占用全部”的预约冲突，则为该时间段计算可预约技师列表
+		if available && len(allTechIDs) > 0 {
+			availableTechIDs = append(availableTechIDs, allTechIDs...)
+			// 逐个预约把冲突的技师剔除
+			for _, apt := range appointments {
+				if apt.AppointmentTime == nil || apt.TechnicianID == nil {
+					continue
+				}
+				aptTime := *apt.AppointmentTime
+				aptMinutes := getAppointmentServiceMinutes(merchant.ID, apt)
+				aptEnd := aptTime.Add(time.Duration(aptMinutes) * time.Minute)
+				slotEnd := slotTime.Add(time.Duration(serviceMinutes) * time.Minute)
+				if slotTime.Before(aptEnd) && aptTime.Before(slotEnd) {
+					// remove tech id
+					removeID := *apt.TechnicianID
+					filtered := make([]uint, 0, len(availableTechIDs))
+					for _, id := range availableTechIDs {
+						if id != removeID {
+							filtered = append(filtered, id)
+						}
+					}
+					availableTechIDs = filtered
+				}
 			}
 		}
 
 		// 仅返回可预约的时间段（排除已被预约/占用的时间段）
 		if available {
-			timeSlots = append(timeSlots, TimeSlot{Time: slot, Available: true, UserName: userName})
+			timeSlots = append(timeSlots, TimeSlot{Time: slot, Available: true, UserName: userName, TechnicianIDs: availableTechIDs})
 		}
 	}
 
@@ -719,6 +767,7 @@ func GetAvailableTimeSlots(c *gin.Context) {
 			"date":                  date,
 			"service_minutes":       serviceMinutes,
 			"time_slots":            timeSlots,
+			"technicians":           technicians,
 		},
 	})
 }

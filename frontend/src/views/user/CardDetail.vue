@@ -380,46 +380,6 @@
           </button>
         </div>
 
-        <div class="px-5 py-3 border-b">
-          <div class="flex gap-2">
-            <button
-              type="button"
-              @click="appointmentMode = 'time'"
-              :class="appointmentMode === 'time' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'"
-              class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors"
-            >
-              按时间段
-            </button>
-            <button
-              type="button"
-              @click="appointmentMode = 'technician'"
-              :disabled="technicians.length === 0"
-              :class="appointmentMode === 'technician' ? 'bg-primary text-white' : 'bg-gray-100 text-gray-700'"
-              class="flex-1 py-2 px-4 rounded-lg font-medium transition-colors disabled:opacity-50"
-            >
-              选技师
-            </button>
-          </div>
-
-          <div v-if="appointmentMode === 'technician'" class="mt-3">
-            <div class="text-sm font-medium text-gray-700 mb-2">选择技师</div>
-            <div v-if="loadingTechnicians" class="text-gray-400 text-sm">加载中...</div>
-            <div v-else-if="technicians.length === 0" class="text-gray-400 text-sm">暂无技师</div>
-            <div v-else class="grid grid-cols-2 gap-2">
-              <button
-                v-for="t in technicians"
-                :key="t.id"
-                type="button"
-                @click="selectedTechnicianId = t.id"
-                :class="selectedTechnicianId === t.id ? 'bg-primary text-white' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary'"
-                class="py-2 px-3 rounded-lg font-medium transition-all text-sm"
-              >
-                {{ t.name }}
-              </button>
-            </div>
-          </div>
-        </div>
-
         <!-- 项目选择（先选项目，再选时间） -->
         <div class="px-5 py-3 border-b">
           <div class="text-sm font-medium text-gray-700 mb-2">选择项目</div>
@@ -435,6 +395,23 @@
           </div>
         </div>
 
+        <!-- 专业客服（可选）：仅在商户开启客服且有启用客服时展示；与时间段双向联动 -->
+        <div v-if="availableTechnicians.length > 0" class="px-5 py-3 border-b">
+          <div class="text-sm font-medium text-gray-700 mb-2">选择专业客服</div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="t in displayedTechnicians"
+              :key="t.id"
+              type="button"
+              @click="toggleTechnician(t.id)"
+              :class="selectedTechnicianId === t.id ? 'bg-primary text-white' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary'"
+              class="py-2 px-3 rounded-lg font-medium transition-all text-sm"
+            >
+              {{ t.name }}
+            </button>
+          </div>
+        </div>
+
         <!-- 时间段列表 -->
         <div class="px-5 py-4 overflow-y-auto" style="max-height: 400px;">
           <div v-if="loadingSlots" class="text-center py-8 text-gray-400">
@@ -445,7 +422,7 @@
           </div>
           <div v-else class="grid grid-cols-2 gap-3">
             <button
-              v-for="slot in timeSlots"
+              v-for="slot in displayedTimeSlots"
               :key="slot.time"
               @click="selectTimeSlot(slot)"
               :class="{
@@ -463,7 +440,7 @@
         <div class="px-5 py-4 border-t">
           <button
             @click="confirmAppointment"
-            :disabled="!selectedAppointmentProjectId || !selectedTimeSlot || appointing || (appointmentMode === 'technician' && !selectedTechnicianId)"
+            :disabled="!selectedAppointmentProjectId || !selectedTimeSlot || appointing"
             class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {{ appointing ? '预纤中...' : '确认预约' }}
@@ -1393,7 +1370,6 @@ const shouldShowBottomSpacer = ref(false)
 
 // 预约弹窗相关
 const showModal = ref(false)
-const appointmentMode = ref('time')
 const selectedDate = ref('')
 const selectedTimeSlot = ref('')
 const timeSlots = ref([])
@@ -1401,9 +1377,26 @@ const loadingSlots = ref(false)
 
 const selectedAppointmentProjectId = ref(null)
 
-const technicians = ref([])
-const loadingTechnicians = ref(false)
+const availableTechnicians = ref([])
 const selectedTechnicianId = ref(null)
+
+const displayedTimeSlots = computed(() => {
+  const list = timeSlots.value || []
+  if (selectedTechnicianId.value) {
+    return list.filter(s => Array.isArray(s?.technician_ids) && s.technician_ids.includes(selectedTechnicianId.value))
+  }
+  return list
+})
+
+const displayedTechnicians = computed(() => {
+  const list = availableTechnicians.value || []
+  if (selectedTimeSlot.value && !selectedTechnicianId.value) {
+    const slot = (timeSlots.value || []).find(s => s && s.time === selectedTimeSlot.value)
+    const ids = Array.isArray(slot?.technician_ids) ? slot.technician_ids : []
+    return list.filter(t => ids.includes(t.id))
+  }
+  return list
+})
 
 const getUsageOperatorInfo = (usage) => {
   // 如果已结单，只显示服务人员
@@ -1665,24 +1658,23 @@ const showAppointmentModal = async () => {
   }
   
   showModal.value = true
-  appointmentMode.value = 'time'
   selectedTechnicianId.value = null
   selectedDate.value = getTomorrowDate()
   selectedAppointmentProjectId.value = null
   selectedTimeSlot.value = ''
   timeSlots.value = []
-  await loadTechnicians(card.value.merchant_id)
+  availableTechnicians.value = []
 }
 
 // 关闭弹窗
 const closeModal = () => {
   showModal.value = false
-  appointmentMode.value = 'time'
   selectedTechnicianId.value = null
   selectedDate.value = ''
   selectedAppointmentProjectId.value = null
   selectedTimeSlot.value = ''
   timeSlots.value = []
+  availableTechnicians.value = []
 }
 
 const onAppointmentProjectChange = async () => {
@@ -1695,18 +1687,6 @@ const onAppointmentProjectChange = async () => {
 watch(selectedAppointmentProjectId, () => {
   onAppointmentProjectChange()
 })
-
-const loadTechnicians = async (merchantId) => {
-  loadingTechnicians.value = true
-  try {
-    const res = await appointmentApi.getMerchantTechnicians(merchantId)
-    technicians.value = res.data.data || []
-  } catch (_) {
-    technicians.value = []
-  } finally {
-    loadingTechnicians.value = false
-  }
-}
 
 // 获取明天日期
 const getTomorrowDate = () => {
@@ -1733,10 +1713,8 @@ const loadTimeSlots = async (date) => {
     console.log('获取时间段响应:', res.data)
     timeSlots.value = res.data.data.time_slots || []
 
-    if (appointmentMode.value === 'technician' && !selectedTimeSlot.value) {
-      const first = (timeSlots.value || []).find(s => s && s.available)
-      if (first) selectedTimeSlot.value = first.time
-    }
+    availableTechnicians.value = res.data.data.technicians || []
+
   } catch (err) {
     console.error('获取可用时间段失败:', err)
     console.error('错误详情:', err.response?.data)
@@ -1746,9 +1724,36 @@ const loadTimeSlots = async (date) => {
   }
 }
 
+const toggleTechnician = (id) => {
+  const next = Number(id)
+  if (!next) return
+
+  if (selectedTechnicianId.value === next) {
+    selectedTechnicianId.value = null
+    return
+  }
+
+  selectedTechnicianId.value = next
+  // 若当前已选时间段不支持该客服，则清空时间段
+  if (selectedTimeSlot.value) {
+    const slot = (timeSlots.value || []).find(s => s && s.time === selectedTimeSlot.value)
+    const ids = Array.isArray(slot?.technician_ids) ? slot.technician_ids : []
+    if (ids.length > 0 && !ids.includes(next)) {
+      selectedTimeSlot.value = ''
+    }
+  }
+}
+
 // 选择时间段
 const selectTimeSlot = (slot) => {
   selectedTimeSlot.value = slot.time
+  // 若尚未选择客服，则联动上方客服列表（通过 displayedTechnicians 计算属性实现）
+  if (selectedTechnicianId.value) {
+    const ids = Array.isArray(slot?.technician_ids) ? slot.technician_ids : []
+    if (ids.length > 0 && !ids.includes(selectedTechnicianId.value)) {
+      selectedTechnicianId.value = null
+    }
+  }
 }
 
 // 格式化时间显示
@@ -1769,11 +1774,6 @@ const confirmAppointment = async () => {
     return
   }
 
-  if (appointmentMode.value === 'technician' && !selectedTechnicianId.value) {
-    alert('请选择技师')
-    return
-  }
-  
   appointing.value = true
   try {
     const userId = localStorage.getItem('userId')
@@ -1787,7 +1787,7 @@ const confirmAppointment = async () => {
       merchant_id: card.value.merchant_id,
       user_id: parseInt(userId),
       project_id: Number(selectedAppointmentProjectId.value),
-      technician_id: appointmentMode.value === 'technician' ? selectedTechnicianId.value : null,
+      technician_id: selectedTechnicianId.value ? Number(selectedTechnicianId.value) : null,
       appointment_time: selectedTimeSlot.value
     })
     
