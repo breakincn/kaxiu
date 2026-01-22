@@ -253,6 +253,9 @@
               <div v-if="usage?.status === 'success' && usage?.finished_at" class="text-gray-400 text-sm mt-0.5">
                 服务结束：{{ formatDateTime(usage.finished_at) }}
               </div>
+              <div v-if="getUsageRoomInfo(usage)" class="text-gray-400 text-sm mt-0.5">
+                {{ getUsageRoomInfo(usage) }}
+              </div>
               <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageProjectText(usage) }}
               </div>
@@ -277,9 +280,8 @@
               </div>
             </div>
 
-            <div v-if="getUsageOperatorInfo(usage) || getUsageRoomInfo(usage)" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
+            <div v-if="getUsageOperatorInfo(usage)" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
               <span v-if="getUsageOperatorInfo(usage)">{{ getUsageOperatorInfo(usage) }}</span>
-              <span v-if="getUsageRoomInfo(usage)" class="text-gray-600 text-xs whitespace-nowrap">{{ getUsageRoomInfo(usage) }}</span>
             </div>
           </div>
         </div>
@@ -1435,9 +1437,8 @@ const getUsageOperatorInfo = (usage) => {
 }
 
 const getUsageRoomInfo = (usage) => {
-  // 只在已完成状态显示房间号
-  if (usage.status === 'success' && usage.finished_at && usage.service_room) {
-    return `房间: ${usage.service_room.name || usage.service_room.code}`
+  if (usage.service_room) {
+    return `房间号：${usage.service_room.name || usage.service_room.code}`
   }
   return ''
 }
