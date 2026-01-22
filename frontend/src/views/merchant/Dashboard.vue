@@ -60,7 +60,7 @@
     <div v-if="showHandCardModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click="onHandCardMaskClick">
       <div class="w-full max-w-sm bg-white rounded-xl p-4 shadow-lg" @click.stop>
         <div class="flex items-center justify-between">
-          <div class="text-gray-800 font-medium text-base">绑定手牌</div>
+          <div class="text-gray-800 font-medium text-base">分配手牌</div>
           <button @click="closeHandCardModal" class="p-1 text-gray-500">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -71,13 +71,15 @@
         <input
           v-model="handCardInput"
           type="text"
+          inputmode="numeric"
+          pattern="[0-9]*"
           placeholder="例如：H001"
           class="w-full mt-3 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
         />
         <div v-if="handCardError" class="text-red-600 text-sm mt-2">{{ handCardError }}</div>
         <div class="mt-4 flex gap-2">
           <button
-            @click="submitHandCard(true)"
+            @click="submitHandCard"
             :disabled="submittingHandCard"
             class="flex-1 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
           >
@@ -449,12 +451,6 @@
               <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
-              <div v-if="merchant?.support_hand_card" class="text-gray-500 text-sm mt-1">
-                手牌：{{ usage.hand_card_no || '-' }}（{{ getHandCardStatusText(usage) }}）
-              </div>
-              <div v-if="usage.card?.locked" class="text-red-600 text-sm mt-1">
-                锁卡：{{ usage.card?.locked_reason || '卡片已锁定' }}
-              </div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             </div>
@@ -1223,13 +1219,13 @@ let serviceSessionTimer = null
 const verifyCodeInput = ref('')
 const verifying = ref(false)
 const verifyResult = ref(null)
+const showVerifyInput = ref(false)
 
 const showHandCardModal = ref(false)
 const submittingHandCard = ref(false)
 const handCardInput = ref('')
 const handCardError = ref('')
 const pendingBindUsageId = ref(null)
-const showVerifyInput = ref(false)
 
 const noticeForm = ref({
   title: '',
@@ -1622,14 +1618,6 @@ const getOperatorName = (usage) => {
     return usage.merchant.name || '店铺'
   }
   return '-'
-}
-
-const getHandCardStatusText = (usage) => {
-  if (!usage) return '未分配'
-  if (!usage.hand_card_no) return '未分配'
-  if (usage.hand_card_returned_at) return '已归还'
-  if (usage.hand_card_assigned_at) return '已分配'
-  return '未分配'
 }
 
 // 获取核销记录的完整操作人信息（包括结单人员）
@@ -2042,27 +2030,14 @@ const verifyCard = async () => {
   
   try {
     const res = await cardApi.verifyCard(verifyCodeInput.value)
-
-    const usageId = res?.data?.data?.usage_id
     verifyResult.value = {
       success: true,
       message: `核销成功！剩余次数: ${res.data.data.remain_times}`
     }
-
-    // 开启手牌：强制弹窗绑定
-    if (merchant.value?.support_hand_card && usageId) {
-      pendingBindUsageId.value = usageId
-      handCardInput.value = ''
-      handCardError.value = ''
-      showHandCardModal.value = true
-      verifyCodeInput.value = ''
-      return
-    }
-
     verifyCodeInput.value = ''
     fetchQueueStatus()
     fetchTodayUsages()
-
+    
     // 核销成功后2秒关闭输入框
     setTimeout(() => {
       showVerifyInput.value = false
@@ -2078,7 +2053,22 @@ const verifyCard = async () => {
   }
 }
 
-const submitHandCard = async (doBind) => {
+const openHandCardModalFromRoute = () => {
+  const usageId = String(route.query.hand_card_usage_id || '').trim()
+  if (!usageId) return
+  if (!merchant.value?.support_hand_card) return
+
+  pendingBindUsageId.value = usageId
+  handCardInput.value = ''
+  handCardError.value = ''
+  showHandCardModal.value = true
+
+  const nextQuery = { ...route.query }
+  delete nextQuery.hand_card_usage_id
+  router.replace({ path: route.path, query: nextQuery })
+}
+
+const submitHandCard = async () => {
   if (submittingHandCard.value) return
   handCardError.value = ''
 
@@ -2088,27 +2078,21 @@ const submitHandCard = async (doBind) => {
     return
   }
 
+  const no = String(handCardInput.value || '').trim()
+  if (!no) {
+    handCardError.value = '请输入手牌号'
+    return
+  }
+
   submittingHandCard.value = true
   try {
-    const no = String(handCardInput.value || '').trim()
-    if (doBind) {
-      if (!no) {
-        handCardError.value = '请输入手牌号'
-        return
-      }
-      await cardApi.bindUsageHandCard(usageId, no)
-    }
+    await cardApi.bindUsageHandCard(usageId, no)
     pendingBindUsageId.value = null
     showHandCardModal.value = false
     fetchQueueStatus()
     fetchTodayUsages()
-
-    setTimeout(() => {
-      showVerifyInput.value = false
-      verifyResult.value = null
-    }, 800)
   } catch (e) {
-    handCardError.value = e?.response?.data?.error || '绑定手牌失败'
+    handCardError.value = e?.response?.data?.error || '绑定失败'
   } finally {
     submittingHandCard.value = false
   }
@@ -2122,10 +2106,6 @@ const closeHandCardModal = () => {
   }
   pendingBindUsageId.value = null
   showHandCardModal.value = false
-  setTimeout(() => {
-    showVerifyInput.value = false
-    verifyResult.value = null
-  }, 200)
 }
 
 const onHandCardMaskClick = () => {
@@ -2321,7 +2301,7 @@ const getAppointmentProjectDisplay = (appt) => {
 
 // 计算预约倒计时（秒）
 const getAppointmentCountdown = (appt) => {
-  if (!appt || appt.status !== 'confirmed' || !appt.appointment_time) return null
+  if (!appt || !appt.appointment_time) return null
   const appointmentTime = new Date(appt.appointment_time).getTime()
   const now = currentTime.value
   return Math.floor((appointmentTime - now) / 1000)
@@ -2570,7 +2550,7 @@ onMounted(async () => {
   const errorParam = route.query.error
   if (errorParam) {
     showErrorModalWithMessage(String(errorParam))
-    // 清除URL中的错误参数，避免重复显示；保留 tab
+    // 清除URL中的错误参数，避免刷新时重复显示
     router.replace({ path: '/merchant', query: { tab: tabParam || 'queue' } })
   }
 
@@ -2596,6 +2576,11 @@ onMounted(async () => {
   merchantId.value = parsedMerchantId
   await fetchMerchant()
   console.log('Merchant loaded:', merchant.value)
+
+  // 扫码核销回跳后的“分配手牌”弹窗（需要商户信息已加载）
+  nextTick(() => {
+    openHandCardModalFromRoute()
+  })
   
   // 根据权限选择默认Tab
   if (!tabParam) {
@@ -2877,9 +2862,6 @@ const fetchCurrentAttendanceStatus = async () => {
 }
 
 onBeforeRouteLeave(() => {
-  if (showHandCardModal.value) {
-    return false
-  }
   scanUserCodeActive.value = false
   routeUserCode.value = ''
 })
@@ -2908,6 +2890,15 @@ onActivated(() => {
     fetchTodayFinishedUsages()
   }
 })
+
+watch(
+  () => route.query.hand_card_usage_id,
+  () => {
+    nextTick(() => {
+      openHandCardModalFromRoute()
+    })
+  }
+)
 </script>
 
 <style scoped>

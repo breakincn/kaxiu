@@ -114,7 +114,7 @@
     <div v-if="showHandCardModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click="onHandCardMaskClick">
       <div class="w-full max-w-sm bg-white rounded-xl p-4 shadow-lg" @click.stop>
         <div class="flex items-center justify-between">
-          <div class="text-gray-800 font-medium text-base">绑定手牌</div>
+          <div class="text-gray-800 font-medium text-base">分配手牌</div>
           <button @click="closeHandCardModal" class="p-1 text-gray-500">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -125,6 +125,8 @@
         <input
           v-model="handCardInput"
           type="text"
+          inputmode="numeric"
+          pattern="[0-9]*"
           placeholder="例如：H001"
           class="w-full mt-3 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
         />
@@ -352,13 +354,19 @@ const onDecoded = async (decodedText) => {
       router.replace({ path: returnPath, query: { tab: backTab } })
     }
 
-    // 开启手牌 + 核销成功：强制弹窗绑定手牌
+    // 开启手牌 + 核销成功：先跳回上一页，再由上一页弹窗分配手牌
     if (action === 'verify' && supportHandCard.value && usageId) {
-      pendingBindUsageId.value = usageId
-      pendingJump.value = jump
-      handCardInput.value = ''
-      handCardError.value = ''
-      showHandCardModal.value = true
+      if (jumpTimer) {
+        clearTimeout(jumpTimer)
+        jumpTimer = null
+      }
+      router.replace({
+        path: returnPath,
+        query: {
+          tab: backTab,
+          hand_card_usage_id: usageId
+        }
+      })
       return
     }
 
