@@ -760,6 +760,18 @@
                 <div class="text-sm font-medium">{{ formatDate(card.end_date) }}</div>
               </div>
             </div>
+
+            <div v-if="merchant?.support_hand_card && card?.locked" class="mt-3 px-3 py-2 rounded-lg bg-red-50 border border-red-100">
+              <div class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                </svg>
+                <div class="flex-1">
+                  <div class="text-red-600 text-sm font-medium">卡片已锁定</div>
+                  <div class="text-red-500 text-xs mt-0.5">{{ getLockedHandCardTipText(card) }}</div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div v-if="expandedCardId === card.id" class="mt-3 bg-gray-50 rounded-2xl p-5 shadow-md border border-gray-200">
@@ -3009,6 +3021,43 @@ const getHandCardStatusText = (usage) => {
   if (usage.hand_card_returned_at) return '已归还'
   if (usage.hand_card_assigned_at) return '已分配'
   return '未分配'
+}
+
+const parseLockedReasonHandCards = (reason) => {
+  const r = String(reason || '').trim()
+  if (!r) return { count: 0, list: [] }
+
+  // 优先解析冒号后的手牌列表（支持中文冒号/英文冒号）
+  let listPart = ''
+  const idxCN = r.indexOf('：')
+  const idxEN = r.indexOf(':')
+  const idx = idxCN >= 0 ? idxCN : idxEN
+  if (idx >= 0 && idx + 1 < r.length) {
+    listPart = r.slice(idx + 1)
+  }
+  const list = (listPart || '')
+    .split(',')
+    .map(s => String(s || '').trim())
+    .filter(Boolean)
+
+  if (list.length > 0) return { count: list.length, list }
+
+  // 兜底：解析“你有N个未归还手牌”中的 N
+  const m = r.match(/你有\s*(\d+)\s*个未归还手牌/)
+  if (m && m[1]) {
+    const n = parseInt(m[1], 10)
+    if (Number.isFinite(n) && n >= 0) return { count: n, list: [] }
+  }
+  return { count: 0, list: [] }
+}
+
+const getLockedHandCardTipText = (card) => {
+  const info = parseLockedReasonHandCards(card?.locked_reason)
+  const n = info.count
+  const listText = info.list.length > 0 ? info.list.join(',') : ''
+  const prefix = `尚未归还${Number.isFinite(n) ? n : 0}个手牌`
+  if (listText) return `${prefix}：${listText}`
+  return prefix
 }
 </script>
 
