@@ -314,7 +314,31 @@ const fetchCards = async () => {
   
   try {
     const res = await cardApi.getUserCards(userId.value, currentStatus.value)
-    const cardsData = res.data.data || []
+    let cardsData = res.data.data || []
+
+    // 锁定卡片优先展示：即使已过期，也要出现在“进行中”
+    if (currentStatus.value === 'active') {
+      try {
+        const expiredRes = await cardApi.getUserCards(userId.value, 'expired')
+        const expiredCards = (expiredRes.data.data || []).filter(c => c && c.locked)
+        if (expiredCards.length > 0) {
+          const seen = new Set((cardsData || []).map(c => c && c.id).filter(Boolean))
+          for (const c of expiredCards) {
+            if (c && c.id && !seen.has(c.id)) {
+              seen.add(c.id)
+              cardsData.push(c)
+            }
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // 已失效中不展示锁定卡片（避免与“进行中”重复）
+    if (currentStatus.value === 'expired') {
+      cardsData = (cardsData || []).filter(c => !(c && c.locked))
+    }
     
     // 为每个卡片获取对应商户的置顶通知
     for (const card of cardsData) {
