@@ -204,6 +204,7 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		SupportDirectSale        *bool   `json:"support_direct_sale"`
 		SupportCustomerService   *bool   `json:"support_customer_service"`
 		SupportOrderComplete     *bool   `json:"support_order_complete"`
+		StartDelaySeconds        *int    `json:"start_delay_seconds"`
 		SupportHandCard          *bool   `json:"support_hand_card"`
 		QueuePrefix              *string `json:"queue_prefix"`
 		QueueStartNo             *int    `json:"queue_start_no"`
@@ -266,6 +267,13 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	}
 	if input.SupportOrderComplete != nil {
 		updates["support_order_complete"] = *input.SupportOrderComplete
+	}
+	if input.StartDelaySeconds != nil {
+		if *input.StartDelaySeconds < 0 || *input.StartDelaySeconds > 3600 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "start_delay_seconds 范围应为 0-3600"})
+			return
+		}
+		updates["start_delay_seconds"] = *input.StartDelaySeconds
 	}
 	if input.SupportHandCard != nil {
 		updates["support_hand_card"] = *input.SupportHandCard

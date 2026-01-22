@@ -564,6 +564,13 @@ const getUsageStatusText = (usage) => {
     const precheckedAt = usage?.service_session_start_confirmed_at
     const now = nowTick.value
     if (sessStatus === 'finished') return '完成'
+    // 未开启客服但开启结单：核销即起单（按服务会话状态展示）
+    if (!supportCS) {
+      if (sessStatus === 'delay_pending') return replaceTerms('待起单', card.value?.merchant)
+      if (sessStatus === 'start_pending') return replaceTerms('待起单', card.value?.merchant)
+      if (sessStatus === 'serving') return replaceTerms('服务中', card.value?.merchant)
+      if (sessStatus === 'auto_finishing') return replaceTerms('待自动结单', card.value?.merchant)
+    }
     if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
     if (supportCS && sessStatus === 'room_locked') return '待选客服'
     // 会话已取消但 usage 仍在进行中：

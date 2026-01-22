@@ -675,6 +675,9 @@ func VerifyCard(c *gin.Context) {
 					usageStatus = "success"
 				}
 			}
+		} else if merchant.SupportOrderComplete {
+			// 未开启客服但开启结单：核销即起单（进入服务流程）
+			usageStatus = "in_progress"
 		}
 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", input.Code).First(&verifyCode).Error; err != nil {
@@ -752,6 +755,60 @@ func VerifyCard(c *gin.Context) {
 		}
 		if err := tx.Create(&usage).Error; err != nil {
 			return err
+		}
+
+		// 未开启客服 + 未开启结单：核销即结单（不创建服务会话）
+		if !merchant.SupportCustomerService && !merchant.SupportOrderComplete {
+			finishedAt := now
+			if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
+				"status":      "success",
+				"finished_at": &finishedAt,
+			}).Error; err != nil {
+				return err
+			}
+			nextStep = ""
+			sessionID = 0
+			return nil
+		}
+
+		// 未开启客服 + 开启结单：核销即起单（创建会话并进入延迟起单）
+		if !merchant.SupportCustomerService && merchant.SupportOrderComplete {
+			// 读取项目真实时长，避免硬编码
+			var project models.MerchantProject
+			durationMinutes := 15 // 默认兜底
+			if verifyCode.ProjectID != nil {
+				if err := config.DB.Where("id = ? AND merchant_id = ?", verifyCode.ProjectID, merchantID).First(&project).Error; err == nil && project.Duration > 0 {
+					durationMinutes = project.Duration
+				}
+			}
+
+			delaySeconds := merchant.StartDelaySeconds
+			if delaySeconds <= 0 {
+				delaySeconds = 60
+			}
+			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+
+			session := models.ServiceSession{
+				MerchantID:             merchantID,
+				UserID:                 card.UserID,
+				CardID:                 card.ID,
+				ProjectID:              verifyCode.ProjectID,
+				InitialUsageID:         usage.ID,
+				VerifyCode:             verifyCode.Code,
+				Status:                 "delay_pending",
+				StartConfirmedAt:       &now,
+				StartDelaySeconds:      delaySeconds,
+				ScheduledStartAt:       &startAt,
+				DurationMinutes:        durationMinutes,
+				AutoFinishDelaySeconds: 300,
+				AutoIdleAfterSeconds:   180,
+			}
+			if err := tx.Create(&session).Error; err != nil {
+				return err
+			}
+			sessionID = session.ID
+			nextStep = ""
+			return nil
 		}
 
 		if autoFinish {
@@ -962,6 +1019,9 @@ func ScanVerifyCard(c *gin.Context) {
 					usageStatus = "success"
 				}
 			}
+		} else if merchant.SupportOrderComplete {
+			// 未开启客服但开启结单：核销即起单（进入服务流程）
+			usageStatus = "in_progress"
 		}
 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", code).First(&verifyCode).Error; err != nil {
@@ -1034,6 +1094,60 @@ func ScanVerifyCard(c *gin.Context) {
 			}
 			if err := tx.Create(&usage).Error; err != nil {
 				return err
+			}
+
+			// 未开启客服 + 未开启结单：核销即结单（不创建服务会话）
+			if !merchant.SupportCustomerService && !merchant.SupportOrderComplete {
+				finishedAt = now
+				if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
+					"status":      "success",
+					"finished_at": &finishedAt,
+				}).Error; err != nil {
+					return err
+				}
+				nextStep = ""
+				sessionID = 0
+				return nil
+			}
+
+			// 未开启客服 + 开启结单：核销即起单（创建会话并进入延迟起单）
+			if !merchant.SupportCustomerService && merchant.SupportOrderComplete {
+				var project models.MerchantProject
+				durationMinutes := 15 // 默认兜底
+				if verifyCode.ProjectID != nil {
+					if err := config.DB.Where("id = ? AND merchant_id = ?", verifyCode.ProjectID, merchantID).First(&project).Error; err == nil && project.Duration > 0 {
+						durationMinutes = project.Duration
+					}
+				}
+
+				delaySeconds := merchant.StartDelaySeconds
+				if delaySeconds <= 0 {
+					delaySeconds = 60
+				}
+				startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+
+				session := models.ServiceSession{
+					MerchantID:             merchantID,
+					UserID:                 card.UserID,
+					CardID:                 card.ID,
+					ProjectID:              verifyCode.ProjectID,
+					InitialUsageID:         usage.ID,
+					VerifyCode:             verifyCode.Code,
+					Status:                 "delay_pending",
+					StartConfirmedAt:       &now,
+					StartDelaySeconds:      delaySeconds,
+					ScheduledStartAt:       &startAt,
+					DurationMinutes:        durationMinutes,
+					AutoFinishDelaySeconds: 300,
+					AutoIdleAfterSeconds:   180,
+				}
+				if err := tx.Create(&session).Error; err != nil {
+					return err
+				}
+				sessionID = session.ID
+				nextStep = ""
+				action = "verify"
+				return nil
 			}
 
 			if autoFinish {
