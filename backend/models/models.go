@@ -172,6 +172,7 @@ func (Notice) TableComment() string {
 
 type Appointment struct {
 	ID              uint       `json:"id" gorm:"primaryKey;comment:预约ID"`
+	CardID          uint       `json:"card_id" gorm:"index;comment:卡片ID（外键关联cards表）"`
 	MerchantID      uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
 	UserID          uint       `json:"user_id" gorm:"index;comment:用户ID（外键关联users表）"`
 	ProjectID       *uint      `json:"project_id" gorm:"index;comment:项目ID（merchant_projects表主键，可为空）"`

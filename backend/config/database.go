@@ -129,6 +129,14 @@ func InitDB() {
 	// service_sessions: 待起单超时秒数（0表示使用系统默认）
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `start_pending_timeout_seconds` int NOT NULL DEFAULT 0 COMMENT '待起单超时秒数（0表示使用系统默认）'")
 
+	// appointments: 关联卡片ID（用于同商户不同卡预约隔离）
+	DB.Exec("ALTER TABLE `appointments` ADD COLUMN `card_id` bigint unsigned NOT NULL DEFAULT 0 COMMENT '卡片ID（外键关联cards表）'")
+	DB.Exec("ALTER TABLE `appointments` ADD INDEX `idx_appointments_card_id` (`card_id`)")
+	// 回填历史预约：优先按预约时间匹配“预约日前最近的一张卡”，避免同商户多卡时挂错卡
+	DB.Exec("UPDATE appointments a SET a.card_id = (SELECT c.id FROM cards c WHERE c.user_id = a.user_id AND c.merchant_id = a.merchant_id AND c.recharge_at IS NOT NULL AND a.appointment_time IS NOT NULL AND c.recharge_at <= DATE(a.appointment_time) ORDER BY c.recharge_at DESC, c.id DESC LIMIT 1) WHERE a.card_id = 0")
+	// 仍未回填的（如 appointment_time 为空），回退到最早的一张卡
+	DB.Exec("UPDATE appointments a SET a.card_id = (SELECT c.id FROM cards c WHERE c.user_id = a.user_id AND c.merchant_id = a.merchant_id ORDER BY c.id ASC LIMIT 1) WHERE a.card_id = 0")
+
 	// 添加 support_order_complete 字段到 merchants 表
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `support_order_complete` BOOLEAN DEFAULT FALSE COMMENT '是否开启结单功能（0-不开启，1-开启）'")
 

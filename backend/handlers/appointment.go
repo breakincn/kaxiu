@@ -201,7 +201,7 @@ func GetCardAppointment(c *gin.Context) {
 
 	var appointment models.Appointment
 	err := config.DB.Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").
-		Where("user_id = ? AND merchant_id = ? AND status IN ('pending', 'confirmed', 'failed')", card.UserID, card.MerchantID).
+		Where("card_id = ? AND merchant_id = ? AND user_id = ? AND status IN ('pending', 'confirmed', 'failed')", card.ID, card.MerchantID, card.UserID).
 		Order("appointment_time ASC").
 		First(&appointment).Error
 
@@ -260,6 +260,7 @@ func GetCardAppointment(c *gin.Context) {
 
 func CreateAppointment(c *gin.Context) {
 	var input struct {
+		CardID          uint   `json:"card_id" binding:"required"`
 		MerchantID      uint   `json:"merchant_id" binding:"required"`
 		UserID          uint   `json:"user_id" binding:"required"`
 		ProjectID       *uint  `json:"project_id"`
@@ -269,6 +270,17 @@ func CreateAppointment(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 校验卡片归属（避免同商户多卡串数据）
+	var card models.Card
+	if err := config.DB.First(&card, input.CardID).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "卡片不存在"})
+		return
+	}
+	if card.UserID != input.UserID || card.MerchantID != input.MerchantID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的卡片"})
 		return
 	}
 
@@ -313,10 +325,10 @@ func CreateAppointment(c *gin.Context) {
 		}
 	}
 
-	// 检查用户在该商户是否已有活跃的预约
+	// 检查该卡片在该商户是否已有活跃的预约
 	var existingAppointment models.Appointment
-	err := config.DB.Where("user_id = ? AND merchant_id = ? AND status IN ('pending', 'confirmed')",
-		input.UserID, input.MerchantID).First(&existingAppointment).Error
+	err := config.DB.Where("card_id = ? AND merchant_id = ? AND user_id = ? AND status IN ('pending', 'confirmed')",
+		input.CardID, input.MerchantID, input.UserID).First(&existingAppointment).Error
 
 	if err == nil {
 		if autoCanceled, autoCancelErr := autoCancelAppointmentIfOverdue(&existingAppointment, time.Now()); autoCancelErr != nil {
@@ -369,6 +381,7 @@ func CreateAppointment(c *gin.Context) {
 	}
 
 	appointment := models.Appointment{
+		CardID:          input.CardID,
 		MerchantID:      input.MerchantID,
 		UserID:          input.UserID,
 		ProjectID:       input.ProjectID,

@@ -1779,6 +1779,7 @@ const confirmAppointment = async () => {
     }
     
     await appointmentApi.createAppointment({
+      card_id: Number(route.params.id),
       merchant_id: card.value.merchant_id,
       user_id: parseInt(userId),
       project_id: Number(selectedAppointmentProjectId.value),
