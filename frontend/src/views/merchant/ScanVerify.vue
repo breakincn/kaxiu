@@ -58,57 +58,6 @@
           提示：请允许浏览器使用摄像头权限，建议使用微信内置浏览器 / Safari / Chrome。
         </p>
       </div>
-
-      <div v-if="supportHandCard" class="bg-white rounded-xl p-4 shadow-sm mt-4">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="font-medium text-gray-800">归还手牌</h3>
-          <button
-            v-if="returnQueryUsage"
-            @click="clearHandCardReturn()"
-            class="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm"
-          >
-            取消
-          </button>
-        </div>
-
-        <div class="flex gap-2">
-          <input
-            v-model="handCardReturnInput"
-            type="text"
-            placeholder="请输入手牌号"
-            class="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-          />
-          <button
-            @click="queryHandCardReturn"
-            :disabled="returnQuerying || !handCardReturnInput"
-            class="px-4 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
-          >
-            {{ returnQuerying ? '查询中...' : '查询' }}
-          </button>
-        </div>
-        <div v-if="returnError" class="text-red-600 text-sm mt-2">{{ returnError }}</div>
-
-        <div v-if="returnQueryUsage" class="mt-3 p-3 bg-gray-50 rounded-lg">
-          <div class="text-gray-800 text-sm font-medium">
-            {{ returnQueryUsage.card?.user?.nickname || '用户' }} / 卡号：{{ returnQueryUsage.card?.card_no || '-' }}
-          </div>
-          <div class="text-gray-500 text-sm mt-1">项目：{{ returnQueryUsage.project?.name || '-' }}</div>
-          <div class="text-gray-500 text-sm mt-1">手牌：{{ returnQueryUsage.hand_card_no || '-' }}</div>
-          <div class="text-gray-500 text-sm mt-1">分配时间：{{ formatDateTime(returnQueryUsage.hand_card_assigned_at) }}</div>
-
-          <button
-            @click="confirmReturnHandCard"
-            :disabled="returnConfirming"
-            class="w-full mt-3 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
-          >
-            {{ returnConfirming ? '归还中...' : '确认归还' }}
-          </button>
-        </div>
-
-        <div v-if="returnSuccessText" class="mt-3 p-3 bg-primary-light text-primary rounded-lg text-sm">
-          {{ returnSuccessText }}
-        </div>
-      </div>
     </div>
 
     <div v-if="showHandCardModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click="onHandCardMaskClick">
@@ -193,12 +142,6 @@ const handCardError = ref('')
 const pendingBindUsageId = ref(null)
 const pendingJump = ref(null)
 
-const handCardReturnInput = ref('')
-const returnQuerying = ref(false)
-const returnConfirming = ref(false)
-const returnError = ref('')
-const returnSuccessText = ref('')
-const returnQueryUsage = ref(null)
 
 const currentCameraIndex = ref(0)
 const cameras = ref([])
@@ -415,56 +358,6 @@ const onHandCardMaskClick = () => {
   closeHandCardModal()
 }
 
-const clearHandCardReturn = () => {
-  handCardReturnInput.value = ''
-  returnQueryUsage.value = null
-  returnError.value = ''
-  returnSuccessText.value = ''
-}
-
-const queryHandCardReturn = async () => {
-  if (returnQuerying.value) return
-  returnError.value = ''
-  returnSuccessText.value = ''
-  const no = String(handCardReturnInput.value || '').trim()
-  if (!no) return
-  returnQuerying.value = true
-  try {
-    const res = await cardApi.queryHandCardForReturn(no)
-    returnQueryUsage.value = res?.data?.data || null
-    if (!returnQueryUsage.value) {
-      returnError.value = '未找到待归还记录'
-    }
-  } catch (e) {
-    returnQueryUsage.value = null
-    returnError.value = e?.response?.data?.error || '查询失败'
-  } finally {
-    returnQuerying.value = false
-  }
-}
-
-const confirmReturnHandCard = async () => {
-  if (returnConfirming.value) return
-  returnError.value = ''
-  returnSuccessText.value = ''
-  const usage = returnQueryUsage.value
-  const no = String(usage?.hand_card_no || handCardReturnInput.value || '').trim()
-  if (!no) return
-  if (!confirm('确定已归还该手牌吗？')) return
-
-  returnConfirming.value = true
-  try {
-    await cardApi.returnHandCard(no)
-    returnSuccessText.value = '归还成功'
-    setTimeout(() => {
-      clearHandCardReturn()
-    }, 800)
-  } catch (e) {
-    returnError.value = e?.response?.data?.error || '归还失败'
-  } finally {
-    returnConfirming.value = false
-  }
-}
 
 const submitHandCard = async (doBind) => {
   if (submittingHandCard.value) return
