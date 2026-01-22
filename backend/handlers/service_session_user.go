@@ -317,11 +317,25 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 		}
 
 		lockedAt := now
-		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
+
+		updates := map[string]interface{}{
 			"room_id":        chosenRoomID,
 			"room_locked_at": lockedAt,
-			"status":         "staff_selecting",
-		}).Error; err != nil {
+		}
+		if merchant.SupportCustomerService {
+			updates["status"] = "staff_selecting"
+		} else {
+			delaySeconds := s.StartDelaySeconds
+			if delaySeconds <= 0 {
+				delaySeconds = 60
+			}
+			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+			updates["status"] = "delay_pending"
+			updates["start_confirmed_at"] = now
+			updates["scheduled_start_at"] = startAt
+		}
+
+		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err
 		}
 

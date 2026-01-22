@@ -296,12 +296,29 @@ func ChooseServiceSessionRoom(c *gin.Context) {
 		if s.Status == "finished" || s.Status == "canceled" {
 			return apiErr{status: http.StatusBadRequest, msg: "会话已结束"}
 		}
+
+		var m models.Merchant
+		if err := tx.First(&m, merchantID).Error; err != nil {
+			return err
+		}
 		lockedAt := now
+
 		updates := map[string]interface{}{
 			"room_id":                 input.RoomID,
 			"room_locked_at":          lockedAt,
-			"status":                  "room_locked",
 			"room_select_deadline_at": nil,
+		}
+		if m.SupportCustomerService {
+			updates["status"] = "room_locked"
+		} else {
+			delaySeconds := s.StartDelaySeconds
+			if delaySeconds <= 0 {
+				delaySeconds = 60
+			}
+			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+			updates["status"] = "delay_pending"
+			updates["start_confirmed_at"] = now
+			updates["scheduled_start_at"] = startAt
 		}
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err

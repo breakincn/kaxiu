@@ -788,6 +788,21 @@ func VerifyCard(c *gin.Context) {
 			}
 			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 
+			status := "delay_pending"
+			var roomSelectDeadlineAt *time.Time
+			var startConfirmedAt *time.Time
+			var scheduledStartAt *time.Time
+			if merchant.SupportRoom {
+				status = "room_selecting"
+				dl := now.Add(90 * time.Second)
+				roomSelectDeadlineAt = &dl
+				nextStep = "room_select"
+			} else {
+				startConfirmedAt = &now
+				scheduledStartAt = &startAt
+				nextStep = ""
+			}
+
 			session := models.ServiceSession{
 				MerchantID:             merchantID,
 				UserID:                 card.UserID,
@@ -795,10 +810,11 @@ func VerifyCard(c *gin.Context) {
 				ProjectID:              verifyCode.ProjectID,
 				InitialUsageID:         usage.ID,
 				VerifyCode:             verifyCode.Code,
-				Status:                 "delay_pending",
-				StartConfirmedAt:       &now,
+				Status:                 status,
+				RoomSelectDeadlineAt:   roomSelectDeadlineAt,
+				StartConfirmedAt:       startConfirmedAt,
 				StartDelaySeconds:      delaySeconds,
-				ScheduledStartAt:       &startAt,
+				ScheduledStartAt:       scheduledStartAt,
 				DurationMinutes:        durationMinutes,
 				AutoFinishDelaySeconds: 300,
 				AutoIdleAfterSeconds:   180,
@@ -807,7 +823,6 @@ func VerifyCard(c *gin.Context) {
 				return err
 			}
 			sessionID = session.ID
-			nextStep = ""
 			return nil
 		}
 
@@ -1126,6 +1141,21 @@ func ScanVerifyCard(c *gin.Context) {
 				}
 				startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 
+				status := "delay_pending"
+				var roomSelectDeadlineAt *time.Time
+				var startConfirmedAt *time.Time
+				var scheduledStartAt *time.Time
+				if merchant.SupportRoom {
+					status = "room_selecting"
+					dl := now.Add(90 * time.Second)
+					roomSelectDeadlineAt = &dl
+					nextStep = "room_select"
+				} else {
+					startConfirmedAt = &now
+					scheduledStartAt = &startAt
+					nextStep = ""
+				}
+
 				session := models.ServiceSession{
 					MerchantID:             merchantID,
 					UserID:                 card.UserID,
@@ -1133,10 +1163,11 @@ func ScanVerifyCard(c *gin.Context) {
 					ProjectID:              verifyCode.ProjectID,
 					InitialUsageID:         usage.ID,
 					VerifyCode:             verifyCode.Code,
-					Status:                 "delay_pending",
-					StartConfirmedAt:       &now,
+					Status:                 status,
+					RoomSelectDeadlineAt:   roomSelectDeadlineAt,
+					StartConfirmedAt:       startConfirmedAt,
 					StartDelaySeconds:      delaySeconds,
-					ScheduledStartAt:       &startAt,
+					ScheduledStartAt:       scheduledStartAt,
 					DurationMinutes:        durationMinutes,
 					AutoFinishDelaySeconds: 300,
 					AutoIdleAfterSeconds:   180,
@@ -1145,7 +1176,6 @@ func ScanVerifyCard(c *gin.Context) {
 					return err
 				}
 				sessionID = session.ID
-				nextStep = ""
 				action = "verify"
 				return nil
 			}
