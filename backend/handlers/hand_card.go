@@ -6,6 +6,7 @@ import (
 	"kabao/middleware"
 	"kabao/models"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,7 +21,6 @@ func BindUsageHandCard(c *gin.Context) {
 	if !ok {
 		return
 	}
-
 	usageID := strings.TrimSpace(c.Param("id"))
 	if usageID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "usage_id 不能为空"})
@@ -96,6 +96,10 @@ func BindUsageHandCard(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func fmtInt64(v int64) string {
+	return strconv.FormatInt(v, 10)
 }
 
 // QueryHandCardForReturn 输入手牌号查询待归还的核销记录
@@ -211,6 +215,39 @@ func ReturnHandCard(c *gin.Context) {
 				"unlocked_reason": "手牌已全部归还",
 			}
 			if err := tx.Model(&models.Card{}).Where("id = ? AND merchant_id = ?", usage.CardID, merchantID).Updates(updates).Error; err != nil {
+				return err
+			}
+		} else {
+			// 仍有未归还手牌：更新锁卡原因，避免继续显示已归还的手牌号
+			var nos []string
+			if err := tx.Model(&models.Usage{}).
+				Select("hand_card_no").
+				Where("card_id = ? AND merchant_id = ? AND hand_card_assigned_at IS NOT NULL AND hand_card_returned_at IS NULL", usage.CardID, merchantID).
+				Where("hand_card_no IS NOT NULL AND hand_card_no <> ''").
+				Order("hand_card_assigned_at asc").
+				Pluck("hand_card_no", &nos).Error; err != nil {
+				return err
+			}
+			uniq := make([]string, 0, len(nos))
+			seen := make(map[string]struct{}, len(nos))
+			for _, n := range nos {
+				v := strings.TrimSpace(n)
+				if v == "" {
+					continue
+				}
+				if _, ok := seen[v]; ok {
+					continue
+				}
+				seen[v] = struct{}{}
+				uniq = append(uniq, v)
+			}
+			reason := "你有" + fmtInt64(cnt) + "个未归还手牌"
+			if len(uniq) > 0 {
+				reason = reason + "：" + strings.Join(uniq, ",")
+			}
+			if err := tx.Model(&models.Card{}).
+				Where("id = ? AND merchant_id = ? AND locked = ?", usage.CardID, merchantID, true).
+				Update("locked_reason", reason).Error; err != nil {
 				return err
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"log"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -110,26 +111,32 @@ func lockOneCardIfNeeded(db *gorm.DB, cardID uint, merchantID uint, now time.Tim
 			return nil
 		}
 
-		// 取一个样例手牌号用于展示
-		var sample string
-		row2 := tx.Table("usages").
+		// 生成完整手牌列表：你有N个未归还手牌：1,2,3
+		var nos []string
+		if err := tx.Model(&models.Usage{}).
 			Select("hand_card_no").
-			Where("card_id = ? AND merchant_id = ? AND hand_card_assigned_at IS NOT NULL AND hand_card_returned_at IS NULL AND hand_card_no IS NOT NULL", cardID, merchantID).
+			Where("card_id = ? AND merchant_id = ? AND hand_card_assigned_at IS NOT NULL AND hand_card_returned_at IS NULL", cardID, merchantID).
+			Where("hand_card_no IS NOT NULL AND hand_card_no <> ''").
 			Order("hand_card_assigned_at asc").
-			Limit(1).
-			Row()
-		_ = row2.Scan(&sample)
-
-		reason := "未归还手牌"
-		if sample != "" {
-			reason = "未归还手牌：" + sample
-			if cnt > 1 {
-				reason = reason + " 等" + fmtInt64(cnt) + "个"
+			Pluck("hand_card_no", &nos).Error; err != nil {
+			return err
+		}
+		uniq := make([]string, 0, len(nos))
+		seen := make(map[string]struct{}, len(nos))
+		for _, n := range nos {
+			v := strings.TrimSpace(n)
+			if v == "" {
+				continue
 			}
-		} else {
-			if cnt > 1 {
-				reason = reason + "（" + fmtInt64(cnt) + "个）"
+			if _, ok := seen[v]; ok {
+				continue
 			}
+			seen[v] = struct{}{}
+			uniq = append(uniq, v)
+		}
+		reason := "你有" + fmtInt64(cnt) + "个未归还手牌"
+		if len(uniq) > 0 {
+			reason = reason + "：" + strings.Join(uniq, ",")
 		}
 
 		updates := map[string]interface{}{
