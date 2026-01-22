@@ -89,6 +89,15 @@ type Card struct {
 	LastUsedAt     *time.Time `json:"last_used_at" gorm:"type:datetime(3);comment:最后使用时间"`
 	StartDate      *time.Time `json:"start_date" gorm:"type:date;comment:有效期开始日期"`
 	EndDate        *time.Time `json:"end_date" gorm:"type:date;comment:有效期结束日期"`
+
+	Locked       bool       `json:"locked" gorm:"default:false;comment:卡片是否锁定（手牌未归还等）"`
+	LockedReason string     `json:"locked_reason" gorm:"size:255;default:'';comment:锁卡原因"`
+	LockedAt     *time.Time `json:"locked_at" gorm:"type:datetime(3);comment:锁卡时间"`
+	LockedBy     *uint      `json:"locked_by" gorm:"comment:锁卡操作人（0/NULL 表示系统）"`
+
+	UnlockedAt     *time.Time `json:"unlocked_at" gorm:"type:datetime(3);comment:解锁时间"`
+	UnlockedBy     *uint      `json:"unlocked_by" gorm:"comment:解锁操作人（0/NULL 表示系统）"`
+	UnlockedReason string     `json:"unlocked_reason" gorm:"size:255;default:'';comment:解锁原因"`
 	CreatedAt      *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	StartPendingTimeoutSeconds int64 `json:"start_pending_timeout_seconds" gorm:"-"`
@@ -118,6 +127,10 @@ type Usage struct {
 	TechnicianID       *uint      `json:"technician_id" gorm:"index;comment:服务人员技师ID（technicians表主键，可为空）"`
 	FinishedAt         *time.Time `json:"finished_at" gorm:"type:datetime(3);comment:服务完成/结单时间"`
 	Status             string     `json:"status" gorm:"size:20;default:success;comment:状态（in_progress-进行中，success-完成，failed-失败）"`
+
+	HandCardNo         *string    `json:"hand_card_no" gorm:"size:20;index;comment:手牌号（商户核销后输入绑定）"`
+	HandCardAssignedAt *time.Time `json:"hand_card_assigned_at" gorm:"type:datetime(3);comment:手牌分配时间"`
+	HandCardReturnedAt *time.Time `json:"hand_card_returned_at" gorm:"type:datetime(3);comment:手牌归还时间"`
 	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	ServiceSessionID        *uint      `json:"service_session_id" gorm:"-"`

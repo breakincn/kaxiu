@@ -59,6 +59,11 @@
             <span class="text-gray-800 text-right max-w-[70%]">{{ getMerchantAddress() }}</span>
           </div>
         </div>
+
+        <div v-if="card?.locked" class="mt-4 p-3 rounded-lg bg-red-50 border border-red-100">
+          <div class="text-red-600 font-medium">卡片已锁定</div>
+          <div class="text-red-500 text-sm mt-1">{{ card.locked_reason || '请联系商户处理' }}</div>
+        </div>
       </div>
     </div>
 
@@ -258,6 +263,9 @@
               </div>
               <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageProjectText(usage) }}
+              </div>
+              <div v-if="card?.merchant?.support_hand_card" class="text-gray-400 text-sm mt-0.5">
+                手牌：{{ usage.hand_card_no || '-' }}（{{ getHandCardStatusText(usage) }}）
               </div>
             </div>
             <div class="text-right flex-shrink-0 ml-3">
@@ -666,6 +674,14 @@ const getUsageStatusClass = (usage) => {
   if (s === 'success') return ''
   if (s === 'failed') return 'text-red-500'
   return ''
+}
+
+const getHandCardStatusText = (usage) => {
+  if (!usage) return '未分配'
+  if (!usage.hand_card_no) return '未分配'
+  if (usage.hand_card_returned_at) return '已归还'
+  if (usage.hand_card_assigned_at) return '已分配'
+  return '未分配'
 }
 
 const isUsageSessionFinishedButUsageInProgress = () => false

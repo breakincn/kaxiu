@@ -21,6 +21,8 @@ func main() {
 	scheduler.StartServiceSessionScheduler()
 	// 启动预约调度器（未选客服预约：10分钟后自动分配客服/失败原因写入）
 	scheduler.StartAppointmentScheduler()
+	// 启动手牌调度器（手牌未归还超时锁卡）
+	scheduler.StartHandCardScheduler()
 
 	// 初始化 Gin
 	r := gin.Default()

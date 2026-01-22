@@ -124,6 +124,11 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.POST("/verify", middleware.RequirePermission("merchant.card.verify"), handlers.VerifyCard)
 	auth.POST("/verify/scan", middleware.RequireAnyPermission("merchant.card.verify", "merchant.card.finish"), handlers.ScanVerifyCard)
 	auth.GET("/merchants/:id/today-verify", handlers.GetTodayVerify)
+	// 手牌管理（商户端）
+	auth.PUT("/usages/:id/hand-card", middleware.RequirePermission("merchant.card.verify"), handlers.BindUsageHandCard)
+	auth.GET("/hand-cards/return", middleware.RequirePermission("merchant.card.verify"), handlers.QueryHandCardForReturn)
+	auth.POST("/hand-cards/return", middleware.RequirePermission("merchant.card.verify"), handlers.ReturnHandCard)
+	auth.POST("/cards/:id/unlock", middleware.RequireAnyPermission("merchant.card.unlock", "merchant.service.manage"), handlers.UnlockCardByMerchant)
 
 	// 使用记录
 	auth.GET("/merchants/:id/usages", handlers.GetMerchantUsages)

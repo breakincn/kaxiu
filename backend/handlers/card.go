@@ -653,6 +653,7 @@ func VerifyCard(c *gin.Context) {
 	var remainTimes int
 	var sessionID uint
 	var nextStep string
+	var usageID uint
 	usageStatus := "success"
 	autoFinish := false
 
@@ -706,6 +707,14 @@ func VerifyCard(c *gin.Context) {
 			return apiErr{status: http.StatusForbidden, msg: "无权核销此卡"}
 		}
 
+		if card.Locked {
+			msg := "卡片已锁定"
+			if strings.TrimSpace(card.LockedReason) != "" {
+				msg = card.LockedReason
+			}
+			return apiErr{status: http.StatusBadRequest, msg: msg}
+		}
+
 		if card.EndDate != nil && now.After(*card.EndDate) {
 			return apiErr{status: http.StatusBadRequest, msg: "卡片已过期"}
 		}
@@ -756,6 +765,7 @@ func VerifyCard(c *gin.Context) {
 		if err := tx.Create(&usage).Error; err != nil {
 			return err
 		}
+		usageID = usage.ID
 
 		// 未开启客服 + 未开启结单：核销即结单（不创建服务会话）
 		if !merchant.SupportCustomerService && !merchant.SupportOrderComplete {
@@ -892,6 +902,7 @@ func VerifyCard(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "核销成功",
 		"data": gin.H{
+			"usage_id":    usageID,
 			"card_id":      card.ID,
 			"remain_times": remainTimes,
 			"used_at":      usedAt.Format("2006-01-02 15:04:05"),
@@ -1013,6 +1024,7 @@ func ScanVerifyCard(c *gin.Context) {
 	var remainTimes int
 	var sessionID uint
 	var nextStep string
+	var usageID uint
 	usageStatus := "success"
 	action := "verify"
 	autoFinish := false
@@ -1059,6 +1071,13 @@ func ScanVerifyCard(c *gin.Context) {
 			}
 			if card.MerchantID != merchantID {
 				return apiErr{status: http.StatusForbidden, msg: "无权核销此卡"}
+			}
+			if card.Locked {
+				msg := "卡片已锁定"
+				if strings.TrimSpace(card.LockedReason) != "" {
+					msg = card.LockedReason
+				}
+				return apiErr{status: http.StatusBadRequest, msg: msg}
 			}
 			if card.EndDate != nil && now.After(*card.EndDate) {
 				return apiErr{status: http.StatusBadRequest, msg: "卡片已过期"}
@@ -1110,6 +1129,7 @@ func ScanVerifyCard(c *gin.Context) {
 			if err := tx.Create(&usage).Error; err != nil {
 				return err
 			}
+			usageID = usage.ID
 
 			// 未开启客服 + 未开启结单：核销即结单（不创建服务会话）
 			if !merchant.SupportCustomerService && !merchant.SupportOrderComplete {
@@ -1250,11 +1270,10 @@ func ScanVerifyCard(c *gin.Context) {
 		return
 	}
 
-	resp := gin.H{
-		"action": action,
-	}
+	resp := gin.H{"action": action}
 	if action == "verify" {
 		resp["card_id"] = card.ID
+		resp["usage_id"] = usageID
 		resp["remain_times"] = remainTimes
 		resp["used_at"] = usedAt.Format("2006-01-02 15:04:05")
 		resp["session_id"] = sessionID

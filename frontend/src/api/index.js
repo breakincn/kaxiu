@@ -229,7 +229,11 @@ export const cardApi = {
   generateVerifyCode: (cardId, data) => api.post(`/user/cards/${cardId}/verify-code`, data),
   verifyCard: (code) => api.post('/merchant/verify', { code }),
   scanVerify: (code) => api.post('/merchant/verify/scan', { code }),
-  getTodayVerify: (merchantId) => api.get(`/merchant/merchants/${merchantId}/today-verify`)
+  getTodayVerify: (merchantId) => api.get(`/merchant/merchants/${merchantId}/today-verify`),
+  bindUsageHandCard: (usageId, handCardNo) => api.put(`/merchant/usages/${usageId}/hand-card`, { hand_card_no: handCardNo }),
+  queryHandCardForReturn: (handCardNo) => api.get('/merchant/hand-cards/return', { params: { hand_card_no: handCardNo } }),
+  returnHandCard: (handCardNo) => api.post('/merchant/hand-cards/return', { hand_card_no: handCardNo }),
+  unlockCard: (cardId, reason) => api.post(`/merchant/cards/${cardId}/unlock`, { reason })
 }
 
 export const usageApi = {

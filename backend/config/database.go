@@ -142,6 +142,33 @@ func InitDB() {
 	// merchants: 核销起单延迟秒数（未开启客服但开启结单时使用）
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `start_delay_seconds` int NOT NULL DEFAULT 60 COMMENT '核销起单延迟秒数（未开启客服但开启结单时使用）'")
 
+	// cards: 锁卡状态（手牌未归还等）
+	DB.Exec("ALTER TABLE `cards` ADD COLUMN `locked` BOOLEAN NOT NULL DEFAULT FALSE COMMENT '卡片是否锁定（手牌未归还等）'")
+	DB.Exec("ALTER TABLE `cards` ADD COLUMN `locked_reason` varchar(255) NOT NULL DEFAULT '' COMMENT '锁卡原因'")
+	DB.Exec("ALTER TABLE `cards` ADD COLUMN `locked_at` datetime(3) NULL COMMENT '锁卡时间'")
+	DB.Exec("ALTER TABLE `cards` ADD COLUMN `locked_by` bigint unsigned NULL COMMENT '锁卡操作人（0/NULL 表示系统）'")
+	DB.Exec("ALTER TABLE `cards` ADD COLUMN `unlocked_at` datetime(3) NULL COMMENT '解锁时间'")
+	DB.Exec("ALTER TABLE `cards` ADD COLUMN `unlocked_by` bigint unsigned NULL COMMENT '解锁操作人（0/NULL 表示系统）'")
+	DB.Exec("ALTER TABLE `cards` ADD COLUMN `unlocked_reason` varchar(255) NOT NULL DEFAULT '' COMMENT '解锁原因'")
+	DB.Exec("ALTER TABLE `cards` ADD INDEX `idx_cards_locked` (`locked`)")
+
+	// usages: 手牌绑定与归还
+	DB.Exec("ALTER TABLE `usages` ADD COLUMN `hand_card_no` varchar(20) NULL DEFAULT NULL COMMENT '手牌号（商户核销后输入绑定）'")
+	// 兼容已存在字段：将空字符串改为 NULL（未分配）
+	DB.Exec("UPDATE `usages` SET `hand_card_no` = NULL WHERE `hand_card_no` = ''")
+	DB.Exec("ALTER TABLE `usages` MODIFY COLUMN `hand_card_no` varchar(20) NULL DEFAULT NULL COMMENT '手牌号（商户核销后输入绑定）'")
+	DB.Exec("ALTER TABLE `usages` ADD COLUMN `hand_card_assigned_at` datetime(3) NULL COMMENT '手牌分配时间'")
+	DB.Exec("ALTER TABLE `usages` ADD COLUMN `hand_card_returned_at` datetime(3) NULL COMMENT '手牌归还时间'")
+	// 生成列：仅在“已分配且未归还”时为 1，否则为 NULL（用于实现部分唯一约束）
+	DB.Exec("ALTER TABLE `usages` ADD COLUMN `hand_card_active` tinyint GENERATED ALWAYS AS (IF(hand_card_no IS NOT NULL AND hand_card_returned_at IS NULL, 1, NULL)) STORED COMMENT '手牌占用标记（1-占用；NULL-不占用）'")
+	DB.Exec("ALTER TABLE `usages` DROP INDEX `idx_usages_hand_card_no`")
+	DB.Exec("ALTER TABLE `usages` ADD INDEX `idx_usages_hand_card_no` (`hand_card_no`)")
+	// 同一商户同一手牌号：在“未归还”(hand_card_returned_at 为 NULL)期间不允许重复；归还后允许复用
+	DB.Exec("ALTER TABLE `usages` DROP INDEX `uidx_usages_merchant_hand_card_no`")
+	DB.Exec("ALTER TABLE `usages` DROP INDEX `uidx_usages_merchant_hand_card_active`")
+	DB.Exec("ALTER TABLE `usages` ADD UNIQUE INDEX `uidx_usages_merchant_hand_card_active` (`merchant_id`, `hand_card_no`, `hand_card_active`)")
+	DB.Exec("ALTER TABLE `usages` ADD INDEX `idx_usages_hand_card_returned_at` (`hand_card_returned_at`)")
+
 	log.Println("数据库初始化成功")
 
 	// 初始化商户注册邀请码（幂等）
@@ -391,6 +418,7 @@ func initPermissions() {
 		{Key: "merchant.card.verify_finish", Name: "核销即结单", Group: "卡片管理", Description: "核销后自动结单（不再需要二次扫码结单）", Sort: 42},
 		{Key: "merchant.card.finish", Name: "结单", Group: "卡片管理", Description: "技师扫码结单，将进行中核销置为完成", Sort: 43},
 		{Key: "merchant.card.sell", Name: "售卡", Group: "卡片管理", Description: "技师售卡：查询售卡模板、生成售卡二维码", Sort: 44},
+		{Key: "merchant.card.unlock", Name: "解锁卡片", Group: "卡片管理", Description: "解锁被锁定的卡片（手牌未归还等）", Sort: 45},
 
 		// 客服管理 (60-69)
 		{Key: "merchant.cs.manage", Name: "客服管理", Group: "客服管理", Description: "新增/编辑/禁用/删除客服账号", Sort: 60},
