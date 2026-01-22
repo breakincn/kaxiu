@@ -84,7 +84,7 @@
     </div>
 
     <!-- 预约排队区域 -->
-    <div v-if="card.merchant?.support_appointment" class="px-4 mt-4">
+    <div v-if="card.merchant?.support_appointment && !card?.locked" class="px-4 mt-4">
       <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center gap-2 mb-3">
           <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -157,7 +157,7 @@
     </div>
 
     <!-- 核销码区域 -->
-    <div v-if="shouldShowVerifyCode()" class="px-4 mt-4">
+    <div v-if="!card?.locked && shouldShowVerifyCode()" class="px-4 mt-4">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <div class="text-center text-gray-600 mb-3">到店出示核销码</div>
         <button
@@ -1971,6 +1971,7 @@ const getAppointmentProjectDisplay = (appt) => {
 
 // 判断是否应该显示核销码区域
 const shouldShowVerifyCode = () => {
+  if (card.value?.locked) return false
   // 如果没有预约，显示核销码
   if (!appointment.value) {
     return true

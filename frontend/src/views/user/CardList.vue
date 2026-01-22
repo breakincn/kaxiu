@@ -124,6 +124,18 @@
               <div class="text-red-500 text-xs line-clamp-2 pl-5">{{ item.pinnedNotice.content }}</div>
             </div>
           </div>
+
+          <div v-if="item.locked" class="mt-2 px-3 py-2 rounded-lg bg-red-50 border border-red-100">
+            <div class="flex items-start gap-2">
+              <svg class="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c1.657 0 3-1.343 3-3S13.657 5 12 5 9 6.343 9 8s1.343 3 3 3zm0 0c-4.418 0-8 2.015-8 4.5V19h16v-3.5c0-2.485-3.582-4.5-8-4.5z"/>
+              </svg>
+              <div class="flex-1">
+                <div class="text-red-600 text-sm font-medium">卡片已锁定</div>
+                <div class="text-red-500 text-xs mt-0.5">{{ item.locked_reason || '请联系商户处理' }}</div>
+              </div>
+            </div>
+          </div>
         </template>
 
         <div

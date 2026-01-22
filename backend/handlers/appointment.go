@@ -279,6 +279,14 @@ func CreateAppointment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "卡片不存在"})
 		return
 	}
+	if card.Locked {
+		msg := "卡片已锁定"
+		if strings.TrimSpace(card.LockedReason) != "" {
+			msg = card.LockedReason
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
 	if card.UserID != input.UserID || card.MerchantID != input.MerchantID {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的卡片"})
 		return

@@ -528,6 +528,14 @@ func GenerateVerifyCode(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "卡片不存在"})
 		return
 	}
+	if card.Locked {
+		msg := "卡片已锁定"
+		if strings.TrimSpace(card.LockedReason) != "" {
+			msg = card.LockedReason
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
 
 	var input struct {
 		ProjectID *uint `json:"project_id"`
