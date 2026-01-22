@@ -684,7 +684,6 @@ const checkVerifyStatusAndMaybeJump = async () => {
   if (verifyStatusChecking.value) return
   if (hasJumpedToRoomSelect.value) return
   if (!verifyCode.value) return
-  if (!card.value?.merchant?.support_room) return
 
   verifyStatusChecking.value = true
   try {
@@ -699,6 +698,21 @@ const checkVerifyStatusAndMaybeJump = async () => {
       hasJumpedToRoomSelect.value = true
       stopVerifyStatusPoll()
       router.push({ path: `/user/service-sessions/${sessionId}`, query: { next_step: 'room_select' } })
+      return
+    }
+
+    // 已核销但无需跳转（例如：未开启房间/客服，或 next_step 为空）：刷新当前页面数据
+    if (used) {
+      stopVerifyStatusPoll()
+      try {
+        await fetchCard()
+      } catch (_) {
+        // ignore
+      }
+      verifyCode.value = ''
+      codeExpireTime.value = ''
+      verifyQrDataUrl.value = ''
+      verifyCodeProject.value = null
     }
   } catch (_) {
     // ignore
@@ -711,7 +725,6 @@ const startVerifyStatusPoll = async () => {
   stopVerifyStatusPoll()
   hasJumpedToRoomSelect.value = false
   if (!verifyCode.value) return
-  if (!card.value?.merchant?.support_room) return
 
   await checkVerifyStatusAndMaybeJump()
   if (hasJumpedToRoomSelect.value) return
