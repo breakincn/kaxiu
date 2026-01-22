@@ -425,6 +425,56 @@
         </div>
       </div>
 
+      <div v-if="merchant?.support_hand_card" class="bg-white rounded-xl p-4 shadow-sm mt-4">
+        <h3 class="font-medium text-gray-800 mb-4">归还手牌</h3>
+        <div class="flex gap-2">
+          <input
+            v-model="returnHandCardNo"
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            placeholder="请输入手牌号"
+            class="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+          />
+          <button
+            @click="queryHandCardForReturn"
+            :disabled="!returnHandCardNo || queryingReturnHandCard"
+            class="px-4 py-3 bg-primary text-white rounded-lg text-sm font-medium disabled:opacity-50"
+          >
+            {{ queryingReturnHandCard ? '查询中...' : '查询' }}
+          </button>
+        </div>
+
+        <div v-if="returnHandCardError" class="text-red-600 text-sm mt-3">{{ returnHandCardError }}</div>
+
+        <div v-if="returnHandCardUsage" class="mt-4 p-4 bg-gray-50 rounded-lg">
+          <div class="text-gray-800 font-medium">{{ returnHandCardUsage.card?.user?.nickname || '用户' }}</div>
+          <div class="text-gray-500 text-sm mt-2">卡号：{{ returnHandCardUsage.card?.card_no || '-' }}</div>
+          <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(returnHandCardUsage) }}</div>
+          <div class="text-gray-500 text-sm mt-1">项目：{{ returnHandCardUsage.project?.name || '-' }}</div>
+          <div class="text-gray-500 text-sm mt-1">手牌：{{ returnHandCardUsage.hand_card_no || '-' }}</div>
+          <div class="text-gray-500 text-sm mt-1">核销时间：{{ formatDateTime(returnHandCardUsage.used_at) }}</div>
+          <div v-if="returnHandCardUsage.service_session?.room" class="text-gray-500 text-sm mt-1">房间：{{ returnHandCardUsage.service_session.room.name || '-' }}</div>
+
+          <div class="mt-4 flex gap-2">
+            <button
+              @click="confirmReturnHandCard"
+              :disabled="returningHandCard"
+              class="flex-1 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
+            >
+              {{ returningHandCard ? '归还中...' : '确认归还' }}
+            </button>
+            <button
+              @click="cancelReturnHandCard"
+              :disabled="returningHandCard"
+              class="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium disabled:opacity-50"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- 今日核销记录 -->
       <div class="bg-white rounded-xl p-4 shadow-sm mt-4">
         <div class="flex items-center justify-between mb-4">
@@ -1226,6 +1276,12 @@ const submittingHandCard = ref(false)
 const handCardInput = ref('')
 const handCardError = ref('')
 const pendingBindUsageId = ref(null)
+
+const returnHandCardNo = ref('')
+const queryingReturnHandCard = ref(false)
+const returnHandCardError = ref('')
+const returnHandCardUsage = ref(null)
+const returningHandCard = ref(false)
 
 const noticeForm = ref({
   title: '',
@@ -2110,6 +2166,52 @@ const closeHandCardModal = () => {
 
 const onHandCardMaskClick = () => {
   closeHandCardModal()
+}
+
+const cancelReturnHandCard = () => {
+  returnHandCardNo.value = ''
+  returnHandCardError.value = ''
+  returnHandCardUsage.value = null
+}
+
+const queryHandCardForReturn = async () => {
+  const no = String(returnHandCardNo.value || '').trim()
+  if (!no || queryingReturnHandCard.value) return
+
+  queryingReturnHandCard.value = true
+  returnHandCardError.value = ''
+  returnHandCardUsage.value = null
+  try {
+    const res = await cardApi.queryHandCardForReturn(no)
+    returnHandCardUsage.value = res?.data?.data || null
+    if (!returnHandCardUsage.value) {
+      returnHandCardError.value = '未找到可归还的记录'
+    }
+  } catch (e) {
+    returnHandCardError.value = e?.response?.data?.error || '查询失败'
+  } finally {
+    queryingReturnHandCard.value = false
+  }
+}
+
+const confirmReturnHandCard = async () => {
+  const no = String(returnHandCardNo.value || '').trim()
+  if (!no || returningHandCard.value) return
+
+  returningHandCard.value = true
+  returnHandCardError.value = ''
+  try {
+    await cardApi.returnHandCard(no)
+    alert('归还成功')
+    cancelReturnHandCard()
+    fetchQueueStatus()
+    fetchTodayUsages()
+    fetchIssuedCards()
+  } catch (e) {
+    returnHandCardError.value = e?.response?.data?.error || '归还失败'
+  } finally {
+    returningHandCard.value = false
+  }
 }
 
 const publishNotice = async () => {
