@@ -238,6 +238,10 @@
             style="-webkit-touch-callout: none;"
           >
             <div class="min-w-0">
+              <!-- 已分配手牌显示 -->
+              <div v-if="card?.merchant?.support_hand_card && usage.hand_card_no && !usage.hand_card_returned_at" class="text-red-500 font-medium mb-2">
+                {{ usage.status === 'success' ? '未归还手牌' : '已分配手牌' }}：<span class="text-lg font-bold">{{ usage.hand_card_no }}</span>
+              </div>
               <div class="text-gray-800">核销次数: {{ usage.used_times }}</div>
               <div class="text-gray-400 text-sm mt-0.5">
                 单号：{{ getUsageTrackingNumber(usage) }}
@@ -264,7 +268,7 @@
               <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageProjectText(usage) }}
               </div>
-              <div v-if="card?.merchant?.support_hand_card" class="text-gray-400 text-sm mt-0.5">
+              <div v-if="card?.merchant?.support_hand_card && !(usage.hand_card_no && !usage.hand_card_returned_at)" class="text-gray-400 text-sm mt-0.5">
                 手牌：{{ usage.hand_card_no || '-' }}（{{ getHandCardStatusText(usage) }}）
               </div>
             </div>
