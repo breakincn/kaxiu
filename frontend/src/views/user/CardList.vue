@@ -97,10 +97,10 @@
             </div>
 
             <!-- 底部：剩余次数和有效期 -->
-            <div class="flex justify-between items-end" :class="item.pinnedNotice ? 'mb-2' : 'mb-6'">
+            <div v-if="!(item.locked && (item.remain_times === 0 || (item.remain_balance === 0 && item.card_type?.includes('储值'))) && currentStatus === 'active')" class="flex justify-between items-end" :class="item.pinnedNotice ? 'mb-2' : 'mb-3'">
               <div>
-                <div class="text-gray-500 text-xs mb-0.5">剩余次数</div>
-                <div class="text-5xl font-bold leading-none">{{ item.remain_times }}</div>
+                <div class="text-gray-500 text-xs mb-0.5">{{ item.card_type?.includes('储值') ? '剩余余额' : '剩余次数' }}</div>
+                <div class="text-5xl font-bold leading-none">{{ item.card_type?.includes('储值') ? `¥${(item.remain_balance / 100).toFixed(2)}` : item.remain_times }}</div>
               </div>
               <div class="text-right">
                 <div class="text-gray-500 text-xs mb-0.5">有效期至</div>
@@ -109,7 +109,10 @@
             </div>
 
             <!-- 锁定提示（在卡片内部） -->
-            <div v-if="item.locked" class="mt-2 px-3 py-2 rounded-lg bg-red-50 border border-red-100">
+            <div v-if="item.locked" :class="[
+              'px-3 py-2 rounded-lg bg-red-50 border border-red-100',
+              (item.remain_times === 0 || (item.remain_balance === 0 && item.card_type?.includes('储值'))) && currentStatus === 'active' ? 'mb-6 mt-4' : 'mt-1'
+            ]">
               <div class="flex items-start gap-2">
                 <svg class="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
