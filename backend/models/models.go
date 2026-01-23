@@ -129,6 +129,10 @@ type Usage struct {
 	FinishedAt         *time.Time `json:"finished_at" gorm:"type:datetime(3);comment:服务完成/结单时间"`
 	Status             string     `json:"status" gorm:"size:20;default:success;comment:状态（in_progress-进行中，success-完成，failed-失败）"`
 
+	QueueNo       int        `json:"queue_no" gorm:"-"`
+	QueueCalledAt *time.Time `json:"queue_called_at" gorm:"-"`
+	QueueKind     string     `json:"queue_kind" gorm:"-"`
+
 	HandCardNo         *string    `json:"hand_card_no" gorm:"size:20;index;comment:手牌号（商户核销后输入绑定）"`
 	HandCardAssignedAt *time.Time `json:"hand_card_assigned_at" gorm:"type:datetime(3);comment:手牌分配时间"`
 	HandCardReturnedAt *time.Time `json:"hand_card_returned_at" gorm:"type:datetime(3);comment:手牌归还时间"`

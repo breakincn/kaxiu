@@ -3,6 +3,7 @@ package main
 import (
 	"kabao/config"
 	"kabao/middleware"
+	"kabao/queue"
 	"kabao/routes"
 	"kabao/scheduler"
 	"log"
@@ -13,6 +14,7 @@ import (
 
 func main() {
 	config.InitDB()
+	queue.InitDefaultStoreFromEnv()
 
 	// 启动服务会话调度器（自动分房/延迟开计时/自动结单/回收空闲）
 	scheduler.StartServiceSessionScheduler()

@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"kabao/config"
+	"kabao/queue"
 	"kabao/middleware"
 	"kabao/models"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -662,6 +665,7 @@ func VerifyCard(c *gin.Context) {
 	var sessionID uint
 	var nextStep string
 	var usageID uint
+	var shouldEnqueueOnsite bool
 	usageStatus := "success"
 	autoFinish := false
 
@@ -894,6 +898,8 @@ func VerifyCard(c *gin.Context) {
 			return err
 		}
 		sessionID = session.ID
+		// 进入服务流程才会参与现场叫号队列
+		shouldEnqueueOnsite = true
 
 		return nil
 	})
@@ -918,6 +924,41 @@ func VerifyCard(c *gin.Context) {
 			"next_step":    nextStep,
 		},
 	})
+
+	// 事务提交后再写内存队列：避免 DB 回滚但队列已入队
+	// 仅限现场核销叫号：预约用户走预约队列，不进入现场叫号队列
+	if merchant.SupportQueue && shouldEnqueueOnsite && usageID > 0 {
+		now := time.Now()
+		isAppointment := false
+		var appt models.Appointment
+		// 若该卡在该商户存在“已确认”的预约，且预约时间就在当天（到店核销窗口内），则视为预约用户
+		if err := config.DB.
+			Where("card_id = ? AND merchant_id = ? AND status = 'confirmed' AND appointment_time IS NOT NULL", card.ID, merchant.ID).
+			Order("appointment_time asc").
+			First(&appt).Error; err == nil {
+			if appt.AppointmentTime != nil {
+				at := *appt.AppointmentTime
+				if at.Format("2006-01-02") == now.Format("2006-01-02") {
+					// 兼容前端 5 分钟展示核销码：这里放宽到 30 分钟内都按预约处理，避免误入现场队列
+					diff := now.Sub(at)
+					if diff < 0 {
+						diff = -diff
+					}
+					if diff <= 30*time.Minute {
+						isAppointment = true
+					}
+				}
+			}
+		}
+
+		if !isAppointment {
+			date := now.Format("2006-01-02")
+			tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, now)
+			if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
+				log.Printf("[queue-debug] verify enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchant.ID, date, usageID, created, tk.No, tk.CalledAt)
+			}
+		}
+	}
 }
 
 func FinishVerifyCard(c *gin.Context) {
@@ -1033,6 +1074,7 @@ func ScanVerifyCard(c *gin.Context) {
 	var sessionID uint
 	var nextStep string
 	var usageID uint
+	shouldEnqueueOnsite := false
 	usageStatus := "success"
 	action := "verify"
 	autoFinish := false
@@ -1204,6 +1246,8 @@ func ScanVerifyCard(c *gin.Context) {
 					return err
 				}
 				sessionID = session.ID
+				// 进入服务流程才会参与现场叫号队列
+				shouldEnqueueOnsite = true
 				action = "verify"
 				return nil
 			}
@@ -1259,6 +1303,8 @@ func ScanVerifyCard(c *gin.Context) {
 				return err
 			}
 			sessionID = session.ID
+			// 进入服务流程才会参与现场叫号队列
+			shouldEnqueueOnsite = true
 
 			action = "verify"
 			return nil
@@ -1287,6 +1333,42 @@ func ScanVerifyCard(c *gin.Context) {
 		resp["session_id"] = sessionID
 		resp["next_step"] = nextStep
 		c.JSON(http.StatusOK, gin.H{"message": "核销成功", "data": resp})
+
+		// 事务提交后再写队列：避免 DB 回滚但队列已入队
+		// 仅限现场核销叫号：预约用户走预约队列，不进入现场叫号队列
+		if merchant.SupportQueue && shouldEnqueueOnsite && usageID > 0 {
+			now := time.Now()
+			isAppointment := false
+			var appt models.Appointment
+			// 若该卡在该商户存在“已确认”的预约，且预约时间就在当天（到店核销窗口内），则视为预约用户
+			if err := config.DB.
+				Where("card_id = ? AND merchant_id = ? AND status = 'confirmed' AND appointment_time IS NOT NULL", card.ID, merchant.ID).
+				Order("appointment_time asc").
+				First(&appt).Error; err == nil {
+				if appt.AppointmentTime != nil {
+					at := *appt.AppointmentTime
+					if at.Format("2006-01-02") == now.Format("2006-01-02") {
+						// 兼容前端 5 分钟展示核销码：这里放宽到 30 分钟内都按预约处理，避免误入现场队列
+						diff := now.Sub(at)
+						if diff < 0 {
+							diff = -diff
+						}
+						if diff <= 30*time.Minute {
+							isAppointment = true
+						}
+					}
+				}
+			}
+
+			if !isAppointment {
+				date := now.Format("2006-01-02")
+				tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, now)
+				if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
+					log.Printf("[queue-debug] scan verify enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchant.ID, date, usageID, created, tk.No, tk.CalledAt)
+				}
+			}
+		}
+
 		return
 	}
 

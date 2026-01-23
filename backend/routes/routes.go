@@ -80,6 +80,9 @@ func SetupUserRoutes(r *gin.Engine) {
 func SetupMerchantRoutes(r *gin.Engine) {
 	merchant := r.Group("/merchant")
 
+	// internal（开发期：跨进程读取内存队列快照）
+	merchant.GET("/internal/merchants/:id/queue/onsite", handlers.InternalGetOnsiteQueueSnapshot)
+
 	// 公开接口（商户端）
 	merchant.POST("/register", handlers.MerchantRegister)
 	merchant.POST("/login", handlers.MerchantLogin)

@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"kabao/config"
 	"kabao/models"
+	"kabao/queue"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -16,6 +19,7 @@ func GetCardUsages(c *gin.Context) {
 	var usages []models.Usage
 	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Preload("Project").Where("card_id = ?", cardID).Order("used_at DESC").Find(&usages)
 	enrichUsagesWithServiceSession(&usages)
+	enrichUsagesWithQueue(&usages)
 	autoFixUsages(&usages)
 	c.JSON(http.StatusOK, gin.H{"data": usages})
 }
@@ -75,8 +79,56 @@ func GetMerchantUsages(c *gin.Context) {
 	query = query.Preload("Card").Preload("Card.User").Preload("Technician").Preload("Technician.ServiceRole").Preload("Merchant").Preload("Project")
 	query.Find(&usages)
 	enrichUsagesWithServiceSession(&usages)
+	enrichUsagesWithQueue(&usages)
 	autoFixUsages(&usages)
 	c.JSON(http.StatusOK, gin.H{"data": usages})
+}
+
+func enrichUsagesWithQueue(usages *[]models.Usage) {
+	if usages == nil || len(*usages) == 0 {
+		return
+	}
+
+	// 仅填充当天现场叫号队列信息（预约走预约队列，不在使用记录里展示现场叫号）
+	now := time.Now()
+	today := now.Format("2006-01-02")
+
+	for i := range *usages {
+		u := &(*usages)[i]
+		u.QueueNo = 0
+		u.QueueCalledAt = nil
+		u.QueueKind = ""
+
+		if u.MerchantID == 0 {
+			continue
+		}
+		if u.UsedAt == nil {
+			continue
+		}
+		// 仅当天
+		if u.UsedAt.Format("2006-01-02") != today {
+			continue
+		}
+
+		snap := queue.Default.Snapshot(u.MerchantID, today, queue.QueueTypeOnsite)
+		if snap.ByID == nil {
+			continue
+		}
+		tk, ok := snap.ByID[u.ID]
+		if !ok {
+			if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
+				headID := uint(0)
+				if len(snap.Tickets) > 0 {
+					headID = snap.Tickets[0].ID
+				}
+				log.Printf("[queue-debug] usage snapshot miss: merchant=%d date=%s usage_id=%d queue_len=%d head_id=%d\n", u.MerchantID, today, u.ID, len(snap.Tickets), headID)
+			}
+			continue
+		}
+		u.QueueNo = tk.No
+		u.QueueCalledAt = tk.CalledAt
+		u.QueueKind = string(queue.QueueTypeOnsite)
+	}
 }
 
 func enrichUsagesWithServiceSession(usages *[]models.Usage) {

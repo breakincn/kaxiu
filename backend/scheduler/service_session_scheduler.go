@@ -4,6 +4,7 @@ import (
 	"errors"
 	"kabao/config"
 	"kabao/models"
+	"kabao/queue"
 	"log"
 	"time"
 
@@ -400,9 +401,22 @@ func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error
 		uUpdates["room_id"] = *s.RoomID
 	}
 
-	return tx.Model(&models.Usage{}).
+	if err := tx.Model(&models.Usage{}).
 		Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
-		Updates(uUpdates).Error
+		Updates(uUpdates).Error; err != nil {
+		return err
+	}
+
+	// 自动叫号：仅现场叫号队列生效；预约队列走预约流程
+	var merchant models.Merchant
+	if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+		return nil
+	}
+	if merchant.SupportQueue && merchant.QueueMode == "auto" {
+		date := now.Format("2006-01-02")
+		queue.Default.MarkDoneAndCallNext(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
+	}
+	return nil
 }
 
 func releaseTechnicianIfNeeded(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {

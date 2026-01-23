@@ -245,6 +245,11 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	}
 
 	updates := make(map[string]interface{})
+	// 本次更新后的目标结单开关，用于校验 queue_mode
+	targetSupportOrderComplete := merchant.SupportOrderComplete
+	if input.SupportOrderComplete != nil {
+		targetSupportOrderComplete = *input.SupportOrderComplete
+	}
 	if input.SupportAppointment != nil {
 		updates["support_appointment"] = *input.SupportAppointment
 	}
@@ -268,6 +273,12 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	}
 	if input.SupportOrderComplete != nil {
 		updates["support_order_complete"] = *input.SupportOrderComplete
+		// 关闭结单时：若此前开启了自动叫号，则同步降级为人工叫号
+		if !*input.SupportOrderComplete {
+			if strings.TrimSpace(merchant.QueueMode) == "auto" {
+				updates["queue_mode"] = "manual"
+			}
+		}
 	}
 	if input.StartDelaySeconds != nil {
 		if *input.StartDelaySeconds < 0 || *input.StartDelaySeconds > 3600 {
@@ -293,6 +304,10 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		mode := strings.TrimSpace(*input.QueueMode)
 		if mode != "auto" && mode != "manual" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "叫号方式必须是自动(auto)或人工(manual)"})
+			return
+		}
+		if mode == "auto" && !targetSupportOrderComplete {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "未开启结单服务时不可开启自动叫号"})
 			return
 		}
 		updates["queue_mode"] = mode

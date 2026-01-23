@@ -246,6 +246,12 @@
               <div class="text-gray-400 text-sm mt-0.5">
                 单号：{{ getUsageTrackingNumber(usage) }}
               </div>
+              <div v-if="getUsageQueueDisplayText(usage)" class="text-sm mt-0.5 font-medium">
+                叫号：<span :class="getUsageQueueNoClass(usage)">{{ getUsageQueueDisplayText(usage) }}</span>
+              </div>
+              <div v-if="getUsageQueueCountdownText(usage)" class="text-xs mt-0.5 font-mono" :class="getUsageQueueCountdownClass(usage)">
+                {{ getUsageQueueCountdownText(usage) }}
+              </div>
               <div class="flex items-center gap-2">
                 <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
                 <span class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</span>
@@ -1109,6 +1115,84 @@ const getUsageStatusCountdownClass = (usage) => {
   }
 
   return 'text-blue-500'
+}
+
+const isOnsiteQueueUsage = (usage) => {
+  return String(usage?.queue_kind || '').trim() === 'onsite' && Number(usage?.queue_no || 0) > 0
+}
+
+const getUsageQueueDisplayText = (usage) => {
+  if (!isOnsiteQueueUsage(usage)) return ''
+  const prefix = String(card.value?.merchant?.queue_prefix || '').trim()
+  const no = Number(usage?.queue_no || 0)
+  if (!no) return ''
+  return `${prefix}${no}`
+}
+
+const getExpectedCallAtMsForQueueNo = (queueNo) => {
+  const n = Number(queueNo || 0)
+  if (!n || n <= 1) return 0
+  const prev = (usages.value || []).find(u => String(u?.queue_kind || '').trim() === 'onsite' && Number(u?.queue_no || 0) === n - 1)
+  if (!prev) return 0
+  const t1 = prev?.service_session_finished_at
+  if (t1) {
+    const ms = new Date(t1).getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+  const t2 = prev?.service_session_scheduled_finish_at
+  if (t2) {
+    const ms = new Date(t2).getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+  const t3 = prev?.finished_at
+  if (t3) {
+    const ms = new Date(t3).getTime()
+    return Number.isFinite(ms) ? ms : 0
+  }
+  return 0
+}
+
+const getQueueCountdownMs = (usage) => {
+  if (!isOnsiteQueueUsage(usage)) return 0
+  const n = Number(usage?.queue_no || 0)
+  if (!n) return 0
+
+  // 已被叫号的不显示倒计时
+  if (usage?.queue_called_at) return 0
+
+  const expectMs = getExpectedCallAtMsForQueueNo(n)
+  if (!expectMs) return 0
+
+  const diff = expectMs - nowTick.value
+  if (!Number.isFinite(diff) || diff <= 0) return 0
+  if (diff > 10 * 60 * 1000) return 0
+  return diff
+}
+
+const getUsageQueueNoClass = (usage) => {
+  const diff = getQueueCountdownMs(usage)
+  if (!diff) return ''
+  if (diff <= 90 * 1000) return 'text-green-600'
+  return 'text-blue-600'
+}
+
+const getUsageQueueCountdownClass = (usage) => {
+  const diff = getQueueCountdownMs(usage)
+  if (!diff) return 'text-gray-400'
+  if (diff <= 90 * 1000) return 'text-green-600'
+  return 'text-blue-600'
+}
+
+const getUsageQueueCountdownText = (usage) => {
+  const diff = getQueueCountdownMs(usage)
+  if (!diff) return ''
+  const totalSeconds = Math.floor(diff / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (diff <= 90 * 1000) {
+    return `${minutes}分${seconds}秒后即将叫号`
+  }
+  return `${minutes}分${seconds}秒后预计叫号`
 }
 
 let usageQrPollTimer = null

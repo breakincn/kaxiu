@@ -4,6 +4,7 @@ import (
 	"errors"
 	"kabao/config"
 	"kabao/models"
+	"kabao/queue"
 	"log"
 	"net/http"
 	"strconv"
@@ -237,13 +238,19 @@ func GetCardAppointment(c *gin.Context) {
 		return
 	}
 
-	// 计算排队信息
-	var queueBefore int64
+	// 计算预约队列排队信息（内存队列）
+	queueBefore := int64(0)
 	if appointment.AppointmentTime != nil {
-		config.DB.Model(&models.Appointment{}).
-			Where("merchant_id = ? AND status IN ('pending', 'confirmed') AND appointment_time < ?",
-				card.MerchantID, appointment.AppointmentTime).
-			Count(&queueBefore)
+		date := appointment.AppointmentTime.Format("2006-01-02")
+		snap := queue.Default.Snapshot(card.MerchantID, date, queue.QueueTypeAppointment)
+		if snap.ByID != nil {
+			if tk, ok := snap.ByID[appointment.ID]; ok {
+				queueBefore = int64(tk.No - 1)
+				if queueBefore < 0 {
+					queueBefore = 0
+				}
+			}
+		}
 	}
 
 	var merchant models.Merchant
@@ -498,6 +505,12 @@ func ConfirmAppointment(c *gin.Context) {
 
 	config.DB.Model(&appointment).Update("status", "confirmed")
 	config.DB.Preload("User").Preload("Merchant").Preload("Technician").First(&appointment, id)
+	// 入预约队列（内存队列）：仅 confirmed 才进入预约排队
+	if appointment.AppointmentTime != nil {
+		date := appointment.AppointmentTime.Format("2006-01-02")
+		now2 := time.Now()
+		queue.Default.Enqueue(appointment.MerchantID, date, queue.QueueTypeAppointment, appointment.ID, 1, now2)
+	}
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 
@@ -543,6 +556,12 @@ func FinishAppointment(c *gin.Context) {
 	}
 
 	config.DB.Model(&appointment).Update("status", "finished")
+	// 完成后推进预约队列
+	if appointment.AppointmentTime != nil {
+		date := appointment.AppointmentTime.Format("2006-01-02")
+		now2 := time.Now()
+		queue.Default.MarkDoneAndCallNext(appointment.MerchantID, date, queue.QueueTypeAppointment, appointment.ID, now2)
+	}
 	config.DB.Preload("User").Preload("Merchant").First(&appointment, id)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }

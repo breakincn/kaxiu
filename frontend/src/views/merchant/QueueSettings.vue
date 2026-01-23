@@ -51,11 +51,13 @@
                 type="radio"
                 v-model="form.queue_mode"
                 value="auto"
+                :disabled="!supportOrderComplete"
                 class="w-4 h-4 mt-1 text-blue-600"
               />
               <div>
                 <div class="text-gray-800 font-medium">自动叫号</div>
                 <div class="text-gray-500 text-sm">自动结单后自动触发</div>
+                <div v-if="!supportOrderComplete" class="text-gray-500 text-sm">需先开启结单服务</div>
               </div>
             </label>
             <label class="flex items-start gap-3">
@@ -95,6 +97,8 @@ const router = useRouter()
 const loading = ref(true)
 const saving = ref(false)
 
+const supportOrderComplete = ref(false)
+
 const form = ref({
   queue_prefix: '',
   queue_start_no: 1,
@@ -119,10 +123,15 @@ const load = async () => {
   try {
     const res = await merchantApi.getCurrentMerchant()
     const m = res.data?.data || {}
+    supportOrderComplete.value = !!m.support_order_complete
     form.value = {
       queue_prefix: m.queue_prefix || '',
       queue_start_no: m.queue_start_no || 1,
       queue_mode: m.queue_mode || 'auto'
+    }
+
+    if (!supportOrderComplete.value && form.value.queue_mode === 'auto') {
+      form.value.queue_mode = 'manual'
     }
   } catch (e) {
     alert(e?.response?.data?.error || '加载失败')
@@ -142,6 +151,12 @@ const save = async () => {
   const mode = String(form.value.queue_mode || '').trim()
   if (mode !== 'auto' && mode !== 'manual') {
     alert('叫号方式无效')
+    return
+  }
+
+  if (mode === 'auto' && !supportOrderComplete.value) {
+    alert('先开启结单服务，才能开启自动叫号')
+    form.value.queue_mode = 'manual'
     return
   }
 
