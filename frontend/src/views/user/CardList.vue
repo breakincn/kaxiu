@@ -111,7 +111,7 @@
             <!-- 锁定提示（在卡片内部） -->
             <div v-if="item.locked" :class="[
               'px-3 py-2 rounded-lg card-gradient-yellow-solid',
-              (item.remain_times === 0 || (item.remain_balance === 0 && item.card_type?.includes('储值'))) && currentStatus === 'active' ? 'mb-6 mt-4' : 'mt-1'
+              (item.remain_times === 0 || (item.remain_balance === 0 && item.card_type?.includes('储值'))) && currentStatus === 'active' ? 'mb-1 mt-4' : 'mt-1'
             ]">
               <div class="flex items-start gap-2">
                 <svg class="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
