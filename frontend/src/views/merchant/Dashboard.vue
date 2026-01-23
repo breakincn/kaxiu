@@ -500,7 +500,7 @@
               <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
               <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
-              <div v-if="merchant?.support_hand_card && usage.hand_card_no" class="text-gray-500 text-sm mt-1">手牌：{{ usage.hand_card_no }} ({{ getHandCardStatusText(usage) }})</div>
+              <div v-if="merchant?.support_hand_card" class="text-gray-500 text-sm mt-1">手牌：{{ usage.hand_card_no || '-' }} (<span v-if="!usage.hand_card_no" class="text-red-500">未分配</span><span v-else>{{ getHandCardStatusText(usage) }}</span>)</div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>

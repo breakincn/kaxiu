@@ -269,7 +269,7 @@
                 {{ getUsageProjectText(usage) }}
               </div>
               <div v-if="card?.merchant?.support_hand_card && !(usage.hand_card_no && !usage.hand_card_returned_at)" class="text-gray-400 text-sm mt-0.5">
-                手牌：{{ usage.hand_card_no || '-' }}（{{ getHandCardStatusText(usage) }}）
+                手牌：{{ usage.hand_card_no || '-' }}（<span v-if="!usage.hand_card_no" class="text-red-500">未分配</span><span v-else>{{ getHandCardStatusText(usage) }}</span>）
               </div>
             </div>
             <div class="text-right flex-shrink-0 ml-3">
