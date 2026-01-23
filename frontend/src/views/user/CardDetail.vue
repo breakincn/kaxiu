@@ -494,6 +494,9 @@ const estimatedMinutes = ref(0)
 const countdown = ref(0)
 let countdownTimer = null
 
+// 跟踪已刷新的自动结单记录，避免重复刷新
+const autoFinishingRefreshed = ref(new Set())
+
 
 const verifyCode = ref('')
 const codeExpireTime = ref('')
@@ -1061,6 +1064,15 @@ const getUsageStatusCountdownText = (usage) => {
       const minutes = Math.floor(totalSeconds / 60)
       const seconds = totalSeconds % 60
       return `${minutes}分${seconds}秒后自动${replaceTerms('结单', card.value?.merchant)}`
+    } else {
+      // 倒计时归0，检查是否需要刷新
+      const usageId = String(usage?.id || '')
+      if (usageId && !autoFinishingRefreshed.value.has(usageId)) {
+        autoFinishingRefreshed.value.add(usageId)
+        setTimeout(() => {
+          fetchUsages()
+        }, 500)
+      }
     }
   }
 
@@ -1517,6 +1529,9 @@ const fetchUsages = async () => {
   try {
     const res = await usageApi.getCardUsages(route.params.id)
     usages.value = res.data.data || []
+    
+    // 重置自动结单刷新跟踪状态
+    autoFinishingRefreshed.value.clear()
 
 		// 记录“已开始计时等待用户选技师”的 usage
 		try {
