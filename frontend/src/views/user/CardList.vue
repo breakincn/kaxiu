@@ -567,7 +567,7 @@ onUnmounted(() => {
 }
 
 .card-gradient-yellow-solid {
-  background: linear-gradient(135deg, #fff8e1 0%, #ffe082 100%);
+  background: linear-gradient(135deg, #fff8e1 0%, #ffeeaa 100%);
   color: #e65100;
   border: 1px solid #ffe082;
   box-shadow: 0 2px 8px rgba(255, 167, 38, 0.2);
