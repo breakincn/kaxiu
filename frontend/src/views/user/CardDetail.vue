@@ -242,7 +242,7 @@
               <div v-if="card?.merchant?.support_hand_card && usage.hand_card_no && !usage.hand_card_returned_at" class="text-red-500 font-medium mb-2">
                 {{ usage.status === 'success' ? '未归还手牌' : '已分配手牌' }}：<span class="text-lg font-bold">{{ usage.hand_card_no }}</span>
               </div>
-              <div class="text-gray-800">核销次数：{{ card.total_times }} / {{ getUsageSequence(index) }}</div>
+              <div class="text-gray-800">核销次数：{{ card.total_times }} / <span :class="getUsageCurrentTimesClass(usage, index)">{{ getUsageSequence(index) }}</span></div>
               <div class="text-gray-400 text-sm mt-0.5">
                 单号：{{ getUsageTrackingNumber(usage) }}
               </div>
@@ -932,6 +932,23 @@ const getUsageSequence = (index) => {
     }
   }
   return seq
+}
+
+const getUsageCurrentTimesClass = (usage, index) => {
+  const v = getUsageSequence(index)
+  if (v === '-' || v === '' || v === null || typeof v === 'undefined') return ''
+
+  const s = String(usage?.status || '').trim()
+  const sessStatus = String(usage?.service_session_status || '').trim()
+
+  // 完成：默认色
+  if (s === 'success' || sessStatus === 'finished') return ''
+
+  // 服务中：绿色
+  if (s === 'in_progress' && sessStatus === 'serving') return 'text-green-500'
+
+  // 非“服务中/完成”：蓝色
+  return 'text-blue-500'
 }
 
 const getPrecheckDeadlineAtMs = (usage) => {
