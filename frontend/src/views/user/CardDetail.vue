@@ -1052,6 +1052,18 @@ const getUsageStatusCountdownText = (usage) => {
     }
   }
 
+  // 待自动下钟/结单倒计时
+  if (sessStatus === 'auto_finishing' && usage?.service_session_finished_at) {
+    const finishAt = new Date(usage.service_session_finished_at).getTime()
+    const diff = finishAt - now
+    if (diff > 0) {
+      const totalSeconds = Math.floor(diff / 1000)
+      const minutes = Math.floor(totalSeconds / 60)
+      const seconds = totalSeconds % 60
+      return `${minutes}分${seconds}秒后自动结单`
+    }
+  }
+
   return ''
 }
 
@@ -1077,6 +1089,11 @@ const getUsageStatusCountdownClass = (usage) => {
   // 待起单倒计时（红色）
   if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
     return 'text-red-500'
+  }
+
+  // 待自动下钟/结单倒计时（蓝色）
+  if (sessStatus === 'auto_finishing') {
+    return 'text-blue-500'
   }
 
   return 'text-blue-500'
