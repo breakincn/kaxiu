@@ -227,7 +227,7 @@
         </div>
         <div v-if="usages.length > 0" class="space-y-2">
           <div
-            v-for="usage in usages"
+            v-for="(usage, index) in usages"
             :key="usage.id"
             class="grid grid-cols-[1fr_auto] items-start p-3 bg-white rounded-lg shadow-sm"
             @touchstart="(e) => onUsageTouchStart(e, usage)"
@@ -242,7 +242,7 @@
               <div v-if="card?.merchant?.support_hand_card && usage.hand_card_no && !usage.hand_card_returned_at" class="text-red-500 font-medium mb-2">
                 {{ usage.status === 'success' ? '未归还手牌' : '已分配手牌' }}：<span class="text-lg font-bold">{{ usage.hand_card_no }}</span>
               </div>
-              <div class="text-gray-800">核销次数: {{ usage.used_times }}</div>
+              <div class="text-gray-800">核销次数：{{ card.total_times }} / {{ getUsageSequence(index) }}</div>
               <div class="text-gray-400 text-sm mt-0.5">
                 单号：{{ getUsageTrackingNumber(usage) }}
               </div>
@@ -918,6 +918,20 @@ const getUsageServiceRemainText = (usage) => {
 const getUsageTrackingNumber = (usage) => {
   if (!usage?.id) return ''
   return String(usage.id).padStart(9, '0')
+}
+
+const getUsageSequence = (index) => {
+  if (!card.value || !usages.value || !usages.value[index]) return 0
+  if (usages.value[index].status === 'failed') return '-'
+  
+  let seq = (card.value.total_times || 0) - (card.value.remain_times || 0)
+  for (let i = 0; i < index; i++) {
+    const u = usages.value[i]
+    if (u && u.status !== 'failed') {
+      seq -= (u.used_times || 0)
+    }
+  }
+  return seq
 }
 
 const getPrecheckDeadlineAtMs = (usage) => {
