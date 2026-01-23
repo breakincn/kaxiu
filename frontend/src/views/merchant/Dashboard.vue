@@ -2211,6 +2211,14 @@ const confirmReturnHandCard = async () => {
   const no = String(returnHandCardNo.value || '').trim()
   if (!no || returningHandCard.value) return
 
+  // 检查核销记录状态，如果不是已结单状态，需要二次确认
+  const usage = returnHandCardUsage.value
+  if (usage && usage.status !== 'success') {
+    if (!confirm('服务尚未结束，是否提前归还手牌')) {
+      return // 用户取消，不执行归还
+    }
+  }
+
   returningHandCard.value = true
   returnHandCardError.value = ''
   try {
