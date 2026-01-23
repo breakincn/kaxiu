@@ -1626,7 +1626,17 @@ const fetchCard = async () => {
 const fetchUsages = async () => {
   try {
     const res = await usageApi.getCardUsages(route.params.id)
-    usages.value = res.data.data || []
+    const allUsages = res.data.data || []
+    
+    // 过滤掉超过12小时的失败记录
+    const now = Date.now()
+    usages.value = allUsages.filter(u => {
+      if (u.status !== 'failed') return true
+      if (!u.used_at) return true
+      const usedAtMs = new Date(u.used_at).getTime()
+      const diffHours = (now - usedAtMs) / (1000 * 60 * 60)
+      return diffHours <= 12
+    })
     
     // 重置自动结单刷新跟踪状态
     autoFinishingRefreshed.value.clear()
