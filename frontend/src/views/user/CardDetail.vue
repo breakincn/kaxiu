@@ -651,6 +651,8 @@ const getUsageStatusClass = (usage) => {
     const precheckedAt = usage?.service_session_start_confirmed_at
     const now = nowTick.value
     if (sessStatus === 'finished') return 'text-gray-600'
+    // 服务中：绿色
+    if (sessStatus === 'serving') return 'text-green-500'
     if (supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
     if (supportCS && sessStatus === 'room_locked') return 'text-orange-500'
     // 会话已取消但 usage 仍在进行中：视为上钟超时
