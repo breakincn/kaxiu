@@ -59,32 +59,6 @@
             <input type="checkbox" v-model="form.support_room" />
           </div>
 
-          <div v-if="form.support_queue" class="px-4 py-4 border-b border-gray-100 space-y-3">
-            <div>
-              <div class="text-sm font-medium text-gray-700 mb-2">叫号前缀</div>
-              <input
-                v-model="form.queue_prefix"
-                type="text"
-                placeholder="如 A"
-                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <div class="text-sm font-medium text-gray-700 mb-2">起始号码</div>
-              <input
-                v-model.number="form.queue_start_no"
-                type="number"
-                min="1"
-                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-
-          <div class="px-4 py-4 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">开启直购售卡</div>
-            <input type="checkbox" v-model="form.support_direct_sale" />
-          </div>
-
         </div>
 
 
@@ -137,8 +111,6 @@ const form = ref({
   support_queue: false,
   support_room: false,
   support_technician_checkin: false,
-  queue_prefix: '',
-  queue_start_no: 1,
   support_direct_sale: false,
   support_customer_service: false,
   support_project: false,
@@ -181,8 +153,6 @@ const load = async () => {
       support_queue: !!m.support_queue,
       support_room: !!m.support_room,
       support_technician_checkin: !!m.support_technician_checkin,
-      queue_prefix: m.queue_prefix || '',
-      queue_start_no: m.queue_start_no || 1,
       support_direct_sale: !!m.support_direct_sale,
       support_customer_service: !!m.support_customer_service,
       support_project: !!m.support_project,
@@ -199,10 +169,6 @@ const load = async () => {
 
 const save = async () => {
   if (saving.value) return
-  if (form.value.support_queue && (!form.value.queue_start_no || form.value.queue_start_no < 1)) {
-    alert('叫号起始号码必须大于等于1')
-    return
-  }
 
   if (form.value.support_appointment && !hasBusinessTimeConfigured()) {
     alert('先设置营业时间，才能开启预约服务')
@@ -217,8 +183,6 @@ const save = async () => {
       support_queue: form.value.support_queue,
       support_room: form.value.support_room,
       support_technician_checkin: form.value.support_technician_checkin,
-      queue_prefix: form.value.queue_prefix,
-      queue_start_no: form.value.queue_start_no,
       support_direct_sale: form.value.support_direct_sale,
       support_customer_service: form.value.support_customer_service,
       support_project: form.value.support_project,

@@ -33,6 +33,7 @@ type Merchant struct {
 	SupportHandCard          bool   `json:"support_hand_card" gorm:"default:false;comment:是否开启发手牌功能（0-不开启，1-开启）"`
 	QueuePrefix              string `json:"queue_prefix" gorm:"size:20;default:'';comment:叫号前缀（如A、B）"`
 	QueueStartNo             int    `json:"queue_start_no" gorm:"default:1;comment:叫号起始号码"`
+	QueueMode                string `json:"queue_mode" gorm:"size:20;default:'auto';comment:叫号模式（auto-自动叫号，manual-人工叫号）"`
 	SupportDirectSale        bool   `json:"support_direct_sale" gorm:"default:false;comment:是否支持直购售卡（0-不支持，1-支持）"`
 	SupportCustomerService   bool   `json:"support_customer_service" gorm:"default:false;comment:是否开启设置客服/技师账号（0-不支持，1-支持）"`
 	SupportOrderComplete     bool   `json:"support_order_complete" gorm:"default:false;comment:是否开启结单功能（0-不开启，1-开启）"`

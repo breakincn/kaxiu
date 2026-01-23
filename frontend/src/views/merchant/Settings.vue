@@ -78,6 +78,22 @@
         </button>
 
         <button
+          v-if="canQueueSettings"
+          @click="goToQueueSettings"
+          class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h6m-6 4h10M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+            <span class="text-gray-800 font-medium">叫号设置</span>
+          </div>
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+
+        <button
           v-if="canHandCardManage"
           @click="goToHandCardSettings"
           class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
@@ -192,6 +208,7 @@ const canCustomerServiceManage = computed(() => {
 })
 
 const canProjectManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_project)
+const canQueueSettings = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_queue)
 const canHandCardManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_hand_card)
 const canRoomNumberCardManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_room)
 const canTableView = computed(() => {
@@ -239,6 +256,10 @@ const goToServiceSessions = () => {
 
 const goToProjectSettings = () => {
   router.push('/merchant/project-settings')
+}
+
+const goToQueueSettings = () => {
+  router.push('/merchant/queue-settings')
 }
 
 const goToHandCardSettings = () => {

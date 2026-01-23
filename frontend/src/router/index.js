@@ -217,6 +217,11 @@ const merchantRoutes = [
     component: () => import('../views/merchant/ProjectSettings.vue')
   },
   {
+    path: '/merchant/queue-settings',
+    name: 'MerchantQueueSettings',
+    component: () => import('../views/merchant/QueueSettings.vue')
+  },
+  {
     path: '/merchant/hand-card-settings',
     name: 'MerchantHandCardSettings',
     component: () => import('../views/merchant/HandCardSettings.vue')

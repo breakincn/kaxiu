@@ -208,6 +208,7 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		SupportHandCard          *bool   `json:"support_hand_card"`
 		QueuePrefix              *string `json:"queue_prefix"`
 		QueueStartNo             *int    `json:"queue_start_no"`
+		QueueMode                *string `json:"queue_mode"`
 		HandCardPrefix           *string `json:"hand_card_prefix"`
 		HandCardStartNo          *int    `json:"hand_card_start_no"`
 		HandCardEndNo            *int    `json:"hand_card_end_no"`
@@ -287,6 +288,14 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 			return
 		}
 		updates["queue_start_no"] = *input.QueueStartNo
+	}
+	if input.QueueMode != nil {
+		mode := strings.TrimSpace(*input.QueueMode)
+		if mode != "auto" && mode != "manual" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "叫号方式必须是自动(auto)或人工(manual)"})
+			return
+		}
+		updates["queue_mode"] = mode
 	}
 	if input.HandCardPrefix != nil {
 		updates["hand_card_prefix"] = strings.TrimSpace(*input.HandCardPrefix)
