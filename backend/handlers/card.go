@@ -204,12 +204,44 @@ func GetUserCards(c *gin.Context) {
 
 	now := time.Now()
 	if status == "active" {
+		// 获取所有未过期且有剩余次数的卡片
 		query = query.Where("end_date >= ? AND remain_times > 0", dateOnlyPtr(now))
+		query.Find(&cards)
+		
+		// 添加逻辑：即使已过期或次数为0，但如果有未完成的核销记录，也应该显示在进行中
+		var expiredCardsWithInProgressUsage []models.Card
+		expiredQuery := config.DB.Preload("Merchant").Where("user_id = ? AND (end_date < ? OR remain_times = 0)", userID, dateOnlyPtr(now))
+		expiredQuery.Find(&expiredCardsWithInProgressUsage)
+		
+		// 检查每张过期卡片是否有未完成的核销记录
+		for _, card := range expiredCardsWithInProgressUsage {
+			var lastUsage models.Usage
+			err := config.DB.Where("card_id = ?", card.ID).Order("used_at DESC").First(&lastUsage).Error
+			if err == nil && lastUsage.Status == "in_progress" {
+				// 有未完成的核销记录，添加到进行中列表
+				cards = append(cards, card)
+			}
+		}
 	} else if status == "expired" {
+		// 获取所有过期或次数为0的卡片
 		query = query.Where("end_date < ? OR remain_times = 0", dateOnlyPtr(now))
+		query.Find(&cards)
+		
+		// 过滤掉有未完成核销记录的卡片（它们应该显示在进行中）
+		var filteredCards []models.Card
+		for _, card := range cards {
+			var lastUsage models.Usage
+			err := config.DB.Where("card_id = ?", card.ID).Order("used_at DESC").First(&lastUsage).Error
+			if err != nil || lastUsage.Status != "in_progress" {
+				// 没有核销记录或最后一次已完成，显示在失效中
+				filteredCards = append(filteredCards, card)
+			}
+		}
+		cards = filteredCards
+	} else {
+		query.Find(&cards)
 	}
 
-	query.Find(&cards)
 	c.JSON(http.StatusOK, gin.H{"data": cards})
 }
 

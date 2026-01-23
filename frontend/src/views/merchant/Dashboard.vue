@@ -506,7 +506,9 @@
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             </div>
             <div class="text-right">
-              <div class="text-gray-700 text-sm">核销 {{ usage.used_times }} 次</div>
+              <div class="text-sm">
+                核销次数：<span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage) }}</span> 次
+              </div>
               <div class="text-gray-500 text-xs mt-1">
                 {{ getVerifyOperatorInfo(usage).split(' / ')[0] }}
               </div>
@@ -555,7 +557,9 @@
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             </div>
             <div class="text-right">
-              <div class="text-gray-700 text-sm">核销 {{ usage.used_times }} 次</div>
+              <div class="text-sm">
+                核销次数：<span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage) }}</span> 次
+              </div>
             </div>
           </div>
         </div>
@@ -587,7 +591,9 @@
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.finished_at) }}</div>
             </div>
             <div class="text-right">
-              <div class="text-gray-700 text-sm">{{ replaceTerms('结单', merchant) }} {{ usage.used_times }} 次</div>
+              <div class="text-sm">
+                {{ replaceTerms('结单', merchant) }}：<span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage) }}</span> 次
+              </div>
             </div>
           </div>
         </div>
@@ -1758,6 +1764,34 @@ const getUsageServiceStatusText = (usage) => {
   }
 
   return '-'
+}
+
+// 获取核销次数显示文本（总次数 / 当前次数）
+const getUsageCountDisplayText = (usage) => {
+  if (!usage || !usage.card) return '-'
+  const totalTimes = usage.card.total_times || 0
+  const usedTimes = usage.used_times || 1
+  return `${totalTimes} / ${usedTimes}`
+}
+
+// 获取当前次数的颜色类
+const getUsageCountColorClass = (usage) => {
+  if (!usage) return 'text-gray-700'
+  
+  const status = usage.service_session_status || usage.status
+  
+  // 服务中：绿色
+  if (status === 'serving') {
+    return 'text-green-600'
+  }
+  
+  // 完成：默认色
+  if (status === 'success' || status === 'finished') {
+    return 'text-gray-700'
+  }
+  
+  // 其他状态：蓝色
+  return 'text-blue-600'
 }
 
 const fetchMerchant = async () => {
