@@ -1060,7 +1060,7 @@ const getUsageStatusCountdownText = (usage) => {
       const totalSeconds = Math.floor(diff / 1000)
       const minutes = Math.floor(totalSeconds / 60)
       const seconds = totalSeconds % 60
-      return `${minutes}分${seconds}秒后自动结单`
+      return `${minutes}分${seconds}秒后自动${replaceTerms('结单', card.value?.merchant)}`
     }
   }
 
