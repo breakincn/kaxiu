@@ -44,30 +44,18 @@ func NewRedisClientFromEnv() *redis.Client {
 	})
 }
 
-func InitDefaultStoreFromEnv() {
-	backend := strings.TrimSpace(os.Getenv("KABAO_QUEUE_BACKEND"))
-	if backend == "" {
-		backend = "redis"
-	}
-	if backend != "redis" {
-		Default = NewMemStore()
-		return
-	}
-
+func InitDefaultStoreFromEnv() error {
 	c := NewRedisClientFromEnv()
 	rs := NewRedisStore(c)
 	if rs == nil {
-		log.Println("[queue] init redis store failed: nil client, fallback to mem")
-		Default = NewMemStore()
-		return
+		return errors.New("[queue] init redis store failed: nil client")
 	}
 	if err := rs.Ping(); err != nil {
-		log.Printf("[queue] redis ping failed (%v), addr=%s, fallback to mem\n", err, c.Options().Addr)
-		Default = NewMemStore()
-		return
+		return err
 	}
 	log.Printf("[queue] redis queue enabled, addr=%s\n", c.Options().Addr)
 	Default = rs
+	return nil
 }
 
 func (s *RedisStore) Enqueue(merchantID uint, date string, qt QueueType, id uint, startNo int, now time.Time) (Ticket, bool) {

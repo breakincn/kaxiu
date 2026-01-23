@@ -17,7 +17,9 @@ import (
 func main() {
 	// 初始化数据库
 	config.InitDB()
-	queue.InitDefaultStoreFromEnv()
+	if err := queue.InitDefaultStoreFromEnv(); err != nil {
+		log.Fatal("初始化Redis队列失败:", err)
+	}
 
 	// 启动服务会话调度器（自动分房/延迟开计时/自动结单/回收空闲）
 	scheduler.StartServiceSessionScheduler()
