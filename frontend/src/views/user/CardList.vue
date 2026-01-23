@@ -110,7 +110,7 @@
 
             <!-- 锁定提示（在卡片内部） -->
             <div v-if="item.locked" :class="[
-              'px-3 py-2 rounded-lg card-gradient-yellow',
+              'px-3 py-2 rounded-lg card-gradient-yellow-solid',
               (item.remain_times === 0 || (item.remain_balance === 0 && item.card_type?.includes('储值'))) && currentStatus === 'active' ? 'mb-6 mt-4' : 'mt-1'
             ]">
               <div class="flex items-start gap-2">
@@ -564,5 +564,12 @@ onUnmounted(() => {
   user-select: none !important;
   -webkit-touch-callout: none !important;
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0) !important;
+}
+
+.card-gradient-yellow-solid {
+  background: linear-gradient(135deg, #fff8e1 0%, #ffe082 100%);
+  color: #e65100;
+  border: 1px solid #ffe082;
+  box-shadow: 0 2px 8px rgba(255, 167, 38, 0.2);
 }
 </style>
