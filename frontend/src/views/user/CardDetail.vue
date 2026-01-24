@@ -397,9 +397,9 @@
 
     <!-- 预约时间选择弹窗 -->
     <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeModal">
-      <div class="bg-white rounded-2xl w-11/12 max-w-lg max-h-[80vh] overflow-hidden">
+      <div class="bg-white rounded-2xl w-11/12 max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
         <!-- 弹窗头部 -->
-        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
+        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between flex-shrink-0">
           <h3 class="font-medium text-lg">选择预约时间</h3>
           <button @click="closeModal" class="text-white">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -408,70 +408,73 @@
           </button>
         </div>
 
-        <!-- 项目选择（先选项目，再选时间） -->
-        <div class="px-5 py-3 border-b">
-          <div class="text-sm font-medium text-gray-700 mb-2">选择项目</div>
-          <div v-if="!card.projects || card.projects.length === 0" class="text-gray-400 text-sm">暂无可选项目</div>
-          <div v-else class="space-y-2">
-            <label v-for="p in card.projects" :key="p.id" class="flex items-center gap-3">
-              <input type="radio" name="appt_project" :value="p.id" v-model="selectedAppointmentProjectId" />
-              <div class="flex-1">
-                <div class="text-gray-800">{{ p.name }}</div>
-                <div v-if="p.duration" class="text-gray-400 text-xs">时长 {{ p.duration }} 分钟</div>
-              </div>
-            </label>
+        <!-- 可滚动内容区域 -->
+        <div class="overflow-y-auto flex-1">
+          <!-- 项目选择（先选项目，再选时间） -->
+          <div class="px-5 py-3 border-b">
+            <div class="text-sm font-medium text-gray-700 mb-2">选择项目</div>
+            <div v-if="!card.projects || card.projects.length === 0" class="text-gray-400 text-sm">暂无可选项目</div>
+            <div v-else class="space-y-2">
+              <label v-for="p in card.projects" :key="p.id" class="flex items-center gap-3">
+                <input type="radio" name="appt_project" :value="p.id" v-model="selectedAppointmentProjectId" />
+                <div class="flex-1">
+                  <div class="text-gray-800">{{ p.name }}</div>
+                  <div v-if="p.duration" class="text-gray-400 text-xs">时长 {{ p.duration }} 分钟</div>
+                </div>
+              </label>
+            </div>
           </div>
-        </div>
 
-        <!-- 专业客服（可选）：仅在商户开启客服且有启用客服时展示；与时间段双向联动 -->
-        <div v-if="availableTechnicians.length > 0" class="px-5 py-3 border-b">
-          <div class="text-sm font-medium text-gray-700 mb-2">选择专业客服</div>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="t in displayedTechnicians"
-              :key="t.id"
-              type="button"
-              @click="toggleTechnician(t.id)"
-              :class="selectedTechnicianId === t.id ? 'bg-primary text-white' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary'"
-              class="py-2 px-3 rounded-lg font-medium transition-all text-sm"
-            >
-              {{ t.name }}
-            </button>
+          <!-- 专业客服（可选）：仅在商户开启客服且有启用客服时展示；与时间段双向联动 -->
+          <div v-if="availableTechnicians.length > 0" class="px-5 py-3 border-b">
+            <div class="text-sm font-medium text-gray-700 mb-2">选择专业客服</div>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="t in displayedTechnicians"
+                :key="t.id"
+                type="button"
+                @click="toggleTechnician(t.id)"
+                :class="selectedTechnicianId === t.id ? 'bg-primary text-white' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary'"
+                class="py-2 px-3 rounded-lg font-medium transition-all text-sm"
+              >
+                {{ t.name }}
+              </button>
+            </div>
           </div>
-        </div>
 
-        <!-- 时间段列表 -->
-        <div class="px-5 py-4 overflow-y-auto" style="max-height: 400px;">
-          <div v-if="loadingSlots" class="text-center py-8 text-gray-400">
-            加载中...
-          </div>
-          <div v-else-if="timeSlots.length === 0" class="text-center py-8 text-gray-400">
-            明日无可用时间段
-          </div>
-          <div v-else class="grid grid-cols-2 gap-3">
-            <button
-              v-for="slot in displayedTimeSlots"
-              :key="slot.time"
-              @click="selectTimeSlot(slot)"
-              :class="{
-                'bg-primary text-white': selectedTimeSlot === slot.time,
-                'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary': selectedTimeSlot !== slot.time
-              }"
-              class="py-3 px-4 rounded-lg font-medium transition-all"
-            >
-              <div>{{ formatTime(slot.time) }}</div>
-            </button>
+          <!-- 时间段列表 -->
+          <div class="px-5 py-4">
+            <div v-if="loadingSlots" class="text-center py-8 text-gray-400">
+              加载中...
+            </div>
+            <div v-else-if="timeSlots.length === 0" class="text-center py-8 text-gray-400">
+              明日无可用时间段
+            </div>
+            <div v-else class="grid grid-cols-2 gap-3">
+              <button
+                v-for="slot in displayedTimeSlots"
+                :key="slot.time"
+                @click="selectTimeSlot(slot)"
+                :class="{
+                  'bg-primary text-white': selectedTimeSlot === slot.time,
+                  'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary': selectedTimeSlot !== slot.time
+                }"
+                class="py-3 px-4 rounded-lg font-medium transition-all"
+              >
+                <div>{{ formatTime(slot.time) }}</div>
+              </button>
+            </div>
           </div>
         </div>
 
         <!-- 弹窗底部 -->
-        <div class="px-5 py-4 border-t">
+        <div class="px-5 py-4 border-t flex-shrink-0 bg-white">
           <button
             @click="confirmAppointment"
             :disabled="!selectedAppointmentProjectId || !selectedTimeSlot || appointing"
             class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {{ appointing ? '预纤中...' : '确认预约' }}
+            {{ appointing ? '预约中...' : '确认预约' }}
           </button>
         </div>
       </div>
