@@ -199,13 +199,33 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
 				return nil
 			}
-			// 必须在用户进入选择客服页后才允许开始5分钟自动分配计时
-			if s.StaffSelectEnteredAt == nil {
-				return nil
-			}
 			var merchant models.Merchant
 			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 				return err
+			}
+			// 若商户已关闭客服：降级为非客服流程（不再选客服/不自动分配客服），进入延迟起单
+			if !merchant.SupportCustomerService {
+				delaySeconds := merchant.StartDelaySeconds
+				if delaySeconds <= 0 {
+					delaySeconds = 60
+				}
+				startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+				updates := map[string]interface{}{
+					"status":                    "delay_pending",
+					"technician_id":             nil,
+					"staff_select_cooldown_until": nil,
+					"staff_select_entered_at":     nil,
+					"start_confirmed_at":        &now,
+					"scheduled_start_at":        &startAt,
+					"room_select_deadline_at":   nil,
+				}
+				return tx.Model(&models.ServiceSession{}).
+					Where("id = ? AND status IN ('room_locked','staff_selecting') AND start_confirmed_at IS NULL", s.ID).
+					Updates(updates).Error
+			}
+			// 必须在用户进入选择客服页后才允许开始5分钟自动分配计时
+			if s.StaffSelectEnteredAt == nil {
+				return nil
 			}
 			if !merchant.SupportRoom {
 				return nil
@@ -242,6 +262,38 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 			return nil
 		case "start_pending":
+			// 若商户已关闭客服：降级为非客服流程，进入延迟起单（避免卡在待起单/待上钟）
+			{
+				var merchant models.Merchant
+				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+					return err
+				}
+				if !merchant.SupportCustomerService {
+					delaySeconds := merchant.StartDelaySeconds
+					if delaySeconds <= 0 {
+						delaySeconds = 60
+					}
+					startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+					updates := map[string]interface{}{
+						"status":              "delay_pending",
+						"technician_id":       nil,
+						"start_confirmed_at":  &now,
+						"scheduled_start_at":  &startAt,
+						"staff_select_entered_at": nil,
+						"staff_select_cooldown_until": nil,
+						"start_pending_timeout_seconds": 0,
+					}
+					// 释放技师占用（如果有）
+					if s.TechnicianID != nil && *s.TechnicianID > 0 {
+						_ = tx.Model(&models.TechnicianAttendance{}).
+							Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+							Updates(map[string]interface{}{"status": "idle"}).Error
+					}
+					return tx.Model(&models.ServiceSession{}).
+						Where("id = ? AND status = ? AND start_confirmed_at IS NULL", s.ID, "start_pending").
+						Updates(updates).Error
+				}
+			}
 			// 待起单超时：不再支持“手动结单”。超时后仅允许用户重新选择工作人员并重新起单。
 			if s.StartConfirmedAt != nil {
 				return nil
