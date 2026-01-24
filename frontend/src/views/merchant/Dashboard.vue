@@ -2064,6 +2064,9 @@ const fetchIssuedCards = async () => {
     const res = await cardApi.getMerchantCards(merchantId.value, params)
     let cardsList = res.data.data || []
     
+    // 过滤掉剩余次数为0的卡片
+    cardsList = cardsList.filter(card => card.remain_times > 0)
+    
     // 排序：先按创建时间降序，再按最近使用时间降序
     cardsList.sort((a, b) => {
       // 先按 created_at 降序排列
