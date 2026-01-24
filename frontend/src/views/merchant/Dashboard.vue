@@ -507,7 +507,7 @@
             </div>
             <div class="text-right">
               <div class="text-sm">
-                核销次数：<span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage) }}</span> 次
+                核销次数：<span class="text-gray-700">{{ getUsageCountDisplayText(usage).totalTimes }}</span> / <span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage).usedTimes }}</span> 次
               </div>
               <div class="text-gray-500 text-xs mt-1">
                 {{ getVerifyOperatorInfo(usage).split(' / ')[0] }}
@@ -558,7 +558,7 @@
             </div>
             <div class="text-right">
               <div class="text-sm">
-                核销次数：<span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage) }}</span> 次
+                核销次数：<span class="text-gray-700">{{ getUsageCountDisplayText(usage).totalTimes }}</span> / <span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage).usedTimes }}</span> 次
               </div>
             </div>
           </div>
@@ -592,7 +592,7 @@
             </div>
             <div class="text-right">
               <div class="text-sm">
-                {{ replaceTerms('结单', merchant) }}：<span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage) }}</span> 次
+                {{ replaceTerms('结单', merchant) }}：<span class="text-gray-700">{{ getUsageCountDisplayText(usage).totalTimes }}</span> / <span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage).usedTimes }}</span> 次
               </div>
             </div>
           </div>
@@ -1771,7 +1771,7 @@ const getUsageCountDisplayText = (usage) => {
   if (!usage || !usage.card) return '-'
   const totalTimes = usage.card.total_times || 0
   const usedTimes = usage.used_times || 1
-  return `${totalTimes} / ${usedTimes}`
+  return { totalTimes, usedTimes }
 }
 
 // 获取当前次数的颜色类
