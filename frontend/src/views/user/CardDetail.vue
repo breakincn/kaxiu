@@ -1196,6 +1196,11 @@ const getQueueCountdownMs = (usage) => {
   const n = Number(usage?.queue_no || 0)
   if (!n) return 0
 
+  // 已进入服务流程（服务中/待自动下钟/待起单/待选房等）则不应再显示“预计叫号”倒计时
+  const s = String(usage?.status || '').trim()
+  const sessStatus = String(usage?.service_session_status || '').trim()
+  if (s === 'in_progress' || sessStatus) return 0
+
   // 已被叫号的不显示倒计时
   if (usage?.queue_called_at) return 0
 
