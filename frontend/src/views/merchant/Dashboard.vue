@@ -1785,9 +1785,44 @@ const getUsageServiceStatusText = (usage) => {
 
 // 获取核销次数显示文本（总次数 / 当前次数）
 const getUsageCountDisplayText = (usage) => {
-  if (!usage || !usage.card) return '-'
-  const totalTimes = usage.card.total_times || 0
-  const usedTimes = usage.used_times || 1
+  if (!usage || !usage.card) return { totalTimes: '-', usedTimes: '-' }
+  
+  const card = usage.card
+  const totalTimes = card.total_times || 0
+  const currentRemainTimes = card.remain_times || 0
+  
+  // 计算该usage在其所属卡片的核销序号
+  // 需要找出同一卡片在todayUsages中的所有记录，按时间排序后计算序号
+  const cardUsages = todayUsages.value.filter(u => u.card_id === usage.card_id && u.status !== 'failed')
+  
+  // 按核销时间升序排列（早的在前）
+  cardUsages.sort((a, b) => {
+    const timeA = a.used_at ? new Date(a.used_at).getTime() : 0
+    const timeB = b.used_at ? new Date(b.used_at).getTime() : 0
+    return timeA - timeB
+  })
+  
+  // 计算当前usage的索引位置
+  const currentIndex = cardUsages.findIndex(u => u.id === usage.id)
+  if (currentIndex === -1) {
+    // 如果找不到，降级处理
+    const usedTimes = totalTimes - currentRemainTimes
+    return { totalTimes, usedTimes }
+  }
+  
+  // 从最新状态（卡片当前剩余次数）反推这条记录的序号
+  // 当前已使用总次数 = total_times - remain_times
+  const currentUsedTotal = totalTimes - currentRemainTimes
+  
+  // 计算该记录之后还有多少次核销
+  let usagesAfterCurrent = 0
+  for (let i = currentIndex + 1; i < cardUsages.length; i++) {
+    usagesAfterCurrent += (cardUsages[i].used_times || 1)
+  }
+  
+  // 该记录的序号 = 当前总使用次数 - 之后的核销次数
+  const usedTimes = currentUsedTotal - usagesAfterCurrent
+  
   return { totalTimes, usedTimes }
 }
 
