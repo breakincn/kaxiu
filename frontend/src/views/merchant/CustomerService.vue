@@ -172,6 +172,7 @@
                             </span>
                           </div>
                           <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：{{ t.account }}</div>
+                          <div v-if="shouldShowWindowNo && t.window_no" class="text-gray-500 text-sm mt-1">{{ windowTerm }}：{{ t.window_no }}</div>
                         </div>
                         <div class="text-gray-400 text-xs">ID: {{ t.id }}</div>
                       </div>
@@ -219,6 +220,18 @@
               :placeholder="staffNamePlaceholder"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
             />
+          </div>
+
+          <!-- 窗口号（仅开启叫号模式时显示，且仅对专业客服显示） -->
+          <div v-if="shouldShowWindowNo" class="mb-4">
+            <label class="block text-gray-700 text-sm font-medium mb-2">{{ windowTerm }}（可选）</label>
+            <input
+              v-model="form.window_no"
+              type="text"
+              :placeholder="`如：1、A1等`"
+              class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+            />
+            <div class="text-gray-500 text-xs mt-2">用于叫号时显示服务{{ windowTerm }}</div>
           </div>
 
           <div v-if="!isEdit" class="text-gray-500 text-sm mb-5">
@@ -297,6 +310,8 @@ const saving = ref(false)
 const savingRole = ref(false)
 const techs = ref([])
 
+const merchant = ref({})
+
 const operationalRolesData = ref([])
 const professionalRolesData = ref([])
 
@@ -321,6 +336,16 @@ const operationalRoles = computed(() => {
 
 const professionalRoles = computed(() => {
   return professionalRolesData.value
+})
+
+// 是否显示窗口号（开启叫号模式且为专业客服）
+const shouldShowWindowNo = computed(() => {
+  return merchant.value?.support_queue && activeType.value === 'professional'
+})
+
+// 窗口自定义名词
+const windowTerm = computed(() => {
+  return merchant.value?.queue_window_term || '窗口'
 })
 
 const allRoles = computed(() => {
@@ -398,7 +423,8 @@ const isEdit = ref(false)
 const form = ref({
   id: 0,
   name: '',
-  code: ''
+  code: '',
+  window_no: ''
 })
 
 const showAddRole = ref(false)
@@ -437,12 +463,12 @@ const load = async () => {
 const closeAdd = () => {
   showAdd.value = false
   isEdit.value = false
-  form.value = { id: 0, name: '' }
+  form.value = { id: 0, name: '', window_no: '' }
 }
 
 const openCreate = () => {
   isEdit.value = false
-  form.value = { id: 0, name: '' }
+  form.value = { id: 0, name: '', window_no: '' }
   showAdd.value = true
 }
 
@@ -465,7 +491,8 @@ const openEdit = (t) => {
   form.value = {
     id: t.id,
     name: t.name || '',
-    code: t.code || ''
+    code: t.code || '',
+    window_no: t.window_no || ''
   }
   showAdd.value = true
 }
@@ -487,7 +514,11 @@ const submit = async () => {
   saving.value = true
   try {
     if (isEdit.value) {
-      await merchantApi.updateTechnician(form.value.id, { name: form.value.name })
+      const payload = { name: form.value.name }
+      if (shouldShowWindowNo.value) {
+        payload.window_no = form.value.window_no || ''
+      }
+      await merchantApi.updateTechnician(form.value.id, payload)
       alert('更新成功')
     } else {
       const res = await merchantApi.createTechnician({
@@ -597,6 +628,14 @@ const submitRole = async () => {
 }
 
 onMounted(async () => {
+  // 获取商户信息
+  try {
+    const res = await merchantApi.getCurrentMerchant()
+    merchant.value = res.data?.data || {}
+  } catch (e) {
+    merchant.value = {}
+  }
+
   try {
     const res = await platformApi.getServiceRoles()
     operationalRolesData.value = res.data?.data || []

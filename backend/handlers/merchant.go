@@ -283,6 +283,7 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		QueuePrefix              *string `json:"queue_prefix"`
 		QueueStartNo             *int    `json:"queue_start_no"`
 		QueueMode                *string `json:"queue_mode"`
+		QueueWindowTerm          *string `json:"queue_window_term"`
 		HandCardPrefix           *string `json:"hand_card_prefix"`
 		HandCardStartNo          *int    `json:"hand_card_start_no"`
 		HandCardEndNo            *int    `json:"hand_card_end_no"`
@@ -409,6 +410,13 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 			return
 		}
 		updates["queue_mode"] = mode
+	}
+	if input.QueueWindowTerm != nil {
+		term := strings.TrimSpace(*input.QueueWindowTerm)
+		if term == "" {
+			term = "窗口"
+		}
+		updates["queue_window_term"] = term
 	}
 	if input.HandCardPrefix != nil {
 		updates["hand_card_prefix"] = strings.TrimSpace(*input.HandCardPrefix)

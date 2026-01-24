@@ -206,6 +206,7 @@ func UpdateMerchantTechnician(c *gin.Context) {
 		Name     *string `json:"name"`
 		IsActive *bool   `json:"is_active"`
 		Code     *string `json:"code"`
+		WindowNo *string `json:"window_no"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -238,6 +239,10 @@ func UpdateMerchantTechnician(c *gin.Context) {
 	}
 	if input.IsActive != nil {
 		updates["is_active"] = *input.IsActive
+	}
+	if input.WindowNo != nil {
+		windowNo := strings.TrimSpace(*input.WindowNo)
+		updates["window_no"] = windowNo
 	}
 	if len(updates) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "没有可更新的字段"})

@@ -72,6 +72,18 @@
                 <div class="text-gray-500 text-sm">服务结束后人工手动触发</div>
               </div>
             </label>
+
+            <!-- 自定义窗口名词 -->
+            <div class="mt-4 pt-4 border-t border-gray-100">
+              <div class="text-gray-700 text-sm font-medium mb-2">自定义叫号窗口名词</div>
+              <input
+                v-model="form.queue_window_term"
+                type="text"
+                placeholder="默认：窗口，可自定义如：台号、工位等"
+                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <div class="text-gray-500 text-xs mt-2">在“设置客服”中为每个专业客服设置服务窗口时，使用此名词</div>
+            </div>
           </div>
         </div>
 
@@ -102,7 +114,8 @@ const supportOrderComplete = ref(false)
 const form = ref({
   queue_prefix: '',
   queue_start_no: 1,
-  queue_mode: 'auto'
+  queue_mode: 'auto',
+  queue_window_term: '窗口'
 })
 
 const goBack = () => {
@@ -127,7 +140,8 @@ const load = async () => {
     form.value = {
       queue_prefix: m.queue_prefix || '',
       queue_start_no: m.queue_start_no || 1,
-      queue_mode: m.queue_mode || 'auto'
+      queue_mode: m.queue_mode || 'auto',
+      queue_window_term: m.queue_window_term || '窗口'
     }
 
     if (!supportOrderComplete.value && form.value.queue_mode === 'auto') {
@@ -165,7 +179,8 @@ const save = async () => {
     await merchantApi.updateCurrentMerchantServices({
       queue_prefix: form.value.queue_prefix,
       queue_start_no: form.value.queue_start_no,
-      queue_mode: form.value.queue_mode
+      queue_mode: form.value.queue_mode,
+      queue_window_term: form.value.queue_window_term
     })
     alert('保存成功')
     await load()

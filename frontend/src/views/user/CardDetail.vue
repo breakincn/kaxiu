@@ -271,6 +271,9 @@
               <div v-if="getUsageRoomInfo(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageRoomInfo(usage) }}
               </div>
+              <div v-if="getUsageWindowInfo(usage)" class="text-gray-400 text-sm mt-0.5">
+                {{ getUsageWindowInfo(usage) }}
+              </div>
               <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageProjectText(usage) }}
               </div>
@@ -1638,6 +1641,15 @@ const getUsageRoomInfo = (usage) => {
     return `房间号：${usage.service_room.name || usage.service_room.code}`
   }
   return ''
+}
+
+const getUsageWindowInfo = (usage) => {
+  // 仅开启叫号模式且技师指定了窗口号时显示
+  if (!card.value?.merchant?.support_queue) return ''
+  const tech = usage?.service_technician || usage?.technician
+  if (!tech || !tech.window_no) return ''
+  const term = card.value?.merchant?.queue_window_term || '窗口'
+  return `${term}：${tech.window_no}`
 }
 
 const goBack = () => {
