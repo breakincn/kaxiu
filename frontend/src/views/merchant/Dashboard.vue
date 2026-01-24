@@ -673,7 +673,7 @@
 
     <!-- 卡片管理 -->
     <div v-if="currentTab === 'cards' && showCardsTab" class="px-4 py-4">
-      <div v-if="cardsError" class="bg-gray-50 border border-gray-100 text-gray-700 rounded-lg p-3 text-sm mb-4">
+      <div v-if="cardsError && canVerify" class="bg-gray-50 border border-gray-100 text-gray-700 rounded-lg p-3 text-sm mb-4">
         {{ cardsError }}
       </div>
 
@@ -733,11 +733,11 @@
         </div>
       </div>
 
-      <div v-if="currentDisplay === 'cards' && cardsLoading" class="text-center py-12 text-gray-400">
+      <div v-if="currentDisplay === 'cards' && canVerify && cardsLoading" class="text-center py-12 text-gray-400">
         加载中...
       </div>
 
-      <div v-else-if="currentDisplay === 'cards'">
+      <div v-else-if="currentDisplay === 'cards' && canVerify">
         <div v-for="(card, index) in issuedCards" :key="card.id" class="mb-6">
           <div
             @click="toggleCardExpand(card.id)"
@@ -1163,7 +1163,7 @@ const showNoticeTab = computed(() => {
 const canCardSell = computed(() => hasMerchantPermission('merchant.card.sell'))
 
 const showCardsTab = computed(() => {
-  return canVerify.value || canCardSell.value
+  return canVerify.value
 })
 
 const showServiceTab = computed(() => {
@@ -1330,8 +1330,12 @@ const filteredSellTemplates = computed(() => {
 })
 
 const currentDisplay = computed(() => {
-  // 如果手动指定了显示模式，优先使用
+  // 如果手动指定了显示模式，优先使用，但要检查权限
   if (displayMode.value !== 'auto') {
+    // 如果是卡片模式但没有核销权限，则显示售卡模板
+    if (displayMode.value === 'cards' && !canVerify.value) {
+      return canSellCards.value ? 'sellTemplates' : 'cards'
+    }
     return displayMode.value
   }
   // 如果没有核销权限但有售卡权限，默认显示售卡模板
@@ -1354,6 +1358,7 @@ watch(
   async () => {
     if (currentTab.value !== 'cards') return
     if (currentDisplay.value !== 'cards') return
+    if (!canVerify.value) return
     await fetchIssuedCards()
   }
 )
@@ -1891,7 +1896,9 @@ const clearUserCodeFilter = async () => {
   routeUserCode.value = ''
   scanUserCodeActive.value = false
   await router.replace({ path: '/merchant', query: { tab: 'cards' } })
-  await fetchIssuedCards()
+  if (canVerify.value) {
+    await fetchIssuedCards()
+  }
 }
 
 const scrollToUserCodeHint = async () => {
@@ -2264,7 +2271,9 @@ const confirmReturnHandCard = async () => {
     cancelReturnHandCard()
     fetchQueueStatus()
     fetchTodayUsages()
-    fetchIssuedCards()
+    if (canVerify.value) {
+      fetchIssuedCards()
+    }
   } catch (e) {
     returnHandCardError.value = e?.response?.data?.error || '归还失败'
   } finally {
@@ -2628,7 +2637,7 @@ watch(currentTab, (tab) => {
       // 如果默认显示售卡模板，则加载售卡模板数据
       if (currentDisplay.value === 'sellTemplates') {
         loadSellTemplates()
-      } else {
+      } else if (canVerify.value) {
         fetchIssuedCards()
       }
     } else if (tab === 'notice') {
@@ -2662,7 +2671,9 @@ watch(
       routeUserCode.value = String(v)
       scanUserCodeActive.value = String(route.query.from_scan || '') === '1'
       if (currentTab.value === 'cards') {
-        await fetchIssuedCards()
+        if (canVerify.value) {
+          await fetchIssuedCards()
+        }
         if (scanUserCodeActive.value) {
           await scrollToUserCodeHint()
           await cleanupScanQuery()
@@ -2674,7 +2685,9 @@ watch(
     if (!scanUserCodeActive.value) {
       routeUserCode.value = ''
       if (currentTab.value === 'cards') {
-        await fetchIssuedCards()
+        if (canVerify.value) {
+          await fetchIssuedCards()
+        }
       }
     }
   }
@@ -2884,7 +2897,7 @@ onMounted(async () => {
     // 如果默认显示售卡模板，则加载售卡模板数据
     if (currentDisplay.value === 'sellTemplates') {
       loadSellTemplates()
-    } else {
+    } else if (canVerify.value) {
       fetchIssuedCards()
     }
   } else if (currentTab.value === 'notice') {
