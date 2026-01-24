@@ -227,7 +227,7 @@
             : 'border-transparent text-gray-500'
         ]"
       >
-        卡片
+        {{ canVerify ? '卡片' : '售卡' }}
       </button>
 
       <button
@@ -677,7 +677,7 @@
         {{ cardsError }}
       </div>
 
-      <div v-if="routeUserCode" ref="userCodeAnchor" class="bg-white rounded-xl p-4 shadow-sm mb-4 flex items-center justify-between">
+      <div v-if="routeUserCode && canVerify" ref="userCodeAnchor" class="bg-white rounded-xl p-4 shadow-sm mb-4 flex items-center justify-between">
         <div class="text-sm text-gray-700">当前仅显示该用户的卡片</div>
         <button type="button" class="text-sm text-primary" @click="clearUserCodeFilter">清除筛选</button>
       </div>
@@ -694,9 +694,9 @@
             v-model="cardSearch.card_type"
             class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
           >
-            <option value="">全部卡片类型</option>
+            <option value="">{{ canVerify ? '全部卡片类型' : '全部售卡类型' }}</option>
             <option
-              v-for="tpl in cardTemplates"
+              v-for="tpl in (canVerify ? cardTemplates : sellTemplates)"
               :key="tpl.id"
               :value="tpl.name"
             >
@@ -824,6 +824,10 @@
 
       <!-- 售卡模板列表 -->
       <div v-if="currentDisplay === 'sellTemplates'">
+        <div class="mb-4">
+          <h3 class="text-lg font-medium text-gray-800">售卡列表</h3>
+          <p class="text-sm text-gray-500 mt-1">长按卡片模板生成售卡二维码</p>
+        </div>
         <div v-if="filteredSellTemplates.length === 0" class="text-center py-12 text-gray-400">
           {{ sellTemplates.length === 0 ? '暂无在售卡片模板' : '没有找到匹配的卡片模板' }}
         </div>
@@ -837,6 +841,11 @@
             <div
               class="template-card"
               @click="openSellQrModal(tpl)"
+              @touchstart="(e) => onTemplateTouchStart(e, tpl)"
+              @touchmove="onTemplateTouchMove"
+              @touchend="onTemplateTouchEnd"
+              @touchcancel="onTemplateTouchEnd"
+              style="-webkit-touch-callout: none; -webkit-user-select: none; user-select: none;"
             >
               <div class="template-info">
                 <div class="template-name">{{ tpl.name }}</div>
@@ -1163,7 +1172,7 @@ const showNoticeTab = computed(() => {
 const canCardSell = computed(() => hasMerchantPermission('merchant.card.sell'))
 
 const showCardsTab = computed(() => {
-  return canVerify.value
+  return canVerify.value || canCardSell.value
 })
 
 const showServiceTab = computed(() => {
@@ -1316,6 +1325,10 @@ const currentView = ref('cards') // 'cards' | 'sellTemplates'
 const issuedCards = ref([])
 const sellTemplates = ref([])
 const displayMode = ref('auto') // 'auto' | 'cards' | 'sellTemplates'
+
+// 售卡模板长按相关
+const templateLongPressTimer = ref(null)
+const templatePressStart = ref(null)
 const filteredSellTemplates = computed(() => {
   if (!sellTemplates.value.length) return []
   
@@ -1883,6 +1896,42 @@ const openSellQrModal = async (tpl) => {
 const closeSellQrModal = () => {
   showSellQrModal.value = false
   sellSelectedTemplate.value = null
+}
+
+// 售卡模板长按事件处理
+const onTemplateTouchStart = (e, tpl) => {
+  if (templateLongPressTimer.value) {
+    clearTimeout(templateLongPressTimer.value)
+    templateLongPressTimer.value = null
+  }
+  templatePressStart.value = null
+  
+  templateLongPressTimer.value = setTimeout(() => {
+    openSellQrModal(tpl)
+  }, 820)
+}
+
+const onTemplateTouchMove = (e) => {
+  if (!templateLongPressTimer.value) return
+  const t = e?.touches?.[0]
+  if (!t) return
+  if (!templatePressStart.value) {
+    templatePressStart.value = { x: t.clientX, y: t.clientY }
+    return
+  }
+  const dx = t.clientX - templatePressStart.value.x
+  const dy = t.clientY - templatePressStart.value.y
+  if (dx * dx + dy * dy > 12 * 12) {
+    clearTimeout(templateLongPressTimer.value)
+    templateLongPressTimer.value = null
+  }
+}
+
+const onTemplateTouchEnd = () => {
+  if (templateLongPressTimer.value) {
+    clearTimeout(templateLongPressTimer.value)
+    templateLongPressTimer.value = null
+  }
 }
 
 const resetCardSearch = async () => {
