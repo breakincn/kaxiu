@@ -332,11 +332,6 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	if input.SupportCustomerService != nil {
 		targetSupportCustomerService = *input.SupportCustomerService
 	}
-	// 本次更新后的目标客服模式开关，用于校验 support_multi_customer_service
-	targetSupportCustomerServiceMode := merchant.SupportCustomerServiceMode
-	if input.SupportCustomerServiceMode != nil {
-		targetSupportCustomerServiceMode = *input.SupportCustomerServiceMode
-	}
 
 	// 客服模式需要先开启客服
 	if input.SupportCustomerServiceMode != nil && *input.SupportCustomerServiceMode {
@@ -345,27 +340,11 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 			return
 		}
 	}
-	// 多客服（多窗口）需要先开启客服模式
-	if input.SupportMultiCustomerService != nil && *input.SupportMultiCustomerService {
-		if !targetSupportCustomerServiceMode {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "开启多个客服前，请先开启\"客服模式\""})
-			return
-		}
-	}
 
 	// 关闭客服时，同步关闭客服模式
 	if input.SupportCustomerService != nil && !*input.SupportCustomerService {
 		if merchant.SupportCustomerServiceMode {
 			updates["support_customer_service_mode"] = false
-		}
-		if merchant.SupportMultiCustomerService {
-			updates["support_multi_customer_service"] = false
-		}
-	}
-	// 关闭客服模式时，同步关闭多客服
-	if input.SupportCustomerServiceMode != nil && !*input.SupportCustomerServiceMode {
-		if merchant.SupportMultiCustomerService {
-			updates["support_multi_customer_service"] = false
 		}
 	}
 	if input.SupportAppointment != nil {
