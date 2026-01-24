@@ -2509,12 +2509,16 @@ const getCountdownClass = (appt) => {
   }
   
   const countdown = getAppointmentCountdown(appt)
-  if (countdown === null) return 'text-primary text-sm font-medium mt-1'
+  if (countdown === null) return 'text-gray-500 text-sm font-medium mt-1'
 
-  // 统一色相：临近用主色，其余用灰
-  if (countdown <= 600) {
-    return 'text-primary text-sm font-medium mt-1'
+  if (countdown <= 0) {
+    return 'text-green-600 text-sm font-medium mt-1'
   }
+
+  if (countdown <= 900) {
+    return 'text-red-500 text-sm font-medium mt-1'
+  }
+
   return 'text-gray-500 text-sm font-medium mt-1'
 }
 

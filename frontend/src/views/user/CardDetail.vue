@@ -1162,6 +1162,12 @@ const getUsageQueueDisplayText = (usage) => {
   return `${prefix}${no}`
 }
 
+const getUsageQueueNoClass = (usage) => {
+  if (!isOnsiteQueueUsage(usage)) return 'text-gray-500'
+  if (usage?.queue_called_at) return 'text-green-600'
+  return 'text-gray-500'
+}
+
 const getExpectedCallAtMsForQueueNo = (queueNo) => {
   const n = Number(queueNo || 0)
   if (!n || n <= 1) return 0
@@ -1202,18 +1208,20 @@ const getQueueCountdownMs = (usage) => {
   return diff
 }
 
-const getUsageQueueNoClass = (usage) => {
+const getUsageQueueCountdownColor = (usage) => {
   const diff = getQueueCountdownMs(usage)
-  if (!diff) return ''
-  if (diff <= 90 * 1000) return 'text-green-600'
-  return 'text-blue-600'
+  if (!diff) return 'text-gray-500'
+  if (diff <= 0) return 'text-green-600'
+  if (diff <= 900 * 1000) return 'text-red-500'
+  return 'text-gray-500'
 }
 
 const getUsageQueueCountdownClass = (usage) => {
   const diff = getQueueCountdownMs(usage)
-  if (!diff) return 'text-gray-400'
-  if (diff <= 90 * 1000) return 'text-green-600'
-  return 'text-blue-600'
+  if (!diff) return 'text-gray-500'
+  if (diff <= 0) return 'text-green-600'
+  if (diff <= 900 * 1000) return 'text-red-500'
+  return 'text-gray-500'
 }
 
 const getUsageQueueCountdownText = (usage) => {
