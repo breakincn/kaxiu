@@ -34,7 +34,7 @@
             <input type="checkbox" v-model="form.support_direct_sale" />
           </div>
 
-		  <div v-if="form.support_direct_sale" class="px-4 py-4 flex items-center justify-between border-t border-gray-100">
+		  <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
 			<div class="text-gray-800 font-medium">开启客服</div>
 			<input type="checkbox" v-model="form.support_customer_service" />
 		  </div>
