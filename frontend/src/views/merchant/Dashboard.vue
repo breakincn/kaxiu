@@ -723,7 +723,7 @@
 
           <div v-if="canVerify" class="flex-1"></div>
           <button
-            v-if="(!isTechnicianAuth() && merchant.support_direct_sale) || (isTechnicianAuth() && canSellCards)"
+            v-if="(!isTechnicianAuth() && merchant.support_direct_sale) || (isTechnicianAuth() && canSellCards && canVerify)"
             type="button"
             @click="loadSellTemplates"
             class="px-4 py-2 bg-slate-600 text-white text-sm rounded-lg"
@@ -824,9 +824,11 @@
 
       <!-- 售卡模板列表 -->
       <div v-if="currentDisplay === 'sellTemplates'">
-        <div class="mb-4">
+        <div class="mb-4" v-if="canVerify">
           <h3 class="text-lg font-medium text-gray-800">售卡列表</h3>
-          <p class="text-sm text-gray-500 mt-1">长按卡片模板生成售卡二维码</p>
+        </div>
+        <div class="mb-4">
+          <p class="text-sm text-gray-500">长按卡片模板生成售卡二维码</p>
         </div>
         <div v-if="filteredSellTemplates.length === 0" class="text-center py-12 text-gray-400">
           {{ sellTemplates.length === 0 ? '暂无在售卡片模板' : '没有找到匹配的卡片模板' }}
