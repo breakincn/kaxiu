@@ -73,8 +73,23 @@
               </div>
             </label>
 
-            <!-- 自定义窗口名词 -->
+            <!-- 开启多个客服 -->
             <div class="mt-4 pt-4 border-t border-gray-100">
+              <label class="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  v-model="form.support_multi_customer_service"
+                  class="w-4 h-4 text-blue-600 rounded"
+                />
+                <div>
+                  <div class="text-gray-800 font-medium">开启多个客服</div>
+                  <div class="text-gray-500 text-sm">允许同时叫多个号，每个技师按完成顺序自动领取下一号</div>
+                </div>
+              </label>
+            </div>
+
+            <!-- 自定义窗口名词：仅开启多个客服时显示 -->
+            <div v-if="form.support_multi_customer_service" class="mt-4 pt-4 border-t border-gray-100">
               <div class="text-gray-700 text-sm font-medium mb-2">自定义叫号窗口名词</div>
               <input
                 v-model="form.queue_window_term"
@@ -115,7 +130,8 @@ const form = ref({
   queue_prefix: '',
   queue_start_no: 1,
   queue_mode: 'auto',
-  queue_window_term: '窗口'
+  queue_window_term: '窗口',
+  support_multi_customer_service: false
 })
 
 const goBack = () => {
@@ -141,7 +157,8 @@ const load = async () => {
       queue_prefix: m.queue_prefix || '',
       queue_start_no: m.queue_start_no || 1,
       queue_mode: m.queue_mode || 'auto',
-      queue_window_term: m.queue_window_term || '窗口'
+      queue_window_term: m.queue_window_term || '窗口',
+      support_multi_customer_service: !!m.support_multi_customer_service
     }
 
     if (!supportOrderComplete.value && form.value.queue_mode === 'auto') {
@@ -180,7 +197,8 @@ const save = async () => {
       queue_prefix: form.value.queue_prefix,
       queue_start_no: form.value.queue_start_no,
       queue_mode: form.value.queue_mode,
-      queue_window_term: form.value.queue_window_term
+      queue_window_term: form.value.queue_window_term,
+      support_multi_customer_service: !!form.value.support_multi_customer_service
     })
     alert('保存成功')
     await load()
