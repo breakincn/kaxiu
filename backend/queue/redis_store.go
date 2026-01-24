@@ -107,10 +107,11 @@ func (s *RedisStore) MarkDoneAndCallNext(merchantID uint, date string, qt QueueT
 	listKey := "q:order:" + k
 	calledKey := "q:called:" + k
 	enqKey := "q:enq:" + k
+	doneKey := "q:done:" + k
 
 	nowMs := now.UnixMilli()
 
-	res, err := doneNextLua.Run(s.ctx, s.c, []string{listKey, calledKey, enqKey}, strconv.FormatUint(uint64(doneID), 10), strconv.FormatInt(nowMs, 10)).Result()
+	res, err := doneNextLua.Run(s.ctx, s.c, []string{listKey, calledKey, enqKey, doneKey}, strconv.FormatUint(uint64(doneID), 10), strconv.FormatInt(nowMs, 10)).Result()
 	if err != nil {
 		log.Printf("[queue] redis done-next failed: merchant=%d date=%s type=%s done_id=%d err=%v\n", merchantID, date, qt, doneID, err)
 		return 0
@@ -129,6 +130,7 @@ func (s *RedisStore) Snapshot(merchantID uint, date string, qt QueueType) Snapsh
 	startKey := "q:start:" + k
 	calledKey := "q:called:" + k
 	enqKey := "q:enq:" + k
+	doneKey := "q:done:" + k
 
 	pipe := s.c.Pipeline()
 	startCmd := pipe.Get(s.ctx, startKey)
@@ -163,12 +165,29 @@ func (s *RedisStore) Snapshot(merchantID uint, date string, qt QueueType) Snapsh
 	pipe2 := s.c.Pipeline()
 	calledCmd := pipe2.HMGet(s.ctx, calledKey, fields...)
 	enqCmd := pipe2.HMGet(s.ctx, enqKey, fields...)
+	doneCmd := pipe2.HMGet(s.ctx, doneKey, fields...)
 	_, _ = pipe2.Exec(s.ctx)
 
 	calledVals, _ := calledCmd.Result()
 	enqVals, _ := enqCmd.Result()
+	doneVals, _ := doneCmd.Result()
 
+	// 过滤已完成的记录，但保留它们的号码
 	for idx, id := range ids {
+		// 检查是否已完成
+		isDone := false
+		if idx < len(doneVals) && doneVals[idx] != nil {
+			ms := toInt64(doneVals[idx])
+			if ms > 0 {
+				isDone = true
+			}
+		}
+
+		// 已完成的记录不加入快照，但保留在Redis以维持号码稳定
+		if isDone {
+			continue
+		}
+
 		no := startNo + idx
 
 		enqAt := time.Time{}
@@ -192,12 +211,14 @@ func (s *RedisStore) Snapshot(merchantID uint, date string, qt QueueType) Snapsh
 		out.ByID[id] = t
 	}
 
-	out.CurrentID = ids[0]
-	if len(ids) > 1 {
-		out.NextID = ids[1]
-	}
-	if tk, ok := out.ByID[out.CurrentID]; ok {
-		out.CurrentCalledAt = tk.CalledAt
+	if len(out.Tickets) > 0 {
+		out.CurrentID = out.Tickets[0].ID
+		if len(out.Tickets) > 1 {
+			out.NextID = out.Tickets[1].ID
+		}
+		if tk, ok := out.ByID[out.CurrentID]; ok {
+			out.CurrentCalledAt = tk.CalledAt
+		}
 	}
 	return out
 }
@@ -241,11 +262,12 @@ return {no, 1, 0, nowMs}
 `)
 
 var doneNextLua = redis.NewScript(`
--- KEYS: [listKey, calledHash, enqHash]
+-- KEYS: [listKey, calledHash, enqHash, doneHash]
 -- ARGV: [doneID, nowMs]
 local listKey = KEYS[1]
 local calledKey = KEYS[2]
 local enqKey = KEYS[3]
+local doneKey = KEYS[4]
 
 local doneID = ARGV[1]
 local nowMs = tonumber(ARGV[2])
@@ -255,13 +277,23 @@ if not head then
   return 0
 end
 
-if tostring(head) == tostring(doneID) then
-  redis.call('LPOP', listKey)
-end
-redis.call('HDEL', calledKey, doneID)
-redis.call('HDEL', enqKey, doneID)
+-- 不移除记录，只标记为已完成
+redis.call('HSET', doneKey, doneID, nowMs)
 
-local nextID = redis.call('LINDEX', listKey, 0)
+-- 找到下一个未完成的记录
+local len = redis.call('LLEN', listKey)
+local nextID = nil
+for i = 0, len - 1 do
+  local id = redis.call('LINDEX', listKey, i)
+  if id then
+    local isDone = redis.call('HEXISTS', doneKey, id)
+    if isDone == 0 then
+      nextID = id
+      break
+    end
+  end
+end
+
 if not nextID then
   return 0
 end
