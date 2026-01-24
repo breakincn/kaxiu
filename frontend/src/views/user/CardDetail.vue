@@ -587,19 +587,21 @@ const getUsageStatusText = (usage) => {
     const precheckedAt = usage?.service_session_start_confirmed_at
     const now = nowTick.value
     if (sessStatus === 'finished') return '完成'
-    // 未开启客服但开启结单：核销即起单（按服务会话状态展示）
-    if (!supportCS) {
-      if (sessStatus === 'delay_pending') return replaceTerms('待起单', card.value?.merchant)
-      if (sessStatus === 'start_pending') return replaceTerms('待起单', card.value?.merchant)
-      if (sessStatus === 'serving') return replaceTerms('服务中', card.value?.merchant)
-      if (sessStatus === 'auto_finishing') return replaceTerms('待自动结单', card.value?.merchant)
-    }
+    // 优先按会话状态本身展示（不要依赖当前商户开关；历史会话在关闭客服后仍需正确展示）
+    if (sessStatus === 'delay_pending') return replaceTerms('待起单', card.value?.merchant)
+    if (sessStatus === 'start_pending') return replaceTerms('待起单', card.value?.merchant)
+    if (sessStatus === 'serving') return replaceTerms('服务中', card.value?.merchant)
+    if (sessStatus === 'auto_finishing') return replaceTerms('待自动结单', card.value?.merchant)
     if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
-    if (supportCS && sessStatus === 'room_locked') return '待选客服'
+    if (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') {
+      // 若客服已关闭：走不开启客服的流程，不允许再进入“待选客服”
+      if (!supportCS) return replaceTerms('待起单', card.value?.merchant)
+      return '待选客服'
+    }
     // 会话已取消但 usage 仍在进行中：
     // - 若房间/客服均已释放：视为“超时未选择客服”，需重新选择房间
     // - 否则：视为上钟超时，需重新选择客服
-    if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
+    if (sessStatus === 'canceled' && !precheckedAt) {
       if (supportRoom && !usage?.service_room && !usage?.service_technician) {
         return '服务超时重新选择房间'
       }
@@ -654,9 +656,9 @@ const getUsageStatusClass = (usage) => {
     // 服务中：绿色
     if (sessStatus === 'serving') return 'text-green-500'
     if (supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
-    if (supportCS && sessStatus === 'room_locked') return 'text-orange-500'
+    if (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') return 'text-orange-500'
     // 会话已取消但 usage 仍在进行中：视为上钟超时
-    if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
+    if (sessStatus === 'canceled' && !precheckedAt) {
       // 已经选定/自动分配了客服：不再视为上钟超时
       if (usage?.service_technician) {
         return 'text-red-500'

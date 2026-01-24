@@ -14,6 +14,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // MerchantRegister 商户注册
@@ -177,6 +178,77 @@ func GetMerchant(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": merchant})
 }
 
+func migrateSessionsAfterDisableCustomerService(tx *gorm.DB, m *models.Merchant, now time.Time) error {
+	if tx == nil || m == nil || m.ID == 0 {
+		return nil
+	}
+
+	// 迁移目标：
+	// - 若已锁定房间（room_id 有值）或商户不支持房间：进入 delay_pending（非客服流程的“待起单”）
+	// - 若未锁定房间且支持房间：回到 room_selecting 让用户选房（不再选客服）
+	statuses := []string{"room_locked", "staff_selecting", "start_pending"}
+
+	var sessions []models.ServiceSession
+	if err := tx.
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("merchant_id = ? AND status IN ? AND start_confirmed_at IS NULL", m.ID, statuses).
+		Find(&sessions).Error; err != nil {
+		return err
+	}
+	if len(sessions) == 0 {
+		return nil
+	}
+
+	delaySeconds := m.StartDelaySeconds
+	if delaySeconds <= 0 {
+		delaySeconds = 60
+	}
+	startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+
+	for i := range sessions {
+		s := sessions[i]
+
+		// 释放技师占用（如果有）
+		if s.TechnicianID != nil && *s.TechnicianID > 0 {
+			_ = tx.Model(&models.TechnicianAttendance{}).
+				Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+				Updates(map[string]interface{}{"status": "idle"}).Error
+		}
+
+		updates := map[string]interface{}{
+			"technician_id":                 nil,
+			"staff_select_cooldown_until":   nil,
+			"staff_select_entered_at":       nil,
+			"start_pending_timeout_seconds": 0,
+		}
+
+		// 已锁定房间：直接进入非客服流程 delay_pending
+		if (s.RoomID != nil && *s.RoomID > 0) || !m.SupportRoom {
+			updates["status"] = "delay_pending"
+			updates["start_confirmed_at"] = &now
+			updates["scheduled_start_at"] = &startAt
+			if m.SupportRoom {
+				// 保留 room_id，但房间锁定时间不再需要
+				updates["room_locked_at"] = nil
+			}
+		} else {
+			// 未锁定房间：回到选房（不再选客服）
+			dl := now.Add(90 * time.Second)
+			updates["status"] = "room_selecting"
+			updates["room_id"] = nil
+			updates["room_locked_at"] = nil
+			updates["room_select_deadline_at"] = &dl
+		}
+
+		if err := tx.Model(&models.ServiceSession{}).
+			Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, statuses).
+			Updates(updates).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func UpdateCurrentMerchantServices(c *gin.Context) {
 	merchantIDAny, exists := c.Get("merchant_id")
 	if !exists {
@@ -194,6 +266,7 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
 		return
 	}
+	oldSupportCustomerService := merchant.SupportCustomerService
 
 	var input struct {
 		SupportAppointment       *bool   `json:"support_appointment"`
@@ -353,11 +426,22 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		return
 	}
 
-	if err := config.DB.Model(&merchant).Updates(updates).Error; err != nil {
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&merchant).Updates(updates).Error; err != nil {
+			return err
+		}
+		if err := tx.First(&merchant, merchantID).Error; err != nil {
+			return err
+		}
+		// 关闭客服后：将进行中的“选客服相关会话”迁移到非客服流程，避免流程卡死
+		if oldSupportCustomerService && !merchant.SupportCustomerService {
+			return migrateSessionsAfterDisableCustomerService(tx, &merchant, time.Now())
+		}
+		return nil
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
 		return
 	}
-	config.DB.First(&merchant, merchantID)
 
 	// 如果开启了房间功能，且房间号牌设置有变化，自动创建房间
 	if merchant.SupportRoom {

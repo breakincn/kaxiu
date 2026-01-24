@@ -173,14 +173,20 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		Table("service_sessions").
 		Select("id, initial_usage_id, project_id, status, room_id, technician_id, start_timeout_count, start_confirmed_at, started_at, scheduled_finish_at, finished_at, duration_minutes, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until, staff_select_entered_at").
 		Where("initial_usage_id IN ?", ids).
+		Order("id desc").
 		Find(&sessions).Error; err != nil {
 		return
 	}
 
+	// 同一个 usage 可能存在多条会话（例如取消/重试/重建）。这里按 id desc 查询后，
+	// 仅保留每个 usage 最新的一条，避免旧会话覆盖导致状态展示错乱。
 	byUsageID := make(map[uint]sessLite, len(sessions))
 	for i := range sessions {
 		s := sessions[i]
 		if s.InitialUsageID == 0 {
+			continue
+		}
+		if _, exists := byUsageID[s.InitialUsageID]; exists {
 			continue
 		}
 		byUsageID[s.InitialUsageID] = s
