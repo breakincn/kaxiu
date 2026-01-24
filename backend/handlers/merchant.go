@@ -276,6 +276,7 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		SupportTechnicianCheckin *bool   `json:"support_technician_checkin"`
 		SupportDirectSale        *bool   `json:"support_direct_sale"`
 		SupportCustomerService   *bool   `json:"support_customer_service"`
+		SupportCustomerServiceMode *bool `json:"support_customer_service_mode"`
 		SupportOrderComplete     *bool   `json:"support_order_complete"`
 		StartDelaySeconds        *int    `json:"start_delay_seconds"`
 		SupportHandCard          *bool   `json:"support_hand_card"`
@@ -323,6 +324,27 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	if input.SupportOrderComplete != nil {
 		targetSupportOrderComplete = *input.SupportOrderComplete
 	}
+	
+	// 本次更新后的目标客服开关，用于校验 support_customer_service_mode
+	targetSupportCustomerService := merchant.SupportCustomerService
+	if input.SupportCustomerService != nil {
+		targetSupportCustomerService = *input.SupportCustomerService
+	}
+	
+	// 客服模式需要先开启客服
+	if input.SupportCustomerServiceMode != nil && *input.SupportCustomerServiceMode {
+		if !targetSupportCustomerService {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "开启客服模式前，请先开启\"开启客服\""})
+			return
+		}
+	}
+	
+	// 关闭客服时，同步关闭客服模式
+	if input.SupportCustomerService != nil && !*input.SupportCustomerService {
+		if merchant.SupportCustomerServiceMode {
+			updates["support_customer_service_mode"] = false
+		}
+	}
 	if input.SupportAppointment != nil {
 		updates["support_appointment"] = *input.SupportAppointment
 	}
@@ -343,6 +365,9 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	}
 	if input.SupportCustomerService != nil {
 		updates["support_customer_service"] = *input.SupportCustomerService
+	}
+	if input.SupportCustomerServiceMode != nil {
+		updates["support_customer_service_mode"] = *input.SupportCustomerServiceMode
 	}
 	if input.SupportOrderComplete != nil {
 		updates["support_order_complete"] = *input.SupportOrderComplete
@@ -433,8 +458,9 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		if err := tx.First(&merchant, merchantID).Error; err != nil {
 			return err
 		}
-		// 关闭客服后：将进行中的“选客服相关会话”迁移到非客服流程，避免流程卡死
-		if oldSupportCustomerService && !merchant.SupportCustomerService {
+		// 关闭客服模式后：将进行中的“选客服相关会话”迁移到非客服流程，避免流程卡死
+		oldSupportCustomerServiceMode := oldSupportCustomerService || merchant.SupportCustomerServiceMode
+		if oldSupportCustomerServiceMode && !merchant.SupportCustomerServiceMode {
 			return migrateSessionsAfterDisableCustomerService(tx, &merchant, time.Now())
 		}
 		return nil

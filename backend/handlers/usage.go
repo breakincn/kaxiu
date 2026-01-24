@@ -308,7 +308,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		if u.UsedAt == nil {
 			continue
 		}
-		if u.Merchant.SupportCustomerService == false {
+		if u.Merchant.SupportCustomerServiceMode == false {
 			continue
 		}
 		if u.Status != "in_progress" {
@@ -345,7 +345,7 @@ func autoFixUsages(usages *[]models.Usage) {
 		}
 
 		// 支持客服流程：仅当始终未起单（start_confirmed_at 为空）时，12小时后自动完成，且不计入客服业绩（technician_id 置空）。
-		if u.Merchant.SupportCustomerService {
+		if u.Merchant.SupportCustomerServiceMode {
 			var s struct {
 				ID               uint       `gorm:"column:id"`
 				Status           string     `gorm:"column:status"`

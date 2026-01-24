@@ -322,7 +322,7 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 			"room_id":        chosenRoomID,
 			"room_locked_at": lockedAt,
 		}
-		if merchant.SupportCustomerService {
+		if merchant.SupportCustomerServiceMode {
 			updates["status"] = "staff_selecting"
 		} else {
 			delaySeconds := s.StartDelaySeconds

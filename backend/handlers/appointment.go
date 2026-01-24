@@ -729,7 +729,7 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	// 如果商户开启“客服”，则返回可选的专业客服列表（用于前端联动）
 	// 说明：历史数据 role_type 可能为空，因此仅排除运营客服 role_type=operational
 	var technicians []models.Technician
-	if merchant.SupportCustomerService {
+	if merchant.SupportCustomerServiceMode {
 		config.DB.
 			Joins("JOIN service_roles sr ON sr.id = technicians.service_role_id").
 			Where("technicians.merchant_id = ? AND technicians.is_active = ? AND (sr.role_type IS NULL OR sr.role_type = '' OR sr.role_type <> ?)", merchantID, true, "operational").

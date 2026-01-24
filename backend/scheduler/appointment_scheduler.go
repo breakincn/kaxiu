@@ -76,7 +76,7 @@ func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) err
 			return err
 		}
 		// 未开启客服则不做自动分配
-		if !m.SupportCustomerService {
+		if !m.SupportCustomerServiceMode {
 			return nil
 		}
 

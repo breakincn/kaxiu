@@ -40,7 +40,7 @@ func UserRevokeUsage(c *gin.Context) {
 		if u.UsedAt == nil {
 			return apiErr{status: http.StatusBadRequest, msg: "核销记录异常"}
 		}
-		if !u.Merchant.SupportCustomerService {
+		if !u.Merchant.SupportCustomerServiceMode {
 			return apiErr{status: http.StatusBadRequest, msg: "该商户无需撤销"}
 		}
 		dl := u.UsedAt.Add(12 * time.Hour)

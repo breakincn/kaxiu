@@ -707,7 +707,7 @@ func VerifyCard(c *gin.Context) {
 		if err := tx.First(&merchant, merchantID).Error; err != nil {
 			return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
 		}
-		if merchant.SupportCustomerService {
+		if merchant.SupportCustomerServiceMode {
 			usageStatus = "in_progress"
 			// 仅 staff 账号可使用“核销即结单”开关（商户老板号默认不走该开关）
 			if authType == "staff" {
@@ -811,8 +811,8 @@ func VerifyCard(c *gin.Context) {
 		}
 		usageID = usage.ID
 
-		// 未开启客服 + 未开启结单：核销即结单（不创建服务会话）
-		if !merchant.SupportCustomerService && !merchant.SupportOrderComplete {
+		// 未开启客服模式 + 未开启结单：核销即结单（不创建服务会话）
+		if !merchant.SupportCustomerServiceMode && !merchant.SupportOrderComplete {
 			finishedAt := now
 			if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
 				"status":      "success",
@@ -825,8 +825,8 @@ func VerifyCard(c *gin.Context) {
 			return nil
 		}
 
-		// 未开启客服 + 开启结单：核销即起单（创建会话并进入延迟起单）
-		if !merchant.SupportCustomerService && merchant.SupportOrderComplete {
+		// 未开启客服模式 + 开启结单：核销即起单（创建会话并进入延迟起单）
+		if !merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete {
 			// 读取项目真实时长，避免硬编码
 			var project models.MerchantProject
 			durationMinutes := 15 // 默认兜底
@@ -1116,7 +1116,7 @@ func ScanVerifyCard(c *gin.Context) {
 		if err := tx.First(&merchant, merchantID).Error; err != nil {
 			return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
 		}
-		if merchant.SupportCustomerService {
+		if merchant.SupportCustomerServiceMode {
 			usageStatus = "in_progress"
 			if authType == "staff" {
 				okVF, err := middleware.HasPermission(c, "merchant.card.verify_finish")
@@ -1213,8 +1213,8 @@ func ScanVerifyCard(c *gin.Context) {
 			}
 			usageID = usage.ID
 
-			// 未开启客服 + 未开启结单：核销即结单（不创建服务会话）
-			if !merchant.SupportCustomerService && !merchant.SupportOrderComplete {
+			// 未开启客服模式 + 未开启结单：核销即结单（不创建服务会话）
+			if !merchant.SupportCustomerServiceMode && !merchant.SupportOrderComplete {
 				finishedAt = now
 				if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
 					"status":      "success",
@@ -1227,8 +1227,8 @@ func ScanVerifyCard(c *gin.Context) {
 				return nil
 			}
 
-			// 未开启客服 + 开启结单：核销即起单（创建会话并进入延迟起单）
-			if !merchant.SupportCustomerService && merchant.SupportOrderComplete {
+			// 未开启客服模式 + 开启结单：核销即起单（创建会话并进入延迟起单）
+			if !merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete {
 				var project models.MerchantProject
 				durationMinutes := 15 // 默认兜底
 				if verifyCode.ProjectID != nil {

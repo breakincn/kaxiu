@@ -203,8 +203,8 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 				return err
 			}
-			// 若商户已关闭客服：降级为非客服流程（不再选客服/不自动分配客服），进入延迟起单
-			if !merchant.SupportCustomerService {
+			// 若商户已关闭客服模式：降级为非客服流程（不再选客服/不自动分配客服），进入延迟起单
+			if !merchant.SupportCustomerServiceMode {
 				delaySeconds := merchant.StartDelaySeconds
 				if delaySeconds <= 0 {
 					delaySeconds = 60
@@ -262,13 +262,13 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 			return nil
 		case "start_pending":
-			// 若商户已关闭客服：降级为非客服流程，进入延迟起单（避免卡在待起单/待上钟）
+			// 若商户已关闭客服模式：降级为非客服流程，进入延迟起单（避免卡在待起单/待上钟）
 			{
 				var merchant models.Merchant
 				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 					return err
 				}
-				if !merchant.SupportCustomerService {
+				if !merchant.SupportCustomerServiceMode {
 					delaySeconds := merchant.StartDelaySeconds
 					if delaySeconds <= 0 {
 						delaySeconds = 60

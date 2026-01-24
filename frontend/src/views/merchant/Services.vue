@@ -15,7 +15,12 @@
       <div v-else class="space-y-4">
         <div class="bg-white rounded-xl shadow-sm overflow-hidden">
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">开启叫号</div>
+            <div class="text-gray-800 font-medium">客服模式</div>
+            <input type="checkbox" v-model="form.support_customer_service_mode" :disabled="!form.support_customer_service" />
+          </div>
+
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="text-gray-800 font-medium">叫号模式</div>
             <input type="checkbox" v-model="form.support_queue" />
           </div>
 
@@ -54,7 +59,7 @@
             <input type="checkbox" v-model="form.support_hand_card" />
           </div>
 
-          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div class="px-4 py-4 flex items-center justify-between">
             <div class="text-gray-800 font-medium">开启房间</div>
             <input type="checkbox" v-model="form.support_room" />
           </div>
@@ -113,6 +118,7 @@ const form = ref({
   support_technician_checkin: false,
   support_direct_sale: false,
   support_customer_service: false,
+  support_customer_service_mode: false,
   support_project: false,
   support_order_complete: false,
   support_hand_card: false
@@ -155,6 +161,7 @@ const load = async () => {
       support_technician_checkin: !!m.support_technician_checkin,
       support_direct_sale: !!m.support_direct_sale,
       support_customer_service: !!m.support_customer_service,
+      support_customer_service_mode: !!m.support_customer_service_mode,
       support_project: !!m.support_project,
       support_order_complete: !!m.support_order_complete,
       support_hand_card: !!m.support_hand_card
@@ -176,6 +183,13 @@ const save = async () => {
     return
   }
 
+  // 客服模式需要先开启客服
+  if (form.value.support_customer_service_mode && !form.value.support_customer_service) {
+    alert('开启客服模式前，请先开启“开启客服”')
+    form.value.support_customer_service_mode = false
+    return
+  }
+
   saving.value = true
   try {
     await merchantApi.updateCurrentMerchantServices({
@@ -185,6 +199,7 @@ const save = async () => {
       support_technician_checkin: form.value.support_technician_checkin,
       support_direct_sale: form.value.support_direct_sale,
       support_customer_service: form.value.support_customer_service,
+      support_customer_service_mode: form.value.support_customer_service_mode,
       support_project: form.value.support_project,
       support_order_complete: form.value.support_order_complete,
       support_hand_card: form.value.support_hand_card

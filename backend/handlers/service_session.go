@@ -308,7 +308,7 @@ func ChooseServiceSessionRoom(c *gin.Context) {
 			"room_locked_at":          lockedAt,
 			"room_select_deadline_at": nil,
 		}
-		if m.SupportCustomerService {
+		if m.SupportCustomerServiceMode {
 			updates["status"] = "room_locked"
 		} else {
 			delaySeconds := s.StartDelaySeconds
