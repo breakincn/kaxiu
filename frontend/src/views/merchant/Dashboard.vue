@@ -824,9 +824,6 @@
 
       <!-- 售卡模板列表 -->
       <div v-if="currentDisplay === 'sellTemplates'">
-        <div class="mb-4" v-if="canVerify">
-          <h3 class="text-lg font-medium text-gray-800">售卡列表</h3>
-        </div>
         <div class="mb-4">
           <p class="text-sm text-gray-500">长按卡片模板生成售卡二维码</p>
         </div>
