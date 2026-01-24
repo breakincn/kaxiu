@@ -723,7 +723,7 @@
 
           <div v-if="canVerify" class="flex-1"></div>
           <button
-            v-if="(!isTechnicianAuth() && merchant.support_direct_sale) || (isTechnicianAuth() && canSellCards && canVerify)"
+            v-if="(!isTechnicianAuth() && merchant.support_direct_sale) || (isTechnicianAuth() && canSellCards)"
             type="button"
             @click="loadSellTemplates"
             class="px-4 py-2 bg-slate-600 text-white text-sm rounded-lg"
