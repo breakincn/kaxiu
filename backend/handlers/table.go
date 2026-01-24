@@ -3,6 +3,7 @@ package handlers
 import (
 	"kabao/config"
 	"kabao/models"
+	"kabao/queue"
 	"net/http"
 	"time"
 
@@ -59,6 +60,10 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 				Where("id = ? AND status = ? AND start_confirmed_at IS NULL", s.ID, "start_pending").
 				Updates(updates).Error; err != nil {
 				continue
+			}
+			if s.InitialUsageID > 0 && queue.Default != nil {
+				date := now.Format("2006-01-02")
+				queue.Default.Uncall(s.MerchantID, date, queue.QueueTypeOnsite, s.InitialUsageID)
 			}
 
 			if oldTechID != nil && *oldTechID > 0 {

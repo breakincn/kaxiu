@@ -269,27 +269,28 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	oldSupportCustomerService := merchant.SupportCustomerService
 
 	var input struct {
-		SupportAppointment       *bool   `json:"support_appointment"`
-		SupportQueue             *bool   `json:"support_queue"`
-		SupportProject           *bool   `json:"support_project"`
-		SupportRoom              *bool   `json:"support_room"`
-		SupportTechnicianCheckin *bool   `json:"support_technician_checkin"`
-		SupportDirectSale        *bool   `json:"support_direct_sale"`
-		SupportCustomerService   *bool   `json:"support_customer_service"`
-		SupportCustomerServiceMode *bool `json:"support_customer_service_mode"`
-		SupportOrderComplete     *bool   `json:"support_order_complete"`
-		StartDelaySeconds        *int    `json:"start_delay_seconds"`
-		SupportHandCard          *bool   `json:"support_hand_card"`
-		QueuePrefix              *string `json:"queue_prefix"`
-		QueueStartNo             *int    `json:"queue_start_no"`
-		QueueMode                *string `json:"queue_mode"`
-		QueueWindowTerm          *string `json:"queue_window_term"`
-		HandCardPrefix           *string `json:"hand_card_prefix"`
-		HandCardStartNo          *int    `json:"hand_card_start_no"`
-		HandCardEndNo            *int    `json:"hand_card_end_no"`
-		RoomNumberCardPrefix     *string `json:"room_number_card_prefix"`
-		RoomNumberCardStartNo    *int    `json:"room_number_card_start_no"`
-		RoomNumberCardEndNo      *int    `json:"room_number_card_end_no"`
+		SupportAppointment          *bool   `json:"support_appointment"`
+		SupportQueue                *bool   `json:"support_queue"`
+		SupportProject              *bool   `json:"support_project"`
+		SupportRoom                 *bool   `json:"support_room"`
+		SupportTechnicianCheckin    *bool   `json:"support_technician_checkin"`
+		SupportDirectSale           *bool   `json:"support_direct_sale"`
+		SupportCustomerService      *bool   `json:"support_customer_service"`
+		SupportCustomerServiceMode  *bool   `json:"support_customer_service_mode"`
+		SupportMultiCustomerService *bool   `json:"support_multi_customer_service"`
+		SupportOrderComplete        *bool   `json:"support_order_complete"`
+		StartDelaySeconds           *int    `json:"start_delay_seconds"`
+		SupportHandCard             *bool   `json:"support_hand_card"`
+		QueuePrefix                 *string `json:"queue_prefix"`
+		QueueStartNo                *int    `json:"queue_start_no"`
+		QueueMode                   *string `json:"queue_mode"`
+		QueueWindowTerm             *string `json:"queue_window_term"`
+		HandCardPrefix              *string `json:"hand_card_prefix"`
+		HandCardStartNo             *int    `json:"hand_card_start_no"`
+		HandCardEndNo               *int    `json:"hand_card_end_no"`
+		RoomNumberCardPrefix        *string `json:"room_number_card_prefix"`
+		RoomNumberCardStartNo       *int    `json:"room_number_card_start_no"`
+		RoomNumberCardEndNo         *int    `json:"room_number_card_end_no"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -325,13 +326,18 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	if input.SupportOrderComplete != nil {
 		targetSupportOrderComplete = *input.SupportOrderComplete
 	}
-	
+
 	// 本次更新后的目标客服开关，用于校验 support_customer_service_mode
 	targetSupportCustomerService := merchant.SupportCustomerService
 	if input.SupportCustomerService != nil {
 		targetSupportCustomerService = *input.SupportCustomerService
 	}
-	
+	// 本次更新后的目标客服模式开关，用于校验 support_multi_customer_service
+	targetSupportCustomerServiceMode := merchant.SupportCustomerServiceMode
+	if input.SupportCustomerServiceMode != nil {
+		targetSupportCustomerServiceMode = *input.SupportCustomerServiceMode
+	}
+
 	// 客服模式需要先开启客服
 	if input.SupportCustomerServiceMode != nil && *input.SupportCustomerServiceMode {
 		if !targetSupportCustomerService {
@@ -339,11 +345,27 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 			return
 		}
 	}
-	
+	// 多客服（多窗口）需要先开启客服模式
+	if input.SupportMultiCustomerService != nil && *input.SupportMultiCustomerService {
+		if !targetSupportCustomerServiceMode {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "开启多个客服前，请先开启\"客服模式\""})
+			return
+		}
+	}
+
 	// 关闭客服时，同步关闭客服模式
 	if input.SupportCustomerService != nil && !*input.SupportCustomerService {
 		if merchant.SupportCustomerServiceMode {
 			updates["support_customer_service_mode"] = false
+		}
+		if merchant.SupportMultiCustomerService {
+			updates["support_multi_customer_service"] = false
+		}
+	}
+	// 关闭客服模式时，同步关闭多客服
+	if input.SupportCustomerServiceMode != nil && !*input.SupportCustomerServiceMode {
+		if merchant.SupportMultiCustomerService {
+			updates["support_multi_customer_service"] = false
 		}
 	}
 	if input.SupportAppointment != nil {
@@ -369,6 +391,9 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	}
 	if input.SupportCustomerServiceMode != nil {
 		updates["support_customer_service_mode"] = *input.SupportCustomerServiceMode
+	}
+	if input.SupportMultiCustomerService != nil {
+		updates["support_multi_customer_service"] = *input.SupportMultiCustomerService
 	}
 	if input.SupportOrderComplete != nil {
 		updates["support_order_complete"] = *input.SupportOrderComplete

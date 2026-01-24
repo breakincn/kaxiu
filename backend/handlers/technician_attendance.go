@@ -4,6 +4,7 @@ import (
 	"errors"
 	"kabao/config"
 	"kabao/models"
+	"kabao/queue"
 	"net/http"
 	"time"
 
@@ -11,6 +12,63 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, now time.Time) {
+	if merchantID == 0 || technicianID == 0 {
+		return
+	}
+	if queue.Default == nil {
+		return
+	}
+
+	var merchant models.Merchant
+	if err := tx.First(&merchant, merchantID).Error; err != nil {
+		return
+	}
+	if !merchant.SupportQueue || merchant.QueueMode != "auto" {
+		return
+	}
+	if !merchant.SupportCustomerServiceMode {
+		return
+	}
+	if !merchant.SupportMultiCustomerService {
+		return
+	}
+
+	date := now.Format("2006-01-02")
+	nextUsageID := queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+	if nextUsageID == 0 {
+		return
+	}
+
+	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchantID, nextUsageID)
+	if merchant.SupportRoom {
+		q = q.Where("status IN ('room_locked','staff_selecting') AND room_id IS NOT NULL")
+	} else {
+		q = q.Where("status IN ('staff_selecting','room_locked')")
+	}
+
+	var nextSession models.ServiceSession
+	if err := q.Order("id desc").First(&nextSession).Error; err != nil {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+		return
+	}
+
+	updates := map[string]interface{}{
+		"technician_id": technicianID,
+		"status":        "start_pending",
+		"staff_select_entered_at": nil,
+		"staff_select_cooldown_until": nil,
+		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
+	}
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchantID).
+		Updates(updates).Error; err != nil {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+		return
+	}
+}
 
 func sameLocalDay(a, b time.Time) bool {
 	aa := a.In(time.Local)
@@ -90,6 +148,7 @@ func TechnicianCheckIn(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		tryAutoCallNextForTechnician(config.DB, merchantID, techID, now)
 		config.DB.Preload("Technician").First(&attendance, attendance.ID)
 		c.JSON(http.StatusOK, gin.H{"data": attendance})
 		return
@@ -106,6 +165,7 @@ func TechnicianCheckIn(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	tryAutoCallNextForTechnician(config.DB, merchantID, techID, now)
 	config.DB.Preload("Technician").First(&attendance, attendance.ID)
 	c.JSON(http.StatusOK, gin.H{"data": attendance})
 }
@@ -292,6 +352,9 @@ func UpdateTechnicianServiceStatus(c *gin.Context) {
 
 		if err := tx.Model(&models.TechnicianAttendance{}).Where("id = ?", attendance.ID).Updates(updates).Error; err != nil {
 			return err
+		}
+		if cur == "paused" && input.Status == "idle" {
+			tryAutoCallNextForTechnician(tx, merchantID, techID, now)
 		}
 		return tx.Preload("Technician").First(&out, attendance.ID).Error
 	})

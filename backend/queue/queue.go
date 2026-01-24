@@ -5,8 +5,10 @@ import (
 )
 
 type Store interface {
-	Enqueue(merchantID uint, date string, qt QueueType, id uint, startNo int, now time.Time) (Ticket, bool)
-	MarkDoneAndCallNext(merchantID uint, date string, qt QueueType, doneID uint, now time.Time) (nextID uint)
+	Enqueue(merchantID uint, date string, qt QueueType, id uint, startNo int, autoCallFirst bool, now time.Time) (Ticket, bool)
+	MarkDone(merchantID uint, date string, qt QueueType, doneID uint, now time.Time)
+	CallNextUncalled(merchantID uint, date string, qt QueueType, now time.Time) (nextID uint)
+	Uncall(merchantID uint, date string, qt QueueType, id uint)
 	Snapshot(merchantID uint, date string, qt QueueType) Snapshot
 }
 

@@ -985,7 +985,7 @@ func VerifyCard(c *gin.Context) {
 
 		if !isAppointment {
 			date := now.Format("2006-01-02")
-			tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, now)
+			tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, false, now)
 			if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
 				log.Printf("[queue-debug] verify enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchant.ID, date, usageID, created, tk.No, tk.CalledAt)
 			}
@@ -1369,7 +1369,7 @@ func ScanVerifyCard(c *gin.Context) {
 		// 事务提交后再写队列：避免 DB 回滚但队列已入队
 		// 仅限现场核销叫号：预约用户走预约队列，不进入现场叫号队列
 		if merchant.SupportQueue && shouldEnqueueOnsite && usageID > 0 {
-			now := time.Now()
+			now2 := time.Now()
 			isAppointment := false
 			var appt models.Appointment
 			// 若该卡在该商户存在“已确认”的预约，且预约时间就在当天（到店核销窗口内），则视为预约用户
@@ -1379,9 +1379,9 @@ func ScanVerifyCard(c *gin.Context) {
 				First(&appt).Error; err == nil {
 				if appt.AppointmentTime != nil {
 					at := *appt.AppointmentTime
-					if at.Format("2006-01-02") == now.Format("2006-01-02") {
+					if at.Format("2006-01-02") == now2.Format("2006-01-02") {
 						// 兼容前端 5 分钟展示核销码：这里放宽到 30 分钟内都按预约处理，避免误入现场队列
-						diff := now.Sub(at)
+						diff := now2.Sub(at)
 						if diff < 0 {
 							diff = -diff
 						}
@@ -1393,25 +1393,17 @@ func ScanVerifyCard(c *gin.Context) {
 			}
 
 			if !isAppointment {
-				date := now.Format("2006-01-02")
-				tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, now)
+				date := now2.Format("2006-01-02")
+				tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, false, now2)
 				if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
 					log.Printf("[queue-debug] scan verify enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchant.ID, date, usageID, created, tk.No, tk.CalledAt)
 				}
 			}
 		}
-
 		return
 	}
 
-	config.DB.Preload("Technician").First(&usage, usage.ID)
-	resp["usage_id"] = usage.ID
-	resp["card_id"] = usage.CardID
-	resp["finished_at"] = finishedAt.Format("2006-01-02 15:04:05")
-	resp["technician_id"] = usage.TechnicianID
-	resp["technician_code"] = usage.Technician.Code
-	resp["used_at"] = usage.UsedAt
-	c.JSON(http.StatusOK, gin.H{"message": "结单成功", "data": resp})
+	c.JSON(http.StatusOK, gin.H{"data": resp})
 }
 
 func GetTodayVerify(c *gin.Context) {

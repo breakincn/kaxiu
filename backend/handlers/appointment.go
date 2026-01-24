@@ -509,7 +509,7 @@ func ConfirmAppointment(c *gin.Context) {
 	if appointment.AppointmentTime != nil {
 		date := appointment.AppointmentTime.Format("2006-01-02")
 		now2 := time.Now()
-		queue.Default.Enqueue(appointment.MerchantID, date, queue.QueueTypeAppointment, appointment.ID, 1, now2)
+		queue.Default.Enqueue(appointment.MerchantID, date, queue.QueueTypeAppointment, appointment.ID, 1, true, now2)
 	}
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
@@ -560,7 +560,8 @@ func FinishAppointment(c *gin.Context) {
 	if appointment.AppointmentTime != nil {
 		date := appointment.AppointmentTime.Format("2006-01-02")
 		now2 := time.Now()
-		queue.Default.MarkDoneAndCallNext(appointment.MerchantID, date, queue.QueueTypeAppointment, appointment.ID, now2)
+		queue.Default.MarkDone(appointment.MerchantID, date, queue.QueueTypeAppointment, appointment.ID, now2)
+		queue.Default.CallNextUncalled(appointment.MerchantID, date, queue.QueueTypeAppointment, now2)
 	}
 	config.DB.Preload("User").Preload("Merchant").First(&appointment, id)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})

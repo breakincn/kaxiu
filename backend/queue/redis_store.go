@@ -58,7 +58,7 @@ func InitDefaultStoreFromEnv() error {
 	return nil
 }
 
-func (s *RedisStore) Enqueue(merchantID uint, date string, qt QueueType, id uint, startNo int, now time.Time) (Ticket, bool) {
+func (s *RedisStore) Enqueue(merchantID uint, date string, qt QueueType, id uint, startNo int, autoCallFirst bool, now time.Time) (Ticket, bool) {
 	if s == nil || s.c == nil {
 		return Ticket{}, false
 	}
@@ -74,7 +74,20 @@ func (s *RedisStore) Enqueue(merchantID uint, date string, qt QueueType, id uint
 
 	nowMs := now.UnixMilli()
 
-	res, err := enqueueLua.Run(s.ctx, s.c, []string{listKey, startKey, calledKey, enqKey}, strconv.FormatUint(uint64(id), 10), strconv.Itoa(startNo), strconv.FormatInt(nowMs, 10)).Result()
+	autoCall := "0"
+	if autoCallFirst {
+		autoCall = "1"
+	}
+
+	res, err := enqueueLua.Run(
+		s.ctx,
+		s.c,
+		[]string{listKey, startKey, calledKey, enqKey},
+		strconv.FormatUint(uint64(id), 10),
+		strconv.Itoa(startNo),
+		autoCall,
+		strconv.FormatInt(nowMs, 10),
+	).Result()
 	if err != nil {
 		log.Printf("[queue] redis enqueue failed: merchant=%d date=%s type=%s id=%d err=%v\n", merchantID, date, qt, id, err)
 		return Ticket{}, false
@@ -99,24 +112,45 @@ func (s *RedisStore) Enqueue(merchantID uint, date string, qt QueueType, id uint
 	return Ticket{ID: id, No: no, EnqueuedAt: enqAt, CalledAt: calledAt}, created
 }
 
-func (s *RedisStore) MarkDoneAndCallNext(merchantID uint, date string, qt QueueType, doneID uint, now time.Time) (nextID uint) {
+func (s *RedisStore) MarkDone(merchantID uint, date string, qt QueueType, doneID uint, now time.Time) {
+	if s == nil || s.c == nil {
+		return
+	}
+	k := makeKey(merchantID, date, qt)
+	doneKey := "q:done:" + k
+	nowMs := now.UnixMilli()
+	if _, err := markDoneLua.Run(s.ctx, s.c, []string{doneKey}, strconv.FormatUint(uint64(doneID), 10), strconv.FormatInt(nowMs, 10)).Result(); err != nil {
+		log.Printf("[queue] redis mark-done failed: merchant=%d date=%s type=%s done_id=%d err=%v\n", merchantID, date, qt, doneID, err)
+	}
+}
+
+func (s *RedisStore) CallNextUncalled(merchantID uint, date string, qt QueueType, now time.Time) (nextID uint) {
 	if s == nil || s.c == nil {
 		return 0
 	}
 	k := makeKey(merchantID, date, qt)
 	listKey := "q:order:" + k
 	calledKey := "q:called:" + k
-	enqKey := "q:enq:" + k
 	doneKey := "q:done:" + k
 
 	nowMs := now.UnixMilli()
-
-	res, err := doneNextLua.Run(s.ctx, s.c, []string{listKey, calledKey, enqKey, doneKey}, strconv.FormatUint(uint64(doneID), 10), strconv.FormatInt(nowMs, 10)).Result()
+	res, err := callNextLua.Run(s.ctx, s.c, []string{listKey, calledKey, doneKey}, strconv.FormatInt(nowMs, 10)).Result()
 	if err != nil {
-		log.Printf("[queue] redis done-next failed: merchant=%d date=%s type=%s done_id=%d err=%v\n", merchantID, date, qt, doneID, err)
+		log.Printf("[queue] redis call-next failed: merchant=%d date=%s type=%s err=%v\n", merchantID, date, qt, err)
 		return 0
 	}
 	return uint(toInt64(res))
+}
+
+func (s *RedisStore) Uncall(merchantID uint, date string, qt QueueType, id uint) {
+	if s == nil || s.c == nil {
+		return
+	}
+	k := makeKey(merchantID, date, qt)
+	calledKey := "q:called:" + k
+	if _, err := uncallLua.Run(s.ctx, s.c, []string{calledKey}, strconv.FormatUint(uint64(id), 10)).Result(); err != nil {
+		log.Printf("[queue] redis uncall failed: merchant=%d date=%s type=%s id=%d err=%v\n", merchantID, date, qt, id, err)
+	}
 }
 
 func (s *RedisStore) Snapshot(merchantID uint, date string, qt QueueType) Snapshot {
@@ -225,7 +259,7 @@ func (s *RedisStore) Snapshot(merchantID uint, date string, qt QueueType) Snapsh
 
 var enqueueLua = redis.NewScript(`
 -- KEYS: [listKey, startKey, calledHash, enqHash]
--- ARGV: [id, startNo, nowMs]
+-- ARGV: [id, startNo, autoCallFirst(0/1), nowMs]
 local listKey = KEYS[1]
 local startKey = KEYS[2]
 local calledKey = KEYS[3]
@@ -233,7 +267,8 @@ local enqKey = KEYS[4]
 
 local id = ARGV[1]
 local startNo = tonumber(ARGV[2])
-local nowMs = tonumber(ARGV[3])
+local autoCallFirst = tonumber(ARGV[3])
+local nowMs = tonumber(ARGV[4])
 
 if redis.call('EXISTS', startKey) == 0 then
   redis.call('SET', startKey, startNo)
@@ -253,7 +288,7 @@ end
 redis.call('RPUSH', listKey, id)
 redis.call('HSET', enqKey, id, nowMs)
 local len = redis.call('LLEN', listKey)
-if tonumber(len) == 1 then
+if autoCallFirst == 1 and tonumber(len) == 1 then
   redis.call('HSET', calledKey, id, nowMs)
   return {start, 1, nowMs, nowMs}
 end
@@ -261,48 +296,53 @@ local no = start + tonumber(len) - 1
 return {no, 1, 0, nowMs}
 `)
 
-var doneNextLua = redis.NewScript(`
--- KEYS: [listKey, calledHash, enqHash, doneHash]
+var markDoneLua = redis.NewScript(`
+-- KEYS: [doneHash]
 -- ARGV: [doneID, nowMs]
-local listKey = KEYS[1]
-local calledKey = KEYS[2]
-local enqKey = KEYS[3]
-local doneKey = KEYS[4]
-
+local doneKey = KEYS[1]
 local doneID = ARGV[1]
 local nowMs = tonumber(ARGV[2])
+redis.call('HSET', doneKey, doneID, nowMs)
+return 1
+`)
 
-local head = redis.call('LINDEX', listKey, 0)
-if not head then
+var callNextLua = redis.NewScript(`
+-- KEYS: [listKey, calledHash, doneHash]
+-- ARGV: [nowMs]
+local listKey = KEYS[1]
+local calledKey = KEYS[2]
+local doneKey = KEYS[3]
+
+local nowMs = tonumber(ARGV[1])
+
+local len = redis.call('LLEN', listKey)
+if not len or tonumber(len) <= 0 then
   return 0
 end
 
--- 不移除记录，只标记为已完成
-redis.call('HSET', doneKey, doneID, nowMs)
-
--- 找到下一个未完成的记录
-local len = redis.call('LLEN', listKey)
-local nextID = nil
-for i = 0, len - 1 do
+for i = 0, tonumber(len) - 1 do
   local id = redis.call('LINDEX', listKey, i)
   if id then
     local isDone = redis.call('HEXISTS', doneKey, id)
     if isDone == 0 then
-      nextID = id
-      break
+      local called = redis.call('HGET', calledKey, id)
+      if not called then
+        redis.call('HSET', calledKey, id, nowMs)
+        return tonumber(id)
+      end
     end
   end
 end
+return 0
+`)
 
-if not nextID then
-  return 0
-end
-
-local called = redis.call('HGET', calledKey, nextID)
-if not called then
-  redis.call('HSET', calledKey, nextID, nowMs)
-end
-return tonumber(nextID)
+var uncallLua = redis.NewScript(`
+-- KEYS: [calledHash]
+-- ARGV: [id]
+local calledKey = KEYS[1]
+local id = ARGV[1]
+redis.call('HDEL', calledKey, id)
+return 1
 `)
 
 func toInt64(v interface{}) int64 {

@@ -319,6 +319,10 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				Updates(updates).Error; err != nil {
 				return err
 			}
+			if s.InitialUsageID > 0 && queue.Default != nil {
+				date := now.Format("2006-01-02")
+				queue.Default.Uncall(s.MerchantID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+			}
 
 			// 释放技师状态
 			if s.TechnicianID != nil && *s.TechnicianID > 0 {
@@ -466,7 +470,10 @@ func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error
 	}
 	if merchant.SupportQueue && merchant.QueueMode == "auto" {
 		date := now.Format("2006-01-02")
-		queue.Default.MarkDoneAndCallNext(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
+		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
+		if !merchant.SupportMultiCustomerService {
+			queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+		}
 	}
 	return nil
 }
@@ -498,10 +505,77 @@ func releaseTechnicianIfNeeded(tx *gorm.DB, s *models.ServiceSession, now time.T
 	updates := map[string]interface{}{
 		"next_status": nil,
 	}
+	newAttStatus := "idle"
 	if att.NextStatus != nil && *att.NextStatus == "paused" {
 		updates["status"] = "paused"
+		newAttStatus = "paused"
 	} else {
 		updates["status"] = "idle"
 	}
-	return tx.Model(&models.TechnicianAttendance{}).Where("id = ?", att.ID).Updates(updates).Error
+	if err := tx.Model(&models.TechnicianAttendance{}).Where("id = ?", att.ID).Updates(updates).Error; err != nil {
+		return err
+	}
+	if newAttStatus == "idle" {
+		if err := autoCallNextForTechnician(tx, s.MerchantID, *s.TechnicianID, now); err != nil {
+			log.Printf("auto call next failed: merchant=%d tech=%d err=%v", s.MerchantID, *s.TechnicianID, err)
+		}
+	}
+	return nil
+}
+
+func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, now time.Time) error {
+	if merchantID == 0 || technicianID == 0 {
+		return nil
+	}
+	if queue.Default == nil {
+		return nil
+	}
+
+	var merchant models.Merchant
+	if err := tx.First(&merchant, merchantID).Error; err != nil {
+		return nil
+	}
+	if !merchant.SupportQueue || merchant.QueueMode != "auto" {
+		return nil
+	}
+	if !merchant.SupportCustomerServiceMode {
+		return nil
+	}
+	if !merchant.SupportMultiCustomerService {
+		return nil
+	}
+
+	date := now.Format("2006-01-02")
+	nextUsageID := queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+	if nextUsageID == 0 {
+		return nil
+	}
+
+	var nextSession models.ServiceSession
+	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchantID, nextUsageID)
+	if merchant.SupportRoom {
+		q = q.Where("status IN ('room_locked','staff_selecting') AND room_id IS NOT NULL")
+	} else {
+		q = q.Where("status IN ('staff_selecting','room_locked')")
+	}
+	if err := q.Order("id desc").First(&nextSession).Error; err != nil {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+		return nil
+	}
+
+	updates := map[string]interface{}{
+		"technician_id": technicianID,
+		"status":        "start_pending",
+		"staff_select_entered_at": nil,
+		"staff_select_cooldown_until": nil,
+		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
+	}
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchantID).
+		Updates(updates).Error; err != nil {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+		return nil
+	}
+	return nil
 }

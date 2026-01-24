@@ -38,6 +38,7 @@ type Merchant struct {
 	SupportDirectSale        bool   `json:"support_direct_sale" gorm:"default:false;comment:是否支持直购售卡（0-不支持，1-支持）"`
 	SupportCustomerService   bool   `json:"support_customer_service" gorm:"default:false;comment:是否开启客服账号设置功能（0-不开启，1-开启）"`
 	SupportCustomerServiceMode bool `json:"support_customer_service_mode" gorm:"default:false;comment:是否开启客服选择模式（0-不开启，1-开启，需先开启SupportCustomerService）"`
+	SupportMultiCustomerService bool `json:"support_multi_customer_service" gorm:"default:false;comment:是否开启多个客服（多窗口叫号）"`
 	SupportOrderComplete     bool   `json:"support_order_complete" gorm:"default:false;comment:是否开启结单功能（0-不开启，1-开启）"`
 	StartDelaySeconds        int    `json:"start_delay_seconds" gorm:"default:60;comment:核销起单延迟秒数（未开启客服但开启结单时使用）"`
 	TechnicianAlias          string `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
