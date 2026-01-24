@@ -15,16 +15,6 @@
       <div v-else class="space-y-4">
         <div class="bg-white rounded-xl shadow-sm overflow-hidden">
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">客服模式</div>
-            <input type="checkbox" v-model="form.support_customer_service_mode" :disabled="!form.support_customer_service" />
-          </div>
-
-          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">叫号模式</div>
-            <input type="checkbox" v-model="form.support_queue" />
-          </div>
-
-          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
             <div class="text-gray-800 font-medium">开启预约</div>
             <input type="checkbox" v-model="form.support_appointment" />
           </div>
@@ -41,8 +31,18 @@
 
 		  <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
 			<div class="text-gray-800 font-medium">开启客服</div>
-			<input type="checkbox" v-model="form.support_customer_service" />
+			<input type="checkbox" v-model="form.support_customer_service" @change="onCustomerServiceChange" />
 		  </div>
+
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="text-gray-800 font-medium">客服模式</div>
+            <input type="checkbox" v-model="form.support_customer_service_mode" :disabled="!form.support_customer_service" @change="onCustomerServiceModeChange" />
+          </div>
+
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="text-gray-800 font-medium">叫号模式</div>
+            <input type="checkbox" v-model="form.support_queue" @change="onQueueModeChange" />
+          </div>
 
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
             <div class="text-gray-800 font-medium">{{ replaceTerms('开启结单') }}</div>
@@ -171,6 +171,27 @@ const load = async () => {
     alert(e.response?.data?.error || '加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+const onCustomerServiceChange = () => {
+  // 关闭客服时，自动关闭客服模式
+  if (!form.value.support_customer_service) {
+    form.value.support_customer_service_mode = false
+  }
+}
+
+const onCustomerServiceModeChange = () => {
+  // 开启客服模式时，自动关闭叫号模式（互斥）
+  if (form.value.support_customer_service_mode) {
+    form.value.support_queue = false
+  }
+}
+
+const onQueueModeChange = () => {
+  // 开启叫号模式时，自动关闭客服模式（互斥）
+  if (form.value.support_queue) {
+    form.value.support_customer_service_mode = false
   }
 }
 
