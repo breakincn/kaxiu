@@ -70,10 +70,14 @@ func UpdateQueueCallingStatus(c *gin.Context) {
 	}
 
 	var input struct {
-		QueuePaused *bool `json:"queue_paused" binding:"required"`
+		QueuePaused *bool `json:"queue_paused"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if input.QueuePaused == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "queue_paused 不能为空"})
 		return
 	}
 
@@ -125,10 +129,14 @@ func UpdateTechnicianQueuePaused(c *gin.Context) {
 	}
 
 	var input struct {
-		QueuePaused *bool `json:"queue_paused" binding:"required"`
+		QueuePaused *bool `json:"queue_paused"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if input.QueuePaused == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "queue_paused 不能为空"})
 		return
 	}
 

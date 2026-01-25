@@ -1746,10 +1746,9 @@ const showQueueControlInVerify = computed(() => {
 
 // 是否显示叫号控制区域（专业客服端 - 服务标签页）
 const showQueueControlInService = computed(() => {
-  // 条件：开启了叫号 + 人工叫号 + 开启多个客服 + 有叫号权限 + 技师账号
+  // 条件：开启了叫号 + 人工叫号 + 有叫号权限 + 技师账号
   return merchant.value?.support_queue && 
          merchant.value?.queue_mode === 'manual' && 
-         merchant.value?.support_multi_customer_service &&
          canQueueCalling.value &&
          isTechnicianAuth()
 })
