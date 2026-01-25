@@ -180,6 +180,12 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.GET("/technicians/available", handlers.ListAvailableTechnicians)
 	auth.GET("/technician/attendance", handlers.GetCurrentTechnicianAttendance)
 
+	// 叫号状态管理
+	auth.GET("/queue/calling-status", middleware.RequirePermission("merchant.queue.calling"), handlers.GetQueueCallingStatus)
+	auth.PUT("/queue/calling-status", middleware.RequirePermission("merchant.queue.calling"), handlers.UpdateQueueCallingStatus)
+	auth.GET("/technician/queue-paused", middleware.RequirePermission("merchant.queue.calling"), handlers.GetTechnicianQueuePaused)
+	auth.PUT("/technician/queue-paused", middleware.RequirePermission("merchant.queue.calling"), handlers.UpdateTechnicianQueuePaused)
+
 	// 服务会话（先提供查询，后续补齐核销创建/选房/选人/预结单/加钟）
 	auth.GET("/service-sessions", handlers.ListServiceSessions)
 	auth.GET("/service-sessions/:id", handlers.GetServiceSession)

@@ -391,6 +391,37 @@
         >
           扫码核销
         </button>
+
+        <!-- 叫号控制按钮（运营客服端） -->
+        <div v-if="showQueueControlInVerify" class="mt-4 flex gap-2">
+          <button
+            @click="startMerchantQueue"
+            :disabled="queueStatusUpdating || !merchantQueuePaused"
+            :class="[
+              'flex-1 py-3 rounded-lg font-medium transition-colors',
+              merchantQueuePaused
+                ? 'bg-green-500 text-white hover:bg-green-600'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            ]"
+          >
+            {{ queueStatusUpdating ? '处理中...' : '开始叫号' }}
+          </button>
+          <button
+            @click="pauseMerchantQueue"
+            :disabled="queueStatusUpdating || merchantQueuePaused"
+            :class="[
+              'flex-1 py-3 rounded-lg font-medium transition-colors',
+              !merchantQueuePaused
+                ? 'bg-orange-500 text-white hover:bg-orange-600'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            ]"
+          >
+            {{ queueStatusUpdating ? '处理中...' : '暂停叫号' }}
+          </button>
+        </div>
+        <div v-if="showQueueControlInVerify" class="mt-2 text-center text-xs text-gray-500">
+          当前状态：{{ merchantQueuePaused ? '叫号已暂停' : '叫号进行中' }}
+        </div>
       </div>
 
       <!-- 输入核销码区域 -->
@@ -941,6 +972,47 @@
         </div>
       </div>
 
+      <!-- 叫号控制（专业客服端） -->
+      <div v-if="showQueueControlInService" class="bg-white rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="font-medium text-gray-800">叫号管理</div>
+            <div class="text-gray-500 text-sm mt-1">
+              商户叫号状态：{{ merchantQueuePaused ? '已暂停' : '进行中' }}
+              <span v-if="technicianQueuePaused" class="text-orange-500 ml-2">· 您已暂停叫号</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              v-if="merchantQueuePaused"
+              @click="startTechnicianQueue"
+              :disabled="queueStatusUpdating"
+              class="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 disabled:opacity-50"
+            >
+              {{ queueStatusUpdating ? '处理中...' : '开始叫号' }}
+            </button>
+            <template v-else>
+              <button
+                v-if="!technicianQueuePaused"
+                @click="pauseTechnicianQueue"
+                :disabled="queueStatusUpdating"
+                class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50"
+              >
+                {{ queueStatusUpdating ? '处理中...' : '暂停叫号' }}
+              </button>
+              <button
+                v-else
+                @click="resumeTechnicianQueue"
+                :disabled="queueStatusUpdating"
+                class="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 disabled:opacity-50"
+              >
+                {{ queueStatusUpdating ? '处理中...' : '恢复叫号' }}
+              </button>
+            </template>
+          </div>
+        </div>
+      </div>
+
       <!-- 房间管理入口 -->
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-center justify-between">
@@ -1096,7 +1168,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, onActivated, watch, nextTick, computed } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
-import { ensureMerchantPermissionsLoaded, merchantApi, appointmentApi, shopApi, attendanceApi, serviceSessionApi, usageApi, noticeApi, cardApi } from '../../api'
+import { ensureMerchantPermissionsLoaded, merchantApi, appointmentApi, shopApi, attendanceApi, serviceSessionApi, usageApi, noticeApi, cardApi, queueApi } from '../../api'
 import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission, getMerchantActiveAuth, getMerchantId, getTechnicianShopSlug } from '../../utils/auth'
 import { replaceTerms } from '../../utils/terms'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
@@ -1124,6 +1196,7 @@ const canNoticeManage = computed(() => hasMerchantPermission('merchant.notice.ma
 const canAppointmentView = computed(() => hasMerchantPermission('merchant.appointment.view'))
 const canAppointmentManage = computed(() => hasMerchantPermission('merchant.appointment.manage'))
 const canRoomManage = computed(() => hasMerchantPermission('merchant.service.manage'))
+const canQueueCalling = computed(() => hasMerchantPermission('merchant.queue.calling'))
 
 // 统计卡片显示个数
 const visibleStatsCount = computed(() => {
@@ -1398,6 +1471,12 @@ const attendanceStatus = ref('not_checked_in') // 用户在下拉框中选择的
 const serverAttendanceStatus = ref('not_checked_in') // 服务器中的真实状态
 const setNextPausedLoading = ref(false)
 
+// 叫号状态管理
+const merchantQueuePaused = ref(false)
+const technicianQueuePaused = ref(false)
+const queueStatusLoading = ref(false)
+const queueStatusUpdating = ref(false)
+
 const serviceSessions = ref([])
 const sessionLoading = ref(false)
 const sessionStatusFilter = ref('')
@@ -1565,6 +1644,115 @@ const goScanVerify = () => {
 const goScanStart = () => {
   router.push({ path: '/merchant/scan-verify', query: { mode: 'start' } })
 }
+
+// 叫号状态管理方法
+const fetchQueueCallingStatus = async () => {
+  if (!canQueueCalling.value) return
+  queueStatusLoading.value = true
+  try {
+    const res = await queueApi.getCallingStatus()
+    const data = res.data?.data || {}
+    merchantQueuePaused.value = !!data.queue_paused
+    if (data.technician_queue_paused !== null && data.technician_queue_paused !== undefined) {
+      technicianQueuePaused.value = !!data.technician_queue_paused
+    }
+  } catch (e) {
+    console.error('获取叫号状态失败', e)
+  } finally {
+    queueStatusLoading.value = false
+  }
+}
+
+const startMerchantQueue = async () => {
+  if (queueStatusUpdating.value) return
+  queueStatusUpdating.value = true
+  try {
+    await queueApi.updateCallingStatus(false)
+    merchantQueuePaused.value = false
+    alert('叫号已开始')
+  } catch (e) {
+    alert(e.response?.data?.error || '操作失败')
+  } finally {
+    queueStatusUpdating.value = false
+  }
+}
+
+const pauseMerchantQueue = async () => {
+  if (queueStatusUpdating.value) return
+  queueStatusUpdating.value = true
+  try {
+    await queueApi.updateCallingStatus(true)
+    merchantQueuePaused.value = true
+    alert('叫号已暂停')
+  } catch (e) {
+    alert(e.response?.data?.error || '操作失败')
+  } finally {
+    queueStatusUpdating.value = false
+  }
+}
+
+const startTechnicianQueue = async () => {
+  if (queueStatusUpdating.value) return
+  queueStatusUpdating.value = true
+  try {
+    // 专业客服点击"开始叫号"也是启动商户的整个叫号服务
+    await queueApi.updateCallingStatus(false)
+    merchantQueuePaused.value = false
+    alert('叫号已开始')
+  } catch (e) {
+    alert(e.response?.data?.error || '操作失败')
+  } finally {
+    queueStatusUpdating.value = false
+  }
+}
+
+const pauseTechnicianQueue = async () => {
+  if (queueStatusUpdating.value) return
+  queueStatusUpdating.value = true
+  try {
+    // 专业客服点击"暂停叫号"是暂停自己的叫号服务
+    await queueApi.updateTechnicianQueuePaused(true)
+    technicianQueuePaused.value = true
+    alert('您的叫号已暂停')
+  } catch (e) {
+    alert(e.response?.data?.error || '操作失败')
+  } finally {
+    queueStatusUpdating.value = false
+  }
+}
+
+const resumeTechnicianQueue = async () => {
+  if (queueStatusUpdating.value) return
+  queueStatusUpdating.value = true
+  try {
+    await queueApi.updateTechnicianQueuePaused(false)
+    technicianQueuePaused.value = false
+    alert('您的叫号已恢复')
+  } catch (e) {
+    alert(e.response?.data?.error || '操作失败')
+  } finally {
+    queueStatusUpdating.value = false
+  }
+}
+
+// 是否显示叫号控制区域（运营客服端 - 扫码核销页）
+const showQueueControlInVerify = computed(() => {
+  // 条件：开启了叫号 + 人工叫号 + 有叫号权限 + 非技师账号（运营客服或商户）
+  return merchant.value?.support_queue && 
+         merchant.value?.queue_mode === 'manual' && 
+         canQueueCalling.value &&
+         !isTechnicianAuth()
+})
+
+// 是否显示叫号控制区域（专业客服端 - 服务标签页）
+const showQueueControlInService = computed(() => {
+  // 条件：开启了叫号 + 人工叫号 + 开启多个客服 + 有叫号权限 + 技师账号
+  return merchant.value?.support_queue && 
+         merchant.value?.queue_mode === 'manual' && 
+         merchant.value?.support_multi_customer_service &&
+         canQueueCalling.value &&
+         isTechnicianAuth()
+})
 
 // 兼容旧模板引用：当前 finish tab 未启用，但需要保留方法以避免编译报错
 const goScanFinish = () => {
@@ -2963,6 +3151,9 @@ onMounted(async () => {
   if (isTechnicianAuth()) {
     await fetchCurrentAttendanceStatus()
   }
+
+  // 获取叫号状态（有权限时）
+  await fetchQueueCallingStatus()
   
   // 根据最终的 currentTab 加载对应的数据
   if (currentTab.value === 'queue') {

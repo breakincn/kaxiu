@@ -431,6 +431,9 @@ func initPermissions() {
 		{Key: "merchant.appointment.view", Name: "预约查看", Group: "预约管理", Description: "可被用户预约、查看和处理预约自己的预约", Sort: 70},
 		{Key: "merchant.appointment.manage", Name: "预约管理", Group: "预约管理", Description: "确认/完成整个店铺的预约", Sort: 71},
 
+		// 叫号管理 (80-89)
+		{Key: "merchant.queue.calling", Name: "叫号", Group: "叫号管理", Description: "启动/暂停商户或自己的叫号服务", Sort: 80},
+
 		// 权限管理 (90-99)
 		{Key: "merchant.permission.adjust", Name: "权限微调", Group: "权限管理", Description: "调整角色权限覆盖", Sort: 90},
 	}
@@ -499,7 +502,7 @@ func initRolePermissions() {
 		ensure("store_manager", p.Key)
 	}
 
-	// 前台：营业状态、通知、核销、售卡管理、售卡、发卡、预约管理
+	// 前台：营业状态、通知、核销、售卡管理、售卡、发卡、预约管理、叫号
 	frontDeskPerms := []string{
 		"merchant.business_status.manage",
 		"merchant.notice.manage",
@@ -510,6 +513,7 @@ func initRolePermissions() {
 		"merchant.appointment.manage",
 		"merchant.room.view",
 		"merchant.staff.view",
+		"merchant.queue.calling",
 	}
 	for _, pk := range frontDeskPerms {
 		ensure("front_desk", pk)

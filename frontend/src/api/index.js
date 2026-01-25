@@ -267,6 +267,15 @@ export const attendanceApi = {
   getCurrentStatus: () => api.get('/merchant/technician/attendance')
 }
 
+export const queueApi = {
+  // 叫号状态管理
+  getCallingStatus: () => api.get('/merchant/queue/calling-status'),
+  updateCallingStatus: (queuePaused) => api.put('/merchant/queue/calling-status', { queue_paused: queuePaused }),
+  // 技师自己的叫号状态
+  getTechnicianQueuePaused: () => api.get('/merchant/technician/queue-paused'),
+  updateTechnicianQueuePaused: (queuePaused) => api.put('/merchant/technician/queue-paused', { queue_paused: queuePaused })
+}
+
 export const serviceSessionApi = {
   listSessions: (params) => api.get('/merchant/service-sessions', { params }),
   getSession: (id) => api.get(`/merchant/service-sessions/${id}`),
