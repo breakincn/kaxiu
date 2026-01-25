@@ -463,18 +463,29 @@ func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error
 		return err
 	}
 
-	// 自动叫号：仅现场叫号队列生效；预约队列走预约流程
+	// 叫号逻辑：仅现场叫号队列生效；预约队列走预约流程
 	var merchant models.Merchant
 	if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 		return nil
 	}
-	if merchant.SupportQueue && merchant.QueueMode == "auto" {
-		date := now.Format("2006-01-02")
-		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
+
+	if !merchant.SupportQueue {
+		return nil
+	}
+
+	date := now.Format("2006-01-02")
+	queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
+
+	// 自动叫号模式：自动触发下一个
+	if merchant.QueueMode == "auto" {
 		if !merchant.SupportMultiCustomerService {
 			queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 		}
+		// 多客服模式下，会在 releaseTechnicianIfNeeded/autoCallNextForTechnician 中触发
 	}
+	// 手动叫号模式：不自动触发，需要客服点击"开始叫号"或者扫码结单时手动触发
+	// 手动叫号的触发在 queue_status.go 的 TriggerNextCalling 接口中实现
+
 	return nil
 }
 
@@ -535,6 +546,7 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 	if err := tx.First(&merchant, merchantID).Error; err != nil {
 		return nil
 	}
+	// 仅自动叫号模式才自动分配
 	if !merchant.SupportQueue || merchant.QueueMode != "auto" {
 		return nil
 	}
@@ -542,6 +554,19 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 		return nil
 	}
 	if !merchant.SupportMultiCustomerService {
+		return nil
+	}
+	// 商户全局暂停叫号时，不自动分配
+	if merchant.QueuePaused {
+		return nil
+	}
+
+	// 检查技师是否暂停了叫号
+	var tech models.Technician
+	if err := tx.Where("id = ? AND merchant_id = ?", technicianID, merchantID).First(&tech).Error; err != nil {
+		return nil
+	}
+	if tech.QueuePaused {
 		return nil
 	}
 

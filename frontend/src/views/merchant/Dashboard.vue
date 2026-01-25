@@ -1667,9 +1667,15 @@ const startMerchantQueue = async () => {
   if (queueStatusUpdating.value) return
   queueStatusUpdating.value = true
   try {
-    await queueApi.updateCallingStatus(false)
+    // 调用 callNext API 恢复叫号并触发下一个
+    const res = await queueApi.callNext()
     merchantQueuePaused.value = false
-    alert('叫号已开始')
+    const nextUsageId = res.data?.data?.next_usage_id
+    if (nextUsageId && nextUsageId > 0) {
+      alert('叫号已开始，已触发下一个叫号')
+    } else {
+      alert('叫号已开始（当前没有等待叫号的用户）')
+    }
   } catch (e) {
     alert(e.response?.data?.error || '操作失败')
   } finally {
@@ -1696,9 +1702,14 @@ const startTechnicianQueue = async () => {
   queueStatusUpdating.value = true
   try {
     // 专业客服点击"开始叫号"也是启动商户的整个叫号服务
-    await queueApi.updateCallingStatus(false)
+    const res = await queueApi.callNext()
     merchantQueuePaused.value = false
-    alert('叫号已开始')
+    const nextUsageId = res.data?.data?.next_usage_id
+    if (nextUsageId && nextUsageId > 0) {
+      alert('叫号已开始，已触发下一个叫号')
+    } else {
+      alert('叫号已开始（当前没有等待叫号的用户）')
+    }
   } catch (e) {
     alert(e.response?.data?.error || '操作失败')
   } finally {

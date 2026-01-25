@@ -271,6 +271,10 @@ export const queueApi = {
   // 叫号状态管理
   getCallingStatus: () => api.get('/merchant/queue/calling-status'),
   updateCallingStatus: (queuePaused) => api.put('/merchant/queue/calling-status', { queue_paused: queuePaused }),
+  // 触发下一个叫号（手动叫号模式）
+  callNext: () => api.post('/merchant/queue/call-next'),
+  // 扫码结单时触发下一个叫号
+  finishCallNext: () => api.post('/merchant/queue/finish-call-next'),
   // 技师自己的叫号状态
   getTechnicianQueuePaused: () => api.get('/merchant/technician/queue-paused'),
   updateTechnicianQueuePaused: (queuePaused) => api.put('/merchant/technician/queue-paused', { queue_paused: queuePaused })
