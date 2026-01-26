@@ -838,11 +838,14 @@ const getStartPendingTimeoutMs = (usage) => {
 }
 
 const getUsageServiceStartAtMs = (usage) => {
-  const confirmedAtMs = getUsageSessionStartConfirmedAtMs(usage)
-  if (confirmedAtMs) return confirmedAtMs
-
+  // 优先使用真正进入服务中的时间（service_session_started_at）
+  // 这才是实际的服务开始时间，而不是起单确认时间或核销时间
   const startedAtMs = getUsageSessionStartedAtMs(usage)
   if (startedAtMs) return startedAtMs
+
+  // 如果没有真正开始服务的时间，才使用起单确认时间作为兜底
+  const confirmedAtMs = getUsageSessionStartConfirmedAtMs(usage)
+  if (confirmedAtMs) return confirmedAtMs
 
   // 若未扫码起单，则按后端调度逻辑推算：updated_at + start_pending_timeout_seconds + 60s
   const sessUpdatedAtMs = getUsageSessionUpdatedAtMs(usage)
