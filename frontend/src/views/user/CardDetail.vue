@@ -902,9 +902,12 @@ const shouldShowServiceRemainTime = (usage) => {
   if (String(usage?.status || '').trim() !== 'in_progress') return false
   
   const precheckedAt = usage?.service_session_start_confirmed_at
+  const sessStatus = String(usage?.service_session_status || '').trim()
   
-  // 仅在已扫码起单确认后才显示剩余时间（避免未上钟前显示预估时间）
+  // 仅在已扫码起单确认且处于真实服务阶段时才显示剩余时间
+  // 避免“待上钟/待起单(start_pending)”阶段误显示服务剩余时长
   if (!precheckedAt) return false
+  if (sessStatus !== 'serving' && sessStatus !== 'auto_finishing') return false
   return true
 }
 
@@ -1095,7 +1098,8 @@ const getUsageStatusCountdownText = (usage) => {
         const totalSeconds = Math.floor(diff / 1000)
         const minutes = Math.floor(totalSeconds / 60)
         const seconds = totalSeconds % 60
-        return `${minutes}分${seconds}秒后重新选择客服`
+        const pad2 = (n) => String(n).padStart(2, '0')
+        return `待上钟倒计时 ${minutes}:${pad2(seconds)}`
       }
       // 超时后不显示倒计时
       return ''
