@@ -600,8 +600,16 @@ const getUsageStatusText = (usage) => {
     if (sessStatus === 'auto_finishing') return replaceTerms('待自动结单', card.value?.merchant)
     if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
     if (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') {
-      // 若客服已关闭：走不开启客服的流程，不允许再进入“待选客服”
-      if (!supportCS) return replaceTerms('待起单', card.value?.merchant)
+      // 若客服模式已关闭：走不开启客服模式的流程，不允许再进入"待选客服"
+      const merchant = card.value?.merchant
+      const supportCSMode = Boolean(merchant?.support_customer_service_mode)
+      if (!supportCSMode) {
+        // 单队列串行模式（叫号模式 + 自动叫号 + 未开启多个客服）：显示"待叫号"
+        if (merchant?.support_queue && merchant?.queue_mode === 'auto' && !merchant?.support_multi_customer_service) {
+          return '待叫号'
+        }
+        return replaceTerms('待起单', card.value?.merchant)
+      }
       return '待选客服'
     }
     // 会话已取消但 usage 仍在进行中：
@@ -618,25 +626,26 @@ const getUsageStatusText = (usage) => {
       return '上钟超时 重新选择客服'
     }
     // 上钟超时统一优先判断（避免兜底到待结单）
-    if (supportCS) {
+    const supportCSMode2 = Boolean(card.value?.merchant?.support_customer_service_mode)
+    if (supportCSMode2) {
       const cnt = Number(usage?.start_timeout_count || 0)
       if (cnt > 0 && sessStatus === 'staff_selecting' && !usage?.service_technician) {
         return '上钟超时 重新选择客服'
       }
     }
-    if (supportCS && sessStatus === 'staff_selecting') {
+    if (supportCSMode2 && sessStatus === 'staff_selecting') {
       // 已经选定/自动分配了客服：应回到待起单
       if (usage?.service_technician) return replaceTerms('待起单', card.value?.merchant)
       return '待选客服'
     }
-    if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
+    if (supportCSMode2 && sessStatus === 'start_pending' && !precheckedAt) {
       const dl = getPrecheckDeadlineAtMs(usage)
       if (dl && now < dl) return replaceTerms('待起单', card.value?.merchant)
       if (dl && now >= dl) return '上钟超时 重新选择客服'
     }
-    // 未上钟成功（未确认起单）时，永远不要进入“待下钟/待结单”兜底
-    if (supportCS && !precheckedAt) {
-      // start_pending 且已超时：应立刻显示“上钟超时 重新选择客服”（无需刷新页面）
+    // 未上钟成功（未确认起单）时，永远不要进入"待下钟/待结单"兜底
+    if (supportCSMode2 && !precheckedAt) {
+      // start_pending 且已超时：应立刻显示"上钟超时 重新选择客服"（无需刷新页面）
       if (sessStatus === 'start_pending') {
         const dl = getPrecheckDeadlineAtMs(usage)
         if (dl && now >= dl) return '上钟超时 重新选择客服'
@@ -672,24 +681,25 @@ const getUsageStatusClass = (usage) => {
       return 'text-red-500'
     }
     // 上钟超时统一优先判断（避免兜底到待结单样式）
-    if (supportCS) {
+    const supportCSMode3 = Boolean(card.value?.merchant?.support_customer_service_mode)
+    if (supportCSMode3) {
       const cnt = Number(usage?.start_timeout_count || 0)
       if (cnt > 0 && sessStatus === 'staff_selecting') {
         return 'text-red-500'
       }
     }
-    if (supportCS && sessStatus === 'staff_selecting') {
+    if (supportCSMode3 && sessStatus === 'staff_selecting') {
       return 'text-orange-500'
     }
-    if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
+    if (supportCSMode3 && sessStatus === 'start_pending' && !precheckedAt) {
       const dl = getPrecheckDeadlineAtMs(usage)
       if (dl && now < dl) return 'text-red-500'
     }
-    if (supportCS && sessStatus === 'start_pending' && !precheckedAt && getPrecheckDeadlineAtMs(usage) && now >= getPrecheckDeadlineAtMs(usage)) {
+    if (supportCSMode3 && sessStatus === 'start_pending' && !precheckedAt && getPrecheckDeadlineAtMs(usage) && now >= getPrecheckDeadlineAtMs(usage)) {
       return 'text-red-500'
     }
-    // 未上钟成功（未确认起单）时，永远不要进入“待下钟/待结单”蓝色兜底
-    if (supportCS && !precheckedAt) {
+    // 未上钟成功（未确认起单）时，永远不要进入"待下钟/待结单"蓝色兜底
+    if (supportCSMode3 && !precheckedAt) {
       return 'text-red-500'
     }
     return 'text-blue-500'

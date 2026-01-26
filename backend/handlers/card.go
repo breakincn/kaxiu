@@ -852,9 +852,18 @@ func VerifyCard(c *gin.Context) {
 				roomSelectDeadlineAt = &dl
 				nextStep = "room_select"
 			} else {
-				startConfirmedAt = &now
-				scheduledStartAt = &startAt
-				nextStep = ""
+				// 单队列串行：自动叫号 + 未开启多个客服时，核销后进入 staff_selecting 状态排队，
+				// 等叫到号后由 scheduler 推进到 delay_pending -> serving，确保串行执行。
+				if merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+					status = "staff_selecting"
+					startConfirmedAt = nil
+					scheduledStartAt = nil
+					nextStep = ""
+				} else {
+					startConfirmedAt = &now
+					scheduledStartAt = &startAt
+					nextStep = ""
+				}
 			}
 
 			session := models.ServiceSession{
@@ -877,6 +886,10 @@ func VerifyCard(c *gin.Context) {
 				return err
 			}
 			sessionID = session.ID
+			// 单队列串行：需要入现场叫号队列（仅非房间模式）
+			if merchant.SupportQueue && !merchant.SupportRoom && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+				shouldEnqueueOnsite = true
+			}
 			return nil
 		}
 
@@ -985,7 +998,12 @@ func VerifyCard(c *gin.Context) {
 
 		if !isAppointment {
 			date := now.Format("2006-01-02")
-			tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, false, now)
+			autoCallFirst := false
+			// 自动叫号 + 未开启多个客服：只有一个队列，队列空时自动叫到第一个号
+			if merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+				autoCallFirst = true
+			}
+			tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, autoCallFirst, now)
 			if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
 				log.Printf("[queue-debug] verify enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchant.ID, date, usageID, created, tk.No, tk.CalledAt)
 			}
@@ -1253,9 +1271,18 @@ func ScanVerifyCard(c *gin.Context) {
 					roomSelectDeadlineAt = &dl
 					nextStep = "room_select"
 				} else {
-					startConfirmedAt = &now
-					scheduledStartAt = &startAt
-					nextStep = ""
+					// 单队列串行：自动叫号 + 未开启多个客服时，核销后进入 staff_selecting 状态排队，
+					// 等叫到号后由 scheduler 推进到 delay_pending -> serving，确保串行执行。
+					if merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+						status = "staff_selecting"
+						startConfirmedAt = nil
+						scheduledStartAt = nil
+						nextStep = ""
+					} else {
+						startConfirmedAt = &now
+						scheduledStartAt = &startAt
+						nextStep = ""
+					}
 				}
 
 				session := models.ServiceSession{
@@ -1278,8 +1305,13 @@ func ScanVerifyCard(c *gin.Context) {
 					return err
 				}
 				sessionID = session.ID
-				// 进入服务流程才会参与现场叫号队列
-				shouldEnqueueOnsite = true
+				// 单队列串行：需要入现场叫号队列（仅非房间模式）
+				if merchant.SupportQueue && !merchant.SupportRoom && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+					shouldEnqueueOnsite = true
+				} else {
+					// 进入服务流程才会参与现场叫号队列
+					shouldEnqueueOnsite = true
+				}
 				action = "verify"
 				return nil
 			}
@@ -1394,7 +1426,12 @@ func ScanVerifyCard(c *gin.Context) {
 
 			if !isAppointment {
 				date := now2.Format("2006-01-02")
-				tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, false, now2)
+				autoCallFirst := false
+				// 自动叫号 + 未开启多个客服：只有一个队列，队列空时自动叫到第一个号
+				if merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+					autoCallFirst = true
+				}
+				tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, autoCallFirst, now2)
 				if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
 					log.Printf("[queue-debug] scan verify enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchant.ID, date, usageID, created, tk.No, tk.CalledAt)
 				}

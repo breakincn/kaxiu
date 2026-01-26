@@ -177,6 +177,49 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&s, session.ID).Error; err != nil {
 			return err
 		}
+
+		// 单队列串行启动（自动叫号 + 未开启多个客服）：
+		// 核销后会话可能被创建出来但 start_confirmed_at 为空（表示仍在排队等待）。
+		// 只有当它成为队列头(CurrentID)且已叫号(CurrentCalledAt!=nil)，并且当前没有其他进行中的会话时，
+		// 才允许写入 start_confirmed_at/scheduled_start_at 进入 delay_pending，随后再推进到 serving。
+		if s.StartConfirmedAt == nil {
+			var merchant models.Merchant
+			if err := tx.First(&merchant, s.MerchantID).Error; err == nil {
+				if merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+					if queue.Default != nil && s.InitialUsageID > 0 {
+						date := now.Format("2006-01-02")
+						snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
+						if snap.CurrentID > 0 && snap.CurrentID == s.InitialUsageID && snap.CurrentCalledAt != nil {
+							var activeCnt int64
+							if err := tx.Model(&models.ServiceSession{}).
+								Where("merchant_id = ? AND id <> ? AND status IN ('start_pending','delay_pending','serving','auto_finishing')", s.MerchantID, s.ID).
+								Count(&activeCnt).Error; err == nil {
+								if activeCnt == 0 {
+									delaySeconds := merchant.StartDelaySeconds
+									if delaySeconds <= 0 {
+										delaySeconds = 60
+									}
+									startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+									updates := map[string]interface{}{
+										"status":              "delay_pending",
+										"start_confirmed_at":  &now,
+										"scheduled_start_at":  &startAt,
+										"start_delay_seconds": delaySeconds,
+									}
+									if err := tx.Model(&models.ServiceSession{}).
+										Where("id = ? AND start_confirmed_at IS NULL AND status IN ('staff_selecting','room_locked','delay_pending')", s.ID).
+										Updates(updates).Error; err == nil {
+										s.StartConfirmedAt = &now
+										s.ScheduledStartAt = &startAt
+										s.Status = "delay_pending"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		baseAt := s.UpdatedAt
 		if baseAt == nil {
 			baseAt = s.CreatedAt
@@ -189,20 +232,20 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 
 		switch s.Status {
 		case "room_locked", "staff_selecting":
-			// 选客服超时：
-			// - 5分钟内：等待用户选择
-			// - 5分钟后：自动分配空闲最久的客服
-			// - 若无空闲客服：进入3分钟冷却，冷却后用户可再次选择
-			if s.RoomID == nil || s.TechnicianID != nil || s.RoomLockedAt == nil {
-				return nil
-			}
-			if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
-				return nil
-			}
 			var merchant models.Merchant
 			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 				return err
 			}
+			
+			// 单队列串行模式（未开启客服模式 + 自动叫号 + 未开启多个客服）：
+			// staff_selecting 状态的会话在队列中排队，等叫到号且无其他进行中会话时推进到 delay_pending
+			if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+				// 这种模式下 RoomID、TechnicianID、RoomLockedAt 都应该为 nil
+				// 不需要等待用户选择，直接由队列控制推进
+				// 推进逻辑已在前面的 start_confirmed_at 检查中处理（第 185-221 行）
+				return nil
+			}
+			
 			// 若商户已关闭客服模式：降级为非客服流程（不再选客服/不自动分配客服），进入延迟起单
 			if !merchant.SupportCustomerServiceMode {
 				delaySeconds := merchant.StartDelaySeconds
@@ -222,6 +265,18 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				return tx.Model(&models.ServiceSession{}).
 					Where("id = ? AND status IN ('room_locked','staff_selecting') AND start_confirmed_at IS NULL", s.ID).
 					Updates(updates).Error
+			}
+			
+			// 以下是开启客服模式的处理逻辑
+			// 选客服超时：
+			// - 5分钟内：等待用户选择
+			// - 5分钟后：自动分配空闲最久的客服
+			// - 若无空闲客服：进入3分钟冷却，冷却后用户可再次选择
+			if s.RoomID == nil || s.TechnicianID != nil || s.RoomLockedAt == nil {
+				return nil
+			}
+			if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
+				return nil
 			}
 			// 必须在用户进入选择客服页后才允许开始5分钟自动分配计时
 			if s.StaffSelectEnteredAt == nil {
