@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"kabao/config"
-	"kabao/queue"
 	"kabao/middleware"
 	"kabao/models"
+	"kabao/queue"
 	"log"
 	"net/http"
 	"os"
@@ -207,12 +207,12 @@ func GetUserCards(c *gin.Context) {
 		// 获取所有未过期且有剩余次数的卡片
 		query = query.Where("end_date >= ? AND remain_times > 0", dateOnlyPtr(now))
 		query.Find(&cards)
-		
+
 		// 添加逻辑：即使已过期或次数为0，但如果有未完成的核销记录，也应该显示在进行中
 		var expiredCardsWithInProgressUsage []models.Card
 		expiredQuery := config.DB.Preload("Merchant").Where("user_id = ? AND (end_date < ? OR remain_times = 0)", userID, dateOnlyPtr(now))
 		expiredQuery.Find(&expiredCardsWithInProgressUsage)
-		
+
 		// 检查每张过期卡片是否有未完成的核销记录
 		for _, card := range expiredCardsWithInProgressUsage {
 			var lastUsage models.Usage
@@ -226,7 +226,7 @@ func GetUserCards(c *gin.Context) {
 		// 获取所有过期或次数为0的卡片
 		query = query.Where("end_date < ? OR remain_times = 0", dateOnlyPtr(now))
 		query.Find(&cards)
-		
+
 		// 过滤掉有未完成核销记录的卡片（它们应该显示在进行中）
 		var filteredCards []models.Card
 		for _, card := range cards {
@@ -854,7 +854,8 @@ func VerifyCard(c *gin.Context) {
 			} else {
 				// 单队列串行：自动叫号 + 未开启多个客服时，核销后进入 staff_selecting 状态排队，
 				// 等叫到号后由 scheduler 推进到 delay_pending -> serving，确保串行执行。
-				if merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+				// 多窗口叫号：同样需要先排队，待分配到空闲技师后进入 start_pending，再扫码起单。
+				if merchant.SupportQueue && merchant.QueueMode == "auto" {
 					status = "staff_selecting"
 					startConfirmedAt = nil
 					scheduledStartAt = nil
@@ -886,8 +887,8 @@ func VerifyCard(c *gin.Context) {
 				return err
 			}
 			sessionID = session.ID
-			// 单队列串行：需要入现场叫号队列（仅非房间模式）
-			if merchant.SupportQueue && !merchant.SupportRoom && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+			// 叫号自动模式：需要入现场叫号队列（仅非房间模式）
+			if merchant.SupportQueue && !merchant.SupportRoom && merchant.QueueMode == "auto" {
 				shouldEnqueueOnsite = true
 			}
 			return nil
@@ -961,7 +962,7 @@ func VerifyCard(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "核销成功",
 		"data": gin.H{
-			"usage_id":    usageID,
+			"usage_id":     usageID,
 			"card_id":      card.ID,
 			"remain_times": remainTimes,
 			"used_at":      usedAt.Format("2006-01-02 15:04:05"),

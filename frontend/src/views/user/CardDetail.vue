@@ -603,21 +603,34 @@ const getUsageStatusText = (usage) => {
     const now = nowTick.value
     const merchant = card.value?.merchant
     
-    // 判断是否为叫号模式（未开启客服模式 + 开启叫号 + 自动叫号）
-    const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+    // 判断是否为单窗口串行叫号模式（未开启客服模式 + 开启叫号 + 自动叫号 + 未开启多个客服）
+    const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto' && !merchant?.support_multi_customer_service
+    // 多窗口叫号模式：按当天签到的专业技师数量并行，叫到号后进入 start_pending 等待扫码起单
+    const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
     
     if (sessStatus === 'finished') return '完成'
     
     // 叫号模式下 delay_pending 显示为"待扫码上号"
     if (sessStatus === 'delay_pending') {
-      if (isQueueMode) {
+      if (isQueueMode || isMultiQueueMode) {
         return '待扫码上号'
       }
       return replaceTerms('待起单', card.value?.merchant)
     }
     
     // 优先按会话状态本身展示（不要依赖当前商户开关；历史会话在关闭客服后仍需正确展示）
-    if (sessStatus === 'start_pending') return replaceTerms('待起单', card.value?.merchant)
+    if (sessStatus === 'start_pending') {
+      if (isMultiQueueMode) {
+        const term = String(merchant?.queue_window_term || '窗口')
+        const tech = usage?.service_technician
+        const wno = String(tech?.window_no || '').trim()
+        const tname = String(tech?.name || '').trim()
+        const wtxt = wno ? `${term}${wno}` : term
+        const ttxt = tname ? `（${tname}）` : ''
+        return `已分配${wtxt}${ttxt}，待扫码起单`
+      }
+      return replaceTerms('待起单', card.value?.merchant)
+    }
     if (sessStatus === 'serving') return replaceTerms('服务中', card.value?.merchant)
     if (sessStatus === 'auto_finishing') return replaceTerms('待自动结单', card.value?.merchant)
     if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
@@ -625,8 +638,8 @@ const getUsageStatusText = (usage) => {
       // 若客服模式已关闭：走不开启客服模式的流程，不允许再进入"待选客服"
       const supportCSMode = Boolean(merchant?.support_customer_service_mode)
       if (!supportCSMode) {
-        // 单队列串行模式（叫号模式 + 自动叫号 + 未开启多个客服）：显示"待叫号"
-        if (merchant?.support_queue && merchant?.queue_mode === 'auto' && !merchant?.support_multi_customer_service) {
+        // 叫号自动模式（单窗口/多窗口）：staff_selecting 统一视为排队中
+        if (merchant?.support_queue && merchant?.queue_mode === 'auto') {
           return '待叫号'
         }
         return replaceTerms('待起单', card.value?.merchant)
@@ -1548,15 +1561,16 @@ const onUsageTouchStart = (e, usage) => {
       
       // 判断是否为叫号模式（未开启客服模式 + 开启叫号 + 自动叫号）
       const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+      const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
 
       // 叫号模式下的特殊处理
-      if (isQueueMode) {
+      if (isQueueMode || isMultiQueueMode) {
         // 待叫号状态：不弹出任何内容（还在排队中）
         if (sessStatus === 'staff_selecting') {
           return
         }
-        // 待扫码上号状态：弹出二维码让客服扫码
-        if (sessStatus === 'delay_pending' && sessID) {
+        // 待扫码起单/待扫码上号状态：弹出二维码让客服扫码
+        if ((sessStatus === 'start_pending' || sessStatus === 'delay_pending') && sessID) {
           openUsageQrModal(latest)
           return
         }

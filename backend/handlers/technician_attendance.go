@@ -28,10 +28,24 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 	if !merchant.SupportQueue || merchant.QueueMode != "auto" {
 		return
 	}
-	if !merchant.SupportCustomerServiceMode {
+	if !merchant.SupportMultiCustomerService {
 		return
 	}
-	if !merchant.SupportMultiCustomerService {
+	// 多窗口叫号：不依赖客服模式开关。并发上限由当天空闲技师数量天然控制。
+	// 通过对考勤记录加行锁 + 将会话置为 start_pending(带 technician_id) 实现并发控制。
+	// 注意：不要在这里把技师置为 busy，busy 仍由扫码起单时完成（见 handleQueueModeStartScan）。
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	var att models.TechnicianAttendance
+	attRes := tx.
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, technicianID, start).
+		Order("id desc").
+		Limit(1).
+		Find(&att)
+	if attRes.Error != nil || attRes.RowsAffected == 0 {
+		return
+	}
+	if att.Status != "idle" {
 		return
 	}
 
@@ -56,10 +70,10 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 	}
 
 	updates := map[string]interface{}{
-		"technician_id": technicianID,
-		"status":        "start_pending",
-		"staff_select_entered_at": nil,
-		"staff_select_cooldown_until": nil,
+		"technician_id":                 technicianID,
+		"status":                        "start_pending",
+		"staff_select_entered_at":       nil,
+		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
 	}
 	if err := tx.Model(&models.ServiceSession{}).
@@ -411,7 +425,7 @@ func ListAvailableTechnicians(c *gin.Context) {
 func GetCurrentTechnicianAttendance(c *gin.Context) {
 	authTypeAny, _ := c.Get("auth_type")
 	authType, _ := authTypeAny.(string)
-	
+
 	merchantIDAny, ok := c.Get("merchant_id")
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
@@ -447,7 +461,7 @@ func GetCurrentTechnicianAttendance(c *gin.Context) {
 	err := config.DB.Where("merchant_id = ? AND technician_id = ? AND created_at >= ?", merchantID, technicianID, start).
 		Order("created_at DESC").
 		First(&attendance).Error
-	
+
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusOK, gin.H{"data": nil})

@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	schedulerTickInterval  = 3 * time.Second
-	schedulerBatchLimit    = 200
-	staffSelectingTimeout  = 5 * time.Minute
+	schedulerTickInterval = 3 * time.Second
+	schedulerBatchLimit   = 200
+	staffSelectingTimeout = 5 * time.Minute
 	// 房间会话超时时间, 房间会话60分钟内没选技师、没开始服务则超时,自动取消房间锁定
 	sessionAbandonTimeout = 60 * time.Minute
 )
@@ -59,7 +59,7 @@ func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Tim
 		"room_locked_at":          nil,
 		"room_select_deadline_at": nil,
 	}
-	
+
 	// 释放技师状态
 	if s.TechnicianID != nil && *s.TechnicianID > 0 {
 		if err := tx.Model(&models.TechnicianAttendance{}).
@@ -68,7 +68,7 @@ func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Tim
 			return err
 		}
 	}
-	
+
 	return tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND status IN ('room_selecting','room_locked','staff_selecting')", s.ID).
 		Updates(updates).Error
@@ -119,10 +119,10 @@ func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now t
 	}
 
 	updates := map[string]interface{}{
-		"technician_id":               cand.TechnicianID,
-		"status":                      "start_pending",
-		"staff_select_cooldown_until": nil,
-		"staff_select_entered_at":     nil,
+		"technician_id":                 cand.TechnicianID,
+		"status":                        "start_pending",
+		"staff_select_cooldown_until":   nil,
+		"staff_select_entered_at":       nil,
 		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
 	}
 	if err := tx.Model(&models.ServiceSession{}).
@@ -189,7 +189,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 					if queue.Default != nil && s.InitialUsageID > 0 {
 						date := now.Format("2006-01-02")
 						snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
-						
+
 						// 如果当前叫号为空或未被叫，且没有其他活跃会话，主动触发叫下一个号
 						if snap.CurrentID == 0 || snap.CurrentCalledAt == nil {
 							var activeCnt int64
@@ -204,7 +204,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 								}
 							}
 						}
-						
+
 						if snap.CurrentID > 0 && snap.CurrentID == s.InitialUsageID && snap.CurrentCalledAt != nil {
 							var activeCnt int64
 							if err := tx.Model(&models.ServiceSession{}).
@@ -252,7 +252,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 				return err
 			}
-			
+
 			// 单队列串行模式（未开启客服模式 + 自动叫号 + 未开启多个客服）：
 			// staff_selecting 状态的会话在队列中排队，等叫到号且无其他进行中会话时推进到 delay_pending
 			if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
@@ -261,13 +261,13 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				// 推进逻辑已在前面的 start_confirmed_at 检查中处理（笥 185-221 行）
 				return nil
 			}
-						
+
 			// 叫号模式 + 多客服：需要扫码上号，不能直接进入 delay_pending 自动开始服务
 			if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
 				// 多客服模式下，保持 staff_selecting 状态，等待 autoCallNextForTechnician 分配
 				return nil
 			}
-						
+
 			// 非叫号模式：降级为非客服流程（不再选客服/不自动分配客服），进入延迟起单
 			if !merchant.SupportCustomerServiceMode {
 				delaySeconds := merchant.StartDelaySeconds
@@ -276,19 +276,19 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				}
 				startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 				updates := map[string]interface{}{
-					"status":                    "delay_pending",
-					"technician_id":             nil,
+					"status":                      "delay_pending",
+					"technician_id":               nil,
 					"staff_select_cooldown_until": nil,
 					"staff_select_entered_at":     nil,
-					"start_confirmed_at":        &now,
-					"scheduled_start_at":        &startAt,
-					"room_select_deadline_at":   nil,
+					"start_confirmed_at":          &now,
+					"scheduled_start_at":          &startAt,
+					"room_select_deadline_at":     nil,
 				}
 				return tx.Model(&models.ServiceSession{}).
 					Where("id = ? AND status IN ('room_locked','staff_selecting') AND start_confirmed_at IS NULL", s.ID).
 					Updates(updates).Error
 			}
-			
+
 			// 以下是开启客服模式的处理逻辑
 			// 选客服超时：
 			// - 5分钟内：等待用户选择
@@ -359,12 +359,12 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 					}
 					startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 					updates := map[string]interface{}{
-						"status":              "delay_pending",
-						"technician_id":       nil,
-						"start_confirmed_at":  &now,
-						"scheduled_start_at":  &startAt,
-						"staff_select_entered_at": nil,
-						"staff_select_cooldown_until": nil,
+						"status":                        "delay_pending",
+						"technician_id":                 nil,
+						"start_confirmed_at":            &now,
+						"scheduled_start_at":            &startAt,
+						"staff_select_entered_at":       nil,
+						"staff_select_cooldown_until":   nil,
 						"start_pending_timeout_seconds": 0,
 					}
 					// 释放技师占用（如果有）
@@ -391,12 +391,12 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 
 			updates := map[string]interface{}{
-				"status":                "staff_selecting",
-				"technician_id":         nil,
-				"staff_select_entered_at": nil,
+				"status":                        "staff_selecting",
+				"technician_id":                 nil,
+				"staff_select_entered_at":       nil,
 				"start_pending_timeout_seconds": 0,
-				"start_timeout_count":   gorm.Expr("start_timeout_count + ?", 1),
-				"start_timeout_last_at": now,
+				"start_timeout_count":           gorm.Expr("start_timeout_count + ?", 1),
+				"start_timeout_last_at":         now,
 			}
 			if err := tx.Model(&models.ServiceSession{}).
 				Where("id = ? AND status = ? AND start_confirmed_at IS NULL", s.ID, "start_pending").
@@ -421,13 +421,13 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if s.StartConfirmedAt == nil {
 				return nil
 			}
-				
+
 			// 检查是否为叫号模式（非客服模式）
 			var merchant models.Merchant
 			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 				return err
 			}
-				
+
 			// 叫号模式（未开启客服模式 + 自动叫号）：需要客服扫码上号，不自动进入 serving
 			if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" {
 				// 检查是否超时：scheduled_start_at + 60秒（即原"待上钟"超时时间 + 60秒）
@@ -443,7 +443,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				// 未超时：保持 delay_pending 状态，等待客服扫码
 				return nil
 			}
-				
+
 			// 客服模式或非叫号模式：到达 scheduled_start_at 后自动进入 serving
 			if s.ScheduledStartAt != nil && !now.Before(*s.ScheduledStartAt) {
 				updates := map[string]interface{}{
@@ -471,13 +471,13 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 					return err
 				}
-				
+
 				// 叫号模式（未开启客服模式）：服务时间到达后直接进入 finished 状态
 				if !merchant.SupportCustomerServiceMode {
 					// 直接结束会话
 					return finalizeSession(tx, &s, now)
 				}
-				
+
 				// 客服模式：进入 auto_finishing 状态，延迟结单
 				finishAt := s.ScheduledFinishAt.Add(time.Duration(s.AutoFinishDelaySeconds) * time.Second)
 				updates := map[string]interface{}{
@@ -637,7 +637,7 @@ func skipCurrentAndCallNext(tx *gorm.DB, s *models.ServiceSession, merchant *mod
 			}).Error; err != nil {
 			return err
 		}
-		
+
 		// 还原卡片次数
 		var usage models.Usage
 		if err := tx.First(&usage, s.InitialUsageID).Error; err == nil {
@@ -656,7 +656,7 @@ func skipCurrentAndCallNext(tx *gorm.DB, s *models.ServiceSession, merchant *mod
 	if merchant.SupportQueue && s.InitialUsageID > 0 {
 		date := now.Format("2006-01-02")
 		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
-		
+
 		// 自动叫下一个号
 		if merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
 			queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
@@ -727,9 +727,6 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 	if !merchant.SupportQueue || merchant.QueueMode != "auto" {
 		return nil
 	}
-	if !merchant.SupportCustomerServiceMode {
-		return nil
-	}
 	if !merchant.SupportMultiCustomerService {
 		return nil
 	}
@@ -744,6 +741,22 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 		return nil
 	}
 	if tech.QueuePaused {
+		return nil
+	}
+	// 多窗口叫号：通过对考勤记录加行锁 + 将会话置为 start_pending(带 technician_id) 实现并发控制。
+	// 注意：不要在这里把技师置为 busy，busy 仍由扫码起单时完成（见 handleQueueModeStartScan）。
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	var att models.TechnicianAttendance
+	attRes := tx.
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, technicianID, start).
+		Order("id desc").
+		Limit(1).
+		Find(&att)
+	if attRes.Error != nil || attRes.RowsAffected == 0 {
+		return nil
+	}
+	if att.Status != "idle" {
 		return nil
 	}
 
@@ -767,10 +780,10 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 	}
 
 	updates := map[string]interface{}{
-		"technician_id": technicianID,
-		"status":        "start_pending",
-		"staff_select_entered_at": nil,
-		"staff_select_cooldown_until": nil,
+		"technician_id":                 technicianID,
+		"status":                        "start_pending",
+		"staff_select_entered_at":       nil,
+		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
 	}
 	if err := tx.Model(&models.ServiceSession{}).
