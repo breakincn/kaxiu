@@ -616,8 +616,11 @@ const getUsageStatusText = (usage) => {
     
     // 叫号模式下 delay_pending 显示为"待扫码上号"
     if (sessStatus === 'delay_pending') {
-      if (isQueueMode || isMultiQueueMode) {
-        return '待扫码上号'
+      if (isQueueMode) return '待扫码上号'
+      if (isMultiQueueMode) {
+        // 多窗口叫号：只有已分配到具体技师/窗口后才进入“待扫码上号”的交互
+        if (usage?.service_technician) return '待扫码上号'
+        return '待叫号'
       }
       return replaceTerms('待起单', card.value?.merchant)
     }
@@ -1384,6 +1387,10 @@ const openUsageQrModal = async (usage) => {
   
   // 叫号模式下的特殊处理：start_pending/delay_pending 都显示 SS 二维码，并轮询等待状态变化
   if ((isQueueMode || isMultiQueueMode) && sessID && (sessStatus === 'start_pending' || sessStatus === 'delay_pending')) {
+    // 多窗口叫号：delay_pending 但未分配技师时，仍在排队中，不弹出二维码
+    if (isMultiQueueMode && sessStatus === 'delay_pending' && !usage?.service_technician) {
+      return
+    }
     qrMode.value = 'start'
     qrSessionId.value = String(sessID)
     selectedUsage.value = usage

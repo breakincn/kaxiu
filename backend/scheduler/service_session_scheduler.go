@@ -418,49 +418,64 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 			return nil
 		case "delay_pending":
-			if s.StartConfirmedAt == nil {
-				return nil
-			}
+			{
+				var merchant models.Merchant
+				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+					return err
+				}
 
-			// 检查是否为叫号模式（非客服模式）
-			var merchant models.Merchant
-			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
-				return err
-			}
-
-			// 叫号模式（未开启客服模式 + 自动叫号）：需要客服扫码上号，不自动进入 serving
-			if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" {
-				// 检查是否超时：scheduled_start_at + 60秒（即原"待上钟"超时时间 + 60秒）
-				// scheduled_start_at = start_confirmed_at + start_delay_seconds（默认60秒）
-				// 所以总超时 = start_delay_seconds + 60秒 = 120秒（默认）
-				if s.ScheduledStartAt != nil {
-					timeoutAt := s.ScheduledStartAt.Add(60 * time.Second)
-					if now.After(timeoutAt) {
-						// 超时：跳过当前叫号，自动叫下一个
-						return skipCurrentAndCallNext(tx, &s, &merchant, now)
+				// 多窗口叫号：delay_pending 必须是“已分配到具体技师/窗口后”的状态。
+				// 若未分配技师却进入 delay_pending，会导致超时后被 skipCurrentAndCallNext 标记 failed。
+				// 这里强制回退到排队态 staff_selecting，并取消叫号，等待后续有技师空闲/签到后再自动分配到 start_pending。
+				if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+					if s.TechnicianID == nil || *s.TechnicianID == 0 {
+						if queue.Default != nil && s.InitialUsageID > 0 {
+							date := now.Format("2006-01-02")
+							queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+						}
+						updates := map[string]interface{}{
+							"status":                      "staff_selecting",
+							"start_confirmed_at":          nil,
+							"scheduled_start_at":          nil,
+							"technician_id":               nil,
+							"staff_select_entered_at":     nil,
+							"staff_select_cooldown_until": nil,
+						}
+						return tx.Model(&models.ServiceSession{}).
+							Where("id = ? AND status = ?", s.ID, "delay_pending").
+							Updates(updates).Error
 					}
 				}
-				// 未超时：保持 delay_pending 状态，等待客服扫码
+
+				// 叫号模式（未开启客服模式 + 自动叫号）：需要客服扫码上号，不自动进入 serving
+				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" {
+					if s.ScheduledStartAt != nil {
+						timeoutAt := s.ScheduledStartAt.Add(60 * time.Second)
+						if now.After(timeoutAt) {
+							return skipCurrentAndCallNext(tx, &s, &merchant, now)
+						}
+					}
+					return nil
+				}
+
+				// 客服模式或非叫号模式：到达 scheduled_start_at 后自动进入 serving
+				if s.ScheduledStartAt != nil && !now.Before(*s.ScheduledStartAt) {
+					updates := map[string]interface{}{
+						"status":     "serving",
+						"started_at": now,
+					}
+					if s.ScheduledFinishAt == nil {
+						if s.DurationMinutes > 0 {
+							finishAt := now.Add(time.Duration(s.DurationMinutes) * time.Minute)
+							updates["scheduled_finish_at"] = finishAt
+						}
+					}
+					return tx.Model(&models.ServiceSession{}).
+						Where("id = ? AND status = ? AND start_confirmed_at IS NOT NULL", s.ID, "delay_pending").
+						Updates(updates).Error
+				}
 				return nil
 			}
-
-			// 客服模式或非叫号模式：到达 scheduled_start_at 后自动进入 serving
-			if s.ScheduledStartAt != nil && !now.Before(*s.ScheduledStartAt) {
-				updates := map[string]interface{}{
-					"status":     "serving",
-					"started_at": now,
-				}
-				if s.ScheduledFinishAt == nil {
-					if s.DurationMinutes > 0 {
-						finishAt := now.Add(time.Duration(s.DurationMinutes) * time.Minute)
-						updates["scheduled_finish_at"] = finishAt
-					}
-				}
-				return tx.Model(&models.ServiceSession{}).
-					Where("id = ? AND status = ? AND start_confirmed_at IS NOT NULL", s.ID, "delay_pending").
-					Updates(updates).Error
-			}
-			return nil
 		case "serving":
 			if s.StartConfirmedAt == nil {
 				return nil
