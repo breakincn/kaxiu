@@ -62,7 +62,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 
 	// 叫号模式：未开启客服模式 + 开启叫号 + 自动叫号
 	isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto"
-	
+
 	if isQueueMode {
 		// 叫号模式：允许商户或工作人员扫码上号
 		// 支持两种状态：
@@ -213,6 +213,17 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 	now := time.Now()
 	var out models.ServiceSession
 
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+	var scannerTechID uint
+	if authType == "staff" {
+		techIDAny, ok := c.Get("technician_id")
+		if ok {
+			v, _ := techIDAny.(uint)
+			scannerTechID = v
+		}
+	}
+
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 		var s models.ServiceSession
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", sessionID, merchantID).First(&s).Error; err != nil {
@@ -223,9 +234,16 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 		// 1. start_pending：多客服模式，工作人员扫码起单 -> delay_pending
 		// 2. delay_pending：扫码上号 -> serving
 		if s.Status == "start_pending" {
+			// 多窗口叫号：必须由被分配的工作人员扫码起单
+			if scannerTechID == 0 {
+				return apiErr{status: http.StatusForbidden, msg: "仅工作人员可扫码起单"}
+			}
 			// 多客服模式：工作人员扫码起单
 			if s.TechnicianID == nil || *s.TechnicianID == 0 {
 				return apiErr{status: http.StatusBadRequest, msg: "该单还未分配工作人员"}
+			}
+			if *s.TechnicianID != scannerTechID {
+				return apiErr{status: http.StatusBadRequest, msg: "该单已分配其他工作人员"}
 			}
 			// 起单前校验：只有当专业客服(技师)为"空闲"才允许起单
 			start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -256,9 +274,9 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			}
 			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 			updates := map[string]interface{}{
-				"start_confirmed_at": now,
-				"scheduled_start_at": startAt,
-				"status":             "delay_pending",
+				"start_confirmed_at":            now,
+				"scheduled_start_at":            startAt,
+				"status":                        "delay_pending",
 				"start_pending_timeout_seconds": 0,
 			}
 			if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND status = ?", s.ID, "start_pending").Updates(updates).Error; err != nil {
@@ -274,6 +292,13 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			}
 			if res.RowsAffected == 0 {
 				return apiErr{status: http.StatusBadRequest, msg: "你目前在服务中，待服务完成后才可重新起单"}
+			}
+
+			// 记录本次起单的服务人员（用于“今日上钟/起单”展示）
+			if s.InitialUsageID > 0 {
+				_ = tx.Model(&models.Usage{}).
+					Where("id = ? AND merchant_id = ?", s.InitialUsageID, merchantID).
+					Update("technician_id", scannerTechID).Error
 			}
 
 			if err := tx.First(&out, s.ID).Error; err != nil {
@@ -298,6 +323,52 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			}
 			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可扫码上号"}
 		}
+		// 扫码上号：优先要求工作人员扫码；若尚未绑定工作人员，则绑定为当前扫码工作人员
+		if scannerTechID == 0 {
+			return apiErr{status: http.StatusForbidden, msg: "仅工作人员可扫码上号"}
+		}
+		if s.TechnicianID == nil || *s.TechnicianID == 0 {
+			v := scannerTechID
+			s.TechnicianID = &v
+			if err := tx.Model(&models.ServiceSession{}).
+				Where("id = ? AND merchant_id = ? AND status = ? AND technician_id IS NULL", s.ID, merchantID, "delay_pending").
+				Update("technician_id", scannerTechID).Error; err != nil {
+				return err
+			}
+		} else {
+			if *s.TechnicianID != scannerTechID {
+				return apiErr{status: http.StatusBadRequest, msg: "该单已分配其他工作人员"}
+			}
+		}
+
+		// 校验并占用技师：仅允许 idle -> busy，避免仍显示空闲
+		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		var att models.TechnicianAttendance
+		attRes := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, scannerTechID, start).
+			Order("id desc").
+			Limit(1).
+			Find(&att)
+		if attRes.Error != nil {
+			return attRes.Error
+		}
+		if attRes.RowsAffected == 0 {
+			return apiErr{status: http.StatusBadRequest, msg: "未上班签到，扫码上号失败"}
+		}
+		if att.Status != "idle" && att.Status != "busy" {
+			if att.Status == "paused" {
+				return apiErr{status: http.StatusBadRequest, msg: "你目前在暂停服务中，请更新服务状态为空闲才可继续上号"}
+			}
+			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新上号", technicianServiceStatusText(att.Status))}
+		}
+		if att.Status == "idle" {
+			if err := tx.Model(&models.TechnicianAttendance{}).
+				Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, scannerTechID, "idle").
+				Updates(map[string]interface{}{"status": "busy"}).Error; err != nil {
+				return err
+			}
+		}
 
 		// 检查是否超时
 		if s.ScheduledStartAt != nil {
@@ -320,6 +391,12 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			Where("id = ? AND status = ?", s.ID, "delay_pending").
 			Updates(updates).Error; err != nil {
 			return err
+		}
+		// 记录本次上号/服务人员（用于“今日上钟/起单”展示）
+		if s.InitialUsageID > 0 {
+			_ = tx.Model(&models.Usage{}).
+				Where("id = ? AND merchant_id = ?", s.InitialUsageID, merchantID).
+				Update("technician_id", scannerTechID).Error
 		}
 
 		if err := tx.First(&out, s.ID).Error; err != nil {
@@ -550,10 +627,10 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 			return err
 		}
 		updates := map[string]interface{}{
-			"technician_id": input.TechnicianID,
-			"status":        "start_pending",
-			"staff_select_entered_at": nil,
-			"staff_select_cooldown_until": nil,
+			"technician_id":                 input.TechnicianID,
+			"status":                        "start_pending",
+			"staff_select_entered_at":       nil,
+			"staff_select_cooldown_until":   nil,
 			"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
 		}
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {

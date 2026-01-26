@@ -553,8 +553,12 @@ const usageQrTitle = computed(() => {
   // 叫号模式下显示“扫码上号二维码”
   const merchant = card.value?.merchant
   const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+  const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
   const sessStatus = String(selectedUsage.value?.service_session_status || '').trim()
-  if (isQueueMode && sessStatus === 'delay_pending') {
+  if ((isQueueMode || isMultiQueueMode) && sessStatus === 'start_pending') {
+    return '扫码起单二维码'
+  }
+  if ((isQueueMode || isMultiQueueMode) && sessStatus === 'delay_pending') {
     return '扫码上号二维码'
   }
   
@@ -1322,8 +1326,21 @@ const trySwitchUsageQrToFinish = async () => {
   await fetchUsages()
   const latest = (usages.value || []).find(u => String(u?.service_session_id || '') === sid)
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+  const merchant = card.value?.merchant
+  const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+  const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
   const sessStatus = String(latest?.service_session_status || '').trim()
   const precheckedAt = latest?.service_session_start_confirmed_at
+
+  // 叫号模式：一旦进入 serving，说明扫码上号完成，自动关闭弹窗
+  if (isQueueMode || isMultiQueueMode) {
+    if (sessStatus === 'serving' || sessStatus === 'finished' || sessStatus === 'canceled') {
+      stopUsageQrPoll()
+      closeUsageQrModal()
+      return
+    }
+    return
+  }
   if (supportCS && sessStatus === 'canceled' && !precheckedAt && !latest?.service_technician) {
     stopUsageQrPoll()
     closeUsageQrModal()
@@ -1363,15 +1380,24 @@ const openUsageQrModal = async (usage) => {
   
   // 判断是否为叫号模式（未开启客服模式 + 开启叫号 + 自动叫号）
   const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+  const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
   
-  // 叫号模式下的特殊处理：delay_pending 状态显示扫码上号二维码
-  if (isQueueMode && sessID && sessStatus === 'delay_pending') {
+  // 叫号模式下的特殊处理：start_pending/delay_pending 都显示 SS 二维码，并轮询等待状态变化
+  if ((isQueueMode || isMultiQueueMode) && sessID && (sessStatus === 'start_pending' || sessStatus === 'delay_pending')) {
     qrMode.value = 'start'
     qrSessionId.value = String(sessID)
     selectedUsage.value = usage
     showUsageQrModal.value = true
     usageQrDataUrl.value = ''
     usagePrecheckDone.value = false
+    usageQrPollSessionId = String(sessID)
+    usageQrPollTimer = setInterval(() => {
+      if (!showUsageQrModal.value || qrMode.value !== 'start') {
+        stopUsageQrPoll()
+        return
+      }
+      trySwitchUsageQrToFinish()
+    }, 1200)
     try {
       usageQrDataUrl.value = await QRCode.toDataURL(`SS:${sessID}`, {
         margin: 1,
