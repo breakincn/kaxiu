@@ -258,11 +258,17 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
 				// 这种模式下 RoomID、TechnicianID、RoomLockedAt 都应该为 nil
 				// 不需要等待用户选择，直接由队列控制推进
-				// 推进逻辑已在前面的 start_confirmed_at 检查中处理（第 185-221 行）
+				// 推进逻辑已在前面的 start_confirmed_at 检查中处理（笥 185-221 行）
 				return nil
 			}
-			
-			// 若商户已关闭客服模式：降级为非客服流程（不再选客服/不自动分配客服），进入延迟起单
+						
+			// 叫号模式 + 多客服：需要扫码上号，不能直接进入 delay_pending 自动开始服务
+			if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+				// 多客服模式下，保持 staff_selecting 状态，等待 autoCallNextForTechnician 分配
+				return nil
+			}
+						
+			// 非叫号模式：降级为非客服流程（不再选客服/不自动分配客服），进入延迟起单
 			if !merchant.SupportCustomerServiceMode {
 				delaySeconds := merchant.StartDelaySeconds
 				if delaySeconds <= 0 {
@@ -339,6 +345,13 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 					return err
 				}
+				// 叫号模式（未开启客服模式 + 自动叫号）：不能自动进入 delay_pending，保持 start_pending 状态等待扫码起单
+				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" {
+					// 保持 start_pending 状态，等待工作人员扫码起单
+					// 不进行自动降级处理
+					return nil
+				}
+				// 非叫号模式：降级为非客服流程
 				if !merchant.SupportCustomerServiceMode {
 					delaySeconds := merchant.StartDelaySeconds
 					if delaySeconds <= 0 {

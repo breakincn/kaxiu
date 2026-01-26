@@ -65,6 +65,9 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 	
 	if isQueueMode {
 		// 叫号模式：允许商户或工作人员扫码上号
+		// 支持两种状态：
+		// 1. delay_pending：单队列串行模式，扫码上号
+		// 2. start_pending：多客服模式，工作人员扫码起单后进入 delay_pending，再扫码上号
 		return handleQueueModeStartScan(c, uint(sid64), merchantID, &merchant)
 	}
 
@@ -216,7 +219,70 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			return err
 		}
 
-		// 叫号模式下，只有 delay_pending 状态才能扫码上号
+		// 叫号模式下，支持两种状态：
+		// 1. start_pending：多客服模式，工作人员扫码起单 -> delay_pending
+		// 2. delay_pending：扫码上号 -> serving
+		if s.Status == "start_pending" {
+			// 多客服模式：工作人员扫码起单
+			if s.TechnicianID == nil || *s.TechnicianID == 0 {
+				return apiErr{status: http.StatusBadRequest, msg: "该单还未分配工作人员"}
+			}
+			// 起单前校验：只有当专业客服(技师)为"空闲"才允许起单
+			start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+			var att models.TechnicianAttendance
+			attRes := tx.
+				Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, *s.TechnicianID, start).
+				Order("id desc").
+				Limit(1).
+				Find(&att)
+			if attRes.Error != nil {
+				return attRes.Error
+			}
+			if attRes.RowsAffected == 0 {
+				return apiErr{status: http.StatusBadRequest, msg: "未上班签到，扫码起单失败"}
+			}
+			if att.Status != "idle" {
+				if att.Status == "paused" {
+					return apiErr{status: http.StatusBadRequest, msg: "你目前在暂停服务中，请更新服务状态为空闲才可继续起单"}
+				}
+				return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新起单", technicianServiceStatusText(att.Status))}
+			}
+
+			// start_pending -> delay_pending
+			delaySeconds := s.StartDelaySeconds
+			if delaySeconds <= 0 {
+				delaySeconds = 60
+			}
+			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+			updates := map[string]interface{}{
+				"start_confirmed_at": now,
+				"scheduled_start_at": startAt,
+				"status":             "delay_pending",
+				"start_pending_timeout_seconds": 0,
+			}
+			if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND status = ?", s.ID, "start_pending").Updates(updates).Error; err != nil {
+				return err
+			}
+
+			// 起单成功后占用技师：仅允许 idle -> busy，避免并发重复起单
+			res := tx.Model(&models.TechnicianAttendance{}).
+				Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, *s.TechnicianID, "idle").
+				Updates(map[string]interface{}{"status": "busy"})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return apiErr{status: http.StatusBadRequest, msg: "你目前在服务中，待服务完成后才可重新起单"}
+			}
+
+			if err := tx.First(&out, s.ID).Error; err != nil {
+				return err
+			}
+			return nil
+		}
+
+		// delay_pending 状态：扫码上号
 		if s.Status != "delay_pending" {
 			if s.Status == "serving" {
 				return apiErr{status: http.StatusBadRequest, msg: "已开始服务，无需重复扫码"}
@@ -276,11 +342,16 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 		return true
 	}
 
+	// 根据会话状态返回不同的消息
+	message := "上号成功，服务已开始"
+	if out.Status == "delay_pending" {
+		message = "起单成功，请再次扫码上号"
+	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
 		"action":     "start",
 		"session_id": out.ID,
 		"session":    out,
-		"message":    "上号成功，服务已开始",
+		"message":    message,
 	}})
 	return true
 }
