@@ -415,9 +415,11 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				return err
 			}
 				
-			// 叫号模式（未开启客服模式）：需要客服扫码上号，不自动进入 serving
+			// 叫号模式（未开启客服模式 + 自动叫号）：需要客服扫码上号，不自动进入 serving
 			if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" {
-				// 检查是否超时：scheduled_start_at + 60秒
+				// 检查是否超时：scheduled_start_at + 60秒（即原"待上钟"超时时间 + 60秒）
+				// scheduled_start_at = start_confirmed_at + start_delay_seconds（默认60秒）
+				// 所以总超时 = start_delay_seconds + 60秒 = 120秒（默认）
 				if s.ScheduledStartAt != nil {
 					timeoutAt := s.ScheduledStartAt.Add(60 * time.Second)
 					if now.After(timeoutAt) {
@@ -425,7 +427,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 						return skipCurrentAndCallNext(tx, &s, &merchant, now)
 					}
 				}
-				// 未超时且未扫码：保持 delay_pending 状态，等待客服扫码
+				// 未超时：保持 delay_pending 状态，等待客服扫码
 				return nil
 			}
 				
