@@ -53,6 +53,22 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		return true
 	}
 
+	// 查询商户信息判断模式
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return true
+	}
+
+	// 叫号模式：未开启客服模式 + 开启叫号 + 自动叫号
+	isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto"
+	
+	if isQueueMode {
+		// 叫号模式：允许商户或工作人员扫码上号
+		return handleQueueModeStartScan(c, uint(sid64), merchantID, &merchant)
+	}
+
+	// 客服模式：仅工作人员可起单
 	authTypeAny, _ := c.Get("auth_type")
 	authType, _ := authTypeAny.(string)
 	if authType != "staff" {
@@ -79,11 +95,6 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			return err
 		}
 
-		var merchant models.Merchant
-		if err := tx.First(&merchant, merchantID).Error; err != nil {
-			return err
-		}
-
 		if merchant.SupportRoom && s.RoomID == nil {
 			if err := assignRoomIfPossible(tx, &s, now); err != nil {
 				return err
@@ -104,7 +115,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			return apiErr{status: http.StatusBadRequest, msg: "未选择工作人员"}
 		}
 
-		// 起单前校验：只有当专业客服(技师)为“空闲”才允许起单
+		// 起单前校验：只有当专业客服(技师)为"空闲"才允许起单
 		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		var att models.TechnicianAttendance
 		attRes := tx.
@@ -190,6 +201,86 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		"action":     "start",
 		"session_id": out.ID,
 		"session":    out,
+	}})
+	return true
+}
+
+// handleQueueModeStartScan 叫号模式下的扫码上号处理
+func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, merchant *models.Merchant) bool {
+	now := time.Now()
+	var out models.ServiceSession
+
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		var s models.ServiceSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", sessionID, merchantID).First(&s).Error; err != nil {
+			return err
+		}
+
+		// 叫号模式下，只有 delay_pending 状态才能扫码上号
+		if s.Status != "delay_pending" {
+			if s.Status == "serving" {
+				return apiErr{status: http.StatusBadRequest, msg: "已开始服务，无需重复扫码"}
+			}
+			if s.Status == "finished" {
+				return apiErr{status: http.StatusBadRequest, msg: "服务已完成"}
+			}
+			if s.Status == "canceled" {
+				return apiErr{status: http.StatusBadRequest, msg: "服务已取消"}
+			}
+			if s.Status == "staff_selecting" {
+				return apiErr{status: http.StatusBadRequest, msg: "该号还在排队中，请等待叫号"}
+			}
+			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可扫码上号"}
+		}
+
+		// 检查是否超时
+		if s.ScheduledStartAt != nil {
+			timeoutAt := s.ScheduledStartAt.Add(60 * time.Second)
+			if now.After(timeoutAt) {
+				return apiErr{status: http.StatusBadRequest, msg: "上号超时，该号已被跳过"}
+			}
+		}
+
+		// 直接推进到 serving 状态
+		updates := map[string]interface{}{
+			"status":     "serving",
+			"started_at": now,
+		}
+		if s.DurationMinutes > 0 {
+			finishAt := now.Add(time.Duration(s.DurationMinutes) * time.Minute)
+			updates["scheduled_finish_at"] = finishAt
+		}
+		if err := tx.Model(&models.ServiceSession{}).
+			Where("id = ? AND status = ?", s.ID, "delay_pending").
+			Updates(updates).Error; err != nil {
+			return err
+		}
+
+		if err := tx.First(&out, s.ID).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return true
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "会话不存在"})
+			return true
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return true
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"action":     "start",
+		"session_id": out.ID,
+		"session":    out,
+		"message":    "上号成功，服务已开始",
 	}})
 	return true
 }

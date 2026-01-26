@@ -549,6 +549,15 @@ const precheckCode = computed(() => {
 
 const usageQrTitle = computed(() => {
   if (isPrecheckModal.value && usagePrecheckDone.value) return '即将进入服务'
+  
+  // 叫号模式下显示“扫码上号二维码”
+  const merchant = card.value?.merchant
+  const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+  const sessStatus = String(selectedUsage.value?.service_session_status || '').trim()
+  if (isQueueMode && sessStatus === 'delay_pending') {
+    return '扫码上号二维码'
+  }
+  
   return replaceTerms('起单二维码', card.value?.merchant)
 })
 
@@ -592,16 +601,28 @@ const getUsageStatusText = (usage) => {
     const sessStatus = String(usage?.service_session_status || '').trim()
     const precheckedAt = usage?.service_session_start_confirmed_at
     const now = nowTick.value
+    const merchant = card.value?.merchant
+    
+    // 判断是否为叫号模式（未开启客服模式 + 开启叫号 + 自动叫号）
+    const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+    
     if (sessStatus === 'finished') return '完成'
+    
+    // 叫号模式下 delay_pending 显示为"待扫码上号"
+    if (sessStatus === 'delay_pending') {
+      if (isQueueMode) {
+        return '待扫码上号'
+      }
+      return replaceTerms('待起单', card.value?.merchant)
+    }
+    
     // 优先按会话状态本身展示（不要依赖当前商户开关；历史会话在关闭客服后仍需正确展示）
-    if (sessStatus === 'delay_pending') return replaceTerms('待起单', card.value?.merchant)
     if (sessStatus === 'start_pending') return replaceTerms('待起单', card.value?.merchant)
     if (sessStatus === 'serving') return replaceTerms('服务中', card.value?.merchant)
     if (sessStatus === 'auto_finishing') return replaceTerms('待自动结单', card.value?.merchant)
     if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
     if (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') {
       // 若客服模式已关闭：走不开启客服模式的流程，不允许再进入"待选客服"
-      const merchant = card.value?.merchant
       const supportCSMode = Boolean(merchant?.support_customer_service_mode)
       if (!supportCSMode) {
         // 单队列串行模式（叫号模式 + 自动叫号 + 未开启多个客服）：显示"待叫号"
@@ -613,7 +634,7 @@ const getUsageStatusText = (usage) => {
       return '待选客服'
     }
     // 会话已取消但 usage 仍在进行中：
-    // - 若房间/客服均已释放：视为“超时未选择客服”，需重新选择房间
+    // - 若房间/客服均已释放：视为"超时未选择客服"，需重新选择房间
     // - 否则：视为上钟超时，需重新选择客服
     if (sessStatus === 'canceled' && !precheckedAt) {
       if (supportRoom && !usage?.service_room && !usage?.service_technician) {
@@ -625,7 +646,7 @@ const getUsageStatusText = (usage) => {
       }
       return '上钟超时 重新选择客服'
     }
-    // 上钟超时统一优先判断（避免兜底到待结单）
+    // 上钟超时统一优先判断（避免兗底到待结单）
     const supportCSMode2 = Boolean(card.value?.merchant?.support_customer_service_mode)
     if (supportCSMode2) {
       const cnt = Number(usage?.start_timeout_count || 0)
@@ -643,7 +664,7 @@ const getUsageStatusText = (usage) => {
       if (dl && now < dl) return replaceTerms('待起单', card.value?.merchant)
       if (dl && now >= dl) return '上钟超时 重新选择客服'
     }
-    // 未上钟成功（未确认起单）时，永远不要进入"待下钟/待结单"兜底
+    // 未上钟成功（未确认起单）时，永远不要进入"待下钟/待结单"兗底
     if (supportCSMode2 && !precheckedAt) {
       // start_pending 且已超时：应立刻显示"上钟超时 重新选择客服"（无需刷新页面）
       if (sessStatus === 'start_pending') {
@@ -1321,10 +1342,34 @@ const openUsageQrModal = async (usage) => {
   qrSessionId.value = ''
   usagePrecheckDone.value = false
 
-  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+  const merchant = card.value?.merchant
+  const supportCS = Boolean(merchant?.support_customer_service)
   const sessID = usage?.service_session_id
   const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_start_confirmed_at
+  
+  // 判断是否为叫号模式（未开启客服模式 + 开启叫号 + 自动叫号）
+  const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+  
+  // 叫号模式下的特殊处理：delay_pending 状态显示扫码上号二维码
+  if (isQueueMode && sessID && sessStatus === 'delay_pending') {
+    qrMode.value = 'start'
+    qrSessionId.value = String(sessID)
+    selectedUsage.value = usage
+    showUsageQrModal.value = true
+    usageQrDataUrl.value = ''
+    usagePrecheckDone.value = false
+    try {
+      usageQrDataUrl.value = await QRCode.toDataURL(`SS:${sessID}`, {
+        margin: 1,
+        scale: 8,
+        errorCorrectionLevel: 'M'
+      })
+    } catch (_) {
+      // ignore
+    }
+    return
+  }
 
     // 会话已取消但 usage 仍在进行中：起单二维码失效（不自动跳转，改为长按记录进入重新选客服）
   if (supportCS && sessID && sessStatus === 'canceled' && !precheckedAt && !usage?.service_technician) {
@@ -1494,11 +1539,32 @@ const onUsageTouchStart = (e, usage) => {
       }
       const latest = (usages.value || []).find(u => Number(u?.id) === Number(usage?.id)) || usage
 
-      const supportRoom = Boolean(card.value?.merchant?.support_room)
-      const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+      const merchant = card.value?.merchant
+      const supportRoom = Boolean(merchant?.support_room)
+      const supportCS = Boolean(merchant?.support_customer_service)
       const sessStatus = String(latest?.service_session_status || '').trim()
       const sessID = latest?.service_session_id
       const precheckedAt = latest?.service_session_start_confirmed_at
+      
+      // 判断是否为叫号模式（未开启客服模式 + 开启叫号 + 自动叫号）
+      const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+
+      // 叫号模式下的特殊处理
+      if (isQueueMode) {
+        // 待叫号状态：不弹出任何内容（还在排队中）
+        if (sessStatus === 'staff_selecting') {
+          return
+        }
+        // 待扫码上号状态：弹出二维码让客服扫码
+        if (sessStatus === 'delay_pending' && sessID) {
+          openUsageQrModal(latest)
+          return
+        }
+        // 服务中/已完成等状态：不弹出二维码
+        if (sessStatus === 'serving' || sessStatus === 'finished' || sessStatus === 'canceled') {
+          return
+        }
+      }
 
       // 选客服冷却期：提示并不跳转
       const cooldownUntil = latest?.staff_select_cooldown_until

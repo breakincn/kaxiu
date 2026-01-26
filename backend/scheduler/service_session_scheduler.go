@@ -189,6 +189,22 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 					if queue.Default != nil && s.InitialUsageID > 0 {
 						date := now.Format("2006-01-02")
 						snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
+						
+						// 如果当前叫号为空或未被叫，且没有其他活跃会话，主动触发叫下一个号
+						if snap.CurrentID == 0 || snap.CurrentCalledAt == nil {
+							var activeCnt int64
+							if err := tx.Model(&models.ServiceSession{}).
+								Where("merchant_id = ? AND status IN ('start_pending','delay_pending','serving','auto_finishing')", s.MerchantID).
+								Count(&activeCnt).Error; err == nil {
+								if activeCnt == 0 {
+									// 没有活跃会话，尝试叫下一个号
+									queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+									// 重新获取 Snapshot
+									snap = queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
+								}
+							}
+						}
+						
 						if snap.CurrentID > 0 && snap.CurrentID == s.InitialUsageID && snap.CurrentCalledAt != nil {
 							var activeCnt int64
 							if err := tx.Model(&models.ServiceSession{}).
@@ -392,6 +408,28 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if s.StartConfirmedAt == nil {
 				return nil
 			}
+				
+			// 检查是否为叫号模式（非客服模式）
+			var merchant models.Merchant
+			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+				return err
+			}
+				
+			// 叫号模式（未开启客服模式）：需要客服扫码上号，不自动进入 serving
+			if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" {
+				// 检查是否超时：scheduled_start_at + 60秒
+				if s.ScheduledStartAt != nil {
+					timeoutAt := s.ScheduledStartAt.Add(60 * time.Second)
+					if now.After(timeoutAt) {
+						// 超时：跳过当前叫号，自动叫下一个
+						return skipCurrentAndCallNext(tx, &s, &merchant, now)
+					}
+				}
+				// 未超时且未扫码：保持 delay_pending 状态，等待客服扫码
+				return nil
+			}
+				
+			// 客服模式或非叫号模式：到达 scheduled_start_at 后自动进入 serving
 			if s.ScheduledStartAt != nil && !now.Before(*s.ScheduledStartAt) {
 				updates := map[string]interface{}{
 					"status":     "serving",
@@ -553,8 +591,62 @@ func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error
 		}
 		// 多客服模式下，会在 releaseTechnicianIfNeeded/autoCallNextForTechnician 中触发
 	}
-	// 手动叫号模式：不自动触发，需要客服点击"开始叫号"或者扫码结单时手动触发
+	// 手动叫号模式：不自动触发，需要客服点击“开始叫号”或者扫码结单时手动触发
 	// 手动叫号的触发在 queue_status.go 的 TriggerNextCalling 接口中实现
+
+	return nil
+}
+
+// skipCurrentAndCallNext 叫号模式下超时未扫码上号，跳过当前叫号并自动叫下一个
+func skipCurrentAndCallNext(tx *gorm.DB, s *models.ServiceSession, merchant *models.Merchant, now time.Time) error {
+	// 将当前会话状态置为 canceled
+	updates := map[string]interface{}{
+		"status":             "canceled",
+		"finished_at":        now,
+		"start_confirmed_at": nil,
+		"scheduled_start_at": nil,
+	}
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND status = ?", s.ID, "delay_pending").
+		Updates(updates).Error; err != nil {
+		return err
+	}
+
+	// 更新 usage 状态为 failed（超时未上号）
+	if s.InitialUsageID > 0 {
+		if err := tx.Model(&models.Usage{}).
+			Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
+			Updates(map[string]interface{}{
+				"status":      "failed",
+				"finished_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		
+		// 还原卡片次数
+		var usage models.Usage
+		if err := tx.First(&usage, s.InitialUsageID).Error; err == nil {
+			if err := tx.Model(&models.Card{}).
+				Where("id = ?", usage.CardID).
+				Updates(map[string]interface{}{
+					"remain_times": gorm.Expr("remain_times + ?", usage.UsedTimes),
+					"used_times":   gorm.Expr("used_times - ?", usage.UsedTimes),
+				}).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	// 在队列中标记当前号为已完成（跳过）
+	if merchant.SupportQueue && s.InitialUsageID > 0 {
+		date := now.Format("2006-01-02")
+		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
+		
+		// 自动叫下一个号
+		if merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+			queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+		}
+	}
 
 	return nil
 }
