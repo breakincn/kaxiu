@@ -1538,7 +1538,9 @@ const onUsageTouchStart = (e, usage) => {
           router.push({ path: `/user/service-sessions/${sessID}`, query: { next_step: 'room_select' } })
           return
         }
-			if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) {
+			// 只有客服模式下才允许跳转到选择客服页面
+			const supportCSMode = Boolean(card.value?.merchant?.support_customer_service_mode)
+			if (supportCSMode && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) {
 				router.push({
 					path: `/user/service-sessions/${sessID}`,
 					query: { next_step: 'staff_select', usage_id: String(latest?.id || ''), can_revoke: latest?.can_revoke ? '1' : '0' }

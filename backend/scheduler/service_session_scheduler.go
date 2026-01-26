@@ -413,6 +413,19 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				return nil
 			}
 			if s.ScheduledFinishAt != nil && now.After(*s.ScheduledFinishAt) {
+				// 检查是否为叫号模式（非客服模式）
+				var merchant models.Merchant
+				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+					return err
+				}
+				
+				// 叫号模式（未开启客服模式）：服务时间到达后直接进入 finished 状态
+				if !merchant.SupportCustomerServiceMode {
+					// 直接结束会话
+					return finalizeSession(tx, &s, now)
+				}
+				
+				// 客服模式：进入 auto_finishing 状态，延迟结单
 				finishAt := s.ScheduledFinishAt.Add(time.Duration(s.AutoFinishDelaySeconds) * time.Second)
 				updates := map[string]interface{}{
 					"status":      "auto_finishing",
