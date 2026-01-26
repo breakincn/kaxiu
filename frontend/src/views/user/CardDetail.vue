@@ -880,20 +880,13 @@ const getUsageServiceStartAtText = (usage) => {
 const shouldShowServiceStartTime = (usage) => {
   if (String(usage?.status || '').trim() !== 'in_progress') return false
   
-  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_start_confirmed_at
   
-  // 如果支持客服且处于待起单状态且未确认起单，则不显示服务开始时间
-  // 因为此时显示的是预估时间，不是实际开始时间
-  if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
-    return false
-  }
-
-  // 会话已取消但 usage 仍在进行中：不显示预估开始时间
-  if (supportCS && sessStatus === 'canceled' && !precheckedAt) {
-    return false
-  }
+  // 仅在真正进入服务中(serving)后才显示服务开始时间
+  // 避免在待上钟/待起单(start_pending)阶段显示预估时间
+  if (sessStatus !== 'serving' && sessStatus !== 'auto_finishing') return false
+  if (!precheckedAt) return false
   
   return true
 }
