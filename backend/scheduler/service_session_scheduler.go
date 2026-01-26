@@ -499,8 +499,10 @@ func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error
 	if s.FinishedAt == nil {
 		updates["finished_at"] = now
 	}
+	// 支持从 serving 或 auto_finishing 状态结束会话
+	// 叫号模式下从 serving 直接结束，客服模式下从 auto_finishing 结束
 	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status = ? AND start_confirmed_at IS NOT NULL", s.ID, "auto_finishing").
+		Where("id = ? AND status IN ('serving','auto_finishing') AND start_confirmed_at IS NOT NULL", s.ID).
 		Updates(updates).Error; err != nil {
 		return err
 	}
