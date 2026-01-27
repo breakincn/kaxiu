@@ -1008,6 +1008,14 @@
               >
                 {{ queueStatusUpdating ? '处理中...' : '恢复叫号' }}
               </button>
+              <button
+                v-if="shouldShowContinueCall"
+                @click="doContinueCall"
+                :disabled="continueCallLoading || queueStatusUpdating"
+                class="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
+              >
+                {{ continueCallLoading ? '处理中...' : '继续叫号' }}
+              </button>
             </template>
           </div>
         </div>
@@ -1483,6 +1491,49 @@ const queueEndedAt = ref(null)
 const isQueueEnded = computed(() => {
   return !isInBusinessHours.value && !!queueEndedAt.value
 })
+
+// 继续叫号按钮可见性规则（专业客服端）
+const shouldShowContinueCall = computed(() => {
+  if (!merchant.value) return false
+  if (!merchant.value.support_queue) return false
+  if (merchant.value.queue_mode !== 'manual') return false
+  if (isQueueEnded.value) return false
+  if (technicianQueuePaused.value) return false
+  if (merchantQueuePaused.value) return false
+  // 检查是否有处于 serving 状态且已超时的会话（超时后可见）
+  const techId = getTechnicianId()
+  if (!techId) return false
+  const now = new Date()
+  const servingSession = serviceSessions.value.find(s => 
+    s.technician_id === techId && 
+    s.status === 'serving' && 
+    s.started_at && 
+    new Date(s.started_at).getTime() < now.getTime() - 4 * 60 * 60 * 1000 // 4小时超时
+  )
+  return !!servingSession
+})
+
+const continueCallLoading = ref(false)
+
+const doContinueCall = async () => {
+  if (continueCallLoading.value) return
+  continueCallLoading.value = true
+  try {
+    const res = await queueApi.continueCall()
+    const data = res.data?.data || {}
+    if (data.finished_session_id) {
+      alert('当前服务已完成，已推进下一号')
+    } else {
+      alert('已推进下一号')
+    }
+    await fetchQueueCallingStatus()
+    await fetchServiceSessions()
+  } catch (e) {
+    alert(e.response?.data?.error || '操作失败')
+  } finally {
+    continueCallLoading.value = false
+  }
+}
 
 const serviceSessions = ref([])
 const sessionLoading = ref(false)
