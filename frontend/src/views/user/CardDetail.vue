@@ -633,8 +633,8 @@ const getUsageStatusText = (usage) => {
         const wno = String(tech?.window_no || '').trim()
         const tname = String(tech?.name || '').trim()
         const wtxt = wno ? `${term}${wno}` : term
-        const ttxt = tname ? `（${tname}）` : ''
-        return `已分配${wtxt}${ttxt}，待扫码上号`
+        const ttxt = tname ? `:${tname}` : ''
+        return `${wtxt}${ttxt} 待上号`
       }
       return replaceTerms('待起单', card.value?.merchant)
     }
