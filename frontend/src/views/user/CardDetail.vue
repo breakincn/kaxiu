@@ -577,8 +577,9 @@ let usageTouchMoved = false
 const revokeLoading = ref(false)
 
 const isUsageStartTimeout = (usage) => {
-  const supportCS = Boolean(card.value?.merchant?.support_customer_service)
-  if (!supportCS) return false
+  const merchant = card.value?.merchant
+  const supportCSMode = Boolean(merchant?.support_customer_service_mode)
+  if (!supportCSMode) return false
   const supportRoom = Boolean(card.value?.merchant?.support_room)
   const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_start_confirmed_at
@@ -653,18 +654,19 @@ const getUsageStatusText = (usage) => {
       }
       return '待选客服'
     }
-    // 会话已取消但 usage 仍在进行中：
-    // - 若房间/客服均已释放：视为"超时未选择客服"，需重新选择房间
-    // - 否则：视为上钟超时，需重新选择客服
+    // 客服模式下会话已取消但 usage 仍在进行中：视为上钟/选择超时
     if (sessStatus === 'canceled' && !precheckedAt) {
-      if (supportRoom && !usage?.service_room && !usage?.service_technician) {
-        return '服务超时重新选择房间'
+      const supportCSModeCanceled = Boolean(merchant?.support_customer_service_mode)
+      if (supportCSModeCanceled) {
+        if (supportRoom && !usage?.service_room && !usage?.service_technician) {
+          return '服务超时重新选择房间'
+        }
+        // 已经选定/自动分配了客服：应回到待起单
+        if (usage?.service_technician) {
+          return replaceTerms('待起单', card.value?.merchant)
+        }
+        return '上钟超时 重新选择客服'
       }
-      // 已经选定/自动分配了客服：应回到待起单
-      if (usage?.service_technician) {
-        return replaceTerms('待起单', card.value?.merchant)
-      }
-      return '上钟超时 重新选择客服'
     }
     // 上钟超时统一优先判断（避免兗底到待结单）
     const supportCSMode2 = Boolean(card.value?.merchant?.support_customer_service_mode)

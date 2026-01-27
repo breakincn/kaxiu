@@ -13,6 +13,27 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+func tryAutoCallNextForIdleTechnicians(db *gorm.DB, merchantID uint, now time.Time) {
+	if db == nil || merchantID == 0 {
+		return
+	}
+	_ = db.Transaction(func(tx *gorm.DB) error {
+		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		var ids []uint
+		tx.Model(&models.TechnicianAttendance{}).
+			Distinct().
+			Where("merchant_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL AND status = ?", merchantID, start, "idle").
+			Pluck("technician_id", &ids)
+		for _, tid := range ids {
+			if tid == 0 {
+				continue
+			}
+			tryAutoCallNextForTechnician(tx, merchantID, tid, now)
+		}
+		return nil
+	})
+}
+
 func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, now time.Time) {
 	if merchantID == 0 || technicianID == 0 {
 		return
@@ -29,6 +50,17 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 		return
 	}
 	if !merchant.SupportMultiCustomerService {
+		return
+	}
+	if merchant.QueuePaused {
+		return
+	}
+	// 检查技师是否暂停了叫号
+	var tech models.Technician
+	if err := tx.Where("id = ? AND merchant_id = ?", technicianID, merchantID).First(&tech).Error; err != nil {
+		return
+	}
+	if tech.QueuePaused {
 		return
 	}
 	// 多窗口叫号：不依赖客服模式开关。并发上限由当天空闲技师数量天然控制。
@@ -57,11 +89,7 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 
 	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchantID, nextUsageID)
-	if merchant.SupportRoom {
-		q = q.Where("status IN ('room_locked','staff_selecting') AND room_id IS NOT NULL")
-	} else {
-		q = q.Where("status IN ('staff_selecting','room_locked')")
-	}
+	q = q.Where("status IN ('staff_selecting','room_locked')")
 
 	var nextSession models.ServiceSession
 	if err := q.Order("id desc").First(&nextSession).Error; err != nil {
@@ -82,6 +110,11 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 		return
 	}
+
+	// 叫号多客服模式：分配技师后，将技师状态从 idle 改为 busy，避免重复分配
+	_ = tx.Model(&models.TechnicianAttendance{}).
+		Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, technicianID, "idle").
+		Updates(map[string]interface{}{"status": "busy"}).Error
 }
 
 func sameLocalDay(a, b time.Time) bool {

@@ -1008,6 +1008,10 @@ func VerifyCard(c *gin.Context) {
 			if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
 				log.Printf("[queue-debug] verify enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchant.ID, date, usageID, created, tk.No, tk.CalledAt)
 			}
+			// 多客服叫号：入队后立即触发分配，避免空闲技师存在但无人触发叫号
+			if merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+				tryAutoCallNextForIdleTechnicians(config.DB, merchant.ID, now)
+			}
 		}
 	}
 }
