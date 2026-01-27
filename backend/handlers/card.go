@@ -846,25 +846,21 @@ func VerifyCard(c *gin.Context) {
 			var roomSelectDeadlineAt *time.Time
 			var startConfirmedAt *time.Time
 			var scheduledStartAt *time.Time
-			if merchant.SupportRoom {
+			// 叫号自动模式：不需要选房间，核销后直接进入排队态 staff_selecting
+			if merchant.SupportQueue && merchant.QueueMode == "auto" {
+				status = "staff_selecting"
+				startConfirmedAt = nil
+				scheduledStartAt = nil
+				nextStep = ""
+			} else if merchant.SupportRoom {
 				status = "room_selecting"
 				dl := now.Add(90 * time.Second)
 				roomSelectDeadlineAt = &dl
 				nextStep = "room_select"
 			} else {
-				// 单队列串行：自动叫号 + 未开启多个客服时，核销后进入 staff_selecting 状态排队，
-				// 等叫到号后由 scheduler 推进到 delay_pending -> serving，确保串行执行。
-				// 多窗口叫号：同样需要先排队，待分配到空闲技师后进入 start_pending，再扫码起单。
-				if merchant.SupportQueue && merchant.QueueMode == "auto" {
-					status = "staff_selecting"
-					startConfirmedAt = nil
-					scheduledStartAt = nil
-					nextStep = ""
-				} else {
-					startConfirmedAt = &now
-					scheduledStartAt = &startAt
-					nextStep = ""
-				}
+				startConfirmedAt = &now
+				scheduledStartAt = &startAt
+				nextStep = ""
 			}
 
 			session := models.ServiceSession{
@@ -887,8 +883,8 @@ func VerifyCard(c *gin.Context) {
 				return err
 			}
 			sessionID = session.ID
-			// 叫号自动模式：需要入现场叫号队列（仅非房间模式）
-			if merchant.SupportQueue && !merchant.SupportRoom && merchant.QueueMode == "auto" {
+			// 叫号自动模式：需要入现场叫号队列
+			if merchant.SupportQueue && merchant.QueueMode == "auto" {
 				shouldEnqueueOnsite = true
 			}
 			return nil
@@ -910,7 +906,11 @@ func VerifyCard(c *gin.Context) {
 		// 新流程：创建服务会话（核销->资源锁定->人员选择->预结单->自动结单）
 		status := "staff_selecting"
 		var roomSelectDeadlineAt *time.Time
-		if merchant.SupportRoom {
+		// 叫号自动模式：不需要选房间，直接排队
+		if merchant.SupportQueue && merchant.QueueMode == "auto" {
+			status = "staff_selecting"
+			nextStep = ""
+		} else if merchant.SupportRoom {
 			status = "room_selecting"
 			dl := now.Add(90 * time.Second)
 			roomSelectDeadlineAt = &dl
