@@ -471,3 +471,53 @@ func TriggerNextCallingOnFinish(c *gin.Context) {
 		},
 	})
 }
+
+// TriggerAutoAssign 多客服叫号模式手动触发自动分配（运营兜底接口）
+// POST /queue/trigger-auto-assign
+// 用于极端情况：有空闲技师但队列卡在待叫号时，运营/商户手动触发重新分配
+func TriggerAutoAssign(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+
+	// 仅在多客服叫号模式下可用
+	if !merchant.SupportQueue || merchant.QueueMode != "auto" || !merchant.SupportMultiCustomerService {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前模式不支持手动分配"})
+		return
+	}
+
+	// 权限检查：商户老板号默认有权限；技师账号需要“merchant.queue.calling”权限
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+	if authType != "merchant" {
+		okAssign, err := middleware.HasPermission(c, "merchant.queue.calling")
+		if err != nil || !okAssign {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权限操作"})
+			return
+		}
+	}
+
+	now := time.Now()
+	// 调用技师签到模块的批量分配函数
+	tryAutoCallNextForIdleTechnicians(config.DB, merchantID, now)
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"triggered": true,
+			"message":   "已尝试为所有空闲技师分配下一号",
+		},
+	})
+}
