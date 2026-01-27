@@ -450,6 +450,12 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 					// 不进行自动降级处理
 					return nil
 				}
+				// 叫号 + 多客服（多窗口）模式：保持 start_pending 状态等待扫码起单，不进行自动降级处理
+				if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+					// 保持 start_pending 状态，等待技师扫码起单
+					// 不进行自动降级处理
+					return nil
+				}
 				// 非叫号模式：降级为非客服流程
 				if !merchant.SupportCustomerServiceMode {
 					delaySeconds := merchant.StartDelaySeconds
@@ -487,6 +493,45 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			startDeadline := s.UpdatedAt.Add(getStartPendingTimeoutForSession(&s))
 			if now.Before(startDeadline) {
 				return nil
+			}
+
+			// 叫号 + 多客服（多窗口）模式超时处理：释放技师并重新排队
+			{
+				var merchant models.Merchant
+				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+					return err
+				}
+				if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+					// 多客服模式超时：释放技师，取消叫号，重新排队等待分配
+					updates := map[string]interface{}{
+						"status":                        "staff_selecting",
+						"technician_id":                 nil,
+						"staff_select_entered_at":       nil,
+						"staff_select_cooldown_until":   nil,
+						"start_pending_timeout_seconds": 0,
+						"start_timeout_count":           gorm.Expr("start_timeout_count + ?", 1),
+						"start_timeout_last_at":         now,
+					}
+					if err := tx.Model(&models.ServiceSession{}).
+						Where("id = ? AND status = ? AND start_confirmed_at IS NULL", s.ID, "start_pending").
+						Updates(updates).Error; err != nil {
+						return err
+					}
+					// 取消当前叫号
+					if s.InitialUsageID > 0 && queue.Default != nil {
+						date := now.Format("2006-01-02")
+						queue.Default.Uncall(s.MerchantID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+					}
+					// 释放技师状态
+					if s.TechnicianID != nil && *s.TechnicianID > 0 {
+						if err := tx.Model(&models.TechnicianAttendance{}).
+							Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+							Updates(map[string]interface{}{"status": "idle"}).Error; err != nil {
+							return err
+						}
+					}
+					return nil
+				}
 			}
 
 			updates := map[string]interface{}{
@@ -584,6 +629,11 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				var merchant models.Merchant
 				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 					return err
+				}
+
+				// 叫号 + 多客服（多窗口）模式：服务结束后直接结束会话（不走客服模式的自动结单流程）
+				if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+					return finalizeSession(tx, &s, now)
 				}
 
 				// 叫号模式（未开启客服模式）：服务时间到达后直接进入 finished 状态
