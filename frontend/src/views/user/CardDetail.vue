@@ -556,7 +556,7 @@ const usageQrTitle = computed(() => {
   const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
   const sessStatus = String(selectedUsage.value?.service_session_status || '').trim()
   if ((isQueueMode || isMultiQueueMode) && sessStatus === 'start_pending') {
-    return '扫码起单二维码'
+    return '扫码上号二维码'
   }
   if ((isQueueMode || isMultiQueueMode) && sessStatus === 'delay_pending') {
     return '扫码上号二维码'
@@ -634,7 +634,7 @@ const getUsageStatusText = (usage) => {
         const tname = String(tech?.name || '').trim()
         const wtxt = wno ? `${term}${wno}` : term
         const ttxt = tname ? `（${tname}）` : ''
-        return `已分配${wtxt}${ttxt}，待扫码起单`
+        return `已分配${wtxt}${ttxt}，待扫码上号`
       }
       return replaceTerms('待起单', card.value?.merchant)
     }
