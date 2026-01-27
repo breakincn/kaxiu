@@ -5,7 +5,9 @@ import (
 	"kabao/middleware"
 	"kabao/models"
 	"kabao/queue"
+	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -53,6 +55,111 @@ func GetQueueCallingStatus(c *gin.Context) {
 			"queue_mode":              merchant.QueueMode,
 			"support_queue":           merchant.SupportQueue,
 			"technician_queue_paused": technicianQueuePaused,
+		},
+	})
+}
+
+// EnqueueOnsiteUsages 补偿：将指定 usage_id 补入现场叫号队列（当日）
+// POST /queue/enqueue-onsite
+// 仅用于历史数据未入队的补偿。
+func EnqueueOnsiteUsages(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var input struct {
+		UsageIDs  []uint `json:"usage_ids"`
+		CallNext  bool   `json:"call_next"`
+		StartNo   *int   `json:"start_no"`
+		QueueType string `json:"queue_type"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if len(input.UsageIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "usage_ids 不能为空"})
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+	if !merchant.SupportQueue {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "商户未开启叫号功能"})
+		return
+	}
+	if merchant.QueueMode != "auto" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "仅自动叫号模式支持补入队列"})
+		return
+	}
+	if queue.Default == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "叫号服务未初始化"})
+		return
+	}
+
+	qt := queue.QueueTypeOnsite
+	if input.QueueType == string(queue.QueueTypeAppointment) {
+		qt = queue.QueueTypeAppointment
+	}
+
+	now := time.Now()
+	date := now.Format("2006-01-02")
+	startNo := merchant.QueueStartNo
+	if input.StartNo != nil && *input.StartNo > 0 {
+		startNo = *input.StartNo
+	}
+	autoCallFirst := false
+
+	createdMap := make(map[uint]bool, len(input.UsageIDs))
+	for _, uid := range input.UsageIDs {
+		if uid == 0 {
+			continue
+		}
+		// 校验 usage 属于本商户且仍在进行中，并存在对应 service_session
+		var u models.Usage
+		if err := config.DB.Where("id = ? AND merchant_id = ?", uid, merchantID).First(&u).Error; err != nil {
+			createdMap[uid] = false
+			continue
+		}
+		if u.Status != "in_progress" {
+			createdMap[uid] = false
+			continue
+		}
+		var ss models.ServiceSession
+		if err := config.DB.Where("merchant_id = ? AND initial_usage_id = ?", merchantID, uid).Order("id desc").First(&ss).Error; err != nil {
+			createdMap[uid] = false
+			continue
+		}
+
+		tk, created := queue.Default.Enqueue(merchantID, date, qt, uid, startNo, autoCallFirst, now)
+		createdMap[uid] = created
+		if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
+			log.Printf("[queue-debug] compensate enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchantID, date, uid, created, tk.No, tk.CalledAt)
+		}
+		_ = tk
+	}
+
+	var nextUsageID uint
+	if input.CallNext {
+		nextUsageID = queue.Default.CallNextUncalled(merchantID, date, qt, now)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"date":          date,
+			"queue_type":    string(qt),
+			"created_map":   createdMap,
+			"next_usage_id": nextUsageID,
 		},
 	})
 }
