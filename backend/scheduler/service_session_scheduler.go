@@ -222,13 +222,6 @@ func autoCallNextForMultiQueueIfPossible(tx *gorm.DB, merchant *models.Merchant,
 		return false, err
 	}
 
-	// 叫号多客服模式：分配技师后，将技师状态从 idle 改为 busy，避免周期扫描重复分配
-	if err := tx.Model(&models.TechnicianAttendance{}).
-		Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchant.ID, cand.TechnicianID, "idle").
-		Updates(map[string]interface{}{"status": "busy"}).Error; err != nil {
-		return false, err
-	}
-
 	return true, nil
 }
 
@@ -515,13 +508,13 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				}
 				skipDegradeToDelayPending := false
 				// 叫号模式（未开启客服模式 + 自动叫号）：不能自动进入 delay_pending，保持 start_pending 状态等待扫码起单
-				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" {
+				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue {
 					// 保持 start_pending 状态，等待工作人员扫码起单
 					// 不进行自动降级处理
 					skipDegradeToDelayPending = true
 				}
 				// 叫号 + 多客服（多窗口）模式：保持 start_pending 状态等待扫码起单，不进行自动降级处理
-				if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+				if merchant.SupportQueue && merchant.SupportMultiCustomerService {
 					// 保持 start_pending 状态，等待技师扫码起单
 					// 不进行自动降级处理
 					skipDegradeToDelayPending = true
@@ -634,7 +627,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				}
 
 				// 叫号模式（未开启客服模式 + 自动叫号）：需要客服扫码上号，不自动进入 serving
-				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" {
+				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue {
 					if s.ScheduledStartAt != nil {
 						timeoutAt := s.ScheduledStartAt.Add(60 * time.Second)
 						if now.After(timeoutAt) {

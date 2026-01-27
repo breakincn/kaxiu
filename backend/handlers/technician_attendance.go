@@ -63,6 +63,19 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 	if tech.QueuePaused {
 		return
 	}
+	// 已存在活跃会话时，不重复分配下一号
+	{
+		var cnt int64
+		err := tx.Model(&models.ServiceSession{}).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ('start_pending','delay_pending','serving','auto_finishing')", merchantID, technicianID).
+			Count(&cnt).Error
+		if err != nil {
+			return
+		}
+		if cnt > 0 {
+			return
+		}
+	}
 	// 多窗口叫号：不依赖客服模式开关。并发上限由当天空闲技师数量天然控制。
 	// 通过对考勤记录加行锁 + 将会话置为 start_pending(带 technician_id) 实现并发控制。
 	// 注意：不要在这里把技师置为 busy，busy 仍由扫码起单时完成（见 handleQueueModeStartScan）。
@@ -110,11 +123,6 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 		return
 	}
-
-	// 叫号多客服模式：分配技师后，将技师状态从 idle 改为 busy，避免重复分配
-	_ = tx.Model(&models.TechnicianAttendance{}).
-		Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, technicianID, "idle").
-		Updates(map[string]interface{}{"status": "busy"}).Error
 }
 
 func sameLocalDay(a, b time.Time) bool {
