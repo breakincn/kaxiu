@@ -30,6 +30,116 @@ func getStartPendingTimeoutForSession(s *models.ServiceSession) time.Duration {
 	return config.StartPendingTimeout()
 }
 
+func finalizeOverdueManualServingSessions(db *gorm.DB, now time.Time) error {
+	if db == nil {
+		return nil
+	}
+	deadline := now.Add(-4 * time.Hour)
+	var sessions []models.ServiceSession
+	if err := db.
+		Where("status = 'serving' AND start_confirmed_at IS NOT NULL AND started_at IS NOT NULL AND started_at <= ?", deadline).
+		Order("id asc").
+		Limit(schedulerBatchLimit).
+		Find(&sessions).Error; err != nil {
+		return err
+	}
+	if len(sessions) == 0 {
+		return nil
+	}
+	for i := range sessions {
+		s := sessions[i]
+		if s.MerchantID == 0 {
+			continue
+		}
+		_ = db.Transaction(func(tx *gorm.DB) error {
+			var locked models.ServiceSession
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", s.ID).First(&locked).Error; err != nil {
+				return nil
+			}
+			if locked.Status != "serving" || locked.StartConfirmedAt == nil || locked.StartedAt == nil {
+				return nil
+			}
+			if locked.StartedAt.After(deadline) {
+				return nil
+			}
+			var merchant models.Merchant
+			if err := tx.First(&merchant, locked.MerchantID).Error; err != nil {
+				return nil
+			}
+			if !merchant.SupportQueue || merchant.QueueMode != "manual" {
+				return nil
+			}
+			return finalizeSession(tx, &locked, now)
+		})
+	}
+	return nil
+}
+
+func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
+	if db == nil {
+		return nil
+	}
+	windowStart := now.Add(-15 * time.Minute)
+	var merchants []models.Merchant
+	if err := db.
+		Where("queue_ended_at IS NOT NULL AND queue_ended_at >= ?", windowStart).
+		Order("queue_ended_at desc").
+		Limit(50).
+		Find(&merchants).Error; err != nil {
+		return err
+	}
+	if len(merchants) == 0 {
+		return nil
+	}
+	for i := range merchants {
+		m := merchants[i]
+		if m.ID == 0 {
+			continue
+		}
+		if !m.SupportQueue {
+			continue
+		}
+		// 仅对人工叫号生效
+		if m.QueueMode != "manual" {
+			continue
+		}
+		_ = db.Transaction(func(tx *gorm.DB) error {
+			// 选取一批未完成 usage（进行中/失败等，统一置为 success）
+			var ids []uint
+			if err := tx.Model(&models.Usage{}).
+				Where("merchant_id = ? AND status != ?", m.ID, "success").
+				Order("id asc").
+				Limit(500).
+				Pluck("id", &ids).Error; err != nil {
+				return nil
+			}
+			if len(ids) == 0 {
+				return nil
+			}
+			if err := tx.Model(&models.Usage{}).
+				Where("id IN ? AND merchant_id = ? AND status != ?", ids, m.ID, "success").
+				Updates(map[string]interface{}{
+					"status":      "success",
+					"finished_at": now,
+				}).Error; err != nil {
+				return nil
+			}
+
+			// 同步结束关联 service_sessions（避免会话仍处于进行中）
+			if err := tx.Model(&models.ServiceSession{}).
+				Where("merchant_id = ? AND initial_usage_id IN ? AND status NOT IN ('finished','canceled')", m.ID, ids).
+				Updates(map[string]interface{}{
+					"status":      "finished",
+					"finished_at": now,
+				}).Error; err != nil {
+				return nil
+			}
+			return nil
+		})
+	}
+	return nil
+}
+
 func finishAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, finishedAt time.Time) error {
 	updates := map[string]interface{}{
 		"status":                  "finished",
@@ -243,6 +353,15 @@ func StartServiceSessionScheduler() {
 
 func runOnce(db *gorm.DB) error {
 	now := time.Now()
+	// 手动叫号自动收尾：
+	// 1) serving 超过4小时未人工结单，自动置为完成
+	// 2) 打烊结束叫号(queue_ended_at)后15分钟内，将未完成核销批量置为完成
+	if err := finalizeOverdueManualServingSessions(db, now); err != nil {
+		log.Printf("finalize overdue manual serving sessions error: %v", err)
+	}
+	if err := finalizeUsagesAfterQueueEnded(db, now); err != nil {
+		log.Printf("finalize usages after queue ended error: %v", err)
+	}
 
 	var sessions []models.ServiceSession
 	err := db.

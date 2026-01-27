@@ -416,11 +416,11 @@
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             ]"
           >
-            {{ queueStatusUpdating ? '处理中...' : '暂停叫号' }}
+            {{ queueStatusUpdating ? '处理中...' : (isQueueEnded ? '结束叫号' : '暂停叫号') }}
           </button>
         </div>
         <div v-if="showQueueControlInVerify" class="mt-2 text-center text-xs text-gray-500">
-          当前状态：{{ merchantQueuePaused ? '叫号已暂停' : '叫号进行中' }}
+          当前状态：{{ isQueueEnded ? '叫号已结束' : (merchantQueuePaused ? '叫号已暂停' : '叫号进行中') }}
         </div>
       </div>
 
@@ -978,7 +978,7 @@
           <div>
             <div class="font-medium text-gray-800">叫号管理</div>
             <div class="text-gray-500 text-sm mt-1">
-              商户叫号状态：{{ merchantQueuePaused ? '已暂停' : '进行中' }}
+              商户叫号状态：{{ isQueueEnded ? '已结束' : (merchantQueuePaused ? '已暂停' : '进行中') }}
               <span v-if="technicianQueuePaused" class="text-orange-500 ml-2">· 您已暂停叫号</span>
             </div>
           </div>
@@ -998,7 +998,7 @@
                 :disabled="queueStatusUpdating"
                 class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50"
               >
-                {{ queueStatusUpdating ? '处理中...' : '暂停叫号' }}
+                {{ queueStatusUpdating ? '处理中...' : (isQueueEnded ? '结束叫号' : '暂停叫号') }}
               </button>
               <button
                 v-else
@@ -1477,6 +1477,13 @@ const technicianQueuePaused = ref(false)
 const queueStatusLoading = ref(false)
 const queueStatusUpdating = ref(false)
 
+const isInBusinessHours = ref(true)
+const queueEndedAt = ref(null)
+
+const isQueueEnded = computed(() => {
+  return !isInBusinessHours.value && !!queueEndedAt.value
+})
+
 const serviceSessions = ref([])
 const sessionLoading = ref(false)
 const sessionStatusFilter = ref('')
@@ -1653,6 +1660,8 @@ const fetchQueueCallingStatus = async () => {
     const res = await queueApi.getCallingStatus()
     const data = res.data?.data || {}
     merchantQueuePaused.value = !!data.queue_paused
+    isInBusinessHours.value = data.is_in_business_hours !== false
+    queueEndedAt.value = data.queue_ended_at || null
     if (data.technician_queue_paused !== null && data.technician_queue_paused !== undefined) {
       technicianQueuePaused.value = !!data.technician_queue_paused
     }
@@ -1689,7 +1698,8 @@ const pauseMerchantQueue = async () => {
   try {
     await queueApi.updateCallingStatus(true)
     merchantQueuePaused.value = true
-    alert('叫号已暂停')
+    await fetchQueueCallingStatus()
+    alert(isQueueEnded.value ? '叫号已结束' : '叫号已暂停')
   } catch (e) {
     alert(e.response?.data?.error || '操作失败')
   } finally {
@@ -1724,7 +1734,8 @@ const pauseTechnicianQueue = async () => {
     // 专业客服点击"暂停叫号"是暂停自己的叫号服务
     await queueApi.updateTechnicianQueuePaused(true)
     technicianQueuePaused.value = true
-    alert('您的叫号已暂停')
+    await fetchQueueCallingStatus()
+    alert(isQueueEnded.value ? '叫号已结束' : '您的叫号已暂停')
   } catch (e) {
     alert(e.response?.data?.error || '操作失败')
   } finally {

@@ -185,6 +185,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.PUT("/queue/calling-status", middleware.RequirePermission("merchant.queue.calling"), handlers.UpdateQueueCallingStatus)
 	auth.POST("/queue/enqueue-onsite", middleware.RequirePermission("merchant.queue.calling"), handlers.EnqueueOnsiteUsages)
 	auth.POST("/queue/call-next", middleware.RequirePermission("merchant.queue.calling"), handlers.TriggerNextCalling)
+	auth.POST("/queue/continue-call", middleware.RequirePermission("merchant.queue.calling"), handlers.TriggerContinueCalling)
 	auth.POST("/queue/finish-call-next", handlers.TriggerNextCallingOnFinish)
 	auth.POST("/queue/trigger-auto-assign", middleware.RequirePermission("merchant.queue.calling"), handlers.TriggerAutoAssign)
 	auth.GET("/technician/queue-paused", middleware.RequirePermission("merchant.queue.calling"), handlers.GetTechnicianQueuePaused)

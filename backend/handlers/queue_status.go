@@ -8,10 +8,163 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+func isMerchantInBusinessHours(m *models.Merchant, now time.Time) bool {
+	if m == nil {
+		return true
+	}
+
+	// IsOpen 优先
+	if !m.IsOpen {
+		return false
+	}
+
+	parseHM := func(s string) (hour int, min int, ok bool) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return 0, 0, false
+		}
+		t, err := time.Parse("15:04", s)
+		if err != nil {
+			return 0, 0, false
+		}
+		return t.Hour(), t.Minute(), true
+	}
+	inRange := func(start, end string) bool {
+		sh, sm, ok1 := parseHM(start)
+		eh, em, ok2 := parseHM(end)
+		if !ok1 || !ok2 {
+			return false
+		}
+		curMin := now.Hour()*60 + now.Minute()
+		startMin := sh*60 + sm
+		endMin := eh*60 + em
+		// 允许跨天营业（如 22:00-02:00）
+		if startMin <= endMin {
+			return curMin >= startMin && curMin <= endMin
+		}
+		return curMin >= startMin || curMin <= endMin
+	}
+
+	allDayStart := strings.TrimSpace(m.AllDayStart)
+	allDayEnd := strings.TrimSpace(m.AllDayEnd)
+	if allDayStart != "" && allDayEnd != "" {
+		return inRange(allDayStart, allDayEnd)
+	}
+
+	if inRange(m.MorningStart, m.MorningEnd) {
+		return true
+	}
+	if inRange(m.AfternoonStart, m.AfternoonEnd) {
+		return true
+	}
+	if inRange(m.EveningStart, m.EveningEnd) {
+		return true
+	}
+
+	// 未配置时间段：默认认为营业中（以 IsOpen 为准）
+	return true
+}
+
+func finalizeSessionManual(tx *gorm.DB, merchant *models.Merchant, s *models.ServiceSession, now time.Time) error {
+	if tx == nil || merchant == nil || s == nil {
+		return nil
+	}
+	if s.StartConfirmedAt == nil {
+		return nil
+	}
+	updates := map[string]interface{}{
+		"status": "finished",
+	}
+	if s.FinishedAt == nil {
+		updates["finished_at"] = now
+	}
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND status IN ('serving','auto_finishing') AND start_confirmed_at IS NOT NULL", s.ID).
+		Updates(updates).Error; err != nil {
+		return err
+	}
+	if err := tx.First(s, s.ID).Error; err != nil {
+		return err
+	}
+
+	if s.InitialUsageID == 0 {
+		return nil
+	}
+	finishedAt := now
+	if s.FinishedAt != nil {
+		finishedAt = *s.FinishedAt
+	}
+	uUpdates := map[string]interface{}{
+		"status":      "success",
+		"finished_at": finishedAt,
+	}
+	if s.TechnicianID != nil && *s.TechnicianID > 0 {
+		uUpdates["technician_id"] = *s.TechnicianID
+	}
+	if s.RoomID != nil && *s.RoomID > 0 {
+		uUpdates["room_id"] = *s.RoomID
+	}
+	if err := tx.Model(&models.Usage{}).
+		Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
+		Updates(uUpdates).Error; err != nil {
+		return err
+	}
+	if merchant.SupportQueue && queue.Default != nil {
+		date := now.Format("2006-01-02")
+		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
+	}
+	return nil
+}
+
+func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant, technicianID uint, now time.Time) (nextUsageID uint, assigned bool, err error) {
+	if tx == nil || merchant == nil || merchant.ID == 0 || technicianID == 0 {
+		return 0, false, nil
+	}
+	if queue.Default == nil {
+		return 0, false, nil
+	}
+	date := now.Format("2006-01-02")
+	nextUsageID = queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+	if nextUsageID == 0 {
+		return 0, false, nil
+	}
+
+	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchant.ID, nextUsageID)
+	q = q.Where("status IN ('staff_selecting','room_locked')")
+
+	var nextSession models.ServiceSession
+	if err := q.Order("id desc").First(&nextSession).Error; err != nil {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+		if err == gorm.ErrRecordNotFound {
+			return 0, false, nil
+		}
+		return 0, false, err
+	}
+
+	updates := map[string]interface{}{
+		"technician_id":                 technicianID,
+		"status":                        "start_pending",
+		"staff_select_entered_at":       nil,
+		"staff_select_cooldown_until":   nil,
+		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
+	}
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchant.ID).
+		Updates(updates).Error; err != nil {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+		return 0, false, err
+	}
+	return nextUsageID, true, nil
+}
 
 // GetQueueCallingStatus 获取叫号状态
 // GET /queue/calling-status
@@ -33,6 +186,9 @@ func GetQueueCallingStatus(c *gin.Context) {
 		return
 	}
 
+	now := time.Now()
+	isInBusinessHours := isMerchantInBusinessHours(&merchant, now)
+
 	// 获取账号类型
 	authTypeAny, _ := c.Get("auth_type")
 	authType, _ := authTypeAny.(string)
@@ -52,8 +208,10 @@ func GetQueueCallingStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"queue_paused":            merchant.QueuePaused,
+			"queue_ended_at":          merchant.QueueEndedAt,
 			"queue_mode":              merchant.QueueMode,
 			"support_queue":           merchant.SupportQueue,
+			"is_in_business_hours":    isInBusinessHours,
 			"technician_queue_paused": technicianQueuePaused,
 		},
 	})
@@ -196,6 +354,44 @@ func UpdateQueueCallingStatus(c *gin.Context) {
 		return
 	}
 
+	now := time.Now()
+	// 恢复叫号：清空结束叫号时间，避免结束叫号后的自动收尾误触发
+	if !*input.QueuePaused {
+		updates := map[string]interface{}{
+			"queue_paused":   false,
+			"queue_ended_at": nil,
+		}
+		if err := config.DB.Model(&merchant).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"queue_paused":   false,
+				"queue_ended_at": nil,
+			},
+		})
+		return
+	}
+	// 打烊时：暂停叫号升级为结束叫号，并记录 queue_ended_at
+	if *input.QueuePaused && !isMerchantInBusinessHours(&merchant, now) {
+		updates := map[string]interface{}{
+			"queue_paused":   true,
+			"queue_ended_at": now,
+		}
+		if err := config.DB.Model(&merchant).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"queue_paused":   true,
+				"queue_ended_at": now,
+			},
+		})
+		return
+	}
+
 	if err := config.DB.Model(&merchant).Update("queue_paused", *input.QueuePaused).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
 		return
@@ -253,6 +449,20 @@ func UpdateTechnicianQueuePaused(c *gin.Context) {
 	if err := config.DB.Where("id = ? AND merchant_id = ?", techID, merchantID).First(&tech).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "工作人员不存在"})
 		return
+	}
+
+	// 若已打烊：技师点击“暂停叫号”时升级为“结束叫号”，写入 merchants.queue_ended_at
+	if *input.QueuePaused {
+		var merchant models.Merchant
+		if err := config.DB.First(&merchant, merchantID).Error; err == nil {
+			now := time.Now()
+			if !isMerchantInBusinessHours(&merchant, now) {
+				_ = config.DB.Model(&merchant).Updates(map[string]interface{}{
+					"queue_paused":   true,
+					"queue_ended_at": now,
+				}).Error
+			}
+		}
 	}
 
 	if err := config.DB.Model(&tech).Update("queue_paused", *input.QueuePaused).Error; err != nil {
@@ -379,6 +589,117 @@ func TriggerNextCalling(c *gin.Context) {
 			"queue_paused":  false,
 		},
 	})
+}
+
+// TriggerContinueCalling 手动叫号：技师点击“继续叫号”= 完成当前服务 + 推进下一号
+// POST /queue/continue-call
+func TriggerContinueCalling(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	// 必须是技师账号
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+	if authType != "staff" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员账号可操作"})
+		return
+	}
+	techIDAny, _ := c.Get("technician_id")
+	techID, _ := techIDAny.(uint)
+	if techID == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "获取工作人员信息失败"})
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+	if !merchant.SupportQueue {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "商户未开启叫号功能"})
+		return
+	}
+	if strings.TrimSpace(merchant.QueueMode) != "manual" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前非人工叫号模式"})
+		return
+	}
+	if merchant.QueuePaused {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "叫号已暂停"})
+		return
+	}
+	if queue.Default == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "叫号服务未初始化"})
+		return
+	}
+
+	// 检查技师是否暂停了自己的叫号
+	var tech models.Technician
+	if err := config.DB.Where("id = ? AND merchant_id = ?", techID, merchantID).First(&tech).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "工作人员不存在"})
+		return
+	}
+	if tech.QueuePaused {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "您的叫号已暂停"})
+		return
+	}
+
+	now := time.Now()
+	date := now.Format("2006-01-02")
+
+	out := gin.H{
+		"finished_session_id": uint(0),
+		"next_usage_id":       uint(0),
+		"assigned":            false,
+		"reason":              "",
+	}
+
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		// 锁定该技师当前进行中的会话
+		var s models.ServiceSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ('serving','auto_finishing') AND start_confirmed_at IS NOT NULL", merchantID, techID).
+			Order("id desc").
+			First(&s).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				out["reason"] = "当前无进行中的服务"
+				return nil
+			}
+			return err
+		}
+		out["finished_session_id"] = s.ID
+		if err := finalizeSessionManual(tx, &merchant, &s, now); err != nil {
+			return err
+		}
+
+		if !merchant.SupportMultiCustomerService {
+			out["next_usage_id"] = queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+			out["assigned"] = false
+			return nil
+		}
+
+		nextUsageID, assigned, err := assignNextSessionToTechnicianManual(tx, &merchant, techID, now)
+		if err != nil {
+			return err
+		}
+		out["next_usage_id"] = nextUsageID
+		out["assigned"] = assigned
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
 // TriggerNextCallingOnFinish 扫码结单时触发下一个叫号（手动叫号模式下使用）
