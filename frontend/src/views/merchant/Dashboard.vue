@@ -1511,17 +1511,8 @@ const shouldShowContinueCall = computed(() => {
   if (isQueueEnded.value) return false
   if (technicianQueuePaused.value) return false
   if (merchantQueuePaused.value) return false
-  // 检查是否有处于 serving 状态且已超时的会话（超时后可见）
-  const techId = getTechnicianId()
-  if (!techId) return false
-  const now = new Date()
-  const servingSession = serviceSessions.value.find(s => 
-    s.technician_id === techId && 
-    s.status === 'serving' && 
-    s.started_at && 
-    new Date(s.started_at).getTime() < now.getTime() - 4 * 60 * 60 * 1000 // 4小时超时
-  )
-  return !!servingSession
+  // 手动叫号：始终显示“继续叫号”（是否有进行中服务由后端判断并返回原因）
+  return true
 })
 
 const continueCallLoading = ref(false)
@@ -1531,14 +1522,18 @@ const doContinueCall = async () => {
   continueCallLoading.value = true
   try {
     const res = await queueApi.continueCall()
-    const data = res.data?.data || {}
-    if (data.finished_session_id) {
-      alert('当前服务已完成，已推进下一号')
+    const data = res?.data?.data || {}
+    if (data?.reason) {
+      alert(String(data.reason))
     } else {
-      alert('已推进下一号')
+      const nextUsageId = Number(data?.next_usage_id || 0)
+      if (nextUsageId > 0) {
+        alert('已完成当前服务，并已触发下一号')
+      } else {
+        alert('已完成当前服务')
+      }
     }
     await fetchQueueCallingStatus()
-    await fetchServiceSessions()
   } catch (e) {
     alert(e.response?.data?.error || '操作失败')
   } finally {
