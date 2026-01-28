@@ -245,7 +245,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			if *s.TechnicianID != scannerTechID {
 				return apiErr{status: http.StatusBadRequest, msg: "该单已分配其他工作人员"}
 			}
-			// 上号前校验：只有当专业客服(技师)为"空闲"才允许上号
+			// 上号前校验：允许技师状态为 idle 或 busy（自动叫号多客服模式分配时已置为 busy，手动叫号模式分配时仍为 idle）
 			start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 			var att models.TechnicianAttendance
 			attRes := tx.
@@ -260,13 +260,14 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			if attRes.RowsAffected == 0 {
 				return apiErr{status: http.StatusBadRequest, msg: "未上班签到，扫码上号失败"}
 			}
-			if att.Status != "idle" {
+			// 允许 idle 或 busy 状态上号（兼容自动/手动叫号模式）
+			if att.Status != "idle" && att.Status != "busy" {
 				if att.Status == "paused" {
 					return apiErr{status: http.StatusBadRequest, msg: "你目前在暂停服务中，请更新服务状态为空闲才可继续上号"}
 				}
 				return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新上号", technicianServiceStatusText(att.Status))}
 			}
-
+		
 			// start_pending -> serving（扫码上号），避免二次扫码
 			updates := map[string]interface{}{
 				"start_confirmed_at":            now,
@@ -281,25 +282,23 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND status = ?", s.ID, "start_pending").Updates(updates).Error; err != nil {
 				return err
 			}
-
-			// 扫码上号成功后占用技师：仅允许 idle -> busy，避免并发重复上号
-			res := tx.Model(&models.TechnicianAttendance{}).
-				Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, *s.TechnicianID, "idle").
-				Updates(map[string]interface{}{"status": "busy"})
-			if res.Error != nil {
-				return res.Error
+		
+			// 扫码上号成功后占用技师：仅在 idle 状态时更新为 busy，已是 busy 则跳过
+			if att.Status == "idle" {
+				if err := tx.Model(&models.TechnicianAttendance{}).
+					Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, *s.TechnicianID, "idle").
+					Updates(map[string]interface{}{"status": "busy"}).Error; err != nil {
+					return err
+				}
 			}
-			if res.RowsAffected == 0 {
-				return apiErr{status: http.StatusBadRequest, msg: "你目前在服务中，待服务完成后才可重新上号"}
-			}
-
+		
 			// 记录本次上号/服务人员（用于“今日上钟/起单”展示）
 			if s.InitialUsageID > 0 {
 				_ = tx.Model(&models.Usage{}).
 					Where("id = ? AND merchant_id = ?", s.InitialUsageID, merchantID).
 					Update("technician_id", scannerTechID).Error
 			}
-
+		
 			if err := tx.First(&out, s.ID).Error; err != nil {
 				return err
 			}
