@@ -738,6 +738,143 @@ func TriggerContinueCalling(c *gin.Context) {
 			return err
 		}
 		out["finished_session_id"] = s.ID
+		
+		// 检查服务是否达到项目设定的服务时长
+		if s.StartedAt != nil && s.DurationMinutes > 0 {
+			servedMinutes := int(now.Sub(*s.StartedAt).Minutes())
+			if servedMinutes < s.DurationMinutes {
+				// 未达到服务时长，返回二次确认信息，不执行结束操作
+				out["need_confirm"] = true
+				out["served_minutes"] = servedMinutes
+				out["required_minutes"] = s.DurationMinutes
+				out["remaining_minutes"] = s.DurationMinutes - servedMinutes
+				return nil
+			}
+		}
+		
+		// 调试日志：检查为什么没有触发二次确认
+		if s.StartedAt == nil {
+			log.Printf("[DEBUG] ServiceSession %d: StartedAt is nil, skipping duration check", s.ID)
+		} else if s.DurationMinutes <= 0 {
+			log.Printf("[DEBUG] ServiceSession %d: DurationMinutes is %d, skipping duration check", s.ID, s.DurationMinutes)
+		} else {
+			servedMinutes := int(now.Sub(*s.StartedAt).Minutes())
+			log.Printf("[DEBUG] ServiceSession %d: served %d minutes, required %d minutes, no confirmation needed", s.ID, servedMinutes, s.DurationMinutes)
+		}
+		
+		if err := finalizeSessionManual(tx, &merchant, &s, now); err != nil {
+			return err
+		}
+
+		if !merchant.SupportMultiCustomerService {
+			out["next_usage_id"] = queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+			out["assigned"] = false
+			return nil
+		}
+
+		nextUsageID, assigned, err := assignNextSessionToTechnicianManual(tx, &merchant, techID, now)
+		if err != nil {
+			return err
+		}
+		out["next_usage_id"] = nextUsageID
+		out["assigned"] = assigned
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": out})
+}
+
+// TriggerContinueCallingForce 手动叫号：技师点击“继续叫号”强制结束 = 强制完成当前服务 + 推进下一号
+// POST /queue/continue-call-force
+func TriggerContinueCallingForce(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	// 必须是技师账号
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+	if authType != "staff" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员账号可操作"})
+		return
+	}
+	techIDAny, _ := c.Get("technician_id")
+	techID, _ := techIDAny.(uint)
+	if techID == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "获取工作人员信息失败"})
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+	if !merchant.SupportQueue {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "商户未开启叫号功能"})
+		return
+	}
+	if strings.TrimSpace(merchant.QueueMode) != "manual" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前非人工叫号模式"})
+		return
+	}
+	if merchant.QueuePaused {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "叫号已暂停"})
+		return
+	}
+	if queue.Default == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "叫号服务未初始化"})
+		return
+	}
+
+	// 检查技师是否暂停了自己的叫号
+	var tech models.Technician
+	if err := config.DB.Where("id = ? AND merchant_id = ?", techID, merchantID).First(&tech).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "工作人员不存在"})
+		return
+	}
+	if tech.QueuePaused {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "您的叫号已暂停"})
+		return
+	}
+
+	now := time.Now()
+	date := now.Format("2006-01-02")
+
+	out := gin.H{
+		"finished_session_id": uint(0),
+		"next_usage_id":       uint(0),
+		"assigned":            false,
+		"reason":              "",
+	}
+
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		// 锁定该技师当前进行中的会话
+		var s models.ServiceSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ('serving','auto_finishing') AND start_confirmed_at IS NOT NULL", merchantID, techID).
+			Order("id desc").
+			First(&s).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				out["reason"] = "当前无进行中的服务"
+				return nil
+			}
+			return err
+		}
+		out["finished_session_id"] = s.ID
+		
+		// 强制结束，不检查服务时长
 		if err := finalizeSessionManual(tx, &merchant, &s, now); err != nil {
 			return err
 		}

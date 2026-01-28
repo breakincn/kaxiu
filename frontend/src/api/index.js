@@ -275,6 +275,8 @@ export const queueApi = {
   callNext: () => api.post('/merchant/queue/call-next'),
   // 技师点击“继续叫号”（手动叫号模式）：完成当前单 + 推进下一号
   continueCall: () => api.post('/merchant/queue/continue-call'),
+  // 强制结束当前服务并继续叫号
+  continueCallForce: () => api.post('/merchant/queue/continue-call-force'),
   // 扫码结单时触发下一个叫号
   finishCallNext: () => api.post('/merchant/queue/finish-call-next'),
   // 技师自己的叫号状态

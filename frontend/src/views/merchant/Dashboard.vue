@@ -1021,7 +1021,7 @@
               </button>
               <button
                 v-if="shouldShowContinueCall"
-                @click="doContinueCall"
+                @click="doContinueCall()"
                 :disabled="continueCallLoading || queueStatusUpdating"
                 class="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
               >
@@ -1179,6 +1179,34 @@
         <p class="text-center text-gray-400 text-xs mt-3">
           10秒后自动关闭
         </p>
+      </div>
+    </div>
+
+    <div v-if="showServiceDurationConfirmModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 select-none" @click.self="cancelServiceDurationConfirm">
+      <div class="bg-white rounded-xl p-6 m-4 max-w-sm w-full">
+        <div class="flex items-center mb-4">
+          <div class="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mr-3">
+            <svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 19a7 7 0 110-14 7 7 0 010 14z"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-medium text-gray-900">完成当前服务</h3>
+        </div>
+        <p class="text-gray-600 whitespace-pre-line mb-6">{{ serviceDurationConfirmMessage }}</p>
+        <div class="flex gap-3">
+          <button
+            @click="cancelServiceDurationConfirm"
+            class="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium"
+          >
+            取消
+          </button>
+          <button
+            @click="confirmServiceDurationConfirm"
+            class="flex-1 py-2.5 bg-primary text-white rounded-lg font-medium"
+          >
+            确认
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -1519,12 +1547,73 @@ const shouldShowContinueCall = computed(() => {
 
 const continueCallLoading = ref(false)
 
-const doContinueCall = async () => {
-  if (continueCallLoading.value) return
+const showServiceDurationConfirmModal = ref(false)
+const serviceDurationConfirmMessage = ref('')
+let serviceDurationConfirmResolve = null
+
+const openServiceDurationConfirm = (msg) => {
+  serviceDurationConfirmMessage.value = String(msg || '')
+  showServiceDurationConfirmModal.value = true
+  return new Promise(resolve => {
+    serviceDurationConfirmResolve = resolve
+  })
+}
+
+const confirmServiceDurationConfirm = () => {
+  showServiceDurationConfirmModal.value = false
+  const resolve = serviceDurationConfirmResolve
+  serviceDurationConfirmResolve = null
+  if (resolve) resolve(true)
+}
+
+const cancelServiceDurationConfirm = () => {
+  showServiceDurationConfirmModal.value = false
+  const resolve = serviceDurationConfirmResolve
+  serviceDurationConfirmResolve = null
+  if (resolve) resolve(false)
+}
+
+const doContinueCall = async (forceFinish = false) => {
+  console.log('[DEBUG] doContinueCall called, forceFinish:', forceFinish)
+  if (continueCallLoading.value) {
+    console.log('[DEBUG] continueCallLoading is true, returning')
+    return
+  }
   continueCallLoading.value = true
+  console.log('[DEBUG] continueCallLoading set to true')
   try {
+    console.log('[DEBUG] calling queueApi.continueCall()')
     const res = await queueApi.continueCall()
+    console.log('[DEBUG] continueCall response:', res)
     const data = res?.data?.data || {}
+    console.log('[DEBUG] response data:', data)
+    
+    // 优先判断是否需要二次确认（服务时长未达标）
+    console.log('[DEBUG] checking need_confirm:', data?.need_confirm, 'forceFinish:', forceFinish)
+    if (data?.need_confirm && !forceFinish) {
+      console.log('[DEBUG] entering confirmation flow')
+      const servedMinutes = Number(data.served_minutes || 0)
+      const requiredMinutes = Number(data.required_minutes || 0)
+      const remainingMinutes = Number(data.remaining_minutes || 0)
+      
+      const confirmMsg = `当前服务已进行 ${servedMinutes} 分钟，项目要求服务时长为 ${requiredMinutes} 分钟，还差 ${remainingMinutes} 分钟。\n\n确定要结束服务并继续叫号吗？`
+      console.log('[DEBUG] calling openServiceDurationConfirm with message:', confirmMsg)
+      
+      const ok = await openServiceDurationConfirm(confirmMsg)
+      console.log('[DEBUG] confirmation result:', ok)
+      if (!ok) {
+        console.log('[DEBUG] user cancelled, returning')
+        continueCallLoading.value = false
+        return
+      }
+      console.log('[DEBUG] user confirmed, calling doContinueCallForce')
+      continueCallLoading.value = false
+      await doContinueCallForce()
+      return
+    }
+    console.log('[DEBUG] no confirmation needed, proceeding with normal flow')
+    
+    // 处理其他情况（reason 提示、成功完成等）
     if (data?.reason) {
       alert(String(data.reason))
     } else {
@@ -1536,6 +1625,36 @@ const doContinueCall = async () => {
       }
     }
     await fetchQueueCallingStatus()
+    await fetchServiceSessions()
+    await fetchTodayUsages()
+  } catch (e) {
+    alert(e.response?.data?.error || '操作失败')
+  } finally {
+    continueCallLoading.value = false
+  }
+}
+
+// 强制结束当前服务并继续叫号
+const doContinueCallForce = async () => {
+  if (continueCallLoading.value) return
+  continueCallLoading.value = true
+  try {
+    const res = await queueApi.continueCallForce()
+    const data = res?.data?.data || {}
+    
+    if (data?.reason) {
+      alert(String(data.reason))
+    } else {
+      const nextUsageId = Number(data?.next_usage_id || 0)
+      if (nextUsageId > 0) {
+        alert('已强制结束当前服务，并已触发下一号')
+      } else {
+        alert('已强制结束当前服务')
+      }
+    }
+    await fetchQueueCallingStatus()
+    await fetchServiceSessions()
+    await fetchTodayUsages()
   } catch (e) {
     alert(e.response?.data?.error || '操作失败')
   } finally {
@@ -2050,6 +2169,7 @@ const getUsageServiceStatusText = (usage) => {
   // 优先按服务单状态展示（避免将待选房间等阶段误显示为“待结单/待下钟”）
   if (usage.service_session_status) {
     const s = usage.service_session_status
+    if (s === 'finished') return '完成'
     if (s === 'room_selecting') return '待选房间'
     if (s === 'room_locked') return '房间已锁定'
     if (s === 'staff_selecting') return replaceTerms('待选客服', merchant.value)
