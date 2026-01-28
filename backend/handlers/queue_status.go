@@ -139,7 +139,7 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 		// 尝试找到对应的可分配 session
 		q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchant.ID, nextUsageID)
-		q = q.Where("status IN ('staff_selecting','room_locked')")
+		q = q.Where("status IN ('staff_selecting')")
 
 		var nextSession models.ServiceSession
 		if err := q.Order("id desc").First(&nextSession).Error; err == nil {
@@ -171,7 +171,7 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 	var anySession models.ServiceSession
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", merchant.ID).
-		Where("status IN ('staff_selecting','room_locked')").
+		Where("status IN ('staff_selecting')").
 		Order("id asc").
 		First(&anySession).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {

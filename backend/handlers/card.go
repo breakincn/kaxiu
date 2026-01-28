@@ -846,8 +846,8 @@ func VerifyCard(c *gin.Context) {
 			var roomSelectDeadlineAt *time.Time
 			var startConfirmedAt *time.Time
 			var scheduledStartAt *time.Time
-			// 叫号自动模式：不需要选房间，核销后直接进入排队态 staff_selecting
-			if merchant.SupportQueue && merchant.QueueMode == "auto" {
+			// 叫号模式（自动或手动）：核销后直接进入排队态 staff_selecting
+			if merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual") {
 				status = "staff_selecting"
 				startConfirmedAt = nil
 				scheduledStartAt = nil
@@ -883,8 +883,8 @@ func VerifyCard(c *gin.Context) {
 				return err
 			}
 			sessionID = session.ID
-			// 叫号自动模式：需要入现场叫号队列
-			if merchant.SupportQueue && merchant.QueueMode == "auto" {
+			// 叫号模式（自动或手动）：需要入现场叫号队列
+			if merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual") {
 				shouldEnqueueOnsite = true
 			}
 			return nil
@@ -1276,9 +1276,8 @@ func ScanVerifyCard(c *gin.Context) {
 					roomSelectDeadlineAt = &dl
 					nextStep = "room_select"
 				} else {
-					// 单队列串行：自动叫号 + 未开启多个客服时，核销后进入 staff_selecting 状态排队，
-					// 等叫到号后由 scheduler 推进到 delay_pending -> serving，确保串行执行。
-					if merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+					// 叫号模式（自动或手动）：核销后进入 staff_selecting 状态排队
+					if merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual") {
 						status = "staff_selecting"
 						startConfirmedAt = nil
 						scheduledStartAt = nil
@@ -1310,8 +1309,8 @@ func ScanVerifyCard(c *gin.Context) {
 					return err
 				}
 				sessionID = session.ID
-				// 单队列串行：需要入现场叫号队列（仅非房间模式）
-				if merchant.SupportQueue && !merchant.SupportRoom && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+				// 叫号模式（自动或手动）：需要入现场叫号队列
+				if merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual") {
 					shouldEnqueueOnsite = true
 				} else {
 					// 进入服务流程才会参与现场叫号队列

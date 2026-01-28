@@ -637,6 +637,11 @@ const getUsageStatusText = (usage) => {
         const ttxt = tname ? `:${tname}` : ''
         return `${wtxt}${ttxt} 待上号`
       }
+      // 手动叫号模式：start_pending 显示为"待上号"
+      const isManualQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'manual'
+      if (isManualQueueMode) {
+        return '待上号'
+      }
       return replaceTerms('待起单', card.value?.merchant)
     }
     if (sessStatus === 'serving') return replaceTerms('服务中', card.value?.merchant)
@@ -646,8 +651,8 @@ const getUsageStatusText = (usage) => {
       // 若客服模式已关闭：走不开启客服模式的流程，不允许再进入"待选客服"
       const supportCSMode = Boolean(merchant?.support_customer_service_mode)
       if (!supportCSMode) {
-        // 叫号自动模式（单窗口/多窗口）：staff_selecting 统一视为排队中
-        if (merchant?.support_queue && merchant?.queue_mode === 'auto') {
+        // 叫号模式（自动或手动）：staff_selecting 统一视为排队中
+        if (merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')) {
           return '待叫号'
         }
         return replaceTerms('待起单', card.value?.merchant)

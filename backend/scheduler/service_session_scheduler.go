@@ -529,6 +529,12 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				return err
 			}
 
+			// 手动叫号模式：不进行任何自动处理，等待技师手动分配
+			if merchant.SupportQueue && merchant.QueueMode == "manual" {
+				// 手动模式下，staff_selecting 状态应该保持不变，等待技师手动分配
+				return nil
+			}
+
 			// 单队列串行模式（未开启客服模式 + 自动叫号 + 未开启多个客服）：
 			// staff_selecting 状态的会话在队列中排队，等叫到号且无其他进行中会话时推进到 delay_pending
 			if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
