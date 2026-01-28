@@ -1511,8 +1511,13 @@ const shouldShowContinueCall = computed(() => {
   if (isQueueEnded.value) return false
   if (technicianQueuePaused.value) return false
   if (merchantQueuePaused.value) return false
-  // 手动叫号：始终显示“继续叫号”（是否有进行中服务由后端判断并返回原因）
-  return true
+  if (!isTechnicianAuth()) return false
+  const techId = getTechnicianId()
+  if (!techId) return false
+  const servingSession = serviceSessions.value
+    .filter(s => s.technician_id === techId && ['serving', 'auto_finishing'].includes(s.status))
+    .sort((a, b) => b.id - a.id)[0]
+  return !!servingSession
 })
 
 const continueCallLoading = ref(false)

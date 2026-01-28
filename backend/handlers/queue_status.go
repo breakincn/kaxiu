@@ -664,7 +664,26 @@ func TriggerContinueCalling(c *gin.Context) {
 			Order("id desc").
 			First(&s).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				out["reason"] = "当前无进行中的服务"
+				// 没有进行中服务：允许“继续叫号”作为“推进下一号/分配下一位”的触发
+				if !merchant.SupportMultiCustomerService {
+					nextUsageID := queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+					out["next_usage_id"] = nextUsageID
+					out["assigned"] = false
+					if nextUsageID == 0 {
+						out["reason"] = "当前无进行中的服务，且暂无可叫号的用户"
+					}
+					return nil
+				}
+
+				nextUsageID, assigned, err := assignNextSessionToTechnicianManual(tx, &merchant, techID, now)
+				if err != nil {
+					return err
+				}
+				out["next_usage_id"] = nextUsageID
+				out["assigned"] = assigned
+				if nextUsageID == 0 {
+					out["reason"] = "当前无进行中的服务，且暂无可分配的用户"
+				}
 				return nil
 			}
 			return err
