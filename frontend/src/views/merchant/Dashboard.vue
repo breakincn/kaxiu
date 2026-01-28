@@ -950,11 +950,22 @@
                   :class="canManualUpdateStatus ? 'w-32' : 'w-44'"
                   :disabled="!canManualUpdateStatus"
                 >
-                  <option value="not_checked_in" disabled>未签到</option>
-                  <option value="idle">空闲</option>
-                  <option value="paused" :disabled="!canManualUpdateStatus">暂停</option>
-                  <option value="service_pending_presettlement" disabled>{{ replaceTerms('服务 待起单', merchant) }}</option>
-                  <option value="service_pending_settlement" disabled>{{ replaceTerms('服务 待结单', merchant) }}</option>
+                  <!-- 叫号模式下的状态选项 -->
+                  <template v-if="merchant.support_queue">
+                    <option value="not_checked_in" disabled>未签到</option>
+                    <option value="idle">空闲</option>
+                    <option value="paused" :disabled="!canManualUpdateStatus">暂停</option>
+                    <option value="service_pending_presettlement" disabled>待上号</option>
+                    <option value="service_pending_settlement" disabled>上号</option>
+                  </template>
+                  <!-- 非叫号模式保持原有选项 -->
+                  <template v-else>
+                    <option value="not_checked_in" disabled>未签到</option>
+                    <option value="idle">空闲</option>
+                    <option value="paused" :disabled="!canManualUpdateStatus">暂停</option>
+                    <option value="service_pending_presettlement" disabled>{{ replaceTerms('服务 待起单', merchant) }}</option>
+                    <option value="service_pending_settlement" disabled>{{ replaceTerms('服务 待结单', merchant) }}</option>
+                  </template>
                 </select>
 
                 <button
@@ -1634,6 +1645,17 @@ const technicianCurrentStatus = computed(() => {
 
 const technicianCurrentStatusText = computed(() => {
   const st = technicianCurrentStatus.value
+  // 叫号模式下的状态显示
+  if (merchant.value?.support_queue) {
+    if (st === 'not_checked_in') return '未签到'
+    if (st === 'idle') return '空闲'
+    if (st === 'paused') return '暂停'
+    if (st === 'service_pending_presettlement') return '待上号'
+    if (st === 'service_pending_settlement') return '上号'
+    if (st === 'busy') return '上号'
+    if (st === 'rest') return '未签到 休息中'
+  }
+  // 非叫号模式保持原有显示
   if (st === 'not_checked_in') return '未签到'
   if (st === 'idle') return '空闲'
   if (st === 'paused') return '暂停'
