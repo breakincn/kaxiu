@@ -60,8 +60,8 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		return true
 	}
 
-	// 叫号模式：未开启客服模式 + 开启叫号 + 自动叫号
-	isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto"
+	// 叫号模式：未开启客服模式 + 开启叫号 + 叫号模式（自动或手动）
+	isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
 
 	if isQueueMode {
 		// 叫号模式：允许商户或工作人员扫码上号
