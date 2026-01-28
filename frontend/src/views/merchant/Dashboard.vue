@@ -1496,7 +1496,7 @@ const isQueueEnded = computed(() => {
 const shouldShowContinueCall = computed(() => {
   if (!merchant.value) return false
   if (!merchant.value.support_queue) return false
-  if (merchant.value.queue_mode !== 'manual') return false
+  if (merchant.value.queue_mode !== 'manual') return false // 仅手动叫号显示
   if (isQueueEnded.value) return false
   if (technicianQueuePaused.value) return false
   if (merchantQueuePaused.value) return false
@@ -1810,18 +1810,16 @@ const resumeTechnicianQueue = async () => {
 
 // 是否显示叫号控制区域（运营客服端 - 扫码核销页）
 const showQueueControlInVerify = computed(() => {
-  // 条件：开启了叫号 + 人工叫号 + 有叫号权限 + 非技师账号（运营客服或商户）
+  // 条件：开启了叫号 + 有叫号权限 + 非技师账号（运营客服或商户）（支持手动和自动叫号）
   return merchant.value?.support_queue && 
-         merchant.value?.queue_mode === 'manual' && 
          canQueueCalling.value &&
          !isTechnicianAuth()
 })
 
 // 是否显示叫号控制区域（专业客服端 - 服务标签页）
 const showQueueControlInService = computed(() => {
-  // 条件：开启了叫号 + 人工叫号 + 有叫号权限 + 技师账号
+  // 条件：开启了叫号 + 有叫号权限 + 技师账号（支持手动和自动叫号）
   return merchant.value?.support_queue && 
-         merchant.value?.queue_mode === 'manual' && 
          canQueueCalling.value &&
          isTechnicianAuth()
 })
