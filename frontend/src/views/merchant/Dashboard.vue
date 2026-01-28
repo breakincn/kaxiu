@@ -1511,13 +1511,10 @@ const shouldShowContinueCall = computed(() => {
   if (isQueueEnded.value) return false
   if (technicianQueuePaused.value) return false
   if (merchantQueuePaused.value) return false
-  if (!isTechnicianAuth()) return false
-  const techId = getTechnicianId()
-  if (!techId) return false
-  const servingSession = serviceSessions.value
-    .filter(s => s.technician_id === techId && ['serving', 'auto_finishing'].includes(s.status))
-    .sort((a, b) => b.id - a.id)[0]
-  return !!servingSession
+  // 手动叫号：始终显示"继续叫号"按钮
+  // - 有进行中服务：完成服务并分配下一号  
+  // - 无进行中服务：直接分配下一号给当前技师
+  return true
 })
 
 const continueCallLoading = ref(false)

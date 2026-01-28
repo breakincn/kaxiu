@@ -132,24 +132,55 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 		return 0, false, nil
 	}
 	date := now.Format("2006-01-02")
+	
+	// 策略1：优先从队列取下一个未叫号
 	nextUsageID = queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
-	if nextUsageID == 0 {
-		return 0, false, nil
+	if nextUsageID > 0 {
+		// 尝试找到对应的可分配 session
+		q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchant.ID, nextUsageID)
+		q = q.Where("status IN ('staff_selecting','room_locked')")
+
+		var nextSession models.ServiceSession
+		if err := q.Order("id desc").First(&nextSession).Error; err == nil {
+			// 找到了，分配给当前技师
+			updates := map[string]interface{}{
+				"technician_id":                 technicianID,
+				"status":                        "start_pending",
+				"staff_select_entered_at":       nil,
+				"staff_select_cooldown_until":   nil,
+				"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
+			}
+			if err := tx.Model(&models.ServiceSession{}).
+				Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchant.ID).
+				Updates(updates).Error; err != nil {
+				queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+				return 0, false, err
+			}
+			return nextUsageID, true, nil
+		} else if err != gorm.ErrRecordNotFound {
+			// 数据库错误
+			queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+			return 0, false, err
+		}
+		// 队列返回的号找不到对应的可分配 session（可能已被分配），回退队列状态
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 	}
 
-	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchant.ID, nextUsageID)
-	q = q.Where("status IN ('staff_selecting','room_locked')")
-
-	var nextSession models.ServiceSession
-	if err := q.Order("id desc").First(&nextSession).Error; err != nil {
-		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+	// 策略2：队列无可叫号或队列返回的号已被分配，直接从数据库查找任意一个待分配的 session
+	var anySession models.ServiceSession
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", merchant.ID).
+		Where("status IN ('staff_selecting','room_locked')").
+		Order("id asc").
+		First(&anySession).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return 0, false, nil
 		}
 		return 0, false, err
 	}
 
+	// 找到了一个待分配的 session，分配给当前技师
 	updates := map[string]interface{}{
 		"technician_id":                 technicianID,
 		"status":                        "start_pending",
@@ -158,12 +189,17 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
 	}
 	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchant.ID).
+		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", anySession.ID, merchant.ID).
 		Updates(updates).Error; err != nil {
-		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 		return 0, false, err
 	}
-	return nextUsageID, true, nil
+	
+	// 如果这个 session 有对应的 usage_id，尝试在队列中标记为已叫（如果还没叫的话）
+	if anySession.InitialUsageID > 0 {
+		_ = queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+	}
+	
+	return anySession.InitialUsageID, true, nil
 }
 
 // GetQueueCallingStatus 获取叫号状态
@@ -664,6 +700,19 @@ func TriggerContinueCalling(c *gin.Context) {
 			Order("id desc").
 			First(&s).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
+				// 若当前技师已有待上号(start_pending)的会话，则不应提示“暂无可分配的用户”
+				// 这里返回更准确的提示，引导先扫码上号。
+				var pending models.ServiceSession
+				if err2 := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("merchant_id = ? AND technician_id = ? AND status = 'start_pending' AND start_confirmed_at IS NULL", merchantID, techID).
+					Order("id desc").
+					First(&pending).Error; err2 == nil {
+					out["reason"] = "当前已有待上号用户，请先扫码上号"
+					return nil
+				} else if err2 != nil && err2 != gorm.ErrRecordNotFound {
+					return err2
+				}
+
 				// 没有进行中服务：允许“继续叫号”作为“推进下一号/分配下一位”的触发
 				if !merchant.SupportMultiCustomerService {
 					nextUsageID := queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
