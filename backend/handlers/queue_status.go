@@ -559,12 +559,6 @@ func TriggerNextCalling(c *gin.Context) {
 		return
 	}
 
-	// 检查是否是手动叫号模式
-	if merchant.QueueMode != "manual" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "当前为自动叫号模式，无需手动触发"})
-		return
-	}
-
 	// 检查商户是否暂停叫号，若暂停则先恢复
 	if merchant.QueuePaused {
 		if err := config.DB.Model(&merchant).Update("queue_paused", false).Error; err != nil {
