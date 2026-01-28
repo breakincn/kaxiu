@@ -989,8 +989,8 @@
           <div>
             <div class="font-medium text-gray-800">叫号管理</div>
             <div class="text-gray-500 text-sm mt-1">
-              商户叫号状态：{{ isQueueEnded ? '已结束' : (merchantQueuePaused ? '已暂停' : '进行中') }}
-              <span v-if="technicianQueuePaused" class="text-orange-500 ml-2">· 您已暂停叫号</span>
+              商户叫号状态: {{ isQueueEnded ? '已结束' : (merchantQueuePaused ? '已暂停' : '进行中') }}
+              <span v-if="technicianQueuePaused" class="text-orange-500 ml-2">·您已暂停叫号</span>
             </div>
           </div>
           <div class="flex items-center gap-2">
