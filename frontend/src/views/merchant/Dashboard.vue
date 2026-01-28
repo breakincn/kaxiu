@@ -420,7 +420,7 @@
           </button>
         </div>
         <div v-if="showQueueControlInVerify" class="mt-2 text-center text-xs text-gray-500">
-          当前状态：{{ isQueueEnded ? '叫号已结束' : (merchantQueuePaused ? '叫号已暂停' : '叫号进行中') }}
+          {{ merchant.queue_mode === 'auto' ? '自动叫号' : '手动叫号' }}：{{ isQueueEnded ? '叫号已结束' : (merchantQueuePaused ? '叫号已暂停' : '叫号进行中') }}
         </div>
       </div>
 
