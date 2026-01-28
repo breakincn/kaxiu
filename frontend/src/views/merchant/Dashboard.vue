@@ -1807,6 +1807,16 @@ const pauseTechnicianQueue = async () => {
     // 专业客服点击"暂停叫号"是暂停自己的叫号服务
     await queueApi.updateTechnicianQueuePaused(true)
     technicianQueuePaused.value = true
+    // 叫号模式下：同步将技师当前状态改为“暂停”
+    if (merchant.value?.support_queue) {
+      try {
+        await attendanceApi.updateStatus({ status: 'paused' })
+        serverAttendanceStatus.value = 'paused'
+        attendanceStatus.value = 'paused'
+      } catch (e) {
+        // ignore
+      }
+    }
     await fetchQueueCallingStatus()
     alert(isQueueEnded.value ? '叫号已结束' : '您的叫号已暂停')
   } catch (e) {
@@ -1822,6 +1832,16 @@ const resumeTechnicianQueue = async () => {
   try {
     await queueApi.updateTechnicianQueuePaused(false)
     technicianQueuePaused.value = false
+    // 叫号模式下：同步将技师当前状态改为“空闲”
+    if (merchant.value?.support_queue) {
+      try {
+        await attendanceApi.updateStatus({ status: 'idle' })
+        serverAttendanceStatus.value = 'idle'
+        attendanceStatus.value = 'idle'
+      } catch (e) {
+        // ignore
+      }
+    }
     alert('您的叫号已恢复')
   } catch (e) {
     alert(e.response?.data?.error || '操作失败')
@@ -3326,6 +3346,28 @@ const updateAttendanceStatus = async () => {
     await attendanceApi.updateStatus({ status: attendanceStatus.value })
     // 更新成功后，同步服务器状态
     serverAttendanceStatus.value = attendanceStatus.value
+    // 叫号模式下：状态更新与“暂停/恢复叫号”联动
+    if (merchant.value?.support_queue) {
+      const st = String(attendanceStatus.value || '')
+      if (st === 'paused') {
+        try {
+          await queueApi.updateTechnicianQueuePaused(true)
+          technicianQueuePaused.value = true
+          await fetchQueueCallingStatus()
+        } catch (e) {
+          // ignore
+        }
+      }
+      if (st === 'idle') {
+        try {
+          await queueApi.updateTechnicianQueuePaused(false)
+          technicianQueuePaused.value = false
+          await fetchQueueCallingStatus()
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
     alert('状态已更新')
   } catch (e) {
     alert(e.response?.data?.error || '更新失败')
