@@ -710,6 +710,8 @@ func VerifyCard(c *gin.Context) {
 		// 叫号模式（自动或手动）：独立于“结单/房间”配置。
 		// 只要开启叫号且未开启客服模式，就允许进入叫号排队流程。
 		isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
+		effectiveSupportOrderComplete := merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete
+		effectiveSupportRoom := merchant.SupportCustomerServiceMode && merchant.SupportRoom
 		if merchant.SupportCustomerServiceMode {
 			usageStatus = "in_progress"
 			// 仅 staff 账号可使用“核销即结单”开关（商户老板号默认不走该开关）
@@ -726,7 +728,7 @@ func VerifyCard(c *gin.Context) {
 		} else if isQueueMode {
 			// 叫号模式：核销后进入排队（需要服务会话），usage 进入 in_progress
 			usageStatus = "in_progress"
-		} else if merchant.SupportOrderComplete {
+		} else if effectiveSupportOrderComplete {
 			// 未开启客服但开启结单：核销即起单（进入服务流程）
 			usageStatus = "in_progress"
 		}
@@ -819,7 +821,7 @@ func VerifyCard(c *gin.Context) {
 
 		// 非叫号模式下：未开启客服模式 + 未开启结单 => 核销即结单（不创建服务会话）
 		// 叫号模式下不走该分支（否则无法排队叫号）
-		if !isQueueMode && !merchant.SupportCustomerServiceMode && !merchant.SupportOrderComplete {
+		if !isQueueMode && !merchant.SupportCustomerServiceMode && !effectiveSupportOrderComplete {
 			finishedAt := now
 			if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
 				"status":      "success",
@@ -833,7 +835,7 @@ func VerifyCard(c *gin.Context) {
 		}
 
 		// 未开启客服模式 + 开启结单 或 叫号模式：创建会话
-		if (!merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete) || isQueueMode {
+		if (!merchant.SupportCustomerServiceMode && effectiveSupportOrderComplete) || isQueueMode {
 			// 读取项目真实时长，避免硬编码
 			var project models.MerchantProject
 			durationMinutes := 15 // 默认兜底
@@ -859,7 +861,7 @@ func VerifyCard(c *gin.Context) {
 				startConfirmedAt = nil
 				scheduledStartAt = nil
 				nextStep = ""
-			} else if merchant.SupportRoom {
+			} else if effectiveSupportRoom {
 				status = "room_selecting"
 				dl := now.Add(90 * time.Second)
 				roomSelectDeadlineAt = &dl
@@ -913,18 +915,18 @@ func VerifyCard(c *gin.Context) {
 		// 新流程：创建服务会话（核销->资源锁定->人员选择->预结单->自动结单）
 		status := "staff_selecting"
 		var roomSelectDeadlineAt *time.Time
-		// 叫号自动模式：不需要选房间，直接排队
-		if merchant.SupportQueue && merchant.QueueMode == "auto" {
-			status = "staff_selecting"
-			nextStep = ""
-		} else if merchant.SupportRoom {
-			status = "room_selecting"
-			dl := now.Add(90 * time.Second)
-			roomSelectDeadlineAt = &dl
-			nextStep = "room_select"
-		} else {
-			nextStep = "staff_select"
-		}
+			// 叫号自动模式：不需要选房间，直接排队
+			if merchant.SupportQueue && merchant.QueueMode == "auto" {
+				status = "staff_selecting"
+				nextStep = ""
+			} else if effectiveSupportRoom {
+				status = "room_selecting"
+				dl := now.Add(90 * time.Second)
+				roomSelectDeadlineAt = &dl
+				nextStep = "room_select"
+			} else {
+				nextStep = "staff_select"
+			}
 
 		// 读取项目真实时长，避免硬编码 50 分钟
 		var project models.MerchantProject
@@ -1146,11 +1148,14 @@ func ScanVerifyCard(c *gin.Context) {
 		if err := tx.First(&merchant, merchantID).Error; err != nil {
 			return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
 		}
+		effectiveSupportOrderComplete := merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete
+		effectiveSupportRoom := merchant.SupportCustomerServiceMode && merchant.SupportRoom
 		// 叫号模式（自动或手动）：独立于“结单/房间”配置。
 		// 只要开启叫号且未开启客服模式，就允许进入叫号排队流程。
 		isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
 		if merchant.SupportCustomerServiceMode {
 			usageStatus = "in_progress"
+			// 仅 staff 账号可使用“核销即结单”开关（商户老板号默认不走该开关）
 			if authType == "staff" {
 				okVF, err := middleware.HasPermission(c, "merchant.card.verify_finish")
 				if err != nil {
@@ -1162,8 +1167,9 @@ func ScanVerifyCard(c *gin.Context) {
 				}
 			}
 		} else if isQueueMode {
+			// 叫号模式：核销后进入排队（需要服务会话），usage 进入 in_progress
 			usageStatus = "in_progress"
-		} else if merchant.SupportOrderComplete {
+		} else if effectiveSupportOrderComplete {
 			// 未开启客服但开启结单：核销即起单（进入服务流程）
 			usageStatus = "in_progress"
 		}
@@ -1250,7 +1256,7 @@ func ScanVerifyCard(c *gin.Context) {
 
 			// 非叫号模式下：未开启客服模式 + 未开启结单 => 核销即结单（不创建服务会话）
 			// 叫号模式下不走该分支（否则无法排队叫号）
-			if !isQueueMode && !merchant.SupportCustomerServiceMode && !merchant.SupportOrderComplete {
+			if !isQueueMode && !merchant.SupportCustomerServiceMode && !effectiveSupportOrderComplete {
 				finishedAt = now
 				if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
 					"status":      "success",
@@ -1264,7 +1270,7 @@ func ScanVerifyCard(c *gin.Context) {
 			}
 
 			// 未开启客服模式 + 开启结单 或 叫号模式：创建会话
-			if (!merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete) || isQueueMode {
+			if (!merchant.SupportCustomerServiceMode && effectiveSupportOrderComplete) || isQueueMode {
 				var project models.MerchantProject
 				durationMinutes := 15 // 默认兜底
 				if verifyCode.ProjectID != nil {
@@ -1289,7 +1295,7 @@ func ScanVerifyCard(c *gin.Context) {
 					startConfirmedAt = nil
 					scheduledStartAt = nil
 					nextStep = ""
-				} else if merchant.SupportRoom {
+				} else if effectiveSupportRoom {
 					status = "room_selecting"
 					dl := now.Add(90 * time.Second)
 					roomSelectDeadlineAt = &dl
@@ -1341,7 +1347,7 @@ func ScanVerifyCard(c *gin.Context) {
 			// 新流程：创建服务会话（核销->资源锁定->人员选择->预结单->自动结单）
 			status := "staff_selecting"
 			var roomSelectDeadlineAt *time.Time
-			if merchant.SupportRoom {
+			if effectiveSupportRoom {
 				status = "room_selecting"
 				dl := now.Add(90 * time.Second)
 				roomSelectDeadlineAt = &dl

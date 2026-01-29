@@ -584,7 +584,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if s.StaffSelectEnteredAt == nil {
 				return nil
 			}
-			if !merchant.SupportRoom {
+			if !merchant.SupportCustomerServiceMode || !merchant.SupportRoom {
 				return nil
 			}
 			deadline := s.StaffSelectEnteredAt.Add(staffSelectingTimeout)
@@ -828,7 +828,7 @@ func autoAssignRoom(tx *gorm.DB, s *models.ServiceSession, now time.Time) error 
 	if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 		return err
 	}
-	if !merchant.SupportRoom {
+	if !merchant.SupportCustomerServiceMode || !merchant.SupportRoom {
 		updates := map[string]interface{}{
 			"status": "staff_selecting",
 		}

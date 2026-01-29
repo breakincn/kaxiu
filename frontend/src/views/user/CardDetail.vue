@@ -602,6 +602,7 @@ const getUsageStatusText = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s === 'in_progress') {
     const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+    const supportCSMode = Boolean(card.value?.merchant?.support_customer_service_mode)
     const supportRoom = Boolean(card.value?.merchant?.support_room)
     const sessStatus = String(usage?.service_session_status || '').trim()
     const precheckedAt = usage?.service_session_start_confirmed_at
@@ -646,7 +647,7 @@ const getUsageStatusText = (usage) => {
     }
     if (sessStatus === 'serving') return replaceTerms('服务中', card.value?.merchant)
     if (sessStatus === 'auto_finishing') return replaceTerms('待自动结单', card.value?.merchant)
-    if (supportRoom && sessStatus === 'room_selecting') return '待选房间'
+    if (supportCSMode && supportRoom && sessStatus === 'room_selecting') return '待选房间'
     if (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') {
       // 若客服模式已关闭：走不开启客服模式的流程，不允许再进入"待选客服"
       const supportCSMode = Boolean(merchant?.support_customer_service_mode)
@@ -711,6 +712,7 @@ const getUsageStatusClass = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s === 'in_progress') {
     const supportCS = Boolean(card.value?.merchant?.support_customer_service)
+    const supportCSMode = Boolean(card.value?.merchant?.support_customer_service_mode)
     const supportRoom = Boolean(card.value?.merchant?.support_room)
     const sessStatus = String(usage?.service_session_status || '').trim()
     const precheckedAt = usage?.service_session_start_confirmed_at
@@ -718,7 +720,7 @@ const getUsageStatusClass = (usage) => {
     if (sessStatus === 'finished') return 'text-gray-600'
     // 服务中：绿色
     if (sessStatus === 'serving') return 'text-green-500'
-    if (supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
+    if (supportCSMode && supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
     if (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') return 'text-orange-500'
     // 会话已取消但 usage 仍在进行中：视为上钟超时
     if (sessStatus === 'canceled' && !precheckedAt) {
@@ -1074,13 +1076,14 @@ const getUsageStatusCountdownText = (usage) => {
   if (s !== 'in_progress') return ''
 
   const supportRoom = Boolean(card.value?.merchant?.support_room)
+  const supportCSMode = Boolean(card.value?.merchant?.support_customer_service_mode)
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_start_confirmed_at
   const now = nowTick.value
 
   // 待选房间倒计时（90秒）
-  if (supportRoom && sessStatus === 'room_selecting' && usage?.room_select_deadline_at) {
+  if (supportCSMode && supportRoom && sessStatus === 'room_selecting' && usage?.room_select_deadline_at) {
     const deadline = new Date(usage.room_select_deadline_at).getTime()
     const diff = deadline - now
     if (diff > 0) {
@@ -1189,12 +1192,13 @@ const getUsageStatusCountdownClass = (usage) => {
   if (s !== 'in_progress') return 'text-gray-400'
 
   const supportRoom = Boolean(card.value?.merchant?.support_room)
+  const supportCSMode = Boolean(card.value?.merchant?.support_customer_service_mode)
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = String(usage?.service_session_status || '').trim()
   const precheckedAt = usage?.service_session_start_confirmed_at
 
   // 待选房间倒计时（橙色）
-  if (supportRoom && sessStatus === 'room_selecting' && usage?.room_select_deadline_at) {
+  if (supportCSMode && supportRoom && sessStatus === 'room_selecting' && usage?.room_select_deadline_at) {
     return 'text-orange-500'
   }
 
@@ -1595,6 +1599,7 @@ const onUsageTouchStart = (e, usage) => {
       const merchant = card.value?.merchant
       const supportRoom = Boolean(merchant?.support_room)
       const supportCS = Boolean(merchant?.support_customer_service)
+      const supportCSMode = Boolean(merchant?.support_customer_service_mode)
       const sessStatus = String(latest?.service_session_status || '').trim()
       const sessID = latest?.service_session_id
       const precheckedAt = latest?.service_session_start_confirmed_at
@@ -1654,19 +1659,18 @@ const onUsageTouchStart = (e, usage) => {
       }
 
       if (sessID) {
-        if (supportRoom && sessStatus === 'room_selecting') {
+        if (supportCSMode && supportRoom && sessStatus === 'room_selecting') {
           router.push({ path: `/user/service-sessions/${sessID}`, query: { next_step: 'room_select' } })
           return
         }
-			// 只有客服模式下才允许跳转到选择客服页面
-			const supportCSMode = Boolean(card.value?.merchant?.support_customer_service_mode)
-			if (supportCSMode && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) {
-				router.push({
-					path: `/user/service-sessions/${sessID}`,
-					query: { next_step: 'staff_select', usage_id: String(latest?.id || ''), can_revoke: latest?.can_revoke ? '1' : '0' }
-				})
-				return
-			}
+        // 只有客服模式下才允许跳转到选择客服页面
+        if (supportCSMode && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) {
+          router.push({
+            path: `/user/service-sessions/${sessID}`,
+            query: { next_step: 'staff_select', usage_id: String(latest?.id || ''), can_revoke: latest?.can_revoke ? '1' : '0' }
+          })
+          return
+        }
       }
 
       openUsageQrModal(latest)

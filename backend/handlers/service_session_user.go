@@ -83,7 +83,7 @@ func UserGetVerifyCodeStatus(c *gin.Context) {
 		"expire_at":             vc.ExpireAt,
 		"used":                  vc.Used,
 		"used_at":               vc.UsedAt,
-		"merchant_support_room": merchant.SupportRoom,
+		"merchant_support_room": merchant.SupportCustomerServiceMode && merchant.SupportRoom,
 	}
 
 	if vc.Used {
@@ -95,7 +95,9 @@ func UserGetVerifyCodeStatus(c *gin.Context) {
 		if err == nil {
 			nextStep := ""
 			if s.Status == "room_selecting" {
-				nextStep = "room_select"
+				if merchant.SupportCustomerServiceMode && merchant.SupportRoom {
+					nextStep = "room_select"
+				}
 			} else if s.Status == "staff_selecting" || s.Status == "room_locked" {
 				nextStep = "staff_select"
 			}
@@ -148,7 +150,7 @@ func UserResumeServiceSession(c *gin.Context) {
 			"updated_at":                  now,
 		}
 
-		if merchant.SupportRoom {
+		if merchant.SupportCustomerServiceMode && merchant.SupportRoom {
 			if s.RoomID == nil {
 				newStatus = "room_selecting"
 				updates["status"] = newStatus
@@ -209,7 +211,7 @@ func UserListAvailableRooms(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
 		return
 	}
-	if !merchant.SupportRoom {
+	if !merchant.SupportCustomerServiceMode || !merchant.SupportRoom {
 		c.JSON(http.StatusOK, gin.H{"data": []models.Room{}})
 		return
 	}
@@ -267,8 +269,8 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 		if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 			return err
 		}
-		if !merchant.SupportRoom {
-			return apiErr{status: http.StatusBadRequest, msg: "商户未开启房间功能"}
+		if !merchant.SupportCustomerServiceMode || !merchant.SupportRoom {
+			return apiErr{status: http.StatusBadRequest, msg: "当前不支持选房"}
 		}
 		if s.Status != "room_selecting" {
 			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可选房"}
@@ -458,7 +460,7 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 		if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 			return err
 		}
-		if merchant.SupportRoom && s.RoomID == nil {
+		if merchant.SupportCustomerServiceMode && merchant.SupportRoom && s.RoomID == nil {
 			return apiErr{status: http.StatusBadRequest, msg: "请先选择房间"}
 		}
 
