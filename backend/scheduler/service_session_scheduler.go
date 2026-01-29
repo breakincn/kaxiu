@@ -626,7 +626,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 					return err
 				}
 				skipDegradeToDelayPending := false
-				// 叫号模式（未开启客服模式 + 自动叫号）：不能自动进入 delay_pending，保持 start_pending 状态等待扫码起单
+				// 叫号模式（未开启客服模式）：不能自动进入 delay_pending，保持 start_pending 状态等待扫码起单
 				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue {
 					// 保持 start_pending 状态，等待工作人员扫码起单
 					// 不进行自动降级处理
@@ -675,6 +675,17 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			startDeadline := s.UpdatedAt.Add(getStartPendingTimeoutForSession(&s))
 			if now.Before(startDeadline) {
 				return nil
+			}
+
+			// 手动叫号模式：不做待上号超时回退/跳号，始终保持 start_pending 等待人工处理
+			{
+				var merchant models.Merchant
+				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+					return err
+				}
+				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "manual" {
+					return nil
+				}
 			}
 
 			// 叫号 + 多客服（多窗口）模式：待上号超时视为上号失败，跳过当前号并立即分配下一个
@@ -746,7 +757,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				}
 
 				// 叫号模式（未开启客服模式 + 自动叫号）：需要客服扫码上号，不自动进入 serving
-				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue {
+				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" {
 					if s.ScheduledStartAt != nil {
 						timeoutAt := s.ScheduledStartAt.Add(60 * time.Second)
 						if now.After(timeoutAt) {

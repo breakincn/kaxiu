@@ -15,6 +15,16 @@ import (
 var tableActiveSessionStatuses = []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
 
 func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
+	// 手动叫号模式：待上号不做超时释放，避免状态被自动回退
+	{
+		var m models.Merchant
+		if err := config.DB.Select("id,support_customer_service_mode,support_queue,queue_mode").First(&m, merchantID).Error; err == nil {
+			if !m.SupportCustomerServiceMode && m.SupportQueue && m.QueueMode == "manual" {
+				return
+			}
+		}
+	}
+
 	// 仅处理“待起单”且已超时、还绑着技师的会话
 	var ids []uint
 	if err := config.DB.

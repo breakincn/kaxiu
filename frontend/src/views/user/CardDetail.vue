@@ -552,7 +552,7 @@ const usageQrTitle = computed(() => {
   
   // 叫号模式下显示“扫码上号二维码”
   const merchant = card.value?.merchant
-  const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+  const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')
   const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
   const sessStatus = String(selectedUsage.value?.service_session_status || '').trim()
   if ((isQueueMode || isMultiQueueMode) && sessStatus === 'start_pending') {
@@ -610,7 +610,7 @@ const getUsageStatusText = (usage) => {
     const merchant = card.value?.merchant
     
     // 判断是否为单窗口串行叫号模式（未开启客服模式 + 开启叫号 + 自动叫号 + 未开启多个客服）
-    const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto' && !merchant?.support_multi_customer_service
+    const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual') && !merchant?.support_multi_customer_service
     // 多窗口叫号模式：按当天签到的专业技师数量并行，叫到号后进入 start_pending 等待扫码起单
     const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
     
@@ -1341,7 +1341,7 @@ const trySwitchUsageQrToFinish = async () => {
   const latest = (usages.value || []).find(u => String(u?.service_session_id || '') === sid)
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const merchant = card.value?.merchant
-  const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+  const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')
   const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
   const sessStatus = String(latest?.service_session_status || '').trim()
   const precheckedAt = latest?.service_session_start_confirmed_at
@@ -1393,7 +1393,7 @@ const openUsageQrModal = async (usage) => {
   const precheckedAt = usage?.service_session_start_confirmed_at
   
   // 判断是否为叫号模式（未开启客服模式 + 开启叫号 + 自动叫号）
-  const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+  const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')
   const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
   
   // 叫号模式下的特殊处理：start_pending/delay_pending 都显示 SS 二维码，并轮询等待状态变化
@@ -1605,7 +1605,7 @@ const onUsageTouchStart = (e, usage) => {
       const precheckedAt = latest?.service_session_start_confirmed_at
       
       // 判断是否为叫号模式（未开启客服模式 + 开启叫号 + 自动叫号）
-      const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'auto'
+      const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')
       const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
 
       // 叫号模式下的特殊处理
