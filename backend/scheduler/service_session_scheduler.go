@@ -79,11 +79,11 @@ func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
 	if db == nil {
 		return nil
 	}
-	windowStart := now.Add(-15 * time.Minute)
+	deadline := now.Add(-15 * time.Minute)
 	var merchants []models.Merchant
 	if err := db.
-		Where("queue_paused = ? AND queue_ended_at IS NOT NULL AND queue_ended_at >= ?", true, windowStart).
-		Order("queue_ended_at desc").
+		Where("support_queue = ? AND queue_mode = ? AND queue_paused = ? AND queue_ended_at IS NOT NULL AND queue_ended_at <= ?", true, "manual", true, deadline).
+		Order("queue_ended_at asc").
 		Limit(50).
 		Find(&merchants).Error; err != nil {
 		return err
@@ -96,13 +96,7 @@ func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
 		if m.ID == 0 {
 			continue
 		}
-		if !m.SupportQueue {
-			continue
-		}
-		// 仅对人工叫号生效
-		if m.QueueMode != "manual" {
-			continue
-		}
+
 		_ = db.Transaction(func(tx *gorm.DB) error {
 			// 选取一批未完成 usage（进行中/失败等，统一置为 success）
 			var ids []uint
