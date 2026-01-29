@@ -707,6 +707,9 @@ func VerifyCard(c *gin.Context) {
 		if err := tx.First(&merchant, merchantID).Error; err != nil {
 			return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
 		}
+		// 叫号模式（自动或手动）：独立于“结单/房间”配置。
+		// 只要开启叫号且未开启客服模式，就允许进入叫号排队流程。
+		isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
 		if merchant.SupportCustomerServiceMode {
 			usageStatus = "in_progress"
 			// 仅 staff 账号可使用“核销即结单”开关（商户老板号默认不走该开关）
@@ -720,6 +723,9 @@ func VerifyCard(c *gin.Context) {
 					usageStatus = "success"
 				}
 			}
+		} else if isQueueMode {
+			// 叫号模式：核销后进入排队（需要服务会话），usage 进入 in_progress
+			usageStatus = "in_progress"
 		} else if merchant.SupportOrderComplete {
 			// 未开启客服但开启结单：核销即起单（进入服务流程）
 			usageStatus = "in_progress"
@@ -811,8 +817,9 @@ func VerifyCard(c *gin.Context) {
 		}
 		usageID = usage.ID
 
-		// 未开启客服模式 + 未开启结单：核销即结单（不创建服务会话）
-		if !merchant.SupportCustomerServiceMode && !merchant.SupportOrderComplete {
+		// 非叫号模式下：未开启客服模式 + 未开启结单 => 核销即结单（不创建服务会话）
+		// 叫号模式下不走该分支（否则无法排队叫号）
+		if !isQueueMode && !merchant.SupportCustomerServiceMode && !merchant.SupportOrderComplete {
 			finishedAt := now
 			if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
 				"status":      "success",
@@ -825,8 +832,8 @@ func VerifyCard(c *gin.Context) {
 			return nil
 		}
 
-		// 未开启客服模式 + 开启结单：核销即起单（创建会话并进入延迟起单）
-		if !merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete {
+		// 未开启客服模式 + 开启结单 或 叫号模式：创建会话
+		if (!merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete) || isQueueMode {
 			// 读取项目真实时长，避免硬编码
 			var project models.MerchantProject
 			durationMinutes := 15 // 默认兜底
@@ -847,7 +854,7 @@ func VerifyCard(c *gin.Context) {
 			var startConfirmedAt *time.Time
 			var scheduledStartAt *time.Time
 			// 叫号模式（自动或手动）：核销后直接进入排队态 staff_selecting
-			if merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual") {
+			if isQueueMode {
 				status = "staff_selecting"
 				startConfirmedAt = nil
 				scheduledStartAt = nil
@@ -884,7 +891,7 @@ func VerifyCard(c *gin.Context) {
 			}
 			sessionID = session.ID
 			// 叫号模式（自动或手动）：需要入现场叫号队列
-			if merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual") {
+			if isQueueMode {
 				shouldEnqueueOnsite = true
 			}
 			return nil
@@ -1139,6 +1146,9 @@ func ScanVerifyCard(c *gin.Context) {
 		if err := tx.First(&merchant, merchantID).Error; err != nil {
 			return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
 		}
+		// 叫号模式（自动或手动）：独立于“结单/房间”配置。
+		// 只要开启叫号且未开启客服模式，就允许进入叫号排队流程。
+		isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
 		if merchant.SupportCustomerServiceMode {
 			usageStatus = "in_progress"
 			if authType == "staff" {
@@ -1151,6 +1161,8 @@ func ScanVerifyCard(c *gin.Context) {
 					usageStatus = "success"
 				}
 			}
+		} else if isQueueMode {
+			usageStatus = "in_progress"
 		} else if merchant.SupportOrderComplete {
 			// 未开启客服但开启结单：核销即起单（进入服务流程）
 			usageStatus = "in_progress"
@@ -1236,8 +1248,9 @@ func ScanVerifyCard(c *gin.Context) {
 			}
 			usageID = usage.ID
 
-			// 未开启客服模式 + 未开启结单：核销即结单（不创建服务会话）
-			if !merchant.SupportCustomerServiceMode && !merchant.SupportOrderComplete {
+			// 非叫号模式下：未开启客服模式 + 未开启结单 => 核销即结单（不创建服务会话）
+			// 叫号模式下不走该分支（否则无法排队叫号）
+			if !isQueueMode && !merchant.SupportCustomerServiceMode && !merchant.SupportOrderComplete {
 				finishedAt = now
 				if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
 					"status":      "success",
@@ -1250,8 +1263,8 @@ func ScanVerifyCard(c *gin.Context) {
 				return nil
 			}
 
-			// 未开启客服模式 + 开启结单：核销即起单（创建会话并进入延迟起单）
-			if !merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete {
+			// 未开启客服模式 + 开启结单 或 叫号模式：创建会话
+			if (!merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete) || isQueueMode {
 				var project models.MerchantProject
 				durationMinutes := 15 // 默认兜底
 				if verifyCode.ProjectID != nil {
@@ -1270,23 +1283,21 @@ func ScanVerifyCard(c *gin.Context) {
 				var roomSelectDeadlineAt *time.Time
 				var startConfirmedAt *time.Time
 				var scheduledStartAt *time.Time
-				if merchant.SupportRoom {
+				if isQueueMode {
+					// 叫号模式：忽略房间设置，直接进入排队态
+					status = "staff_selecting"
+					startConfirmedAt = nil
+					scheduledStartAt = nil
+					nextStep = ""
+				} else if merchant.SupportRoom {
 					status = "room_selecting"
 					dl := now.Add(90 * time.Second)
 					roomSelectDeadlineAt = &dl
 					nextStep = "room_select"
 				} else {
-					// 叫号模式（自动或手动）：核销后进入 staff_selecting 状态排队
-					if merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual") {
-						status = "staff_selecting"
-						startConfirmedAt = nil
-						scheduledStartAt = nil
-						nextStep = ""
-					} else {
-						startConfirmedAt = &now
-						scheduledStartAt = &startAt
-						nextStep = ""
-					}
+					startConfirmedAt = &now
+					scheduledStartAt = &startAt
+					nextStep = ""
 				}
 
 				session := models.ServiceSession{
@@ -1309,14 +1320,7 @@ func ScanVerifyCard(c *gin.Context) {
 					return err
 				}
 				sessionID = session.ID
-				// 叫号模式（自动或手动）：需要入现场叫号队列
-				if merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual") {
-					shouldEnqueueOnsite = true
-				} else {
-					// 进入服务流程才会参与现场叫号队列
-					shouldEnqueueOnsite = true
-				}
-				action = "verify"
+				shouldEnqueueOnsite = true
 				return nil
 			}
 
