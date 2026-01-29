@@ -50,11 +50,6 @@
           </div>
 
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">开启签到</div>
-            <input type="checkbox" v-model="form.support_technician_checkin" />
-          </div>
-
-          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
             <div class="text-gray-800 font-medium">开启手牌</div>
             <input type="checkbox" v-model="form.support_hand_card" />
           </div>
@@ -115,7 +110,6 @@ const form = ref({
   support_appointment: false,
   support_queue: false,
   support_room: false,
-  support_technician_checkin: false,
   support_direct_sale: false,
   support_customer_service: false,
   support_customer_service_mode: false,
@@ -158,7 +152,6 @@ const load = async () => {
       support_appointment: !!m.support_appointment,
       support_queue: !!m.support_queue,
       support_room: !!m.support_room,
-      support_technician_checkin: !!m.support_technician_checkin,
       support_direct_sale: !!m.support_direct_sale,
       support_customer_service: !!m.support_customer_service,
       support_customer_service_mode: !!m.support_customer_service_mode,
@@ -217,7 +210,6 @@ const save = async () => {
       support_appointment: form.value.support_appointment,
       support_queue: form.value.support_queue,
       support_room: form.value.support_room,
-      support_technician_checkin: form.value.support_technician_checkin,
       support_direct_sale: form.value.support_direct_sale,
       support_customer_service: form.value.support_customer_service,
       support_customer_service_mode: form.value.support_customer_service_mode,

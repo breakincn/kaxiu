@@ -163,6 +163,10 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.GET("/professional-roles", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantProfessionalRoles)
 	auth.POST("/professional-roles", middleware.RequirePermission("merchant.cs.manage"), handlers.CreateMerchantProfessionalRole)
 
+	// 岗位签到配置（按岗位独立控制是否需要签到）
+	auth.GET("/role-attendance-configs", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantRoleAttendanceConfigs)
+	auth.PUT("/role-attendance-configs/:roleKey", middleware.RequirePermission("merchant.cs.manage"), handlers.SetMerchantRoleAttendanceConfig)
+
 	// 房间管理
 	auth.GET("/rooms", middleware.RequireAnyPermission("merchant.room.view", "merchant.service.manage"), handlers.ListRooms)
 	auth.POST("/rooms", middleware.RequirePermission("merchant.service.manage"), handlers.CreateRoom)

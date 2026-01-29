@@ -200,6 +200,10 @@ export const merchantApi = {
   getRolePermissions: (roleKey) => api.get(`/merchant/role-permissions/${roleKey}`),
   setRolePermissions: (roleKey, data) => api.post(`/merchant/role-permissions/${roleKey}`, data),
 
+  // 岗位签到配置（按岗位独立控制是否需要签到）
+  getRoleAttendanceConfigs: () => api.get('/merchant/role-attendance-configs'),
+  setRoleAttendanceConfig: (roleKey, requireAttendance) => api.put(`/merchant/role-attendance-configs/${encodeURIComponent(roleKey)}`, { require_attendance: !!requireAttendance }),
+
   // 看板（Table）：房间/客服
   getTableRooms: () => api.get('/merchant/table/rooms'),
   getTableStaff: (type) => {

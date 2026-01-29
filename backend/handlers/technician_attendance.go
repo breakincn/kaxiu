@@ -145,16 +145,6 @@ func TechnicianCheckIn(c *gin.Context) {
 		return
 	}
 
-	var merchant models.Merchant
-	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
-		return
-	}
-	if !merchant.SupportTechnicianCheckin {
-		c.JSON(http.StatusForbidden, gin.H{"error": "该商户未启用工作人员签到"})
-		return
-	}
-
 	authTypeAny, _ := c.Get("auth_type")
 	authType, _ := authTypeAny.(string)
 
@@ -190,9 +180,16 @@ func TechnicianCheckIn(c *gin.Context) {
 		return
 	}
 
+	req, err := isRoleAttendanceRequired(config.DB, merchantID, tech.ServiceRoleID)
+	if err == nil && !req {
+		_ = ensureAttendanceForNoCheckinRole(config.DB, merchantID, techID, now)
+		c.JSON(http.StatusOK, gin.H{"ok": true, "message": "该岗位无需签到"})
+		return
+	}
+
 	var attendance models.TechnicianAttendance
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	err := config.DB.Where("merchant_id = ? AND technician_id = ? AND created_at >= ?", merchantID, techID, start).First(&attendance).Error
+	err = config.DB.Where("merchant_id = ? AND technician_id = ? AND created_at >= ?", merchantID, techID, start).First(&attendance).Error
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -237,16 +234,6 @@ func TechnicianCheckOut(c *gin.Context) {
 		return
 	}
 
-	var merchant models.Merchant
-	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
-		return
-	}
-	if !merchant.SupportTechnicianCheckin {
-		c.JSON(http.StatusForbidden, gin.H{"error": "该商户未启用工作人员签到"})
-		return
-	}
-
 	authTypeAny, _ := c.Get("auth_type")
 	authType, _ := authTypeAny.(string)
 
@@ -276,6 +263,28 @@ func TechnicianCheckOut(c *gin.Context) {
 
 	now := time.Now()
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// 若岗位无需签到，自动补一条当天考勤记录，保证后续状态更新有记录可写
+	{
+		var tech models.Technician
+		if err := config.DB.Where("id = ? AND merchant_id = ?", techID, merchantID).First(&tech).Error; err == nil {
+			if req, err := isRoleAttendanceRequired(config.DB, merchantID, tech.ServiceRoleID); err == nil && !req {
+				_ = ensureAttendanceForNoCheckinRole(config.DB, merchantID, techID, now)
+			}
+		}
+	}
+
+	// 按岗位独立配置签到：若岗位无需签到，则无需下班签到
+	{
+		var tech models.Technician
+		if err := config.DB.Where("id = ? AND merchant_id = ?", techID, merchantID).First(&tech).Error; err == nil {
+			if req, err := isRoleAttendanceRequired(config.DB, merchantID, tech.ServiceRoleID); err == nil && !req {
+				_ = ensureAttendanceForNoCheckinRole(config.DB, merchantID, techID, now)
+				c.JSON(http.StatusOK, gin.H{"ok": true, "message": "该岗位无需签到"})
+				return
+			}
+		}
+	}
 
 	var attendance models.TechnicianAttendance
 	if err := config.DB.Where("merchant_id = ? AND technician_id = ? AND created_at >= ?", merchantID, techID, start).
@@ -314,15 +323,7 @@ func UpdateTechnicianServiceStatus(c *gin.Context) {
 		return
 	}
 
-	var merchant models.Merchant
-	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
-		return
-	}
-	if !merchant.SupportTechnicianCheckin {
-		c.JSON(http.StatusForbidden, gin.H{"error": "该商户未启用工作人员签到"})
-		return
-	}
+	// 按岗位独立配置签到：不再依赖商户全局开关
 
 	authTypeAny, _ := c.Get("auth_type")
 	authType, _ := authTypeAny.(string)
@@ -365,6 +366,16 @@ func UpdateTechnicianServiceStatus(c *gin.Context) {
 
 	now := time.Now()
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// 若岗位无需签到，自动补一条当天考勤记录，保证后续状态更新有记录可写
+	{
+		var tech models.Technician
+		if err := config.DB.Where("id = ? AND merchant_id = ?", techID, merchantID).First(&tech).Error; err == nil {
+			if req, err := isRoleAttendanceRequired(config.DB, merchantID, tech.ServiceRoleID); err == nil && !req {
+				_ = ensureAttendanceForNoCheckinRole(config.DB, merchantID, techID, now)
+			}
+		}
+	}
 
 	var out models.TechnicianAttendance
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
@@ -442,15 +453,7 @@ func ListAvailableTechnicians(c *gin.Context) {
 		return
 	}
 
-	var merchant models.Merchant
-	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
-		return
-	}
-	if !merchant.SupportTechnicianCheckin {
-		c.JSON(http.StatusForbidden, gin.H{"error": "该商户未启用工作人员签到"})
-		return
-	}
+	// 按岗位独立配置签到：不再依赖商户全局开关
 
 	now := time.Now()
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -499,6 +502,16 @@ func GetCurrentTechnicianAttendance(c *gin.Context) {
 	var attendance models.TechnicianAttendance
 	now := time.Now()
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// 按岗位独立配置签到：若岗位无需签到，确保当天存在考勤记录
+	{
+		var tech models.Technician
+		if err := config.DB.Where("id = ? AND merchant_id = ?", technicianID, merchantID).First(&tech).Error; err == nil {
+			if req, err := isRoleAttendanceRequired(config.DB, merchantID, tech.ServiceRoleID); err == nil && !req {
+				_ = ensureAttendanceForNoCheckinRole(config.DB, merchantID, technicianID, now)
+			}
+		}
+	}
 	err := config.DB.Where("merchant_id = ? AND technician_id = ? AND created_at >= ?", merchantID, technicianID, start).
 		Order("created_at DESC").
 		First(&attendance).Error

@@ -94,6 +94,11 @@ func InitDB() {
 	// service_roles: 支持商户自定义专业岗位
 	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `merchant_id` int unsigned NULL DEFAULT NULL COMMENT '所属商户ID（NULL 表示平台默认）'")
 	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `role_type` varchar(20) NOT NULL DEFAULT '' COMMENT '角色类型：operational/professional'")
+	// service_roles: 是否需要签到（按岗位配置）
+	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `require_attendance` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否需要签到（0-不需要，1-需要）'")
+
+	// merchant_role_attendance_configs: 商户维度覆盖岗位签到配置
+	DB.Exec("CREATE TABLE IF NOT EXISTS `merchant_role_attendance_configs` (\n  `id` int unsigned NOT NULL AUTO_INCREMENT,\n  `merchant_id` int unsigned NOT NULL,\n  `service_role_id` int unsigned NOT NULL,\n  `require_attendance` tinyint(1) NOT NULL DEFAULT 1,\n  `created_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),\n  `updated_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uidx_m_role_att` (`merchant_id`,`service_role_id`),\n  KEY `idx_m_role_att_merchant` (`merchant_id`),\n  KEY `idx_m_role_att_role` (`service_role_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商户岗位签到配置（覆盖service_roles.require_attendance）'")
 
 	// 添加表注释
 	DB.Exec("ALTER TABLE `users` COMMENT = '用户表'")
@@ -526,6 +531,7 @@ func addFieldComments() {
 	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `key` varchar(50) NOT NULL COMMENT '客服类型标识（如：technician、teacher）'")
 	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `name` varchar(50) NOT NULL COMMENT '客服类型名称（如：技师、老师）'")
 	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `account_prefix` varchar(5) NOT NULL DEFAULT '' COMMENT '账号前缀（最多5个英文字母）'")
+	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `require_attendance` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否需要签到（0-不需要，1-需要）'")
 	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `description` varchar(255) DEFAULT '' COMMENT '客服类型描述'")
 	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否启用（0-禁用，1-启用）'")
 	DB.Exec("ALTER TABLE `service_roles` MODIFY COLUMN `allow_permission_adjust` tinyint(1) NOT NULL DEFAULT 0 COMMENT '是否允许权限调整（0-不允许，1-允许）'")

@@ -1316,7 +1316,8 @@ const showCardsTab = computed(() => {
 })
 
 const showServiceTab = computed(() => {
-  return isTechnicianAuth() && !!merchant.value?.support_technician_checkin
+  // 按岗位独立配置签到：不再依赖商户全局开关
+  return isTechnicianAuth()
 })
 const currentTab = ref('queue')
 const routeUserCode = ref('')
@@ -3486,8 +3487,9 @@ const doCheckIn = async () => {
   if (!isTechnicianAuth()) return
   attendanceLoading.value = true
   try {
-    await attendanceApi.checkIn({})
-    alert('签到成功')
+    const res = await attendanceApi.checkIn({})
+    const msg = res?.data?.message
+    alert(msg || '签到成功')
     // 重新获取最新状态
     await fetchCurrentAttendanceStatus()
   } catch (e) {
@@ -3506,11 +3508,12 @@ const doCheckOut = async () => {
   
   attendanceLoading.value = true
   try {
-    await attendanceApi.checkOut({})
+    const res = await attendanceApi.checkOut({})
     // 下班签到成功后，同步服务器状态
     serverAttendanceStatus.value = 'rest'
     attendanceStatus.value = 'rest'
-    alert('下班签到成功')
+    const msg = res?.data?.message
+    alert(msg || '下班签到成功')
   } catch (e) {
     alert(e.response?.data?.error || '下班签到失败')
   } finally {

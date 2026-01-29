@@ -39,19 +39,10 @@ func TechnicianLogin(c *gin.Context) {
 		return
 	}
 
-	var merchant models.Merchant
-	if err := config.DB.First(&merchant, shopSlug.MerchantID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
-		return
-	}
-
-	if !merchant.SupportTechnicianCheckin {
-		c.JSON(http.StatusForbidden, gin.H{"error": "该商户未启用工作人员签到"})
-		return
-	}
+	merchantID := shopSlug.MerchantID
 
 	var tech models.Technician
-	if err := config.DB.Preload("ServiceRole").Where("merchant_id = ? AND account = ?", merchant.ID, account).First(&tech).Error; err != nil {
+	if err := config.DB.Preload("ServiceRole").Where("merchant_id = ? AND account = ?", merchantID, account).First(&tech).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "账号或密码错误"})
 		return
 	}
@@ -66,8 +57,17 @@ func TechnicianLogin(c *gin.Context) {
 		return
 	}
 
+	// 按岗位独立配置签到：若该岗位不需要签到，则自动确保当天存在考勤记录
+	{
+		now := time.Now()
+		req, err := isRoleAttendanceRequired(config.DB, merchantID, tech.ServiceRoleID)
+		if err == nil && !req {
+			_ = ensureAttendanceForNoCheckinRole(config.DB, merchantID, tech.ID, now)
+		}
+	}
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"merchant_id":     merchant.ID,
+		"merchant_id":     merchantID,
 		"staff_id":        tech.ID,
 		"service_role_id": tech.ServiceRoleID,
 		"account":         tech.Account,
@@ -82,15 +82,12 @@ func TechnicianLogin(c *gin.Context) {
 		return
 	}
 
-	log.Printf("技师登录成功(店铺路径): ID=%d, 账号=%s, merchant_id=%d, slug=%s", tech.ID, tech.Account, merchant.ID, slug)
+	log.Printf("技师登录成功(店铺路径): ID=%d, 账号=%s, merchant_id=%d, slug=%s", tech.ID, tech.Account, merchantID, slug)
 
 	c.JSON(http.StatusOK, gin.H{
 		"token": tokenString,
 		"merchant": gin.H{
-			"id":    merchant.ID,
-			"phone": merchant.Phone,
-			"name":  merchant.Name,
-			"type":  merchant.Type,
+			"id": merchantID,
 		},
 		"technician": gin.H{
 			"id":      tech.ID,

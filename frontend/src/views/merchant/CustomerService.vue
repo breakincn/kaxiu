@@ -70,6 +70,16 @@
               </template>
             </div>
           </div>
+
+          <div v-if="activeType === 'operational'" class="mt-3 flex items-center justify-between">
+            <div class="text-gray-700 text-sm">开启签到</div>
+            <input
+              type="checkbox"
+              :checked="getRoleRequireAttendance(selectedOperationalRole)"
+              :disabled="attendanceConfigLoading || attendanceConfigSaving"
+              @change="(e) => onToggleRoleAttendance(selectedOperationalRole, e.target.checked)"
+            />
+          </div>
         </div>
 
         <div>
@@ -151,14 +161,25 @@
                       <div class="text-gray-800 font-medium">{{ roleName }}</div>
                       <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs">{{ group.techs.length }}人</span>
                     </div>
-                    <button
-                      v-if="group.role && group.role.allow_permission_adjust"
-                      type="button"
-                      class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
-                      @click="openPermissionAdjustProfessional(group.role.key)"
-                    >
-                      权限微调
-                    </button>
+                    <div class="flex items-center gap-2">
+                      <div v-if="group.role" class="flex items-center gap-2">
+                        <div class="text-gray-700 text-sm">开启签到</div>
+                        <input
+                          type="checkbox"
+                          :checked="getRoleRequireAttendance(group.role.key)"
+                          :disabled="attendanceConfigLoading || attendanceConfigSaving"
+                          @change="(e) => onToggleRoleAttendance(group.role.key, e.target.checked)"
+                        />
+                      </div>
+                      <button
+                        v-if="group.role && group.role.allow_permission_adjust"
+                        type="button"
+                        class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
+                        @click="openPermissionAdjustProfessional(group.role.key)"
+                      >
+                        权限微调
+                      </button>
+                    </div>
                   </div>
                   
                   <div class="space-y-3">
@@ -309,6 +330,10 @@ const loading = ref(false)
 const saving = ref(false)
 const savingRole = ref(false)
 const techs = ref([])
+
+const attendanceConfigLoading = ref(false)
+const attendanceConfigSaving = ref(false)
+const roleAttendanceMap = ref({})
 
 const merchant = ref({})
 
@@ -593,6 +618,47 @@ const loadProfessionalRoles = async () => {
   }
 }
 
+const loadRoleAttendanceConfigs = async () => {
+  attendanceConfigLoading.value = true
+  try {
+    const res = await merchantApi.getRoleAttendanceConfigs()
+    const list = res.data?.data || []
+    const m = {}
+    list.forEach((it) => {
+      if (!it || !it.service_role_key) return
+      m[String(it.service_role_key)] = !!it.require_attendance
+    })
+    roleAttendanceMap.value = m
+  } catch (e) {
+    roleAttendanceMap.value = {}
+  } finally {
+    attendanceConfigLoading.value = false
+  }
+}
+
+const getRoleRequireAttendance = (roleKey) => {
+  const k = String(roleKey || '')
+  if (!k) return true
+  const v = roleAttendanceMap.value[k]
+  if (typeof v === 'boolean') return v
+  return true
+}
+
+const onToggleRoleAttendance = async (roleKey, checked) => {
+  const k = String(roleKey || '').trim()
+  if (!k) return
+  if (attendanceConfigSaving.value) return
+  attendanceConfigSaving.value = true
+  try {
+    await merchantApi.setRoleAttendanceConfig(k, !!checked)
+    roleAttendanceMap.value = { ...roleAttendanceMap.value, [k]: !!checked }
+  } catch (e) {
+    alert(e.response?.data?.error || '保存失败')
+  } finally {
+    attendanceConfigSaving.value = false
+  }
+}
+
 const closeAddRole = () => {
   showAddRole.value = false
   roleForm.value = { name: '', account_prefix: '' }
@@ -615,6 +681,8 @@ const submitRole = async () => {
     const res = await merchantApi.createProfessionalRole({ name, account_prefix: prefix })
     const role = res?.data?.data
     await loadProfessionalRoles()
+
+    await loadRoleAttendanceConfigs()
     if (role && role.key) {
       selectedProfessionalRole.value = String(role.key)
     }
@@ -644,6 +712,8 @@ onMounted(async () => {
   }
 
   await loadProfessionalRoles()
+
+  await loadRoleAttendanceConfigs()
 
   const opFirst = operationalRoles.value[0]
   if (opFirst && opFirst.key) {

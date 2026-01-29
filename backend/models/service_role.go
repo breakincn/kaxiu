@@ -9,6 +9,7 @@ type ServiceRole struct {
 	Key                   string     `json:"key" gorm:"size:50;uniqueIndex"`
 	Name                  string     `json:"name" gorm:"size:50;not null"`
 	AccountPrefix         string     `json:"account_prefix" gorm:"size:5;default:''"`
+	RequireAttendance     bool       `json:"require_attendance" gorm:"default:true"`
 	Description           string     `json:"description" gorm:"size:255"`
 	IsActive              bool       `json:"is_active" gorm:"default:true"`
 	AllowPermissionAdjust bool       `json:"allow_permission_adjust" gorm:"default:false"`
