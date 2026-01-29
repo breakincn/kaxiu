@@ -60,12 +60,12 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 
 			oldTechID := s.TechnicianID
 			updates := map[string]interface{}{
-				"status":                "staff_selecting",
-				"technician_id":         nil,
-				"staff_select_entered_at": nil,
+				"status":                        "staff_selecting",
+				"technician_id":                 nil,
+				"staff_select_entered_at":       nil,
 				"start_pending_timeout_seconds": 0,
-				"start_timeout_count":   gorm.Expr("start_timeout_count + ?", 1),
-				"start_timeout_last_at": now,
+				"start_timeout_count":           gorm.Expr("start_timeout_count + ?", 1),
+				"start_timeout_last_at":         now,
 			}
 			if err := tx.Model(&models.ServiceSession{}).
 				Where("id = ? AND status = ? AND start_confirmed_at IS NULL", s.ID, "start_pending").
@@ -241,7 +241,13 @@ func TableStaff(c *gin.Context) {
 	if roleType == "professional" {
 		qTech = qTech.Where("sr.`key` NOT IN ('store_manager','front_desk')")
 	}
-	qTech.Order("technicians.id desc").Find(&techs)
+	if roleType == "operational" {
+		// 运营客服：店长（account_prefix=sm）优先
+		qTech.Order("CASE WHEN sr.account_prefix = 'sm' THEN 1 ELSE 2 END, technicians.id, technicians.updated_at desc")
+	} else {
+		qTech.Order("technicians.id, technicians.updated_at desc")
+	}
+	qTech.Find(&techs)
 
 	// 签到/状态 - 和选择工作人员条件一致：当天签到且未下班
 	now := time.Now()
