@@ -596,8 +596,13 @@ func TriggerNextCalling(c *gin.Context) {
 	}
 
 	// 检查商户是否暂停叫号，若暂停则先恢复
-	if merchant.QueuePaused {
-		if err := config.DB.Model(&merchant).Update("queue_paused", false).Error; err != nil {
+	// 恢复叫号时也需要清空 queue_ended_at：否则调度器会把 queue_ended_at 最近 15 分钟内的商户批量收尾，导致“待叫号”刷新后变“完成”
+	if merchant.QueuePaused || merchant.QueueEndedAt != nil {
+		updates := map[string]interface{}{
+			"queue_paused":   false,
+			"queue_ended_at": nil,
+		}
+		if err := config.DB.Model(&merchant).Updates(updates).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "恢复叫号失败"})
 			return
 		}
@@ -944,6 +949,10 @@ func TriggerNextCallingOnFinish(c *gin.Context) {
 	if merchant.QueuePaused {
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{"triggered": false, "reason": "商户叫号已暂停"}})
 		return
+	}
+	// 防御性处理：若历史上写入了 queue_ended_at 但又恢复运营（queue_paused=false），这里清理掉，避免调度器 finalizeUsagesAfterQueueEnded 误收尾
+	if merchant.QueueEndedAt != nil {
+		_ = config.DB.Model(&merchant).Update("queue_ended_at", nil).Error
 	}
 
 	// 获取账号类型

@@ -82,7 +82,7 @@ func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
 	windowStart := now.Add(-15 * time.Minute)
 	var merchants []models.Merchant
 	if err := db.
-		Where("queue_ended_at IS NOT NULL AND queue_ended_at >= ?", windowStart).
+		Where("queue_paused = ? AND queue_ended_at IS NOT NULL AND queue_ended_at >= ?", true, windowStart).
 		Order("queue_ended_at desc").
 		Limit(50).
 		Find(&merchants).Error; err != nil {
