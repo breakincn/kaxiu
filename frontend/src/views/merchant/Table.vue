@@ -31,6 +31,25 @@
           </button>
         </div>
 
+        <div v-if="activeTab === 'staff'" class="mt-3 flex gap-2">
+          <button
+            type="button"
+            class="flex-1 px-3 py-2 rounded-lg text-sm font-medium border"
+            :class="staffSubTab === 'operation' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
+            @click="selectStaffSubTab('operation')"
+          >
+            运营客服
+          </button>
+          <button
+            type="button"
+            class="flex-1 px-3 py-2 rounded-lg text-sm font-medium border"
+            :class="staffSubTab === 'professional' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
+            @click="selectStaffSubTab('professional')"
+          >
+            专业客服
+          </button>
+        </div>
+
         <div v-if="loading" class="text-center text-gray-400 py-10">加载中...</div>
 
         <div v-else class="mt-4">
@@ -81,7 +100,7 @@
           </div>
 
           <div v-else>
-            <div v-if="staff.length === 0" class="text-center text-gray-400 py-10">暂无专业客服</div>
+            <div v-if="staff.length === 0" class="text-center text-gray-400 py-10">暂无{{ staffSubTab === 'operation' ? '运营客服' : '专业客服' }}</div>
             <div v-else class="space-y-3">
               <div v-for="it in staff" :key="it.technician.id" class="border border-gray-100 rounded-xl p-4">
                 <div class="flex items-start justify-between gap-3">
@@ -126,6 +145,8 @@ const router = useRouter()
 // 从localStorage恢复选中的标签，默认为空（不默认选择）
 const savedTab = localStorage.getItem('tableActiveTab')
 const activeTab = ref(savedTab || '')
+const savedStaffSubTab = localStorage.getItem('tableStaffSubTab')
+const staffSubTab = ref(savedStaffSubTab || 'professional')
 const loading = ref(false)
 const rooms = ref([])
 const staff = ref([])
@@ -171,6 +192,15 @@ const selectTab = async (t) => {
   // 保存到localStorage
   localStorage.setItem('tableActiveTab', t)
   await load()
+}
+
+const selectStaffSubTab = (t) => {
+  staffSubTab.value = t
+  localStorage.setItem('tableStaffSubTab', t)
+  // 在客服页切换子项时，立即重新加载对应类型的数据
+  if (activeTab.value === 'staff') {
+    load()
+  }
 }
 
 const formatTime = (v) => {
@@ -292,7 +322,8 @@ const load = async () => {
       const res = await merchantApi.getTableRooms()
       rooms.value = res.data?.data || []
     } else {
-      const res = await merchantApi.getTableStaff()
+      const type = staffSubTab.value === 'operation' ? 'operation' : 'professional'
+      const res = await merchantApi.getTableStaff(type)
       staff.value = res.data?.data || []
     }
   } catch (e) {

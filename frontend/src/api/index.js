@@ -202,7 +202,11 @@ export const merchantApi = {
 
   // 看板（Table）：房间/客服
   getTableRooms: () => api.get('/merchant/table/rooms'),
-  getTableStaff: () => api.get('/merchant/table/staff')
+  getTableStaff: (type) => {
+    const t = String(type || '').trim()
+    if (!t) return api.get('/merchant/table/staff')
+    return api.get('/merchant/table/staff', { params: { type: t } })
+  }
 }
 
 export const ensureMerchantPermissionsLoaded = async () => {

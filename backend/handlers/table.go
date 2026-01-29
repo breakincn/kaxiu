@@ -5,6 +5,7 @@ import (
 	"kabao/models"
 	"kabao/queue"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -216,28 +217,46 @@ func TableStaff(c *gin.Context) {
 		return
 	}
 
+	roleType := strings.TrimSpace(c.Query("type"))
+	if roleType == "" {
+		roleType = "professional"
+	}
+	// 注意：DB 中运营客服 role_type 实际为 operational，但前端参数使用 operation
+	if roleType == "operation" || roleType == "operational" {
+		roleType = "operational"
+	}
+	if roleType != "professional" && roleType != "operational" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效type，支持: professional / operation"})
+		return
+	}
+
 	lazyReleaseStartPendingTimeout(merchantID, time.Now())
 
-	// 专业客服（排除店长/前台）
+	// 专业客服（排除店长/前台）；运营客服不排除
 	var techs []models.Technician
-	config.DB.
+	qTech := config.DB.
 		Preload("ServiceRole").
 		Joins("JOIN service_roles sr ON sr.id = technicians.service_role_id").
-		Where("technicians.merchant_id = ? AND sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", merchantID, "professional").
-		Order("technicians.id desc").
-		Find(&techs)
+		Where("technicians.merchant_id = ? AND sr.role_type = ?", merchantID, roleType)
+	if roleType == "professional" {
+		qTech = qTech.Where("sr.`key` NOT IN ('store_manager','front_desk')")
+	}
+	qTech.Order("technicians.id desc").Find(&techs)
 
 	// 签到/状态 - 和选择工作人员条件一致：当天签到且未下班
 	now := time.Now()
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var atts []models.TechnicianAttendance
-	config.DB.
+	qAtt := config.DB.
 		Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
 		Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
 		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL", merchantID, start).
 		Where("t.is_active = ?", true).
-		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
-		Find(&atts)
+		Where("sr.role_type = ?", roleType)
+	if roleType == "professional" {
+		qAtt = qAtt.Where("sr.`key` NOT IN ('store_manager','front_desk')")
+	}
+	qAtt.Find(&atts)
 	attByTech := map[uint]models.TechnicianAttendance{}
 	for _, a := range atts {
 		attByTech[a.TechnicianID] = a
