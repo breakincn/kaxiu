@@ -46,7 +46,7 @@
 
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
             <div class="text-gray-800 font-medium">{{ replaceTerms('开启结单') }}</div>
-            <input type="checkbox" v-model="form.support_order_complete" />
+            <input type="checkbox" v-model="form.support_order_complete" :disabled="form.support_queue" />
           </div>
 
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -61,7 +61,7 @@
 
           <div class="px-4 py-4 flex items-center justify-between">
             <div class="text-gray-800 font-medium">开启房间</div>
-            <input type="checkbox" v-model="form.support_room" />
+            <input type="checkbox" v-model="form.support_room" :disabled="form.support_queue" />
           </div>
 
         </div>
