@@ -1036,20 +1036,41 @@
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-center justify-between">
           <div>
-            <div class="font-medium text-gray-800">房间管理</div>
-            <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1">
-              {{ roomManagePhaseText }} 房间号: {{ roomManageRoomText }}
-            </div>
-            <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1 font-mono">
-              单号: {{ formatSessionNo(roomManageTrackingId) }}
-            </div>
-            <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1">
-              项目: {{ roomManageProjectName }}
-            </div>
-            <div class="text-gray-500 text-sm mt-1">用于核销后房间占用与调度</div>
+            <div class="font-medium text-gray-800">{{ (merchant.support_queue && isTechnicianAuth()) ? '叫号信息' : '房间管理' }}</div>
+
+            <!-- 叫号模式 + 专业客服：显示窗口/台号、叫号、单号、项目 -->
+            <template v-if="merchant.support_queue && isTechnicianAuth()">
+              <div v-if="technicianWindowNo" class="text-gray-700 text-sm mt-1">
+                {{ windowTerm }}: {{ technicianWindowNo }}
+              </div>
+              <div class="text-gray-700 text-sm mt-1">
+                叫号: {{ technicianQueueNoText }}
+              </div>
+              <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1 font-mono">
+                单号: {{ formatSessionNo(roomManageTrackingId) }}
+              </div>
+              <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1">
+                项目: {{ roomManageProjectName }}
+              </div>
+            </template>
+
+            <!-- 非叫号模式：保留原房间管理展示 -->
+            <template v-else>
+              <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1">
+                {{ roomManagePhaseText }} 房间号: {{ roomManageRoomText }}
+              </div>
+              <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1 font-mono">
+                单号: {{ formatSessionNo(roomManageTrackingId) }}
+              </div>
+              <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1">
+                项目: {{ roomManageProjectName }}
+              </div>
+            </template>
           </div>
+
+          <!-- 叫号模式 + 专业客服：不展示房间管理按钮 -->
           <button
-            v-if="canRoomManage && merchant?.support_room"
+            v-if="!(merchant.support_queue && isTechnicianAuth()) && canRoomManage && merchant?.support_room"
             @click="router.push('/merchant/rooms')"
             class="px-4 py-2 bg-slate-600 text-white rounded-lg text-sm font-medium"
           >
@@ -1389,6 +1410,32 @@ const getTechnicianName = () => {
   if (code) return `技师${code}`
   return '技师'
 }
+
+// 窗口/台号名词（商户可自定义）
+const windowTerm = computed(() => {
+  return merchant.value?.queue_window_term || '窗口'
+})
+
+// 当前技师信息（用于读取 window_no 等）
+const technicianMe = ref(null)
+const technicianWindowNo = computed(() => {
+  const no = technicianMe.value?.window_no
+  return String(no || '').trim() || ''
+})
+
+// 当前技师正在服务/待上号的会话对应的叫号号数（从 todayUsages.queue_no 得到）
+const technicianQueueNoText = computed(() => {
+  if (!merchant.value?.support_queue) return '-'
+  const s = roomManageSession.value
+  if (!s) return '-'
+  const usageId = Number(s.initial_usage_id || 0)
+  if (!usageId) return '-'
+  const u = (todayUsages.value || []).find(x => Number(x?.id) === usageId)
+  const no = Number(u?.queue_no || 0)
+  if (!Number.isFinite(no) || no <= 0) return '-'
+  const prefix = String(merchant.value?.queue_prefix || '')
+  return `${prefix}${no}`
+})
 
 const canSellCards = computed(() => {
   return (
@@ -2272,6 +2319,16 @@ const fetchMerchant = async () => {
   }
 }
 
+const fetchCurrentTechnicianMe = async () => {
+  if (!isTechnicianAuth()) return
+  try {
+    const res = await merchantApi.getCurrentTechnician()
+    technicianMe.value = res.data?.data || null
+  } catch (e) {
+    technicianMe.value = null
+  }
+}
+
 const loadCardTemplates = async () => {
   try {
     const res = await shopApi.getCardTemplates()
@@ -3143,7 +3200,9 @@ watch(currentTab, (tab) => {
     } else if (tab === 'notice') {
       fetchNotices()
     } else if (tab === 'service') {
+      fetchCurrentTechnicianMe()
       fetchServiceSessions()
+      fetchTodayUsages()
       startServiceSessionTimer()
     }
   }
@@ -3253,6 +3312,8 @@ onMounted(async () => {
   merchantId.value = parsedMerchantId
   await fetchMerchant()
   console.log('Merchant loaded:', merchant.value)
+
+  await fetchCurrentTechnicianMe()
 
   // 扫码核销回跳后的“分配手牌”弹窗（需要商户信息已加载）
   nextTick(() => {
@@ -3407,6 +3468,7 @@ onMounted(async () => {
     fetchNotices()
   } else if (currentTab.value === 'service') {
     fetchServiceSessions()
+    fetchTodayUsages()
     startServiceSessionTimer()
   }
 })
