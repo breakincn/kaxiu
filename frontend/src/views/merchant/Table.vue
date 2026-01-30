@@ -107,7 +107,7 @@
                   <div>
                     <div class="flex items-center gap-2">
                       <div class="text-gray-800 font-medium">{{ it.technician.name }}</div>
-                      <span class="px-2 py-0.5 rounded text-xs" :class="badgeClass(it)">
+                      <span v-if="shouldShowStaffBadge(it)" class="px-2 py-0.5 rounded text-xs" :class="badgeClass(it)">
                         {{ badgeText(it) }}
                       </span>
                     </div>
@@ -153,6 +153,8 @@ const staff = ref([])
 const currentTime = ref(new Date())
 const merchant = ref({})
 const config = ref({})
+
+const roleAttendanceMap = ref({})
 
 // 定时器
 let timer = null
@@ -304,6 +306,23 @@ const badgeText = (it) => {
   return st || '暂停'
 }
 
+const getRoleRequireAttendance = (roleKey) => {
+  const k = String(roleKey || '')
+  if (!k) return true
+  const v = roleAttendanceMap.value[k]
+  if (typeof v === 'boolean') return v
+  return true
+}
+
+const shouldShowStaffBadge = (it) => {
+  const roleKey = it?.technician?.service_role?.key
+  const requireAttendance = getRoleRequireAttendance(roleKey)
+  if (requireAttendance) return true
+  // 不要求签到的岗位：不展示“未签到/空闲/暂停”等签到相关徽标
+  // 但如果有服务会话（例如服务待起单/待结单等），仍然展示服务状态徽标
+  return !!it?.current_session
+}
+
 const badgeClass = (it) => {
   const txt = badgeText(it)
   if (txt === '未签到') return 'bg-gray-100 text-gray-500'
@@ -313,6 +332,21 @@ const badgeClass = (it) => {
   if (txt === replaceTerms('服务 待结单', merchant.value)) return 'bg-orange-50 text-orange-600'
   if (txt === '暂停') return 'bg-blue-50 text-blue-600'
   return 'bg-blue-50 text-blue-600'
+}
+
+const loadRoleAttendanceConfigs = async () => {
+  try {
+    const res = await merchantApi.getRoleAttendanceConfigs()
+    const list = res.data?.data || []
+    const m = {}
+    list.forEach((it) => {
+      if (!it || !it.service_role_key) return
+      m[String(it.service_role_key)] = !!it.require_attendance
+    })
+    roleAttendanceMap.value = m
+  } catch (e) {
+    roleAttendanceMap.value = {}
+  }
 }
 
 const load = async () => {
@@ -343,6 +377,7 @@ onMounted(async () => {
   }
   await fetchMerchant()
   await fetchConfig()
+  await loadRoleAttendanceConfigs()
   await load()
   // 启动定时器，每秒更新一次
   timer = setInterval(updateCurrentTime, 1000)
