@@ -100,28 +100,40 @@
           </div>
 
           <div v-else>
-            <div v-if="staff.length === 0" class="text-center text-gray-400 py-10">暂无{{ staffSubTab === 'operation' ? '运营客服' : '专业客服' }}</div>
-            <div v-else class="space-y-3">
-              <div v-for="it in staff" :key="it.technician.id" class="border border-gray-100 rounded-xl p-4">
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <div class="flex items-center gap-2">
-                      <div class="text-gray-800 font-medium">{{ it.technician.name }}</div>
-                      <span v-if="shouldShowStaffBadge(it)" class="px-2 py-0.5 rounded text-xs" :class="badgeClass(it)">
-                        {{ badgeText(it) }}
-                      </span>
-                    </div>
-                    <div class="text-gray-500 text-sm mt-1">
-                      <div>岗位：{{ it.technician.service_role?.name || '-' }}　账号：{{ it.technician.account }}</div>
-                      <div v-if="it.checked_in_at">签到：{{ formatTime(it.checked_in_at) }}</div>
-                      <div v-if="it.room">房间：{{ it.room.name }}</div>
-                      <div v-if="it.service_start_at">开始：{{ formatTime(it.service_start_at) }}</div>
-                      <div v-if="it.service_finish_at">结束：{{ formatTime(it.service_finish_at) }}</div>
-                      <div v-if="it.service_finish_at">剩余：{{ calculateRemainTime(it.service_finish_at) }}</div>
-                      <div v-if="it.next_available_at">下次可服务：{{ formatTime(it.next_available_at) }}（{{ formatDuration(it.next_available_in_seconds) }}）</div>
+            <div v-if="groupedStaff.length === 0" class="text-center text-gray-400 py-10">暂无{{ staffSubTab === 'operation' ? '运营客服' : '专业客服' }}</div>
+
+            <div v-else class="space-y-6">
+              <div v-for="g in groupedStaff" :key="g.groupKey" class="bg-gray-50 rounded-xl p-4">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="flex items-center gap-2">
+                    <div class="text-gray-800 font-medium">{{ g.roleName }}</div>
+                    <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs">{{ g.items.length }}人</span>
+                  </div>
+                </div>
+
+                <div class="space-y-3">
+                  <div v-for="it in g.items" :key="it.technician.id" class="border border-gray-100 rounded-xl p-4 bg-white">
+                    <div class="flex items-start justify-between gap-3">
+                      <div>
+                        <div class="flex items-center gap-2">
+                          <div class="text-gray-800 font-medium">{{ it.technician.name }}</div>
+                          <span v-if="shouldShowStaffBadge(it)" class="px-2 py-0.5 rounded text-xs" :class="badgeClass(it)">
+                            {{ badgeText(it) }}
+                          </span>
+                        </div>
+                        <div class="text-gray-500 text-sm mt-1">
+                          <div>岗位：{{ it.technician.service_role?.name || '-' }}　账号：{{ it.technician.account }}</div>
+                          <div v-if="it.checked_in_at">签到：{{ formatTime(it.checked_in_at) }}</div>
+                          <div v-if="it.room">房间：{{ it.room.name }}</div>
+                          <div v-if="it.service_start_at">开始：{{ formatTime(it.service_start_at) }}</div>
+                          <div v-if="it.service_finish_at">结束：{{ formatTime(it.service_finish_at) }}</div>
+                          <div v-if="it.service_finish_at">剩余：{{ calculateRemainTime(it.service_finish_at) }}</div>
+                          <div v-if="it.next_available_at">下次可服务：{{ formatTime(it.next_available_at) }}（{{ formatDuration(it.next_available_in_seconds) }}）</div>
+                        </div>
+                      </div>
+                      <div class="text-gray-400 text-xs">ID: {{ it.technician.id }}</div>
                     </div>
                   </div>
-                  <div class="text-gray-400 text-xs">ID: {{ it.technician.id }}</div>
                 </div>
               </div>
             </div>
@@ -134,7 +146,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
 import { replaceTerms } from '../../utils/terms'
@@ -155,6 +167,28 @@ const merchant = ref({})
 const config = ref({})
 
 const roleAttendanceMap = ref({})
+
+const groupedStaff = computed(() => {
+  const list = staff.value || []
+  const groups = []
+  const idx = {}
+
+  list.forEach((it) => {
+    const roleKey = String(it?.technician?.service_role?.key || '').trim()
+    const roleName = String(it?.technician?.service_role?.name || '').trim() || '未知岗位'
+    const groupKey = roleKey || roleName
+
+    let gi = idx[groupKey]
+    if (gi === undefined) {
+      gi = groups.length
+      idx[groupKey] = gi
+      groups.push({ groupKey, roleKey, roleName, items: [] })
+    }
+    groups[gi].items.push(it)
+  })
+
+  return groups
+})
 
 // 定时器
 let timer = null
