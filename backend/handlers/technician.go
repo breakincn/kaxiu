@@ -44,6 +44,49 @@ func nextTechnicianCode4(tx *gorm.DB, merchantID uint, serviceRoleID uint, roleT
 	return fmt.Sprintf("%0*d", digits, seq), nil
 }
 
+func nextTechnicianCodeByPrefix(tx *gorm.DB, merchantID uint, prefix string, roleType string) (string, error) {
+	// 运营客服用3位编号（001），专业客服用4位编号（0001）
+	digits := 4
+	if roleType == "operational" {
+		digits = 3
+	}
+
+	p := strings.ToLower(strings.TrimSpace(prefix))
+	if p == "" {
+		return "", fmt.Errorf("empty prefix")
+	}
+
+	// account 固定位数时按字符串倒序即可得到最大号
+	// 例：js0003 > js0002
+	var lastAccount string
+	pattern := fmt.Sprintf("^%s[0-9]{%d}$", p, digits)
+	err := tx.Raw(
+		"SELECT account FROM technicians WHERE merchant_id = ? AND account REGEXP ? ORDER BY account DESC LIMIT 1 FOR UPDATE",
+		merchantID,
+		pattern,
+	).Scan(&lastAccount).Error
+	if err != nil {
+		return "", err
+	}
+	lastAccount = strings.TrimSpace(lastAccount)
+	if lastAccount == "" {
+		return fmt.Sprintf("%0*d", digits, 1), nil
+	}
+	if !strings.HasPrefix(lastAccount, p) {
+		return fmt.Sprintf("%0*d", digits, 1), nil
+	}
+	lastCode := strings.TrimPrefix(lastAccount, p)
+	seq, err := strconv.Atoi(lastCode)
+	if err != nil {
+		return fmt.Sprintf("%0*d", digits, 1), nil
+	}
+	seq++
+	if seq < 1 {
+		seq = 1
+	}
+	return fmt.Sprintf("%0*d", digits, seq), nil
+}
+
 func GetCurrentTechnician(c *gin.Context) {
 	authType, _ := c.Get("auth_type")
 	if authType != "staff" {
@@ -354,7 +397,7 @@ func CreateMerchantTechnician(c *gin.Context) {
 	var tech models.Technician
 	defaultPassword := ""
 	if err := config.DB.Transaction(func(tx *gorm.DB) error {
-		code, err := nextTechnicianCode4(tx, merchantID, role.ID, role.RoleType)
+		code, err := nextTechnicianCodeByPrefix(tx, merchantID, prefix, role.RoleType)
 		if err != nil {
 			return err
 		}
