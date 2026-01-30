@@ -67,7 +67,7 @@
               <div class="flex items-center justify-between mb-2">
                 <div class="text-gray-700 text-sm font-medium">专业客服</div>
                 <button type="button" class="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-medium" @click="openProfessionalBasePerms">
-                  配置专业客服基础默认权限
+                  配置基础默认权限
                 </button>
               </div>
               <div class="space-y-3">
