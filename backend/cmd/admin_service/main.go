@@ -13,6 +13,7 @@ import (
 )
 
 func main() {
+	config.LoadEnv()
 	config.InitDB()
 	if err := queue.InitDefaultStoreFromEnv(); err != nil {
 		log.Fatal("初始化Redis队列失败:", err)

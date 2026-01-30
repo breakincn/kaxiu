@@ -18,6 +18,19 @@ func PlatformAdminMiddleware() gin.HandlerFunc {
 		}
 
 		got := strings.TrimSpace(c.GetHeader("X-Platform-Admin-Token"))
+		if got == "" {
+			// 兼容：Authorization: Bearer <token>
+			auth := strings.TrimSpace(c.GetHeader("Authorization"))
+			if auth != "" {
+				lower := strings.ToLower(auth)
+				if strings.HasPrefix(lower, "bearer ") {
+					got = strings.TrimSpace(auth[len("Bearer "):])
+				} else {
+					got = strings.TrimSpace(auth)
+				}
+			}
+		}
+
 		if got == "" || got != secret {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权限"})
 			c.Abort()

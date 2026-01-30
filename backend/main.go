@@ -15,6 +15,7 @@ import (
 )
 
 func main() {
+	config.LoadEnv()
 	// 初始化数据库
 	config.InitDB()
 	if err := queue.InitDefaultStoreFromEnv(); err != nil {
