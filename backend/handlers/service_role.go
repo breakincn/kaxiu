@@ -32,7 +32,7 @@ func GetMerchantProfessionalRoles(c *gin.Context) {
 	}
 
 	var list []models.ServiceRole
-	config.DB.Where("merchant_id = ? AND role_type = ? AND is_active = ?", merchantID, "professional", true).Order("sort asc, id asc").Find(&list)
+	config.DB.Where("(merchant_id IS NULL AND role_type = ? AND is_active = ?) OR (merchant_id = ? AND role_type = ? AND is_active = ?)", "professional", true, merchantID, "professional", true).Order("sort asc, id asc").Find(&list)
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
 
