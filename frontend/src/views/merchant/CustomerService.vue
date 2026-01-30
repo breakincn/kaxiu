@@ -573,7 +573,8 @@ const openPermissionAdjustProfessional = (roleKey) => {
 const load = async () => {
   loading.value = true
   try {
-    const res = await merchantApi.getTechnicians(activeType.value === 'operational' ? selectedOperationalRole.value : '')
+    // 运营客服需要拉取所有店长和前台数据用于分组展示
+    const res = await merchantApi.getTechnicians(activeType.value === 'operational' ? '' : '')
     techs.value = res.data.data || []
   } catch (e) {
     techs.value = []
@@ -702,12 +703,6 @@ const removeTech = async (t) => {
 const selectType = async (t) => {
   activeType.value = t
   saveActiveType(t)
-  closeAdd()
-  await load()
-}
-
-const selectOperationalRole = async (key) => {
-  selectedOperationalRole.value = key
   closeAdd()
   await load()
 }
@@ -844,7 +839,7 @@ onMounted(async () => {
 })
 
 // 监听角色切换
-watch([activeType, selectedOperationalRole, selectedProfessionalRole], () => {
+watch([activeType, selectedProfessionalRole], () => {
   load()
 })
 </script>
