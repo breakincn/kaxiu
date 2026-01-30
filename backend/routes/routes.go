@@ -245,6 +245,8 @@ func SetupAdminRoutes(r *gin.Engine) {
 	admin.DELETE("/permissions/:id", handlers.AdminDeletePermission)
 	admin.GET("/service-roles/:roleId/permissions", handlers.AdminGetRolePermissions)
 	admin.POST("/service-roles/:roleId/permissions", handlers.AdminSetRolePermissions)
+	admin.GET("/professional-base-permissions", handlers.AdminGetProfessionalBasePermissions)
+	admin.POST("/professional-base-permissions", handlers.AdminSetProfessionalBasePermissions)
 
 	// 平台管理商户
 	admin.POST("/merchants", handlers.CreateMerchant)

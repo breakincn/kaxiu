@@ -110,6 +110,23 @@ func HasPermission(c *gin.Context, permissionKey string) (bool, error) {
 		return override.Allowed, nil
 	}
 
+	// 专业客服：基础默认权限（全局）
+	var role models.ServiceRole
+	if err := config.DB.First(&role, serviceRoleID).Error; err == nil {
+		if strings.TrimSpace(role.RoleType) == "professional" {
+			var sc models.SystemConfig
+			if err2 := config.DB.Where("`key` = ?", "professional_base_permission_keys").First(&sc).Error; err2 == nil {
+				parts := strings.Split(sc.Value, ",")
+				for _, p := range parts {
+					k := strings.TrimSpace(p)
+					if k != "" && k == strings.TrimSpace(permissionKey) {
+						return true, nil
+					}
+				}
+			}
+		}
+	}
+
 	// 检查全局角色权限
 	var rolePerm models.RolePermission
 	err = config.DB.Where("service_role_id = ? AND permission_id = ? AND allowed = ?", serviceRoleID, perm.ID, true).First(&rolePerm).Error

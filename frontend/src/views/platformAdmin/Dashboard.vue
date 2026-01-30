@@ -20,8 +20,11 @@
         <div v-if="loadingRoles" class="text-center text-gray-400 py-10">加载中...</div>
         <div v-else>
           <div v-if="roles.length === 0" class="text-center text-gray-400 py-10">暂无角色</div>
-          <div v-else class="mt-4 space-y-3">
-            <div v-for="r in roles" :key="r.id" class="border border-gray-100 rounded-xl p-4">
+          <div v-else class="mt-4 space-y-6">
+            <div>
+              <div class="text-gray-700 text-sm font-medium mb-2">运营客服</div>
+              <div class="space-y-3">
+                <div v-for="r in operationalRoles" :key="r.id" class="border border-gray-100 rounded-xl p-4">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <div class="flex items-center gap-2">
@@ -55,6 +58,56 @@
                   删除
                 </button>
               </div>
+            </div>
+              </div>
+              <div v-if="operationalRoles.length === 0" class="text-gray-400 text-sm py-6 text-center">暂无运营客服</div>
+            </div>
+
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <div class="text-gray-700 text-sm font-medium">专业客服</div>
+                <button type="button" class="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-medium" @click="openProfessionalBasePerms">
+                  配置专业客服基础默认权限
+                </button>
+              </div>
+              <div class="space-y-3">
+                <div v-for="r in professionalRoles" :key="r.id" class="border border-gray-100 rounded-xl p-4">
+                  <div class="flex items-start justify-between gap-3">
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <div class="text-gray-800 font-medium">{{ r.name }}</div>
+                        <span class="px-2 py-0.5 rounded text-xs" :class="r.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'">
+                          {{ r.is_active ? '启用' : '禁用' }}
+                        </span>
+                        <span v-if="r.allow_permission_adjust" class="px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-600">可微调</span>
+                      </div>
+                      <div class="text-gray-500 text-sm mt-1">key：{{ r.key }}　sort：{{ r.sort }}</div>
+                      <div v-if="r.description" class="text-gray-400 text-sm mt-1">{{ r.description }}</div>
+                    </div>
+                    <div class="text-gray-400 text-xs">ID: {{ r.id }}</div>
+                  </div>
+
+                  <div class="mt-3 flex gap-2">
+                    <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEditRole(r)">编辑</button>
+                    <button
+                      type="button"
+                      class="px-3 py-2 rounded-lg text-sm font-medium"
+                      :class="r.is_active ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'"
+                      @click="toggleRoleActive(r)"
+                    >
+                      {{ r.is_active ? '禁用' : '启用' }}
+                    </button>
+                    <button type="button" class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium" @click="openRolePerms(r)">
+                      配置默认权限
+                    </button>
+                    <div class="flex-1"></div>
+                    <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="deleteRole(r)">
+                      删除
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="professionalRoles.length === 0" class="text-gray-400 text-sm py-6 text-center">暂无专业客服</div>
             </div>
           </div>
         </div>
@@ -192,11 +245,45 @@
                   <div class="text-gray-500 text-xs">{{ it.permission.key }}</div>
                 </div>
                 <label class="flex items-center gap-2 text-sm text-gray-700">
-                  <input type="checkbox" v-model="it.allowed" />允许
+                  <input type="checkbox" v-model="it.allowed" :disabled="!!it.is_base" />允许
                 </label>
               </div>
             </div>
             <button type="button" class="mt-4 w-full py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50" :disabled="saving" @click="saveRolePerms">
+              {{ saving ? '保存中...' : '保存' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 专业客服基础默认权限弹窗 -->
+    <div v-if="showProfessionalBasePermModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-4 z-50" @click.self="closeProfessionalBasePermModal">
+      <div class="bg-white rounded-2xl w-full max-w-2xl overflow-hidden">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+          <div class="font-medium text-gray-800">配置专业客服基础默认权限</div>
+          <button type="button" class="text-gray-400" @click="closeProfessionalBasePermModal">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="px-5 py-5">
+          <div v-if="loadingProfessionalBasePerms" class="text-center text-gray-400 py-10">加载中...</div>
+          <div v-else>
+            <div v-if="professionalBasePermItems.length === 0" class="text-center text-gray-400 py-10">暂无权限</div>
+            <div v-else class="max-h-[60vh] overflow-y-auto border border-gray-100 rounded-xl">
+              <div v-for="it in professionalBasePermItems" :key="it.permission.id" class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <div>
+                  <div class="text-gray-800 text-sm font-medium">{{ it.permission.name }}</div>
+                  <div class="text-gray-500 text-xs">{{ it.permission.key }}</div>
+                </div>
+                <label class="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" v-model="it.allowed" />允许
+                </label>
+              </div>
+            </div>
+            <button type="button" class="mt-4 w-full py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50" :disabled="saving" @click="saveProfessionalBasePerms">
               {{ saving ? '保存中...' : '保存' }}
             </button>
           </div>
@@ -231,6 +318,13 @@ const rolePermRole = ref(null)
 const rolePermItems = ref([])
 const loadingRolePerms = ref(false)
 
+const operationalRoles = ref([])
+const professionalRoles = ref([])
+
+const showProfessionalBasePermModal = ref(false)
+const professionalBasePermItems = ref([])
+const loadingProfessionalBasePerms = ref(false)
+
 const logout = () => {
   localStorage.removeItem('platformAdminToken')
   router.replace('/platform-admin/login')
@@ -250,8 +344,62 @@ const loadRoles = async () => {
   try {
     const res = await platformAdminApi.listServiceRoles()
     roles.value = res.data?.data || []
+    const ops = []
+    const pros = []
+    for (const r of roles.value) {
+      if ((r.role_type || '').trim() === 'operational') {
+        ops.push(r)
+      } else if ((r.role_type || '').trim() === 'professional') {
+        pros.push(r)
+      } else {
+        // 兼容旧数据：role_type 为空时按描述前缀推断
+        const d = (r.description || '').trim()
+        if (d.startsWith('运营客服')) {
+          ops.push(r)
+        } else {
+          pros.push(r)
+        }
+      }
+    }
+    operationalRoles.value = ops
+    professionalRoles.value = pros
   } finally {
     loadingRoles.value = false
+  }
+}
+
+const openProfessionalBasePerms = async () => {
+  showProfessionalBasePermModal.value = true
+  loadingProfessionalBasePerms.value = true
+  try {
+    const res = await platformAdminApi.getProfessionalBasePermissions()
+    professionalBasePermItems.value = res.data?.data?.items || []
+  } catch (e) {
+    alert(e.response?.data?.error || '加载失败')
+  } finally {
+    loadingProfessionalBasePerms.value = false
+  }
+}
+
+const closeProfessionalBasePermModal = () => {
+  showProfessionalBasePermModal.value = false
+}
+
+const saveProfessionalBasePerms = async () => {
+  if (saving.value) return
+  saving.value = true
+  try {
+    await platformAdminApi.setProfessionalBasePermissions({
+      items: (professionalBasePermItems.value || []).map((it) => ({
+        permission_key: it.permission?.key,
+        allowed: !!it.allowed
+      }))
+    })
+    closeProfessionalBasePermModal()
+  } catch (e) {
+    alert(e.response?.data?.error || '保存失败')
+  } finally {
+    saving.value = false
   }
 }
 
@@ -425,7 +573,13 @@ const openRolePerms = async (r) => {
   loadingRolePerms.value = true
   try {
     const res = await platformAdminApi.getRolePermissions(r.id)
-    rolePermItems.value = res.data?.data?.items || []
+    const items = res.data?.data?.items || []
+    for (const it of items) {
+      if (it && it.is_base) {
+        it.allowed = true
+      }
+    }
+    rolePermItems.value = items
   } catch (e) {
     alert(e.response?.data?.error || '加载失败')
   } finally {
@@ -444,7 +598,10 @@ const saveRolePerms = async () => {
   if (saving.value) return
   saving.value = true
   try {
-    const items = rolePermItems.value.map((it) => ({ permission_key: it.permission.key, allowed: !!it.allowed }))
+    const items = rolePermItems.value.map((it) => ({
+      permission_key: it.permission.key,
+      allowed: it && it.is_base ? true : !!it.allowed
+    }))
     await platformAdminApi.setRolePermissions(rolePermRole.value.id, { items })
     closeRolePermModal()
   } catch (e) {

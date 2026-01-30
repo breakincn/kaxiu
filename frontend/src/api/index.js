@@ -143,7 +143,10 @@ export const platformAdminApi = {
   deletePermission: (id) => api.delete(`/admin/permissions/${id}`),
 
   getRolePermissions: (roleId) => api.get(`/admin/service-roles/${roleId}/permissions`),
-  setRolePermissions: (roleId, data) => api.post(`/admin/service-roles/${roleId}/permissions`, data)
+  setRolePermissions: (roleId, data) => api.post(`/admin/service-roles/${roleId}/permissions`, data),
+
+  getProfessionalBasePermissions: () => api.get('/admin/professional-base-permissions'),
+  setProfessionalBasePermissions: (data) => api.post('/admin/professional-base-permissions', data)
 }
 
 export const userApi = {
