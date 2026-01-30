@@ -322,7 +322,8 @@ func CreateMerchantTechnician(c *gin.Context) {
 			return
 		}
 	} else if strings.TrimSpace(role.RoleType) == "professional" {
-		if role.MerchantID == nil || *role.MerchantID != merchantID {
+		//if role.MerchantID == nil || *role.MerchantID != merchantID {
+		if role.MerchantID != nil {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权使用该岗位"})
 			return
 		}
