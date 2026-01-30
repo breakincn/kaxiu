@@ -31,8 +31,35 @@ func GetMerchantProfessionalRoles(c *gin.Context) {
 		return
 	}
 
-	var list []models.ServiceRole
-	config.DB.Where("(merchant_id IS NULL AND role_type = ? AND is_active = ?) OR (merchant_id = ? AND role_type = ? AND is_active = ?)", "professional", true, merchantID, "professional", true).Order("sort asc, id asc").Find(&list)
+	// 同称谓去重：优先商户自定义岗位，若商户已定义同名岗位，则不返回平台同名岗位
+	var merchantRoles []models.ServiceRole
+	config.DB.Where("merchant_id = ? AND role_type = ? AND is_active = ?", merchantID, "professional", true).Order("sort asc, id asc").Find(&merchantRoles)
+
+	var platformRoles []models.ServiceRole
+	config.DB.Where("merchant_id IS NULL AND role_type = ? AND is_active = ?", "professional", true).Order("sort asc, id asc").Find(&platformRoles)
+
+	seenName := map[string]bool{}
+	list := make([]models.ServiceRole, 0, len(merchantRoles)+len(platformRoles))
+	for _, r := range merchantRoles {
+		n := strings.TrimSpace(r.Name)
+		if n == "" {
+			continue
+		}
+		seenName[n] = true
+		list = append(list, r)
+	}
+	for _, r := range platformRoles {
+		n := strings.TrimSpace(r.Name)
+		if n == "" {
+			continue
+		}
+		if seenName[n] {
+			continue
+		}
+		seenName[n] = true
+		list = append(list, r)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
 
@@ -81,6 +108,13 @@ func CreateMerchantProfessionalRole(c *gin.Context) {
 	var existing models.ServiceRole
 	if err := config.DB.Where("merchant_id = ? AND role_type = ? AND account_prefix = ?", merchantID, "professional", prefix).First(&existing).Error; err == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该前缀已存在"})
+		return
+	}
+
+	// 称谓不可重复：对齐“新增岗位（称谓）”下拉框口径（平台 + 商户，若同名则平台会被剔除，但依然视为已存在）
+	var existingByName models.ServiceRole
+	if err := config.DB.Where("role_type = ? AND is_active = ? AND name = ? AND (merchant_id IS NULL OR merchant_id = ?)", "professional", true, name, merchantID).First(&existingByName).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该岗位称谓已经存在,请不要重复添加"})
 		return
 	}
 

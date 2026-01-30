@@ -360,7 +360,33 @@ const operationalRoles = computed(() => {
 })
 
 const professionalRoles = computed(() => {
-  return professionalRolesData.value
+  // 兜底去重：同称谓优先商户自定义（merchant_id 非空），剔除平台同名
+  const list = professionalRolesData.value || []
+  const byName = {}
+  for (const r of list) {
+    if (!r) continue
+    const name = String(r.name || '').trim()
+    if (!name) continue
+    const isMerchant = r.merchant_id !== null && r.merchant_id !== undefined
+    const existing = byName[name]
+    if (!existing) {
+      byName[name] = r
+      continue
+    }
+    const existingIsMerchant = existing.merchant_id !== null && existing.merchant_id !== undefined
+    if (!existingIsMerchant && isMerchant) {
+      byName[name] = r
+    }
+  }
+  const out = Object.values(byName)
+  // 保持稳定排序：sort asc, id asc
+  out.sort((a, b) => {
+    const sa = Number(a?.sort || 0)
+    const sb = Number(b?.sort || 0)
+    if (sa !== sb) return sa - sb
+    return Number(a?.id || 0) - Number(b?.id || 0)
+  })
+  return out
 })
 
 // 是否显示窗口号（开启叫号模式且为专业客服）
@@ -672,6 +698,14 @@ const submitRole = async () => {
     alert('请输入称谓')
     return
   }
+
+	// 称谓重复校验：与“新增岗位（称谓）”下拉框一致
+	const exists = (professionalRoles.value || []).some((r) => String(r?.name || '').trim() === name)
+	if (exists) {
+		alert('该岗位称谓已经存在,请不要重复添加')
+		return
+	}
+
   if (!prefix) {
     alert('请输入账号前缀')
     return
