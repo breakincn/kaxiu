@@ -43,21 +43,7 @@
             </div>
             <div class="flex items-center gap-2">
               <template v-if="activeType === 'operational'">
-                <button
-                  v-if="selectedOperationalRoleObj && selectedOperationalRoleObj.allow_permission_adjust"
-                  type="button"
-                  class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
-                  @click="openPermissionAdjustOperational"
-                >
-                  权限微调
-                </button>
-                <button
-                  type="button"
-                  class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
-                  @click="openCreateOperational"
-                >
-                  添加{{ selectedOperationalRoleObj?.name || '运营客服' }}
-                </button>
+                <!-- 运营客服不再需要全局按钮 -->
               </template>
               <template v-else>
                 <button
@@ -70,16 +56,6 @@
               </template>
             </div>
           </div>
-
-          <div v-if="activeType === 'operational'" class="mt-3 flex items-center justify-between">
-            <div class="text-gray-700 text-sm">开启签到</div>
-            <input
-              type="checkbox"
-              :checked="getRoleRequireAttendance(selectedOperationalRole)"
-              :disabled="attendanceConfigLoading || attendanceConfigSaving"
-              @change="(e) => onToggleRoleAttendance(selectedOperationalRole, e.target.checked)"
-            />
-          </div>
         </div>
 
         <div>
@@ -87,48 +63,134 @@
 
           <div v-else>
             <div v-if="activeType === 'operational'" class="mt-4">
-              <div class="flex flex-wrap gap-2">
-                <button
-                  v-for="r in operationalRoles"
-                  :key="r.key"
-                  type="button"
-                  class="px-3 py-2 rounded-lg text-sm font-medium border"
-                  :class="selectedOperationalRole === r.key ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
-                  @click="selectOperationalRole(r.key)"
-                >
-                  {{ r.name }}
-                </button>
-              </div>
-
-              <div v-if="visibleTechs.length === 0" class="text-center text-gray-400 py-10">暂无{{ selectedOperationalRoleObj?.name || '运营客服' }}</div>
-
-              <div v-else class="mt-4 space-y-3">
-                <div v-for="t in visibleTechs" :key="t.id" class="border border-gray-100 rounded-xl p-4">
-                  <div class="flex items-start justify-between gap-3">
-                    <div>
-                      <div class="flex items-center gap-2">
-                        <div class="text-gray-800 font-medium">{{ t.name }}</div>
-                        <span class="px-2 py-0.5 rounded text-xs" :class="t.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'">
-                          {{ t.is_active ? '启用' : '禁用' }}
-                        </span>
-                      </div>
-                      <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：{{ selectedOperationalRoleObj?.name }}: {{ t.account }}</div>
+              <!-- 店长分组 -->
+              <div class="mb-6">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="text-gray-800 font-medium">店长</div>
+                  <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2">
+                      <div class="text-gray-700 text-sm">开启签到</div>
+                      <input
+                        type="checkbox"
+                        :checked="getRoleRequireAttendance('store_manager')"
+                        :disabled="attendanceConfigLoading || attendanceConfigSaving"
+                        @change="(e) => onToggleRoleAttendance('store_manager', e.target.checked)"
+                      />
                     </div>
-                    <div class="text-gray-400 text-xs">ID: {{ t.id }}</div>
-                  </div>
-
-                  <div class="mt-3 flex gap-2">
-                    <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEdit(t)">编辑</button>
+                    <button
+                      v-if="operationalRoles.find(r => r.key === 'store_manager')?.allow_permission_adjust"
+                      type="button"
+                      class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
+                      @click="openPermissionAdjustOperationalByKey('store_manager')"
+                    >
+                      权限微调
+                    </button>
                     <button
                       type="button"
-                      class="px-3 py-2 rounded-lg text-sm font-medium"
-                      :class="t.is_active ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'"
-                      @click="toggleActive(t)"
+                      class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+                      @click="openCreateOperationalByKey('store_manager')"
                     >
-                      {{ t.is_active ? '禁用' : '启用' }}
+                      添加店长
                     </button>
-                    <div class="flex-1"></div>
-                    <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
+                  </div>
+                </div>
+
+                <div v-if="visibleTechsByRole('store_manager').length === 0" class="text-center text-gray-400 py-10">暂无店长</div>
+
+                <div v-else class="space-y-3">
+                  <div v-for="t in visibleTechsByRole('store_manager')" :key="t.id" class="border border-gray-100 rounded-xl p-4">
+                    <div class="flex items-start justify-between gap-3">
+                      <div>
+                        <div class="flex items-center gap-2">
+                          <div class="text-gray-800 font-medium">{{ t.name }}</div>
+                          <span class="px-2 py-0.5 rounded text-xs" :class="t.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'">
+                            {{ t.is_active ? '启用' : '禁用' }}
+                          </span>
+                        </div>
+                        <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：店长: {{ t.account }}</div>
+                      </div>
+                      <div class="text-gray-400 text-xs">ID: {{ t.id }}</div>
+                    </div>
+
+                    <div class="mt-3 flex gap-2">
+                      <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEdit(t)">编辑</button>
+                      <button
+                        type="button"
+                        class="px-3 py-2 rounded-lg text-sm font-medium"
+                        :class="t.is_active ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'"
+                        @click="toggleActive(t)"
+                      >
+                        {{ t.is_active ? '禁用' : '启用' }}
+                      </button>
+                      <div class="flex-1"></div>
+                      <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 前台分组 -->
+              <div class="mb-6">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="text-gray-800 font-medium">前台</div>
+                  <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2">
+                      <div class="text-gray-700 text-sm">开启签到</div>
+                      <input
+                        type="checkbox"
+                        :checked="getRoleRequireAttendance('front_desk')"
+                        :disabled="attendanceConfigLoading || attendanceConfigSaving"
+                        @change="(e) => onToggleRoleAttendance('front_desk', e.target.checked)"
+                      />
+                    </div>
+                    <button
+                      v-if="operationalRoles.find(r => r.key === 'front_desk')?.allow_permission_adjust"
+                      type="button"
+                      class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
+                      @click="openPermissionAdjustOperationalByKey('front_desk')"
+                    >
+                      权限微调
+                    </button>
+                    <button
+                      type="button"
+                      class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+                      @click="openCreateOperationalByKey('front_desk')"
+                    >
+                      添加前台
+                    </button>
+                  </div>
+                </div>
+
+                <div v-if="visibleTechsByRole('front_desk').length === 0" class="text-center text-gray-400 py-10">暂无前台</div>
+
+                <div v-else class="space-y-3">
+                  <div v-for="t in visibleTechsByRole('front_desk')" :key="t.id" class="border border-gray-100 rounded-xl p-4">
+                    <div class="flex items-start justify-between gap-3">
+                      <div>
+                        <div class="flex items-center gap-2">
+                          <div class="text-gray-800 font-medium">{{ t.name }}</div>
+                          <span class="px-2 py-0.5 rounded text-xs" :class="t.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'">
+                            {{ t.is_active ? '启用' : '禁用' }}
+                          </span>
+                        </div>
+                        <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：前台: {{ t.account }}</div>
+                      </div>
+                      <div class="text-gray-400 text-xs">ID: {{ t.id }}</div>
+                    </div>
+
+                    <div class="mt-3 flex gap-2">
+                      <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEdit(t)">编辑</button>
+                      <button
+                        type="button"
+                        class="px-3 py-2 rounded-lg text-sm font-medium"
+                        :class="t.is_active ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'"
+                        @click="toggleActive(t)"
+                      >
+                        {{ t.is_active ? '禁用' : '启用' }}
+                      </button>
+                      <div class="flex-1"></div>
+                      <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -434,6 +496,11 @@ const staffNamePlaceholder = computed(() => {
   return '如：朱迪亚'
 })
 
+const visibleTechsByRole = (roleKey) => {
+  const list = techs.value || []
+  return list.filter((t) => String(t?.service_role?.key || '') === String(roleKey))
+}
+
 const visibleTechs = computed(() => {
   const list = techs.value || []
   if (activeType.value === 'operational') {
@@ -493,6 +560,11 @@ const openPermissionAdjustOperational = () => {
   router.push(`/merchant/role-permissions/${selectedOperationalRole.value}`)
 }
 
+const openPermissionAdjustOperationalByKey = (roleKey) => {
+  if (!roleKey) return
+  router.push(`/merchant/role-permissions/${roleKey}`)
+}
+
 const openPermissionAdjustProfessional = (roleKey) => {
   if (!roleKey) return
   router.push(`/merchant/role-permissions/${roleKey}`)
@@ -524,6 +596,11 @@ const openCreate = () => {
 }
 
 const openCreateOperational = () => {
+  openCreate()
+}
+
+const openCreateOperationalByKey = (roleKey) => {
+  selectedOperationalRole.value = roleKey
   openCreate()
 }
 
