@@ -149,7 +149,7 @@
 
           <!-- 服务单看板内容 -->
           <div v-else-if="activeTab === 'service'">
-            <div class="px-4 py-4">
+            <div class="px-2 py-4">
               <!-- 筛选器 -->
               <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
                 <div class="flex items-center gap-3">
