@@ -137,7 +137,8 @@ func CreateMerchantProfessionalRole(c *gin.Context) {
 
 func AdminListServiceRoles(c *gin.Context) {
 	var list []models.ServiceRole
-	config.DB.Order("sort asc, id asc").Find(&list)
+	// 只返回平台创建的客服角色（merchant_id IS NULL）
+	config.DB.Where("merchant_id IS NULL").Order("sort asc, id asc").Find(&list)
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
 

@@ -240,7 +240,6 @@ func initServiceRoles() {
 		{Key: "technician", Name: "技师", AccountPrefix: "js", RoleType: "professional", Description: "技师账号(历史默认)", IsActive: false, AllowPermissionAdjust: true, Sort: 10},
 		{Key: "teacher", Name: "助教", AccountPrefix: "zj", RoleType: "professional", Description: "授课教师/助教(历史默认)", IsActive: false, AllowPermissionAdjust: true, Sort: 20},
 		{Key: "coach", Name: "教练", AccountPrefix: "jl", RoleType: "professional", Description: "教练(历史默认)", IsActive: false, AllowPermissionAdjust: true, Sort: 30},
-		{Key: "pet_doctor", Name: "宠物医生", AccountPrefix: "ys", RoleType: "professional", Description: "宠物医生(历史默认)", IsActive: false, AllowPermissionAdjust: true, Sort: 40},
 	}
 
 	for _, r := range defaults {
