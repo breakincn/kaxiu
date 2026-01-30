@@ -111,9 +111,22 @@ func GetCurrentTechnician(c *gin.Context) {
 	}
 
 	var tech models.Technician
-	if err := config.DB.Where("id = ? AND merchant_id = ?", technicianID, merchantID).First(&tech).Error; err != nil {
+	if err := config.DB.
+		Preload("ServiceRole").
+		Where("id = ? AND merchant_id = ?", technicianID, merchantID).
+		First(&tech).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "技师不存在"})
 		return
+	}
+
+	// 应用商户对“岗位是否需要签到”的覆盖配置
+	{
+		var o models.MerchantRoleAttendanceConfig
+		if err := config.DB.
+			Where("merchant_id = ? AND service_role_id = ?", merchantID, tech.ServiceRoleID).
+			First(&o).Error; err == nil {
+			tech.ServiceRole.RequireAttendance = o.RequireAttendance
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": tech})

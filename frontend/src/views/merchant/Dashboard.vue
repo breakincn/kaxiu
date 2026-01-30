@@ -899,7 +899,7 @@
     <!-- 服务/会话 -->
     <div v-if="currentTab === 'service' && showServiceTab" class="px-4 py-4 space-y-4">
       <!-- 签到/状态 -->
-      <div class="bg-white rounded-xl p-4 shadow-sm">
+      <div v-if="showTechnicianAttendancePanel" class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-center justify-between">
           <div>
             <div class="font-medium text-gray-800">工作人员签到</div>
@@ -1422,6 +1422,14 @@ const technicianMe = ref(null)
 const technicianWindowNo = computed(() => {
   const no = technicianMe.value?.window_no
   return String(no || '').trim() || ''
+})
+
+const showTechnicianAttendancePanel = computed(() => {
+  // 仅技师账号需要展示；并且岗位开启签到才展示
+  if (!isTechnicianAuth()) return false
+  const requireAttendance = technicianMe.value?.service_role?.require_attendance
+  if (typeof requireAttendance === 'boolean') return requireAttendance
+  return true
 })
 
 // 当前技师正在服务/待上号的会话对应的叫号号数（从 todayUsages.queue_no 得到）
