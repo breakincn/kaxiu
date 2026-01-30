@@ -11,13 +11,13 @@ import (
 )
 
 type roleAttendanceItem struct {
-	ServiceRoleID      uint   `json:"service_role_id"`
-	ServiceRoleKey     string `json:"service_role_key"`
-	ServiceRoleName    string `json:"service_role_name"`
-	RoleType           string `json:"role_type"`
-	RequireAttendance  bool   `json:"require_attendance"`
-	DefaultRequire     bool   `json:"default_require_attendance"`
-	HasMerchantOverride bool  `json:"has_merchant_override"`
+	ServiceRoleID       uint   `json:"service_role_id"`
+	ServiceRoleKey      string `json:"service_role_key"`
+	ServiceRoleName     string `json:"service_role_name"`
+	RoleType            string `json:"role_type"`
+	RequireAttendance   bool   `json:"require_attendance"`
+	DefaultRequire      bool   `json:"default_require_attendance"`
+	HasMerchantOverride bool   `json:"has_merchant_override"`
 }
 
 // GetMerchantRoleAttendanceConfigs 返回商户各岗位是否需要签到的配置（含默认值+商户覆盖）
@@ -35,7 +35,7 @@ func GetMerchantRoleAttendanceConfigs(c *gin.Context) {
 	// 运营岗位：平台默认店长/前台；专业岗位：商户自定义
 	var roles []models.ServiceRole
 	config.DB.
-		Where("(merchant_id IS NULL AND `key` IN ('store_manager','front_desk')) OR (merchant_id = ? AND role_type = ?)", merchantID, "professional").
+		Where("is_active = ? AND ((merchant_id IS NULL AND `key` IN ('store_manager','front_desk')) OR (role_type = ? AND (merchant_id IS NULL OR merchant_id = ?)))", true, "professional", merchantID).
 		Order("role_type asc, sort asc, id asc").
 		Find(&roles)
 
@@ -55,12 +55,12 @@ func GetMerchantRoleAttendanceConfigs(c *gin.Context) {
 			has = true
 		}
 		out = append(out, roleAttendanceItem{
-			ServiceRoleID:      r.ID,
-			ServiceRoleKey:     r.Key,
-			ServiceRoleName:    r.Name,
-			RoleType:           strings.TrimSpace(r.RoleType),
-			RequireAttendance:  req,
-			DefaultRequire:     r.RequireAttendance,
+			ServiceRoleID:       r.ID,
+			ServiceRoleKey:      r.Key,
+			ServiceRoleName:     r.Name,
+			RoleType:            strings.TrimSpace(r.RoleType),
+			RequireAttendance:   req,
+			DefaultRequire:      r.RequireAttendance,
 			HasMerchantOverride: has,
 		})
 	}
@@ -107,7 +107,8 @@ func SetMerchantRoleAttendanceConfig(c *gin.Context) {
 			return
 		}
 	} else if strings.TrimSpace(role.RoleType) == "professional" {
-		if role.MerchantID == nil || *role.MerchantID != merchantID {
+		// 专业角色：允许使用平台创建的角色（merchant_id IS NULL）和商户自定义的角色（merchant_id = 当前商户）
+		if role.MerchantID != nil && *role.MerchantID != merchantID {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权操作该岗位"})
 			return
 		}
