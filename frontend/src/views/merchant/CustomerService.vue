@@ -51,7 +51,7 @@
                   class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
                   @click="openCreateProfessionalRole"
                 >
-                  添加客服
+                  添加岗位
                 </button>
               </template>
             </div>
@@ -198,7 +198,7 @@
 
             <div v-else class="mt-4">
               <div class="mb-3">
-                <label class="block text-gray-700 text-sm font-medium mb-2">新增岗位（称谓）</label>
+                <label class="block text-gray-700 text-sm font-medium mb-2">新增客服（岗位）</label>
                 <div class="flex items-center gap-2">
                   <select v-model="selectedProfessionalRole" class="flex-1 px-4 py-3 border border-gray-200 rounded-lg bg-white">
                     <option v-for="r in professionalRoles" :key="r.key" :value="r.key">{{ r.name }}</option>
