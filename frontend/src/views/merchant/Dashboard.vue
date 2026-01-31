@@ -231,6 +231,19 @@
       </button>
 
       <button
+        v-if="showTableTab"
+        @click="selectTab('table')"
+        :class="[
+          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          currentTab === 'table'
+            ? 'border-primary text-primary'
+            : 'border-transparent text-gray-500'
+        ]"
+      >
+        看板
+      </button>
+
+      <button
         v-if="showServiceTab"
         @click="selectTab('service')"
         :class="[
@@ -242,6 +255,11 @@
       >
         服务
       </button>
+    </div>
+
+    <!-- 看板 -->
+    <div v-if="currentTab === 'table' && showTableTab" class="py-2">
+      <Table :embedded="true" />
     </div>
 
     <!-- 预约（技师端） -->
@@ -1240,6 +1258,7 @@ import { ensureMerchantPermissionsLoaded, merchantApi, appointmentApi, shopApi, 
 import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission, getMerchantActiveAuth, getMerchantId, getTechnicianShopSlug } from '../../utils/auth'
 import { replaceTerms } from '../../utils/terms'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
+import Table from './Table.vue'
 import QRCode from 'qrcode'
 
 const router = useRouter()
@@ -1265,6 +1284,7 @@ const canAppointmentView = computed(() => hasMerchantPermission('merchant.appoin
 const canAppointmentManage = computed(() => hasMerchantPermission('merchant.appointment.manage'))
 const canRoomManage = computed(() => hasMerchantPermission('merchant.service.manage'))
 const canQueueCalling = computed(() => hasMerchantPermission('merchant.queue.calling'))
+const canTableView = computed(() => hasMerchantPermission('merchant.table.view'))
 
 // 统计卡片显示个数
 const visibleStatsCount = computed(() => {
@@ -1315,6 +1335,10 @@ const showCardsTab = computed(() => {
   return canVerify.value || canCardSell.value
 })
 
+const showTableTab = computed(() => {
+  return canTableView.value
+})
+
 const showServiceTab = computed(() => {
   // 按岗位独立配置签到：不再依赖商户全局开关
   return isTechnicianAuth()
@@ -1350,8 +1374,12 @@ const getDefaultTab = () => {
     return 'finish'
   } else if (showNoticeTab.value) {
     return 'notice'
+  } else if (showCardsTab.value) {
+    return 'cards'
+  } else if (showTableTab.value) {
+    return 'table'
   } else {
-    return showCardsTab.value ? 'cards' : 'queue'
+    return 'queue'
   }
 }
 
@@ -3268,7 +3296,7 @@ onMounted(async () => {
   // 尝试从 localStorage 恢复上次选择的 tab
   try {
     const savedTab = localStorage.getItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY)
-    if (savedTab && ['queue', 'verify', 'appointment', 'start', 'finish', 'notice', 'cards', 'service'].includes(savedTab)) {
+    if (savedTab && ['queue', 'verify', 'appointment', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(savedTab)) {
       selectTab(savedTab)
       console.log('从 localStorage 恢复 tab:', savedTab)
     }
@@ -3287,7 +3315,7 @@ onMounted(async () => {
   
   // 检查查询参数，自动切换到指定Tab（优先级高于 localStorage）
   const tabParam = route.query.tab
-  if (tabParam && ['queue', 'verify', 'appointment', 'start', 'finish', 'notice', 'cards', 'service'].includes(tabParam)) {
+  if (tabParam && ['queue', 'verify', 'appointment', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(tabParam)) {
     selectTab(tabParam)
   }
 
@@ -3333,7 +3361,7 @@ onMounted(async () => {
   if (!tabParam) {
     // 如果已经从 localStorage 恢复了 tab，并且该 tab 有权限显示，则保持不变
     const restoredTab = currentTab.value
-    if (restoredTab && ['queue', 'verify', 'appointment', 'start', 'finish', 'notice', 'cards', 'service'].includes(restoredTab)) {
+    if (restoredTab && ['queue', 'verify', 'appointment', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(restoredTab)) {
       // 检查恢复的 tab 是否有权限显示
       const canShowRestoredTab = 
         (restoredTab === 'queue' && showQueueTab.value) ||
@@ -3343,6 +3371,7 @@ onMounted(async () => {
         (restoredTab === 'finish' && showFinishTab.value) ||
         (restoredTab === 'notice' && showNoticeTab.value) ||
         (restoredTab === 'cards' && showCardsTab.value) ||
+        (restoredTab === 'table' && showTableTab.value) ||
         (restoredTab === 'service' && showServiceTab.value)
       
       if (canShowRestoredTab) {
@@ -3424,7 +3453,7 @@ onMounted(async () => {
       } else if (showFinishTab.value) {
         selectTab('finish')
       } else {
-        selectTab(showCardsTab.value ? 'cards' : 'queue')
+        selectTab(showCardsTab.value ? 'cards' : (showTableTab.value ? 'table' : 'queue'))
       }
     } else if (currentTab.value === 'cards' && !showCardsTab.value) {
       if (showQueueTab.value) {
@@ -3435,6 +3464,20 @@ onMounted(async () => {
         selectTab('finish')
       } else if (showNoticeTab.value) {
         selectTab('notice')
+      } else {
+        selectTab(showTableTab.value ? 'table' : 'queue')
+      }
+    } else if (currentTab.value === 'table' && !showTableTab.value) {
+      if (showQueueTab.value) {
+        selectTab('queue')
+      } else if (showVerifyTab.value) {
+        selectTab('verify')
+      } else if (showFinishTab.value) {
+        selectTab('finish')
+      } else if (showNoticeTab.value) {
+        selectTab('notice')
+      } else if (showCardsTab.value) {
+        selectTab('cards')
       } else {
         selectTab('queue')
       }

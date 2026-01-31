@@ -424,8 +424,9 @@ func initPermissions() {
 
 		// 客服管理 (60-69)
 		{Key: "merchant.cs.manage", Name: "客服管理", Group: "客服管理", Description: "新增/编辑/禁用/删除客服账号", Sort: 60},
-		{Key: "merchant.room.view", Name: "查看房间", Group: "看板", Description: "查看房间使用/空闲情况", Sort: 61},
-		{Key: "merchant.staff.view", Name: "查看客服", Group: "看板", Description: "查看专业客服签到/空闲/服务状态", Sort: 62},
+		{Key: "merchant.table.view", Name: "查看看板", Group: "看板", Description: "查看看板页面与相关数据", Sort: 61},
+		{Key: "merchant.room.view", Name: "查看房间", Group: "看板", Description: "查看房间使用/空闲情况", Sort: 62},
+		{Key: "merchant.staff.view", Name: "查看客服", Group: "看板", Description: "查看专业客服签到/空闲/服务状态", Sort: 63},
 
 		// 预约管理 (70-89)
 		{Key: "merchant.appointment.view", Name: "预约查看", Group: "预约管理", Description: "可被用户预约、查看和处理预约自己的预约", Sort: 70},

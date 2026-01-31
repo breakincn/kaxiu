@@ -31,23 +31,6 @@
         </button>
 
         <button
-          v-if="canTableView"
-          @click="goToTable"
-          class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
-        >
-          <div class="flex items-center gap-3">
-            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 6h18M3 14h18M3 18h18"/>
-            </svg>
-            <span class="text-gray-800 font-medium">看板</span>
-          </div>
-          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-          </svg>
-        </button>
-
-        
-        <button
           v-if="canProjectManage"
           @click="goToProjectSettings"
           class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
@@ -197,9 +180,6 @@ const canProjectManage = computed(() => hasMerchantPermission('merchant.service.
 const canQueueSettings = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_queue)
 const canHandCardManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_hand_card)
 const canRoomNumberCardManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_room)
-const canTableView = computed(() => {
-  return hasMerchantPermission('merchant.room.view') || hasMerchantPermission('merchant.staff.view')
-})
 
 const merchant = ref({})
 
@@ -231,11 +211,6 @@ const goToMerchantInfo = () => {
 const goToCustomerService = () => {
   router.push('/merchant/customer-service')
 }
-
-const goToTable = () => {
-  router.push('/merchant/table')
-}
-
 
 const goToProjectSettings = () => {
   router.push('/merchant/project-settings')

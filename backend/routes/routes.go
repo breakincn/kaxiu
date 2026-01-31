@@ -174,8 +174,8 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.DELETE("/rooms/:id", middleware.RequirePermission("merchant.service.manage"), handlers.DeleteRoom)
 
 	// 看板（Table）：房间/客服状态
-	auth.GET("/table/rooms", middleware.RequirePermission("merchant.room.view"), handlers.TableRooms)
-	auth.GET("/table/staff", middleware.RequirePermission("merchant.staff.view"), handlers.TableStaff)
+	auth.GET("/table/rooms", middleware.RequirePermission("merchant.table.view"), handlers.TableRooms)
+	auth.GET("/table/staff", middleware.RequirePermission("merchant.table.view"), handlers.TableStaff)
 
 	// 工作人员签到/状态
 	auth.POST("/technician/checkin", handlers.TechnicianCheckIn)

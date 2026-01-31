@@ -1,6 +1,6 @@
 <template>
   <div class="min-h-screen bg-gray-50">
-    <header class="bg-white px-4 py-3 flex items-center gap-3 border-b sticky top-0 z-10">
+    <header v-if="!embedded" class="bg-white px-4 py-3 flex items-center gap-3 border-b sticky top-0 z-10">
       <button @click="goBack" class="p-1">
         <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
@@ -251,6 +251,13 @@ import { getMerchantId, isTechnicianAuth, getTechnicianId } from '../../utils/au
 import ServiceSessionItem from '../../components/ServiceSessionItem.vue'
 
 const router = useRouter()
+
+defineProps({
+  embedded: {
+    type: Boolean,
+    default: false
+  }
+})
 
 // 从localStorage恢复选中的标签，默认为空（不默认选择）
 const savedTab = localStorage.getItem('tableActiveTab')
