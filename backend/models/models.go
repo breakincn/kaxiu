@@ -107,6 +107,7 @@ type Card struct {
 	CreatedAt      *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	StartPendingTimeoutSeconds int64 `json:"start_pending_timeout_seconds" gorm:"-"`
+	StartScanTimeoutSeconds    int64 `json:"start_scan_timeout_seconds" gorm:"-"`
 
 	User     User              `json:"user" gorm:"foreignKey:UserID"`
 	Merchant Merchant          `json:"merchant" gorm:"foreignKey:MerchantID"`

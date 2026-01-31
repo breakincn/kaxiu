@@ -109,6 +109,7 @@ import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import { getMerchantId, hasMerchantPermission, isTechnicianAuth, getTechnicianId } from '../../utils/auth'
 import ServiceSessionItem from '../../components/ServiceSessionItem.vue'
 import { replaceTerms } from '../../utils/terms'
+import { normalizeSessionStatus } from '../../utils/sessionStatus'
 
 const router = useRouter()
 
@@ -127,7 +128,7 @@ const myServingSessions = computed(() => {
   if (!techId) return []
   return serviceSessions.value.filter(s => 
     s.technician_id === techId && 
-    ['delay_pending', 'serving', 'auto_finishing'].includes(s.status)
+    ['delay_pending', 'serving', 'auto_finishing'].includes(normalizeSessionStatus(s.status))
   )
 })
 
@@ -138,7 +139,7 @@ const filteredOtherSessions = computed(() => {
     : serviceSessions.value
   
   if (statusFilter.value) {
-    sessions = sessions.filter(s => s.status === statusFilter.value)
+    sessions = sessions.filter(s => normalizeSessionStatus(s.status) === statusFilter.value)
   }
   
   return sessions

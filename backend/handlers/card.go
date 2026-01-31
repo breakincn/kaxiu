@@ -85,6 +85,7 @@ func GetCard(c *gin.Context) {
 	}
 
 	card.StartPendingTimeoutSeconds = int64(config.StartPendingTimeout().Seconds())
+	card.StartScanTimeoutSeconds = int64(config.StartScanTimeout().Seconds())
 
 	// 查询卡片关联项目
 	var projects []models.MerchantProject
@@ -871,6 +872,14 @@ func VerifyCard(c *gin.Context) {
 				scheduledStartAt = &startAt
 				nextStep = ""
 			}
+			sessionMode := models.ResolveSessionMode(&merchant)
+			if isQueueMode {
+				// 叫号模式：写入 qs_/qm_/qms_/qmm_ 前缀状态
+				status = models.WithModePrefix(sessionMode, status)
+			} else if merchant.SupportCustomerServiceMode {
+				// 客服模式：写入 cs_ 前缀状态
+				status = models.WithCSPrefix(status)
+			}
 
 			session := models.ServiceSession{
 				MerchantID:             merchantID,
@@ -879,6 +888,7 @@ func VerifyCard(c *gin.Context) {
 				ProjectID:              verifyCode.ProjectID,
 				InitialUsageID:         usage.ID,
 				VerifyCode:             verifyCode.Code,
+				SessionMode:            sessionMode,
 				Status:                 status,
 				RoomSelectDeadlineAt:   roomSelectDeadlineAt,
 				StartConfirmedAt:       startConfirmedAt,
@@ -927,6 +937,13 @@ func VerifyCard(c *gin.Context) {
 			} else {
 				nextStep = "staff_select"
 			}
+		sessionMode := models.ResolveSessionMode(&merchant)
+		isQueueMode2 := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
+		if isQueueMode2 {
+			status = models.WithModePrefix(sessionMode, status)
+		} else if merchant.SupportCustomerServiceMode {
+			status = models.WithCSPrefix(status)
+		}
 
 		// 读取项目真实时长，避免硬编码 50 分钟
 		var project models.MerchantProject
@@ -942,6 +959,7 @@ func VerifyCard(c *gin.Context) {
 			ProjectID:              verifyCode.ProjectID,
 			InitialUsageID:         usage.ID,
 			VerifyCode:             verifyCode.Code,
+			SessionMode:            sessionMode,
 			Status:                 status,
 			RoomSelectDeadlineAt:   roomSelectDeadlineAt,
 			StartDelaySeconds:      60,
@@ -1306,6 +1324,13 @@ func ScanVerifyCard(c *gin.Context) {
 					nextStep = ""
 				}
 
+				sessionMode := models.ResolveSessionMode(&merchant)
+				if isQueueMode {
+					status = models.WithModePrefix(sessionMode, status)
+				} else if merchant.SupportCustomerServiceMode {
+					status = models.WithCSPrefix(status)
+				}
+
 				session := models.ServiceSession{
 					MerchantID:             merchantID,
 					UserID:                 card.UserID,
@@ -1313,6 +1338,7 @@ func ScanVerifyCard(c *gin.Context) {
 					ProjectID:              verifyCode.ProjectID,
 					InitialUsageID:         usage.ID,
 					VerifyCode:             verifyCode.Code,
+					SessionMode:            sessionMode,
 					Status:                 status,
 					RoomSelectDeadlineAt:   roomSelectDeadlineAt,
 					StartConfirmedAt:       startConfirmedAt,
@@ -1356,6 +1382,13 @@ func ScanVerifyCard(c *gin.Context) {
 				nextStep = "staff_select"
 			}
 
+			sessionMode := models.ResolveSessionMode(&merchant)
+			if isQueueMode {
+				status = models.WithModePrefix(sessionMode, status)
+			} else if merchant.SupportCustomerServiceMode {
+				status = models.WithCSPrefix(status)
+			}
+
 			// 读取项目真实时长，避免硬编码 50 分钟
 			var project models.MerchantProject
 			durationMinutes := 50 // 默认值兜底
@@ -1370,6 +1403,7 @@ func ScanVerifyCard(c *gin.Context) {
 				ProjectID:              verifyCode.ProjectID,
 				InitialUsageID:         usage.ID,
 				VerifyCode:             verifyCode.Code,
+				SessionMode:            sessionMode,
 				Status:                 status,
 				RoomSelectDeadlineAt:   roomSelectDeadlineAt,
 				StartDelaySeconds:      60,

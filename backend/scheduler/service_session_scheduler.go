@@ -37,7 +37,7 @@ func finalizeOverdueManualServingSessions(db *gorm.DB, now time.Time) error {
 	deadline := now.Add(-4 * time.Hour)
 	var sessions []models.ServiceSession
 	if err := db.
-		Where("status = 'serving' AND start_confirmed_at IS NOT NULL AND started_at IS NOT NULL AND started_at <= ?", deadline).
+		Where("status IN ? AND start_confirmed_at IS NOT NULL AND started_at IS NOT NULL AND started_at <= ?", models.ExpandStatusWithKnownPrefixes("serving"), deadline).
 		Order("id asc").
 		Limit(schedulerBatchLimit).
 		Find(&sessions).Error; err != nil {
@@ -121,9 +121,15 @@ func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
 
 			// 同步结束关联 service_sessions（避免会话仍处于进行中）
 			if err := tx.Model(&models.ServiceSession{}).
-				Where("merchant_id = ? AND initial_usage_id IN ? AND status NOT IN ('finished','canceled')", m.ID, ids).
+				Where("merchant_id = ? AND initial_usage_id IN ? AND status NOT IN ?", m.ID, ids, models.ExpandStatusesWithKnownPrefixes([]string{"finished", "canceled"})).
 				Updates(map[string]interface{}{
-					"status":      "finished",
+					"status": gorm.Expr("CASE " +
+						"WHEN status LIKE 'cs_%' THEN 'cs_finished' " +
+						"WHEN status LIKE 'qs_%' THEN 'qs_finished' " +
+						"WHEN status LIKE 'qm_%' THEN 'qm_finished' " +
+						"WHEN status LIKE 'qms_%' THEN 'qms_finished' " +
+						"WHEN status LIKE 'qmm_%' THEN 'qmm_finished' " +
+						"ELSE 'finished' END"),
 					"finished_at": now,
 				}).Error; err != nil {
 				return nil
@@ -136,14 +142,14 @@ func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
 
 func finishAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, finishedAt time.Time) error {
 	updates := map[string]interface{}{
-		"status":                  "finished",
+		"status":                  models.ApplyStatusPrefix(s.Status, "finished"),
 		"finished_at":             finishedAt,
 		"room_id":                 nil,
 		"room_locked_at":          nil,
 		"room_select_deadline_at": nil,
 	}
 	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status = ?", s.ID, "start_pending").
+		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("start_pending")).
 		Updates(updates).Error; err != nil {
 		return err
 	}
@@ -158,7 +164,7 @@ func finishAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, finishedAt t
 
 func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
 	updates := map[string]interface{}{
-		"status":                  "canceled",
+		"status":                  models.ApplyStatusPrefix(s.Status, "canceled"),
 		"room_id":                 nil,
 		"room_locked_at":          nil,
 		"room_select_deadline_at": nil,
@@ -174,13 +180,13 @@ func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Tim
 	}
 
 	return tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status IN ('room_selecting','room_locked','staff_selecting')", s.ID).
+		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_selecting", "room_locked", "staff_selecting"})).
 		Updates(updates).Error
 }
 
 func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) (bool, error) {
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	activeSessionStatuses := []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
+	activeSessionStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 
 	type candLite struct {
 		ID           uint `gorm:"column:id"`
@@ -224,13 +230,13 @@ func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now t
 
 	updates := map[string]interface{}{
 		"technician_id":                 cand.TechnicianID,
-		"status":                        "start_pending",
+		"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 		"staff_select_cooldown_until":   nil,
 		"staff_select_entered_at":       nil,
 		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
 	}
 	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND technician_id IS NULL AND status IN ('room_locked','staff_selecting')", s.ID).
+		Where("id = ? AND technician_id IS NULL AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
 		Updates(updates).Error; err != nil {
 		return false, err
 	}
@@ -301,7 +307,7 @@ func autoCallNextForMultiQueueIfPossible(tx *gorm.DB, merchant *models.Merchant,
 
 	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchant.ID, nextUsageID)
-	q = q.Where("status IN ('staff_selecting','room_locked')")
+	q = q.Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked"}))
 
 	var nextSession models.ServiceSession
 	if err := q.Order("id desc").First(&nextSession).Error; err != nil {
@@ -314,7 +320,7 @@ func autoCallNextForMultiQueueIfPossible(tx *gorm.DB, merchant *models.Merchant,
 
 	updates := map[string]interface{}{
 		"technician_id":                 cand.TechnicianID,
-		"status":                        "start_pending",
+		"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
@@ -359,7 +365,7 @@ func runOnce(db *gorm.DB) error {
 
 	var sessions []models.ServiceSession
 	err := db.
-		Where("status IN ('room_selecting','room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing','finished')").
+		Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"room_selecting", "room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing", "finished", "timeout_waiting", "timeout_failed"})).
 		Order("id asc").
 		Limit(schedulerBatchLimit).
 		Find(&sessions).Error
@@ -464,7 +470,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 						if snap.CurrentID == 0 || snap.CurrentCalledAt == nil {
 							var activeCnt int64
 							if err := tx.Model(&models.ServiceSession{}).
-								Where("merchant_id = ? AND status IN ('start_pending','delay_pending','serving','auto_finishing')", s.MerchantID).
+								Where("merchant_id = ? AND status IN ?", s.MerchantID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
 								Count(&activeCnt).Error; err == nil {
 								if activeCnt == 0 {
 									// 没有活跃会话，尝试叫下一个号
@@ -478,7 +484,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 						if snap.CurrentID > 0 && snap.CurrentID == s.InitialUsageID && snap.CurrentCalledAt != nil {
 							var activeCnt int64
 							if err := tx.Model(&models.ServiceSession{}).
-								Where("merchant_id = ? AND id <> ? AND status IN ('start_pending','delay_pending','serving','auto_finishing')", s.MerchantID, s.ID).
+								Where("merchant_id = ? AND id <> ? AND status IN ?", s.MerchantID, s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
 								Count(&activeCnt).Error; err == nil {
 								if activeCnt == 0 {
 									delaySeconds := merchant.StartDelaySeconds
@@ -487,17 +493,17 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 									}
 									startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 									updates := map[string]interface{}{
-										"status":              "delay_pending",
+										"status":              models.ApplyStatusPrefix(s.Status, "delay_pending"),
 										"start_confirmed_at":  &now,
 										"scheduled_start_at":  &startAt,
 										"start_delay_seconds": delaySeconds,
 									}
 									if err := tx.Model(&models.ServiceSession{}).
-										Where("id = ? AND start_confirmed_at IS NULL AND status IN ('staff_selecting','room_locked','delay_pending')", s.ID).
+										Where("id = ? AND start_confirmed_at IS NULL AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked", "delay_pending"})).
 										Updates(updates).Error; err == nil {
 										s.StartConfirmedAt = &now
 										s.ScheduledStartAt = &startAt
-										s.Status = "delay_pending"
+										s.Status = models.ApplyStatusPrefix(s.Status, "delay_pending")
 									}
 								}
 							}
@@ -516,7 +522,8 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 		}
 
-		switch s.Status {
+		baseStatus := models.NormalizeSessionStatus(s.Status)
+		switch baseStatus {
 		case "room_locked", "staff_selecting":
 			var merchant models.Merchant
 			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
@@ -556,7 +563,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				}
 				startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 				updates := map[string]interface{}{
-					"status":                      "delay_pending",
+					"status":                      models.ApplyStatusPrefix(s.Status, "delay_pending"),
 					"technician_id":               nil,
 					"staff_select_cooldown_until": nil,
 					"staff_select_entered_at":     nil,
@@ -565,7 +572,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 					"room_select_deadline_at":     nil,
 				}
 				return tx.Model(&models.ServiceSession{}).
-					Where("id = ? AND status IN ('room_locked','staff_selecting') AND start_confirmed_at IS NULL", s.ID).
+					Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
 					Updates(updates).Error
 			}
 
@@ -600,11 +607,11 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 			dl := now.Add(3 * time.Minute)
 			updates := map[string]interface{}{
-				"status":                      "staff_selecting",
+				"status":                      models.ApplyStatusPrefix(s.Status, "staff_selecting"),
 				"staff_select_cooldown_until": &dl,
 			}
 			return tx.Model(&models.ServiceSession{}).
-				Where("id = ? AND technician_id IS NULL AND status IN ('room_locked','staff_selecting')", s.ID).
+				Where("id = ? AND technician_id IS NULL AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
 				Updates(updates).Error
 		case "room_selecting":
 			if s.RoomSelectDeadlineAt != nil && now.After(*s.RoomSelectDeadlineAt) {
@@ -646,7 +653,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 					}
 					startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 					updates := map[string]interface{}{
-						"status":                        "delay_pending",
+						"status":                        models.ApplyStatusPrefix(s.Status, "delay_pending"),
 						"technician_id":                 nil,
 						"start_confirmed_at":            &now,
 						"scheduled_start_at":            &startAt,
@@ -661,7 +668,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 							Updates(map[string]interface{}{"status": "idle"}).Error
 					}
 					return tx.Model(&models.ServiceSession{}).
-						Where("id = ? AND status = ? AND start_confirmed_at IS NULL", s.ID, "start_pending").
+						Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusWithKnownPrefixes("start_pending")).
 						Updates(updates).Error
 				}
 			}
@@ -700,7 +707,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 
 			updates := map[string]interface{}{
-				"status":                        "staff_selecting",
+				"status":                        models.ApplyStatusPrefix(s.Status, "staff_selecting"),
 				"technician_id":                 nil,
 				"staff_select_entered_at":       nil,
 				"start_pending_timeout_seconds": 0,
@@ -708,7 +715,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				"start_timeout_last_at":         now,
 			}
 			if err := tx.Model(&models.ServiceSession{}).
-				Where("id = ? AND status = ? AND start_confirmed_at IS NULL", s.ID, "start_pending").
+				Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusWithKnownPrefixes("start_pending")).
 				Updates(updates).Error; err != nil {
 				return err
 			}
@@ -759,7 +766,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				// 叫号模式（未开启客服模式 + 自动叫号）：需要客服扫码上号，不自动进入 serving
 				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" {
 					if s.ScheduledStartAt != nil {
-						timeoutAt := s.ScheduledStartAt.Add(60 * time.Second)
+						timeoutAt := s.ScheduledStartAt.Add(config.StartScanTimeout())
 						if now.After(timeoutAt) {
 							return skipCurrentAndCallNext(tx, &s, &merchant, now)
 						}
@@ -826,12 +833,89 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				return finalizeSession(tx, &s, now)
 			}
 			return nil
+		case "timeout_waiting":
+			// qs_ 单窗口：超时过号后的等待插队窗口。
+			// 过期后才真正置失败与退卡。
+			if s.InitialUsageID == 0 {
+				return nil
+			}
+			if s.SessionMode != models.SessionModeQueueAutoSingle {
+				return nil
+			}
+			var merchant models.Merchant
+			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+				return nil
+			}
+			if !merchant.SupportQueue || merchant.QueueMode != "auto" || merchant.SupportMultiCustomerService {
+				return nil
+			}
+			if queue.Default == nil {
+				return nil
+			}
+			date := now.Format("2006-01-02")
+			snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
+			currentNo := 0
+			if len(snap.Tickets) > 0 {
+				currentNo = snap.Tickets[0].No
+			}
+			myNo, ok := queue.Default.GetNo(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+			if !ok || myNo <= 0 || currentNo <= 0 {
+				return nil
+			}
+			// 基础窗口：3 个号（例如 myNo=10 则允许到 currentNo<=12），
+			// 若同一会话多次超时（被插队回前列又再次超时），窗口按次数叠加扩展。
+			cnt := s.StartTimeoutCount
+			if models.QsTimeoutWaitingExpired(currentNo, myNo, cnt) {
+				return failTimeoutWaitingAndRefund(tx, &s, &merchant, now)
+			}
+			return nil
 		case "finished":
 			return releaseTechnicianIfNeeded(tx, &s, now)
 		default:
 			return nil
 		}
 	})
+}
+
+func failTimeoutWaitingAndRefund(tx *gorm.DB, s *models.ServiceSession, merchant *models.Merchant, now time.Time) error {
+	if tx == nil || s == nil || merchant == nil {
+		return nil
+	}
+	if s.InitialUsageID == 0 {
+		return nil
+	}
+
+	updates := map[string]interface{}{
+		"status":      models.ApplyStatusPrefix(s.Status, "timeout_failed"),
+		"finished_at": now,
+	}
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("timeout_waiting")).
+		Updates(updates).Error; err != nil {
+		return err
+	}
+
+	if err := tx.Model(&models.Usage{}).
+		Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
+		Updates(map[string]interface{}{
+			"status":      "failed",
+			"finished_at": now,
+		}).Error; err != nil {
+		return err
+	}
+
+	var usage models.Usage
+	if err := tx.First(&usage, s.InitialUsageID).Error; err == nil {
+		if err := tx.Model(&models.Card{}).
+			Where("id = ?", usage.CardID).
+			Updates(map[string]interface{}{
+				"remain_times": gorm.Expr("remain_times + ?", usage.UsedTimes),
+				"used_times":   gorm.Expr("used_times - ?", usage.UsedTimes),
+			}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func autoAssignRoom(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
@@ -854,7 +938,7 @@ func autoAssignRoom(tx *gorm.DB, s *models.ServiceSession, now time.Time) error 
 		r := rooms[i]
 		var cnt int64
 		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing')", s.MerchantID, r.ID).
+			Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, r.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})).
 			Count(&cnt).Error; err != nil {
 			return err
 		}
@@ -863,9 +947,11 @@ func autoAssignRoom(tx *gorm.DB, s *models.ServiceSession, now time.Time) error 
 			updates := map[string]interface{}{
 				"room_id":        r.ID,
 				"room_locked_at": lockedAt,
-				"status":         "room_locked",
+				"status":         models.ApplyStatusPrefix(s.Status, "room_locked"),
 			}
-			return tx.Model(&models.ServiceSession{}).Where("id = ? AND status = ?", s.ID, "room_selecting").Updates(updates).Error
+			return tx.Model(&models.ServiceSession{}).
+				Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("room_selecting")).
+				Updates(updates).Error
 		}
 	}
 	return nil
@@ -876,7 +962,7 @@ func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error
 		return nil
 	}
 	updates := map[string]interface{}{
-		"status": "finished",
+		"status": models.ApplyStatusPrefix(s.Status, "finished"),
 	}
 	if s.FinishedAt == nil {
 		updates["finished_at"] = now
@@ -884,7 +970,7 @@ func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error
 	// 支持从 serving 或 auto_finishing 状态结束会话
 	// 叫号模式下从 serving 直接结束，客服模式下从 auto_finishing 结束
 	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status IN ('serving','auto_finishing') AND start_confirmed_at IS NOT NULL", s.ID).
+		Where("id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
 		Updates(updates).Error; err != nil {
 		return err
 	}
@@ -943,15 +1029,44 @@ func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error
 
 // skipCurrentAndCallNext 叫号模式下超时未扫码上号，跳过当前叫号并自动叫下一个
 func skipCurrentAndCallNext(tx *gorm.DB, s *models.ServiceSession, merchant *models.Merchant, now time.Time) error {
-	// 将当前会话状态置为 canceled
+	if tx == nil || s == nil || merchant == nil {
+		return nil
+	}
+
+	// qs_ 单窗口：超时进入 timeout_waiting（允许插队窗口），不立即失败/退卡。
+	if merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService && s.SessionMode == models.SessionModeQueueAutoSingle {
+		updates := map[string]interface{}{
+			"status":             models.ApplyStatusPrefix(s.Status, "timeout_waiting"),
+			"start_confirmed_at": nil,
+			"scheduled_start_at": nil,
+			"started_at":         nil,
+			"start_timeout_count": gorm.Expr("start_timeout_count + ?", 1),
+			"start_timeout_last_at": now,
+		}
+		if err := tx.Model(&models.ServiceSession{}).
+			Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("delay_pending")).
+			Updates(updates).Error; err != nil {
+			return err
+		}
+
+		if queue.Default != nil && s.InitialUsageID > 0 {
+			date := now.Format("2006-01-02")
+			queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+			queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
+			queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+		}
+		return nil
+	}
+
+	// 其它叫号模式：保持原逻辑，直接失败并退卡
 	updates := map[string]interface{}{
-		"status":             "canceled",
+		"status":             models.ApplyStatusPrefix(s.Status, "canceled"),
 		"finished_at":        now,
 		"start_confirmed_at": nil,
 		"scheduled_start_at": nil,
 	}
 	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status = ?", s.ID, "delay_pending").
+		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("delay_pending")).
 		Updates(updates).Error; err != nil {
 		return err
 	}
@@ -1098,7 +1213,7 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 	var nextSession models.ServiceSession
 	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchantID, nextUsageID)
-	q = q.Where("status IN ('staff_selecting','room_locked')")
+	q = q.Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked"}))
 	if err := q.Order("id desc").First(&nextSession).Error; err != nil {
 		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 		return nil
@@ -1106,7 +1221,7 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 
 	updates := map[string]interface{}{
 		"technician_id":                 technicianID,
-		"status":                        "start_pending",
+		"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),

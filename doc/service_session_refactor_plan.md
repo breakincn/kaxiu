@@ -1,0 +1,71 @@
+# ServiceSession 重构实施计划（Phase Plan）
+
+## Phase 0：准备与约束落地
+- 新增 service_sessions.session_mode 字段
+- 建立状态前缀与模式一致性校验
+- 统一入口 resolveMode(merchant) 并分发到各模式处理器
+
+## Phase 1：架构骨架（隔离优先）
+### 后端
+- 统一的模式判定函数 resolveMode
+- 统一的状态推进函数 transition（集中校验 + 记录审计）
+- scheduler/handlers 改为先分发，再调用具体模式逻辑
+- 兼容旧状态：legacy 路径仅保证不崩溃并可读，逐步迁移
+
+### 前端
+- 统一状态文案映射：根据前缀映射基础文案（cs_/qs_/qm_/qms_/qmm_）
+
+验收：
+- 会话均可写入 session_mode
+- 状态写入不会跨前缀
+
+## Phase 2：客服模式 cs_（仅自动结单）
+### 后端
+- 核销创建 cs_ 会话：cs_room_selecting 或 cs_staff_selecting
+- 选房间：cs_room_selecting → cs_room_locked
+- 选技师：cs_room_locked/cs_staff_selecting → cs_start_pending
+- 起单：cs_start_pending → cs_serving
+- 自动结单：cs_serving → cs_auto_finishing → cs_finished
+- 超时：
+  - 选房 90s 自动分配
+  - 选技师 5min 自动分配（以 staff_select_entered_at 为起点）
+
+### 前端
+- 客服流程 UI：选房倒计时、选技师倒计时、起单入口、服务中/待自动结单
+
+验收：
+- SupportRoom=true/false 两条流程闭环
+
+## Phase 3：叫号模式四象限
+### qs_ 自动单窗口
+- scheduler 自动叫号：qs_waiting → qs_called
+- 上号：qs_called → qs_serving
+- 完成：qs_serving → qs_finished
+- 过号插队三号窗口机制：qs_missed_waiting / qs_missed_failed
+
+### qm_ 自动多窗口
+- 按空闲技师并行分配下一号
+- 展示窗口信息：technician.window_no（可为空）
+
+### qms_ 手动单窗口
+- 人工推进叫号
+
+### qmm_ 手动多窗口
+- 人工选择 technician_id 进行叫号分配
+- 窗口信息仅展示，不强制指定
+
+验收：
+- 四种模式均可排队→叫号→上号→服务→结束
+
+## Phase 4：数据迁移与去旧
+- 旧状态映射/迁移脚本
+- 删除重复分支逻辑（VerifyCard/ScanVerifyCard 等）
+- 增加回归测试用例集合
+
+## 测试清单（最小集合）
+- cs_房间自动：选房超时自动分配后再选技师；选技师超时自动分配；起单；自动结单
+- cs_无房间自动：选技师/自动分配；起单；自动结单
+- qs_：10过号后可在12、13前插队；到14失败
+- qs_连续过号：10、11过号后允许在13、14前插队；到15失败
+- qmm_：选择技师叫号；技师有 window_no 显示窗口，无则不显示
+- 防串用：cs_ 会话走 qs_ 推进接口应被拒绝

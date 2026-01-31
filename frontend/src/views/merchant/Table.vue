@@ -247,6 +247,7 @@ import { useRouter } from 'vue-router'
 import { merchantApi, serviceSessionApi } from '../../api'
 import { replaceTerms } from '../../utils/terms'
 import { getMerchantId, isTechnicianAuth, getTechnicianId } from '../../utils/auth'
+import { normalizeSessionStatus } from '../../utils/sessionStatus'
 import ServiceSessionItem from '../../components/ServiceSessionItem.vue'
 
 const router = useRouter()
@@ -287,7 +288,7 @@ const myServingSessions = computed(() => {
   if (!techId) return []
   return serviceSessions.value.filter(s => 
     s.technician_id === techId && 
-    ['delay_pending', 'serving', 'auto_finishing'].includes(s.status)
+    ['delay_pending', 'serving', 'auto_finishing'].includes(normalizeSessionStatus(s.status))
   )
 })
 
@@ -298,7 +299,7 @@ const filteredOtherSessions = computed(() => {
     : serviceSessions.value
   
   if (statusFilter.value) {
-    sessions = sessions.filter(s => s.status === statusFilter.value)
+    sessions = sessions.filter(s => normalizeSessionStatus(s.status) === statusFilter.value)
   }
   
   return sessions
@@ -443,13 +444,15 @@ const calculateElapsedTime = (startTime) => {
 }
 
 const sessionStatusText = (st) => {
-  const s = String(st || '').trim()
+  const s = normalizeSessionStatus(st)
   if (s === 'created') return '已创建'
   if (s === 'room_selecting') return '选房中'
   if (s === 'room_locked') return '房间已锁定'
   if (s === 'staff_selecting') return '选人中'
   if (s === 'start_pending') return replaceTerms('待起单', merchant.value)
-  if (s === 'delay_pending') return '延迟中'
+  if (s === 'delay_pending') return '待上号'
+  if (s === 'timeout_waiting') return '过号等待'
+  if (s === 'timeout_failed') return '过号失败'
   if (s === 'serving') return '服务中'
   if (s === 'auto_finishing') return replaceTerms('待自动结单', merchant.value)
   if (s === 'finished') return '已完成'
@@ -463,7 +466,7 @@ const badgeText = (it) => {
 
   const sess = it.current_session
   if (sess) {
-    const sst = String(sess.status || '').trim()
+    const sst = normalizeSessionStatus(sess.status)
     const startConfirmedAt = sess.start_confirmed_at
     if (sst === 'start_pending' && !startConfirmedAt) return replaceTerms('服务 待起单', merchant.value)
     if (sst === 'auto_finishing') return replaceTerms('待自动下钟', merchant.value)

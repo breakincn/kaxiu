@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"kabao/config"
 	"kabao/models"
+	"kabao/queue"
 	"net/http"
 	"strconv"
 	"strings"
@@ -97,6 +98,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", uint(sid64), merchantID).First(&s).Error; err != nil {
 			return err
 		}
+		baseStatus := models.NormalizeSessionStatus(s.Status)
 
 		if merchant.SupportRoom && s.RoomID == nil {
 			if err := assignRoomIfPossible(tx, &s, now); err != nil {
@@ -152,7 +154,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新%s", technicianServiceStatusText(att.Status), startTerm)}
 		}
 
-		if s.Status == "finished" || s.Status == "canceled" {
+		if baseStatus == "finished" || baseStatus == "canceled" {
 			return apiErr{status: http.StatusBadRequest, msg: "会话状态不可起单"}
 		}
 
@@ -160,7 +162,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		updates := map[string]interface{}{
 			"start_confirmed_at": now,
 			"scheduled_start_at": startAt,
-			"status":             "delay_pending",
+			"status":             models.ApplyStatusPrefix(s.Status, "delay_pending"),
 		}
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err
@@ -233,7 +235,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 		// 叫号模式下，支持两种状态：
 		// 1. start_pending：多窗口叫号，工作人员扫码后直接上号进入 serving（移除二次扫码）
 		// 2. delay_pending：扫码上号 -> serving
-		if s.Status == "start_pending" {
+		if models.NormalizeSessionStatus(s.Status) == "start_pending" {
 			// 多窗口叫号：必须由被分配的工作人员扫码上号
 			if scannerTechID == 0 {
 				return apiErr{status: http.StatusForbidden, msg: "仅工作人员可扫码上号"}
@@ -271,7 +273,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			// start_pending -> serving（扫码上号），避免二次扫码
 			updates := map[string]interface{}{
 				"start_confirmed_at":            now,
-				"status":                        "serving",
+				"status":                        models.ApplyStatusPrefix(s.Status, "serving"),
 				"started_at":                    now,
 				"start_pending_timeout_seconds": 0,
 			}
@@ -279,7 +281,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 				finishAt := now.Add(time.Duration(s.DurationMinutes) * time.Minute)
 				updates["scheduled_finish_at"] = finishAt
 			}
-			if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND status = ?", s.ID, "start_pending").Updates(updates).Error; err != nil {
+			if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("start_pending")).Updates(updates).Error; err != nil {
 				return err
 			}
 		
@@ -306,20 +308,54 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 		}
 
 		// delay_pending 状态：扫码上号
-		if s.Status != "delay_pending" {
-			if s.Status == "serving" {
+		baseStatus := models.NormalizeSessionStatus(s.Status)
+		if baseStatus != "delay_pending" && baseStatus != "timeout_waiting" {
+			if baseStatus == "serving" {
 				return apiErr{status: http.StatusBadRequest, msg: "已开始服务，无需重复扫码"}
 			}
-			if s.Status == "finished" {
+			if baseStatus == "finished" {
 				return apiErr{status: http.StatusBadRequest, msg: "服务已完成"}
 			}
-			if s.Status == "canceled" {
+			if baseStatus == "canceled" {
 				return apiErr{status: http.StatusBadRequest, msg: "服务已取消"}
 			}
-			if s.Status == "staff_selecting" {
+			if baseStatus == "staff_selecting" {
 				return apiErr{status: http.StatusBadRequest, msg: "该号还在排队中，请等待叫号"}
 			}
 			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可扫码上号"}
+		}
+
+		// qs_ 单窗口：timeout_waiting 状态下允许在插队窗口内再次扫码上号
+		if baseStatus == "timeout_waiting" {
+			if s.SessionMode != models.SessionModeQueueAutoSingle {
+				return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
+			}
+			if merchant == nil || !merchant.SupportQueue || merchant.QueueMode != "auto" || merchant.SupportMultiCustomerService {
+				return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
+			}
+			if queue.Default == nil {
+				return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
+			}
+
+			date := now.Format("2006-01-02")
+			snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
+			currentNo := 0
+			if len(snap.Tickets) > 0 {
+				currentNo = snap.Tickets[0].No
+			}
+			myNo, ok := queue.Default.GetNo(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+			if !ok || myNo <= 0 || currentNo <= 0 {
+				return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
+			}
+			cnt := s.StartTimeoutCount
+			if models.QsTimeoutWaitingExpired(currentNo, myNo, cnt) {
+				return apiErr{status: http.StatusBadRequest, msg: "过号超时，该号已失效"}
+			}
+
+			// 撤销 MarkDone，让该号重新回到队列（由于号码更小，会成为 current），并重新叫号
+			queue.Default.UnmarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+			queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+			queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 		}
 		// 扫码上号：优先要求工作人员扫码；若尚未绑定工作人员，则绑定为当前扫码工作人员
 		if scannerTechID == 0 {
@@ -329,7 +365,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			v := scannerTechID
 			s.TechnicianID = &v
 			if err := tx.Model(&models.ServiceSession{}).
-				Where("id = ? AND merchant_id = ? AND status = ? AND technician_id IS NULL", s.ID, merchantID, "delay_pending").
+				Where("id = ? AND merchant_id = ? AND status IN ? AND technician_id IS NULL", s.ID, merchantID, models.ExpandStatusesWithKnownPrefixes([]string{"delay_pending", "timeout_waiting"})).
 				Update("technician_id", scannerTechID).Error; err != nil {
 				return err
 			}
@@ -368,17 +404,19 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			}
 		}
 
-		// 检查是否超时
-		if s.ScheduledStartAt != nil {
-			timeoutAt := s.ScheduledStartAt.Add(60 * time.Second)
-			if now.After(timeoutAt) {
-				return apiErr{status: http.StatusBadRequest, msg: "上号超时，该号已被跳过"}
+		// delay_pending 状态：超时检查；timeout_waiting 已由 qs_ 窗口判断处理
+		if baseStatus == "delay_pending" {
+			if s.ScheduledStartAt != nil {
+				timeoutAt := s.ScheduledStartAt.Add(config.StartScanTimeout())
+				if now.After(timeoutAt) {
+					return apiErr{status: http.StatusBadRequest, msg: "上号超时，该号已被跳过"}
+				}
 			}
 		}
 
 		// 直接推进到 serving 状态
 		updates := map[string]interface{}{
-			"status":     "serving",
+			"status":     models.ApplyStatusPrefix(s.Status, "serving"),
 			"started_at": now,
 		}
 		if s.DurationMinutes > 0 {
@@ -386,7 +424,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			updates["scheduled_finish_at"] = finishAt
 		}
 		if err := tx.Model(&models.ServiceSession{}).
-			Where("id = ? AND status = ?", s.ID, "delay_pending").
+			Where("id = ? AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"delay_pending", "timeout_waiting"})).
 			Updates(updates).Error; err != nil {
 			return err
 		}
@@ -440,7 +478,7 @@ func assignRoomIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 		r := rooms[i]
 		var cnt int64
 		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing')", s.MerchantID, r.ID).
+			Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, r.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})).
 			Count(&cnt).Error; err != nil {
 			return err
 		}
@@ -451,7 +489,7 @@ func assignRoomIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 			return tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
 				"room_id":        r.ID,
 				"room_locked_at": lockedAt,
-				"status":         "room_locked",
+				"status":         models.ApplyStatusPrefix(s.Status, "room_locked"),
 			}).Error
 		}
 	}
@@ -494,7 +532,10 @@ func ListServiceSessions(c *gin.Context) {
 	status := c.Query("status")
 	q := config.DB.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").Preload("Project").Where("merchant_id = ?", merchantID)
 	if status != "" {
-		q = q.Where("status = ?", status)
+		st := strings.TrimSpace(status)
+		if st != "" {
+			q = q.Where("status IN ?", models.ExpandStatusWithKnownPrefixes(st))
+		}
 	}
 
 	var list []models.ServiceSession

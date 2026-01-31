@@ -67,7 +67,7 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 	{
 		var cnt int64
 		err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND technician_id = ? AND status IN ('start_pending','delay_pending','serving','auto_finishing')", merchantID, technicianID).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchantID, technicianID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
 			Count(&cnt).Error
 		if err != nil {
 			return
@@ -102,7 +102,7 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 
 	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchantID, nextUsageID)
-	q = q.Where("status IN ('staff_selecting','room_locked')")
+	q = q.Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked"}))
 
 	var nextSession models.ServiceSession
 	if err := q.Order("id desc").First(&nextSession).Error; err != nil {
@@ -112,7 +112,7 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 
 	updates := map[string]interface{}{
 		"technician_id":                 technicianID,
-		"status":                        "start_pending",
+		"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),

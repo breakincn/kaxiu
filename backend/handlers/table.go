@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var tableActiveSessionStatuses = []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
+var tableActiveSessionStatuses = models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 
 func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 	// 手动叫号模式：待上号不做超时释放，避免状态被自动回退
@@ -31,7 +31,7 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 	if err := config.DB.
 		Model(&models.ServiceSession{}).
 		Select("id").
-		Where("merchant_id = ? AND status = 'start_pending' AND start_confirmed_at IS NULL AND technician_id IS NOT NULL AND updated_at IS NOT NULL", merchantID).
+		Where("merchant_id = ? AND status IN ? AND start_confirmed_at IS NULL AND technician_id IS NOT NULL AND updated_at IS NOT NULL", merchantID, models.ExpandStatusWithKnownPrefixes("start_pending")).
 		Limit(200).
 		Pluck("id", &ids).Error; err != nil {
 		return
@@ -46,7 +46,7 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", id, merchantID).First(&s).Error; err != nil {
 				continue
 			}
-			if s.Status != "start_pending" || s.StartConfirmedAt != nil || s.UpdatedAt == nil {
+			if models.NormalizeSessionStatus(s.Status) != "start_pending" || s.StartConfirmedAt != nil || s.UpdatedAt == nil {
 				continue
 			}
 			timeout := config.StartPendingTimeout()
@@ -60,7 +60,7 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 
 			oldTechID := s.TechnicianID
 			updates := map[string]interface{}{
-				"status":                        "staff_selecting",
+				"status":                        models.ApplyStatusPrefix(s.Status, "staff_selecting"),
 				"technician_id":                 nil,
 				"staff_select_entered_at":       nil,
 				"start_pending_timeout_seconds": 0,
@@ -68,7 +68,7 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 				"start_timeout_last_at":         now,
 			}
 			if err := tx.Model(&models.ServiceSession{}).
-				Where("id = ? AND status = ? AND start_confirmed_at IS NULL", s.ID, "start_pending").
+				Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusWithKnownPrefixes("start_pending")).
 				Updates(updates).Error; err != nil {
 				continue
 			}

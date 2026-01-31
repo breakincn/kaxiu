@@ -10,6 +10,7 @@ type ServiceSession struct {
 	ProjectID      *uint  `json:"project_id" gorm:"index;comment:项目ID（merchant_projects表主键，可为空）"`
 	InitialUsageID uint   `json:"initial_usage_id" gorm:"index;comment:首次核销usage_id"`
 	VerifyCode     string `json:"verify_code" gorm:"size:50;index;default:'';comment:首次核销码"`
+	SessionMode    string `json:"session_mode" gorm:"column:session_mode;size:20;default:'';comment:会话模式"`
 	RoomID         *uint  `json:"room_id" gorm:"index;comment:房间ID"`
 	TechnicianID   *uint  `json:"technician_id" gorm:"index;comment:工作人员ID"`
 	StartTimeoutCount  int        `json:"start_timeout_count" gorm:"column:start_timeout_count;default:0"`

@@ -93,12 +93,13 @@ func UserGetVerifyCodeStatus(c *gin.Context) {
 			Order("id desc").
 			First(&s).Error
 		if err == nil {
+			baseStatus := models.NormalizeSessionStatus(s.Status)
 			nextStep := ""
-			if s.Status == "room_selecting" {
+			if baseStatus == "room_selecting" {
 				if merchant.SupportCustomerServiceMode && merchant.SupportRoom {
 					nextStep = "room_select"
 				}
-			} else if s.Status == "staff_selecting" || s.Status == "room_locked" {
+			} else if baseStatus == "staff_selecting" || baseStatus == "room_locked" {
 				nextStep = "staff_select"
 			}
 			resp["session_id"] = s.ID
@@ -131,7 +132,7 @@ func UserResumeServiceSession(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", sid, userID).First(&s).Error; err != nil {
 			return err
 		}
-		if s.Status != "canceled" {
+		if models.NormalizeSessionStatus(s.Status) != "canceled" {
 			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可恢复"}
 		}
 
@@ -142,7 +143,7 @@ func UserResumeServiceSession(c *gin.Context) {
 
 		newStatus := "staff_selecting"
 		updates := map[string]interface{}{
-			"status":                      newStatus,
+			"status":                      models.ApplyStatusPrefix(s.Status, newStatus),
 			"technician_id":               nil,
 			"staff_select_cooldown_until": nil,
 			"staff_select_entered_at":     nil,
@@ -153,7 +154,7 @@ func UserResumeServiceSession(c *gin.Context) {
 		if merchant.SupportCustomerServiceMode && merchant.SupportRoom {
 			if s.RoomID == nil {
 				newStatus = "room_selecting"
-				updates["status"] = newStatus
+				updates["status"] = models.ApplyStatusPrefix(s.Status, newStatus)
 				updates["room_select_deadline_at"] = nil
 				updates["room_locked_at"] = nil
 			} else {
@@ -165,7 +166,7 @@ func UserResumeServiceSession(c *gin.Context) {
 			updates["room_select_deadline_at"] = nil
 		}
 
-		if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND user_id = ? AND status = ?", s.ID, userID, "canceled").Updates(updates).Error; err != nil {
+		if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND user_id = ? AND status IN ?", s.ID, userID, models.ExpandStatusWithKnownPrefixes("canceled")).Updates(updates).Error; err != nil {
 			return err
 		}
 		return tx.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").First(&out, s.ID).Error
@@ -223,8 +224,9 @@ func UserListAvailableRooms(c *gin.Context) {
 	for i := range rooms {
 		r := rooms[i]
 		var cnt int64
+		activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 		config.DB.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing')", s.MerchantID, r.ID).
+			Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, r.ID, activeStatuses).
 			Count(&cnt)
 		if cnt == 0 {
 			available = append(available, r)
@@ -272,7 +274,8 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 		if !merchant.SupportCustomerServiceMode || !merchant.SupportRoom {
 			return apiErr{status: http.StatusBadRequest, msg: "当前不支持选房"}
 		}
-		if s.Status != "room_selecting" {
+		baseStatus := models.NormalizeSessionStatus(s.Status)
+		if baseStatus != "room_selecting" {
 			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可选房"}
 		}
 
@@ -282,8 +285,9 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 		}
 
 		var cnt int64
+		activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing')", s.MerchantID, room.ID).
+			Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, room.ID, activeStatuses).
 			Count(&cnt).Error; err != nil {
 			return err
 		}
@@ -302,8 +306,9 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 					continue
 				}
 				var c2 int64
+				activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 				if err := tx.Model(&models.ServiceSession{}).
-					Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing')", s.MerchantID, r.ID).
+					Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, r.ID, activeStatuses).
 					Count(&c2).Error; err != nil {
 					return err
 				}
@@ -325,7 +330,7 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 			"room_locked_at": lockedAt,
 		}
 		if merchant.SupportCustomerServiceMode {
-			updates["status"] = "staff_selecting"
+			updates["status"] = models.ApplyStatusPrefix(s.Status, "staff_selecting")
 		} else {
 			delaySeconds := s.StartDelaySeconds
 			if delaySeconds <= 0 {
@@ -337,7 +342,7 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 			updates["scheduled_start_at"] = startAt
 		}
 
-		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
+		if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND user_id = ? AND status IN ?", s.ID, userID, models.ExpandStatusWithKnownPrefixes("room_selecting")).Updates(updates).Error; err != nil {
 			return err
 		}
 
@@ -392,7 +397,7 @@ func UserListAvailableTechnicians(c *gin.Context) {
 	}
 
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	activeSessionStatuses := []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
+	activeSessionStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 	var list []models.TechnicianAttendance
 	config.DB.
 		Model(&models.TechnicianAttendance{}).
@@ -408,10 +413,11 @@ func UserListAvailableTechnicians(c *gin.Context) {
 		Find(&list)
 
 	// 仅当确实存在可选客服时，才开始5分钟自动分配计时（避免无空闲客服时提前计时）
-	if (s.Status == "staff_selecting" || s.Status == "room_locked") && s.StaffSelectEnteredAt == nil {
+	baseStatus := models.NormalizeSessionStatus(s.Status)
+	if (baseStatus == "staff_selecting" || baseStatus == "room_locked") && s.StaffSelectEnteredAt == nil {
 		if len(list) > 0 {
 			config.DB.Model(&models.ServiceSession{}).
-				Where("id = ? AND user_id = ? AND staff_select_entered_at IS NULL AND status IN ('staff_selecting','room_locked')", s.ID, userID).
+				Where("id = ? AND user_id = ? AND staff_select_entered_at IS NULL AND status IN ?", s.ID, userID, models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked"})).
 				Update("staff_select_entered_at", now)
 			s.StaffSelectEnteredAt = &now
 		}
@@ -449,7 +455,8 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", sid, userID).First(&s).Error; err != nil {
 			return err
 		}
-		if s.Status != "staff_selecting" && s.Status != "room_locked" {
+		baseStatus := models.NormalizeSessionStatus(s.Status)
+		if baseStatus != "staff_selecting" && baseStatus != "room_locked" {
 			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可选工作人员"}
 		}
 		if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
@@ -472,7 +479,7 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
 			Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
 			Where("technician_attendances.merchant_id = ? AND technician_attendances.technician_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", s.MerchantID, input.TechnicianID, start).
-			Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}).
+			Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})).
 			Where("t.is_active = ?", true).
 			Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 			First(&candidate).Error; err != nil {
@@ -493,7 +500,7 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
 			"technician_id": input.TechnicianID,
-			"status":        "start_pending",
+			"status":        models.ApplyStatusPrefix(s.Status, "start_pending"),
 			"staff_select_entered_at": nil,
 			"staff_select_cooldown_until": nil,
 			"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
@@ -548,7 +555,8 @@ func ExtendServiceSessionUser(c *gin.Context) {
 			return err
 		}
 
-		if s.Status != "serving" {
+		baseStatus := models.NormalizeSessionStatus(s.Status)
+		if baseStatus != "serving" {
 			return apiErr{status: http.StatusBadRequest, msg: "仅服务中可加钟"}
 		}
 

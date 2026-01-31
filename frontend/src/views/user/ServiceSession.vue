@@ -104,10 +104,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { userServiceSessionApi } from '../../api'
 import { replaceTerms } from '../../utils/terms'
+import { normalizeSessionStatus } from '../../utils/sessionStatus'
+import { userServiceSessionApi } from '../../api/index'
 
 const route = useRoute()
 const router = useRouter()
@@ -162,17 +163,18 @@ const staffSelectCooldownText = computed(() => {
 
 const needsRoom = computed(() => {
   if (!session.value) return false
-  return session.value.status === 'room_selecting'
+  return normalizeSessionStatus(session.value.status) === 'room_selecting'
 })
 
 const canChooseTechnician = computed(() => {
   if (!session.value) return false
   if (isStaffSelectCooling.value) return false
-  return session.value.status === 'staff_selecting' || session.value.status === 'room_locked'
+  const st = normalizeSessionStatus(session.value.status)
+  return st === 'staff_selecting' || st === 'room_locked'
 })
 
 const canExtend = computed(() => {
-  return session.value?.status === 'serving'
+  return normalizeSessionStatus(session.value?.status) === 'serving'
 })
 
 const nextStepText = computed(() => {
@@ -185,6 +187,7 @@ const nextStepText = computed(() => {
 })
 
 const statusText = (s) => {
+  const st = normalizeSessionStatus(s)
   const statusMap = {
     room_selecting: '选房中',
     room_locked: '房间已锁定',
@@ -195,7 +198,7 @@ const statusText = (s) => {
     auto_finishing: replaceTerms('待自动结单'),
     finished: '已完成'
   }
-  return statusMap[s] || s || '-'
+  return statusMap[st] || st || '-'
 }
 
 const goBack = () => router.back()
@@ -203,7 +206,7 @@ const goBack = () => router.back()
 
 const resumeIfCanceled = async () => {
   if (!session.value) return false
-  if (session.value.status !== 'canceled') return false
+  if (normalizeSessionStatus(session.value.status) !== 'canceled') return false
   try {
     const res = await userServiceSessionApi.resume(sessionId.value)
     session.value = res.data?.data || session.value

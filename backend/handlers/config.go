@@ -11,6 +11,7 @@ import (
 func GetConfig(c *gin.Context) {
 	response := gin.H{
 		"startPendingTimeoutSeconds": int64(config.StartPendingTimeout().Seconds()),
+		"startScanTimeoutSeconds":   int64(config.StartScanTimeout().Seconds()),
 	}
 	c.JSON(http.StatusOK, gin.H{"data": response})
 }

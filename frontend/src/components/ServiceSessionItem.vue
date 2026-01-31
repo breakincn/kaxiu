@@ -59,6 +59,7 @@
 import { computed } from 'vue'
 import { formatDateTime } from '../utils/dateFormat'
 import { replaceTerms } from '../utils/terms'
+import { normalizeSessionStatus } from '../utils/sessionStatus'
 
 const props = defineProps({
   session: {
@@ -76,38 +77,44 @@ const hasTimeInfo = computed(() => {
 })
 
 const canExtend = computed(() => {
-  return props.session.status === 'serving'
+  return normalizeSessionStatus(props.session.status) === 'serving'
 })
 
 const getStatusText = (status) => {
+  const s = normalizeSessionStatus(status)
   const statusMap = {
     created: '已创建',
     room_selecting: '选房中',
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
-    start_pending: replaceTerms('待起单'),
-    delay_pending: '延迟中',
-    serving: '进行中',
-    auto_finishing: replaceTerms('待自动结单'),
+    start_pending: '待起单',
+    delay_pending: '待上号',
+    timeout_waiting: '过号等待',
+    timeout_failed: '过号失败',
+    serving: '服务中',
+    auto_finishing: '待结单',
     finished: '已完成',
     canceled: '已取消'
   }
-  return statusMap[status] || status
+  return statusMap[s] || s
 }
 
 const getStatusClass = (status) => {
+  const s = normalizeSessionStatus(status)
   const statusClassMap = {
     created: 'bg-gray-100 text-gray-600',
     room_selecting: 'bg-yellow-100 text-yellow-600',
-    room_locked: 'bg-orange-100 text-orange-600',
-    staff_selecting: 'bg-blue-100 text-blue-600',
-    start_pending: 'bg-purple-100 text-purple-600',
-    delay_pending: 'bg-indigo-100 text-indigo-600',
+    room_locked: 'bg-yellow-100 text-yellow-600',
+    staff_selecting: 'bg-yellow-100 text-yellow-600',
+    start_pending: 'bg-red-100 text-red-600',
+    delay_pending: 'bg-blue-100 text-blue-600',
+    timeout_waiting: 'bg-blue-100 text-blue-600',
+    timeout_failed: 'bg-red-100 text-red-600',
     serving: 'bg-green-100 text-green-600',
-    auto_finishing: 'bg-red-100 text-red-600',
-    finished: 'bg-gray-100 text-gray-500',
-    canceled: 'bg-red-100 text-red-500'
+    auto_finishing: 'bg-purple-100 text-purple-600',
+    finished: 'bg-gray-100 text-gray-600',
+    canceled: 'bg-gray-100 text-gray-600'
   }
-  return statusClassMap[status] || 'bg-gray-100 text-gray-600'
+  return statusClassMap[s] || 'bg-gray-100 text-gray-600'
 }
 </script>

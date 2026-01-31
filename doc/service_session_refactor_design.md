@@ -1,0 +1,103 @@
+# 客服模式 & 叫号模式 ServiceSession 重构设计文档
+
+## 目标
+- 完全的模式隔离
+- 清晰的状态语义
+- 支持主要业务场景
+- 防止逻辑串用
+
+## 范围与阶段
+- 当前阶段客服模式暂不支持：客服-手动结单、客服-房间手动结单
+- 叫号模式包含：自动单窗口(qs_)、自动多窗口(qm_)、手动单窗口(qms_)、手动多窗口(qmm_)
+
+## 模式判定（权威规则）
+### 商户配置
+- 客服模式：SupportCustomerServiceMode = true
+- 叫号模式：SupportCustomerServiceMode = false 且 SupportQueue = true
+  - QueueMode = auto：自动叫号
+  - QueueMode = manual：手动叫号
+  - SupportMultiCustomerService = true：多窗口（多客服并行）
+
+### 窗口显示规则（最终确认）
+- 窗口信息来源于 technicians.window_no（可为空）。
+- 不要求每次叫号指定窗口。
+- 前端仅当被分配技师存在 window_no 时显示窗口信息。
+
+## 模式隔离方案
+### 新增字段
+- service_sessions.session_mode：会话模式（建议枚举/字符串）
+
+### 状态前缀隔离
+- 客服：cs_
+- 自动叫号单窗口：qs_
+- 自动叫号多窗口：qm_
+- 手动叫号单窗口：qms_
+- 手动叫号多窗口：qmm_
+
+### 强约束（必须实现）
+- status 前缀必须与 session_mode 对应
+- 状态推进必须在所属模式状态机内进行
+- 入口（核销/扫码/选择房间/选择技师/scheduler）必须先 resolveMode，再路由到对应处理器
+
+## 客服模式（cs_）状态机（与现有业务对齐）
+### 支持的客服子模式
+- cs_无房间自动：核销 → 选技师 → 起单 → 自动结单
+- cs_房间自动：核销 → 选房间 → 选技师 → 起单 → 自动结单
+
+### 状态集合
+- cs_room_selecting：选房中（90s 超时自动分配）
+- cs_room_locked：房间已锁定
+- cs_staff_selecting：选技师中（5min 超时自动分配，基于 staff_select_entered_at）
+- cs_start_pending：待起单
+- cs_serving：服务中
+- cs_auto_finishing：待自动结单
+- cs_finished：完成
+- cs_canceled：取消
+
+### 状态流
+- SupportRoom=true：
+  - 核销 → cs_room_selecting → cs_room_locked → cs_staff_selecting → cs_start_pending → cs_serving → cs_auto_finishing → cs_finished
+  - cs_room_selecting 超时：自动分配房间
+  - cs_staff_selecting 超时：自动分配技师
+- SupportRoom=false：
+  - 核销 → cs_staff_selecting → cs_start_pending → cs_serving → cs_auto_finishing → cs_finished
+
+## 叫号模式
+
+## (A) 自动叫号单窗口（qs_）
+### 状态集合
+- qs_waiting：排队中
+- qs_called：已叫号，等待上号
+- qs_serving：服务中
+- qs_missed_waiting：超时过号等待（可插队）
+- qs_missed_failed：超时过号失败（只能重新排队）
+- qs_finished：完成
+- qs_canceled：取消
+
+### 过号插队规则（最终确认）
+- 当 qs_called 上号超时：进入 qs_missed_waiting
+- 在“实际后续服务推进到的三个号之前”允许插队
+- 超过该窗口：进入 qs_missed_failed
+- 连续过号时窗口顺延：如 10、11 都过号，则允许在 13、14 前插队，到 15 才失败
+
+### 建议字段（最小可实现集）
+- missed_at
+- missed_base_no
+- missed_deadline_call_no（基于全局叫号进度动态更新）
+- missed_max_calls_ahead（常量=3）
+- global_called_no（建议放队列表/商户当日状态表）
+
+## (B) 自动叫号多窗口（qm_）
+- 并行分配：系统按空闲技师分配下一号
+- 窗口展示：technician.window_no（可为空）
+
+## (C) 手动叫号单窗口（qms_）
+- 人工触发叫号/叫下一位
+
+## (D) 手动叫号多窗口（qmm_）
+- 人工触发叫号并选择分配到哪个 technician_id
+- 不要求指定窗口；窗口仅展示
+
+## 非目标
+- 本阶段不实现客服手动结单及房间手动结单
+- 不在本阶段一次性清理所有历史状态数据；提供迁移/兼容策略即可

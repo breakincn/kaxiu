@@ -7,6 +7,8 @@ import (
 type Store interface {
 	Enqueue(merchantID uint, date string, qt QueueType, id uint, startNo int, autoCallFirst bool, now time.Time) (Ticket, bool)
 	MarkDone(merchantID uint, date string, qt QueueType, doneID uint, now time.Time)
+	UnmarkDone(merchantID uint, date string, qt QueueType, id uint)
+	GetNo(merchantID uint, date string, qt QueueType, id uint) (no int, ok bool)
 	CallNextUncalled(merchantID uint, date string, qt QueueType, now time.Time) (nextID uint)
 	Uncall(merchantID uint, date string, qt QueueType, id uint)
 	Snapshot(merchantID uint, date string, qt QueueType) Snapshot

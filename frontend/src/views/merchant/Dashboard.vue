@@ -549,7 +549,7 @@
               <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
               <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
-              <div v-if="merchant?.support_hand_card" class="text-gray-500 text-sm mt-1">手牌：{{ usage.hand_card_no || '-' }} (<span v-if="!usage.hand_card_no" class="text-red-500">未分配</span><span v-else-if="usage.hand_card_returned_at">{{ getHandCardStatusText(usage) }}</span><span v-else-if="usage.service_session_status === 'serving'">{{ getHandCardStatusText(usage) }}</span><span v-else class="text-red-500">未归还</span>)</div>
+              <div v-if="merchant?.support_hand_card" class="text-gray-500 text-sm mt-1">手牌：{{ usage.hand_card_no || '-' }} (<span v-if="!usage.hand_card_no" class="text-red-500">未分配</span><span v-else-if="usage.hand_card_returned_at">{{ getHandCardStatusText(usage) }}</span><span v-else-if="normalizeSessionStatus(usage.service_session_status) === 'serving'">{{ getHandCardStatusText(usage) }}</span><span v-else class="text-red-500">未归还</span>)</div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
@@ -1257,6 +1257,7 @@ import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { ensureMerchantPermissionsLoaded, merchantApi, appointmentApi, shopApi, attendanceApi, serviceSessionApi, usageApi, noticeApi, cardApi, queueApi } from '../../api'
 import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission, getMerchantActiveAuth, getMerchantId, getTechnicianShopSlug } from '../../utils/auth'
 import { replaceTerms } from '../../utils/terms'
+import { normalizeSessionStatus } from '../../utils/sessionStatus'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import Table from './Table.vue'
 import QRCode from 'qrcode'
@@ -1755,7 +1756,7 @@ const pendingStartSession = computed(() => {
   const techId = getTechnicianId()
   if (!techId) return null
   const sess = serviceSessions.value
-    .filter(s => s.technician_id === techId && s.status === 'start_pending' && !s.start_confirmed_at)
+    .filter(s => s.technician_id === techId && normalizeSessionStatus(s.status) === 'start_pending' && !s.start_confirmed_at)
     .sort((a, b) => b.id - a.id)[0]
   return sess || null
 })
@@ -1766,7 +1767,7 @@ const roomManageSession = computed(() => {
   if (!techId) return null
   const activeStatuses = ['start_pending', 'delay_pending', 'serving', 'auto_finishing']
   const sess = serviceSessions.value
-    .filter(s => s.technician_id === techId && activeStatuses.includes(s.status))
+    .filter(s => s.technician_id === techId && activeStatuses.includes(normalizeSessionStatus(s.status)))
     .sort((a, b) => b.id - a.id)[0]
   return sess || null
 })
@@ -1774,7 +1775,7 @@ const roomManageSession = computed(() => {
 const roomManagePhaseText = computed(() => {
   const s = roomManageSession.value
   if (!s) return ''
-  if (s.status === 'start_pending' && !s.start_confirmed_at) return '待上钟'
+  if (normalizeSessionStatus(s.status) === 'start_pending' && !s.start_confirmed_at) return '待上钟'
   return '服务中'
 })
 
@@ -1834,12 +1835,12 @@ const technicianCurrentStatus = computed(() => {
   if (!isTechnicianAuth()) return null
   const techId = getTechnicianId()
   if (!techId) return null
-  const sess = serviceSessions.value.find(s => s.technician_id === techId && ['start_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(s.status))
+  const sess = serviceSessions.value.find(s => s.technician_id === techId && ['start_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(normalizeSessionStatus(s.status)))
   if (!sess) {
     // 没有活跃会话，返回服务器中的签到状态 idle/paused
     return serverAttendanceStatus.value
   }
-  if (sess.status === 'start_pending' && !sess.start_confirmed_at) return 'service_pending_presettlement'
+  if (normalizeSessionStatus(sess.status) === 'start_pending' && !sess.start_confirmed_at) return 'service_pending_presettlement'
   return 'service_pending_settlement'
 })
 
@@ -1896,7 +1897,7 @@ const myServingSessions = computed(() => {
   if (!isTechnicianAuth()) return []
   const techId = getTechnicianId()
   if (!techId) return []
-  return serviceSessions.value.filter(s => s.technician_id === techId && ['delay_pending', 'serving', 'auto_finishing'].includes(s.status))
+  return serviceSessions.value.filter(s => s.technician_id === techId && ['delay_pending', 'serving', 'auto_finishing'].includes(normalizeSessionStatus(s.status)))
 })
 
 // 其他会话（技师视角）或全部会话（商户视角）
@@ -2246,13 +2247,13 @@ const getUsageServiceStatusText = (usage) => {
   if (!usage) return '-'
 
   // 已结单
-  if ((usage.status === 'success' && usage.finished_at) || usage.service_session_status === 'finished') {
+  if ((usage.status === 'success' && usage.finished_at) || normalizeSessionStatus(usage.service_session_status) === 'finished') {
     return replaceTerms('已结单', merchant.value)
   }
 
   // 优先按服务单状态展示（避免将待选房间等阶段误显示为“待结单/待下钟”）
   if (usage.service_session_status) {
-    const s = usage.service_session_status
+    const s = normalizeSessionStatus(usage.service_session_status)
     if (s === 'finished') return '完成'
     if (s === 'room_selecting') return '待选房间'
     if (s === 'room_locked') return '房间已锁定'
@@ -2266,7 +2267,7 @@ const getUsageServiceStatusText = (usage) => {
   }
 
   // 待起单
-  if (usage.service_session_status === 'start_pending') {
+  if (normalizeSessionStatus(usage.service_session_status) === 'start_pending') {
     return replaceTerms('待起单', merchant.value)
   }
 
@@ -2331,7 +2332,7 @@ const getUsageCountDisplayText = (usage) => {
 const getUsageCountColorClass = (usage) => {
   if (!usage) return 'text-gray-700'
   
-  const status = usage.service_session_status || usage.status
+  const status = normalizeSessionStatus(usage.service_session_status) || usage.status
   
   // 服务中：绿色
   if (status === 'serving') {
@@ -3632,7 +3633,9 @@ const getSessionStatusText = (status) => {
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
     start_pending: replaceTerms('待起单', merchant.value),
-    delay_pending: '延迟中',
+    delay_pending: '待上号',
+    timeout_waiting: '过号等待',
+    timeout_failed: '过号失败',
     serving: '进行中',
     auto_finishing: replaceTerms('待自动结单', merchant.value),
     finished: '已完成',

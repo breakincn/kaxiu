@@ -81,13 +81,13 @@ func finalizeSessionManual(tx *gorm.DB, merchant *models.Merchant, s *models.Ser
 		return nil
 	}
 	updates := map[string]interface{}{
-		"status": "finished",
+		"status": models.ApplyStatusPrefix(s.Status, "finished"),
 	}
 	if s.FinishedAt == nil {
 		updates["finished_at"] = now
 	}
 	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status IN ('serving','auto_finishing') AND start_confirmed_at IS NOT NULL", s.ID).
+		Where("id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
 		Updates(updates).Error; err != nil {
 		return err
 	}
@@ -139,14 +139,14 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 		// 尝试找到对应的可分配 session
 		q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchant.ID, nextUsageID)
-		q = q.Where("status IN ('staff_selecting')")
+		q = q.Where("status IN ?", models.ExpandStatusWithKnownPrefixes("staff_selecting"))
 
 		var nextSession models.ServiceSession
 		if err := q.Order("id desc").First(&nextSession).Error; err == nil {
 			// 找到了，分配给当前技师
 			updates := map[string]interface{}{
 				"technician_id":                 technicianID,
-				"status":                        "start_pending",
+				"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 				"staff_select_entered_at":       nil,
 				"staff_select_cooldown_until":   nil,
 				"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
@@ -171,7 +171,7 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 	var anySession models.ServiceSession
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", merchant.ID).
-		Where("status IN ('staff_selecting')").
+		Where("status IN ?", models.ExpandStatusWithKnownPrefixes("staff_selecting")).
 		Order("id asc").
 		First(&anySession).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -183,7 +183,7 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 	// 找到了一个待分配的 session，分配给当前技师
 	updates := map[string]interface{}{
 		"technician_id":                 technicianID,
-		"status":                        "start_pending",
+		"status":                        models.ApplyStatusPrefix(anySession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
@@ -566,6 +566,44 @@ func GetTechnicianQueuePaused(c *gin.Context) {
 // 未使用的变量占位
 var _ = middleware.RequirePermission
 
+func promoteManualSingleCalledSession(tx *gorm.DB, merchant *models.Merchant, usageID uint, now time.Time) {
+	if tx == nil || merchant == nil || merchant.ID == 0 || usageID == 0 {
+		return
+	}
+	if merchant.QueueMode != "manual" || merchant.SupportMultiCustomerService {
+		return
+	}
+
+	date := now.Format("2006-01-02")
+	var s models.ServiceSession
+	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("merchant_id = ? AND initial_usage_id = ?", merchant.ID, usageID).
+		Where("status IN ?", models.ExpandStatusWithKnownPrefixes("staff_selecting")).
+		Order("id desc")
+	if err := q.First(&s).Error; err != nil {
+		if queue.Default != nil {
+			queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, usageID)
+		}
+		return
+	}
+
+	startAt := now.Add(time.Duration(merchant.StartDelaySeconds) * time.Second)
+	updates := map[string]interface{}{
+		"start_confirmed_at":  now,
+		"scheduled_start_at":  startAt,
+		"status":              models.ApplyStatusPrefix(s.Status, "delay_pending"),
+		"start_delay_seconds": merchant.StartDelaySeconds,
+	}
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND start_confirmed_at IS NULL AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("staff_selecting")).
+		Updates(updates).Error; err != nil {
+		if queue.Default != nil {
+			queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, usageID)
+		}
+		return
+	}
+}
+
 // TriggerNextCalling 触发下一个叫号（手动叫号模式下使用）
 // POST /queue/call-next
 // 运营客服点击"开始叫号"时：恢复商户叫号 + 触发下一个
@@ -617,6 +655,12 @@ func TriggerNextCalling(c *gin.Context) {
 	now := time.Now()
 	date := now.Format("2006-01-02")
 	nextUsageID := queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+	if nextUsageID > 0 {
+		_ = config.DB.Transaction(func(tx *gorm.DB) error {
+			promoteManualSingleCalledSession(tx, &merchant, nextUsageID, now)
+			return nil
+		})
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
@@ -701,7 +745,7 @@ func TriggerContinueCalling(c *gin.Context) {
 		// 锁定该技师当前进行中的会话
 		var s models.ServiceSession
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("merchant_id = ? AND technician_id = ? AND status IN ('serving','auto_finishing') AND start_confirmed_at IS NOT NULL", merchantID, techID).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", merchantID, techID, models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
 			Order("id desc").
 			First(&s).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -709,7 +753,7 @@ func TriggerContinueCalling(c *gin.Context) {
 				// 这里返回更准确的提示，引导先扫码上号。
 				var pending models.ServiceSession
 				if err2 := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-					Where("merchant_id = ? AND technician_id = ? AND status = 'start_pending' AND start_confirmed_at IS NULL", merchantID, techID).
+					Where("merchant_id = ? AND technician_id = ? AND status IN ? AND start_confirmed_at IS NULL", merchantID, techID, models.ExpandStatusWithKnownPrefixes("start_pending")).
 					Order("id desc").
 					First(&pending).Error; err2 == nil {
 					out["reason"] = "当前已有待上号用户，请先扫码上号"
@@ -721,6 +765,9 @@ func TriggerContinueCalling(c *gin.Context) {
 				// 没有进行中服务：允许“继续叫号”作为“推进下一号/分配下一位”的触发
 				if !merchant.SupportMultiCustomerService {
 					nextUsageID := queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+					if nextUsageID > 0 {
+						promoteManualSingleCalledSession(tx, &merchant, nextUsageID, now)
+					}
 					out["next_usage_id"] = nextUsageID
 					out["assigned"] = false
 					if nextUsageID == 0 {
@@ -772,7 +819,11 @@ func TriggerContinueCalling(c *gin.Context) {
 		}
 
 		if !merchant.SupportMultiCustomerService {
-			out["next_usage_id"] = queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+			nextUsageID := queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+			if nextUsageID > 0 {
+				promoteManualSingleCalledSession(tx, &merchant, nextUsageID, now)
+			}
+			out["next_usage_id"] = nextUsageID
 			out["assigned"] = false
 			return nil
 		}
@@ -868,7 +919,7 @@ func TriggerContinueCallingForce(c *gin.Context) {
 		// 锁定该技师当前进行中的会话
 		var s models.ServiceSession
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("merchant_id = ? AND technician_id = ? AND status IN ('serving','auto_finishing') AND start_confirmed_at IS NOT NULL", merchantID, techID).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", merchantID, techID, models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
 			Order("id desc").
 			First(&s).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -885,7 +936,11 @@ func TriggerContinueCallingForce(c *gin.Context) {
 		}
 
 		if !merchant.SupportMultiCustomerService {
-			out["next_usage_id"] = queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+			nextUsageID := queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+			if nextUsageID > 0 {
+				promoteManualSingleCalledSession(tx, &merchant, nextUsageID, now)
+			}
+			out["next_usage_id"] = nextUsageID
 			out["assigned"] = false
 			return nil
 		}
@@ -992,6 +1047,12 @@ func TriggerNextCallingOnFinish(c *gin.Context) {
 	now := time.Now()
 	date := now.Format("2006-01-02")
 	nextUsageID := queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+	if nextUsageID > 0 {
+		_ = config.DB.Transaction(func(tx *gorm.DB) error {
+			promoteManualSingleCalledSession(tx, &merchant, nextUsageID, now)
+			return nil
+		})
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{

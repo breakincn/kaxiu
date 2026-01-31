@@ -826,9 +826,9 @@ func createOrUpdateRoomsForMerchant(merchantID uint, prefix string, startNo, end
 		if !found {
 			// 检查房间是否正在使用
 			var activeSessionCount int64
+			activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 			config.DB.Model(&models.ServiceSession{}).
-				Where("merchant_id = ? AND room_id = ? AND status IN ('room_locked','staff_selecting','start_pending','delay_pending','serving','auto_finishing')",
-					merchantID, room.ID).
+				Where("merchant_id = ? AND room_id = ? AND status IN ?", merchantID, room.ID, activeStatuses).
 				Count(&activeSessionCount)
 
 			if activeSessionCount == 0 {

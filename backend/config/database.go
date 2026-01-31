@@ -133,6 +133,8 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `staff_select_entered_at` datetime(3) NULL COMMENT '用户进入选择客服页时间（以拉取可选客服列表为准）'")
 	// service_sessions: 待起单超时秒数（0表示使用系统默认）
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `start_pending_timeout_seconds` int NOT NULL DEFAULT 0 COMMENT '待起单超时秒数（0表示使用系统默认）'")
+	// service_sessions: 会话模式（用于客服/叫号模式隔离）
+	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `session_mode` varchar(20) NOT NULL DEFAULT '' COMMENT '会话模式'")
 
 	// appointments: 关联卡片ID（用于同商户不同卡预约隔离）
 	DB.Exec("ALTER TABLE `appointments` ADD COLUMN `card_id` bigint unsigned NOT NULL DEFAULT 0 COMMENT '卡片ID（外键关联cards表）'")

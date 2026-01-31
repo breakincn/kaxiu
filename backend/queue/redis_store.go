@@ -124,6 +124,49 @@ func (s *RedisStore) MarkDone(merchantID uint, date string, qt QueueType, doneID
 	}
 }
 
+func (s *RedisStore) UnmarkDone(merchantID uint, date string, qt QueueType, id uint) {
+	if s == nil || s.c == nil {
+		return
+	}
+	k := makeKey(merchantID, date, qt)
+	doneKey := "q:done:" + k
+	if _, err := unmarkDoneLua.Run(s.ctx, s.c, []string{doneKey}, strconv.FormatUint(uint64(id), 10)).Result(); err != nil {
+		log.Printf("[queue] redis unmark-done failed: merchant=%d date=%s type=%s id=%d err=%v\n", merchantID, date, qt, id, err)
+	}
+}
+
+func (s *RedisStore) GetNo(merchantID uint, date string, qt QueueType, id uint) (no int, ok bool) {
+	if s == nil || s.c == nil {
+		return 0, false
+	}
+	if merchantID == 0 || date == "" || id == 0 {
+		return 0, false
+	}
+
+	k := makeKey(merchantID, date, qt)
+	listKey := "q:order:" + k
+	startKey := "q:start:" + k
+
+	pipe := s.c.Pipeline()
+	startCmd := pipe.Get(s.ctx, startKey)
+	posCmd := pipe.LPos(s.ctx, listKey, strconv.FormatUint(uint64(id), 10), redis.LPosArgs{})
+	_, _ = pipe.Exec(s.ctx)
+
+	pos, err := posCmd.Result()
+	if err != nil {
+		return 0, false
+	}
+
+	startNo := 1
+	if v, err := startCmd.Result(); err == nil {
+		if n, err2 := strconv.Atoi(v); err2 == nil {
+			startNo = n
+		}
+	}
+
+	return startNo + int(pos), true
+}
+
 func (s *RedisStore) CallNextUncalled(merchantID uint, date string, qt QueueType, now time.Time) (nextID uint) {
 	if s == nil || s.c == nil {
 		return 0
@@ -303,6 +346,15 @@ local doneKey = KEYS[1]
 local doneID = ARGV[1]
 local nowMs = tonumber(ARGV[2])
 redis.call('HSET', doneKey, doneID, nowMs)
+return 1
+`)
+
+var unmarkDoneLua = redis.NewScript(`
+-- KEYS: [doneHash]
+-- ARGV: [id]
+local doneKey = KEYS[1]
+local id = ARGV[1]
+redis.call('HDEL', doneKey, id)
 return 1
 `)
 

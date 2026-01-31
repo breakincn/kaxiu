@@ -493,6 +493,7 @@ import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
 
 import { replaceTerms } from '../../utils/terms'
+import { normalizeSessionStatus } from '../../utils/sessionStatus'
 
 const router = useRouter()
 const route = useRoute()
@@ -554,7 +555,7 @@ const usageQrTitle = computed(() => {
   const merchant = card.value?.merchant
   const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')
   const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
-  const sessStatus = String(selectedUsage.value?.service_session_status || '').trim()
+  const sessStatus = normalizeSessionStatus(selectedUsage.value?.service_session_status)
   if ((isQueueMode || isMultiQueueMode) && sessStatus === 'start_pending') {
     return '扫码上号二维码'
   }
@@ -581,7 +582,7 @@ const isUsageStartTimeout = (usage) => {
   const supportCSMode = Boolean(merchant?.support_customer_service_mode)
   if (!supportCSMode) return false
   const supportRoom = Boolean(card.value?.merchant?.support_room)
-  const sessStatus = String(usage?.service_session_status || '').trim()
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
   const precheckedAt = usage?.service_session_start_confirmed_at
   const cnt = Number(usage?.start_timeout_count || 0)
   const precheckDl = getPrecheckDeadlineAtMs(usage)
@@ -604,7 +605,7 @@ const getUsageStatusText = (usage) => {
     const supportCS = Boolean(card.value?.merchant?.support_customer_service)
     const supportCSMode = Boolean(card.value?.merchant?.support_customer_service_mode)
     const supportRoom = Boolean(card.value?.merchant?.support_room)
-    const sessStatus = String(usage?.service_session_status || '').trim()
+    const sessStatus = normalizeSessionStatus(usage?.service_session_status)
     const precheckedAt = usage?.service_session_start_confirmed_at
     const now = nowTick.value
     const merchant = card.value?.merchant
@@ -714,7 +715,7 @@ const getUsageStatusClass = (usage) => {
     const supportCS = Boolean(card.value?.merchant?.support_customer_service)
     const supportCSMode = Boolean(card.value?.merchant?.support_customer_service_mode)
     const supportRoom = Boolean(card.value?.merchant?.support_room)
-    const sessStatus = String(usage?.service_session_status || '').trim()
+    const sessStatus = normalizeSessionStatus(usage?.service_session_status)
     const precheckedAt = usage?.service_session_start_confirmed_at
     const now = nowTick.value
     if (sessStatus === 'finished') return 'text-gray-600'
@@ -897,6 +898,12 @@ const getStartPendingTimeoutMs = (usage) => {
   return fromCard * 1000
 }
 
+const getStartScanTimeoutMs = () => {
+  const fromCard = Number(card.value?.start_scan_timeout_seconds || 0)
+  if (Number.isFinite(fromCard) && fromCard > 0) return fromCard * 1000
+  return 60 * 1000
+}
+
 const getUsageServiceStartAtMs = (usage) => {
   // 优先使用真正进入服务中的时间（service_session_started_at）
   // 这才是实际的服务开始时间，而不是起单确认时间或核销时间
@@ -910,7 +917,8 @@ const getUsageServiceStartAtMs = (usage) => {
   // 若未扫码起单，则按后端调度逻辑推算：updated_at + start_pending_timeout_seconds + 60s
   const sessUpdatedAtMs = getUsageSessionUpdatedAtMs(usage)
   const startPendingTimeoutMs = getStartPendingTimeoutMs(usage)
-  if (sessUpdatedAtMs && startPendingTimeoutMs) return sessUpdatedAtMs + startPendingTimeoutMs + 60 * 1000
+  const startScanTimeoutMs = getStartScanTimeoutMs()
+  if (sessUpdatedAtMs && startPendingTimeoutMs) return sessUpdatedAtMs + startPendingTimeoutMs + startScanTimeoutMs
 
   // 无服务会话信息时退化：以核销时间作为服务开始时间
   const usedAtMs = getUsageUsedAtMs(usage)
@@ -943,7 +951,7 @@ const getUsageServiceStartAtText = (usage) => {
 const shouldShowServiceStartTime = (usage) => {
   if (String(usage?.status || '').trim() !== 'in_progress') return false
   
-  const sessStatus = String(usage?.service_session_status || '').trim()
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
   const precheckedAt = usage?.service_session_start_confirmed_at
   
   // 仅在真正进入服务中(serving)后才显示服务开始时间
@@ -958,7 +966,7 @@ const shouldShowServiceRemainTime = (usage) => {
   if (String(usage?.status || '').trim() !== 'in_progress') return false
   
   const precheckedAt = usage?.service_session_start_confirmed_at
-  const sessStatus = String(usage?.service_session_status || '').trim()
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
   
   // 仅在已扫码起单确认且处于真实服务阶段时才显示剩余时间
   // 避免“待上钟/待起单(start_pending)”阶段误显示服务剩余时长
@@ -1008,7 +1016,7 @@ const getUsageCurrentTimesClass = (usage, index) => {
   if (v === '-' || v === '' || v === null || typeof v === 'undefined') return ''
 
   const s = String(usage?.status || '').trim()
-  const sessStatus = String(usage?.service_session_status || '').trim()
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
 
   // 完成：默认色
   if (s === 'success' || sessStatus === 'finished') return ''
@@ -1078,7 +1086,7 @@ const getUsageStatusCountdownText = (usage) => {
   const supportRoom = Boolean(card.value?.merchant?.support_room)
   const supportCSMode = Boolean(card.value?.merchant?.support_customer_service_mode)
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
-  const sessStatus = String(usage?.service_session_status || '').trim()
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
   const precheckedAt = usage?.service_session_start_confirmed_at
   const now = nowTick.value
 
@@ -1194,7 +1202,7 @@ const getUsageStatusCountdownClass = (usage) => {
   const supportRoom = Boolean(card.value?.merchant?.support_room)
   const supportCSMode = Boolean(card.value?.merchant?.support_customer_service_mode)
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
-  const sessStatus = String(usage?.service_session_status || '').trim()
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
   const precheckedAt = usage?.service_session_start_confirmed_at
 
   // 待选房间倒计时（橙色）
@@ -1268,7 +1276,7 @@ const getQueueCountdownMs = (usage) => {
 
   // 已进入服务流程（服务中/待自动下钟/待起单/待选房等）则不应再显示“预计叫号”倒计时
   const s = String(usage?.status || '').trim()
-  const sessStatus = String(usage?.service_session_status || '').trim()
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
   if (s === 'in_progress' || sessStatus) return 0
 
   // 已被叫号的不显示倒计时
@@ -1343,7 +1351,7 @@ const trySwitchUsageQrToFinish = async () => {
   const merchant = card.value?.merchant
   const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')
   const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
-  const sessStatus = String(latest?.service_session_status || '').trim()
+  const sessStatus = normalizeSessionStatus(latest?.service_session_status)
   const precheckedAt = latest?.service_session_start_confirmed_at
 
   // 叫号模式：一旦进入 serving，说明扫码上号完成，自动关闭弹窗
@@ -1389,7 +1397,7 @@ const openUsageQrModal = async (usage) => {
   const merchant = card.value?.merchant
   const supportCS = Boolean(merchant?.support_customer_service)
   const sessID = usage?.service_session_id
-  const sessStatus = String(usage?.service_session_status || '').trim()
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
   const precheckedAt = usage?.service_session_start_confirmed_at
   
   // 判断是否为叫号模式（未开启客服模式 + 开启叫号 + 自动叫号）
@@ -1557,7 +1565,7 @@ const maybeAutoOpenPrecheckQrAfterAssigned = async () => {
     // 未到5分钟：即使用户手动选了技师导致回到 start_pending，也不自动弹窗（保持原逻辑）
     if (now < deadline) continue
 
-    const sessStatus = String(u?.service_session_status || '').trim()
+    const sessStatus = normalizeSessionStatus(u?.service_session_status)
     const precheckedAt = u?.service_session_start_confirmed_at
     if (sessStatus === 'start_pending' && !precheckedAt && Boolean(u?.service_technician) && Boolean(u?.service_session_id)) {
       // 认为是系统自动分配成功：自动弹出待上钟二维码，并在5秒后自动关闭
@@ -1600,7 +1608,7 @@ const onUsageTouchStart = (e, usage) => {
       const supportRoom = Boolean(merchant?.support_room)
       const supportCS = Boolean(merchant?.support_customer_service)
       const supportCSMode = Boolean(merchant?.support_customer_service_mode)
-      const sessStatus = String(latest?.service_session_status || '').trim()
+      const sessStatus = normalizeSessionStatus(latest?.service_session_status)
       const sessID = latest?.service_session_id
       const precheckedAt = latest?.service_session_start_confirmed_at
       
