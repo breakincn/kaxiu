@@ -475,9 +475,15 @@ const visibleTechs = computed(() => {
 // 专业客服按岗位分组
 const professionalTechsByRole = computed(() => {
   const list = techs.value || []
+  // 严格过滤：排除运营岗位（店长/前台/role_type=operational）
+  const opKeys = new Set((operationalRolesData.value || []).map((r) => String(r?.key || '').trim()).filter(Boolean))
   const professionalTechs = list.filter((t) => {
-    const k = String(t?.service_role?.key || '')
-    return k !== 'store_manager' && k !== 'front_desk'
+    const k = String(t?.service_role?.key || '').trim()
+    if (k === 'store_manager' || k === 'front_desk') return false
+    if (opKeys.has(k)) return false
+    const rt = String(t?.service_role?.role_type || '').trim()
+    if (rt === 'operational') return false
+    return true
   })
   
   const grouped = {}
@@ -498,11 +504,14 @@ const professionalTechsByRole = computed(() => {
 // 运营客服按岗位分组
 const operationalTechsByRole = computed(() => {
   const list = techs.value || []
+  // 严格过滤：仅运营岗位（店长/前台 或 role_type=operational），排除专业岗位key
+  const proKeys = new Set((professionalRolesData.value || []).map((r) => String(r?.key || '').trim()).filter(Boolean))
   const operationalTechs = list.filter((t) => {
+    const k = String(t?.service_role?.key || '').trim()
+    if (k === 'store_manager' || k === 'front_desk') return true
+    if (proKeys.has(k)) return false
     const rt = String(t?.service_role?.role_type || '').trim()
-    if (rt) return rt === 'operational'
-    const k = String(t?.service_role?.key || '')
-    return k === 'store_manager' || k === 'front_desk'
+    return rt === 'operational'
   })
 
   const grouped = {}

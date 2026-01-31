@@ -32,11 +32,12 @@ func GetMerchantProfessionalRoles(c *gin.Context) {
 	}
 
 	// 同称谓去重：优先商户自定义岗位，若商户已定义同名岗位，则不返回平台同名岗位
+	// 硬性排除运营岗位key：店长/前台及所有role_type=operational的岗位
 	var merchantRoles []models.ServiceRole
-	config.DB.Where("merchant_id = ? AND role_type = ? AND is_active = ?", merchantID, "professional", true).Order("sort asc, id asc").Find(&merchantRoles)
+	config.DB.Where("merchant_id = ? AND role_type = ? AND is_active = ? AND `key` NOT IN ('store_manager','front_desk')", merchantID, "professional", true).Order("sort asc, id asc").Find(&merchantRoles)
 
 	var platformRoles []models.ServiceRole
-	config.DB.Where("merchant_id IS NULL AND role_type = ? AND is_active = ?", "professional", true).Order("sort asc, id asc").Find(&platformRoles)
+	config.DB.Where("merchant_id IS NULL AND role_type = ? AND is_active = ? AND `key` NOT IN ('store_manager','front_desk')", "professional", true).Order("sort asc, id asc").Find(&platformRoles)
 
 	seenName := map[string]bool{}
 	list := make([]models.ServiceRole, 0, len(merchantRoles)+len(platformRoles))
@@ -180,14 +181,34 @@ func GetMerchantOperationalRoles(c *gin.Context) {
 		return
 	}
 
-	var list []models.ServiceRole
 	// 运营岗位：平台默认 + 商户自定义
-	// 兼容历史数据：店长/前台可能缺失 role_type，按 key 兜底返回
-	// 兜底过滤：仅认 description 含“运营”的 operational 角色，避免历史脏数据把专业岗位标成 operational
+	// 策略：先查所有运营岗位（role_type=operational 或 key=店长/前台），再排除专业岗位key
+	var allOperational []models.ServiceRole
 	config.DB.
-		Where("is_active = ? AND (((role_type = ? AND description LIKE ?) ) OR (`key` IN ('store_manager','front_desk'))) AND (merchant_id IS NULL OR merchant_id = ?)", true, "operational", "%运营%", merchantID).
+		Where("is_active = ? AND (role_type = ? OR `key` IN ('store_manager','front_desk')) AND (merchant_id IS NULL OR merchant_id = ?)", true, "operational", merchantID).
 		Order("sort asc, id asc").
-		Find(&list)
+		Find(&allOperational)
+
+	// 获取所有专业岗位key，用于排除
+	var professionalKeys []string
+	config.DB.Model(&models.ServiceRole{}).
+		Where("role_type = ? AND is_active = ?", "professional", true).
+		Pluck("`key`", &professionalKeys)
+	professionalKeySet := make(map[string]bool)
+	for _, k := range professionalKeys {
+		if strings.TrimSpace(k) != "" {
+			professionalKeySet[k] = true
+		}
+	}
+
+	// 过滤掉专业岗位key
+	var list []models.ServiceRole
+	for _, r := range allOperational {
+		if professionalKeySet[r.Key] {
+			continue
+		}
+		list = append(list, r)
+	}
 	
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
