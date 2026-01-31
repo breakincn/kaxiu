@@ -182,8 +182,9 @@ func GetMerchantOperationalRoles(c *gin.Context) {
 
 	var list []models.ServiceRole
 	// 运营岗位：平台默认 + 商户自定义
+	// 兼容历史数据：店长/前台可能缺失 role_type，按 key 兜底返回
 	config.DB.
-		Where("is_active = ? AND role_type = ? AND (merchant_id IS NULL OR merchant_id = ?)", true, "operational", merchantID).
+		Where("is_active = ? AND ((role_type = ?) OR (`key` IN ('store_manager','front_desk'))) AND (merchant_id IS NULL OR merchant_id = ?)", true, "operational", merchantID).
 		Order("sort asc, id asc").
 		Find(&list)
 	

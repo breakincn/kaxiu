@@ -372,7 +372,12 @@ const saveActiveType = (type) => {
 }
 
 const operationalRoles = computed(() => {
-  return (operationalRolesData.value || []).filter((r) => r && String(r.role_type || '').trim() === 'operational')
+  return (operationalRolesData.value || []).filter((r) => {
+    if (!r) return false
+    const k = String(r.key || '').trim()
+    if (k === 'store_manager' || k === 'front_desk') return true
+    return String(r.role_type || '').trim() === 'operational'
+  })
 })
 
 const professionalRoles = computed(() => {

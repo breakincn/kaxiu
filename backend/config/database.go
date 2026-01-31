@@ -234,8 +234,8 @@ func migrateLegacyMerchantProjects() {
 
 func initServiceRoles() {
 	defaults := []models.ServiceRole{
-		{Key: "store_manager", Name: "店长", AccountPrefix: "sm", RoleType: "operational", Description: "运营客服-店长", IsActive: true, AllowPermissionAdjust: false, Sort: 5},
-		{Key: "front_desk", Name: "前台", AccountPrefix: "fd", RoleType: "operational", Description: "运营客服-前台", IsActive: true, AllowPermissionAdjust: false, Sort: 6},
+		{Key: "store_manager", Name: "店长", AccountPrefix: "sm", RoleType: "operational", Description: "运营客服-店长", IsActive: true, AllowPermissionAdjust: true, Sort: 5},
+		{Key: "front_desk", Name: "前台", AccountPrefix: "fd", RoleType: "operational", Description: "运营客服-前台", IsActive: true, AllowPermissionAdjust: true, Sort: 6},
 	}
 
 	for _, r := range defaults {
