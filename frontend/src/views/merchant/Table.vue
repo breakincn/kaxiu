@@ -139,7 +139,6 @@
                           <div v-if="it.next_available_at">下次可服务：{{ formatTime(it.next_available_at) }}（{{ formatDuration(it.next_available_in_seconds) }}）</div>
                         </div>
                       </div>
-                      <div class="text-gray-400 text-xs">ID: {{ it.technician.id }}</div>
                     </div>
                   </div>
                 </div>
