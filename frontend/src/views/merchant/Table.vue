@@ -10,8 +10,8 @@
       <div class="flex-1"></div>
     </header>
 
-    <div class="px-4 py-4">
-      <div class="bg-white rounded-xl shadow-sm p-4">
+    <div class="px-4 pt-2 pb-4">
+      <div class="bg-white rounded-xl shadow-sm px-4 pt-3 pb-4">
         <div class="flex gap-2">
           <button
             type="button"
@@ -60,7 +60,7 @@
 
         <div v-if="loading" class="text-center text-gray-400 py-10">加载中...</div>
 
-        <div v-else class="mt-4">
+        <div v-else class="mt-2">
           <div v-if="!activeTab" class="text-center text-gray-400 py-10">
             请选择上方标签查看内容
           </div>
