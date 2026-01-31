@@ -216,8 +216,8 @@
 
               <div v-if="Object.keys(professionalTechsByRole).length === 0" class="text-center text-gray-400 py-10">暂无专业客服</div>
 
-              <div v-else class="mt-4 space-y-6">
-                <div v-for="(group, roleName) in professionalTechsByRole" :key="roleName" class="bg-gray-50 rounded-xl p-4">
+              <div v-else class="mt-4">
+                <div v-for="(group, roleName) in professionalTechsByRole" :key="roleName" class="mb-6">
                   <div class="flex items-center justify-between mb-3">
                     <div class="flex items-center gap-2">
                       <div class="text-gray-800 font-medium">{{ roleName }}</div>
