@@ -111,7 +111,7 @@
             <div v-if="groupedStaff.length === 0" class="text-center text-gray-400 py-10">暂无{{ staffSubTab === 'operation' ? '运营客服' : '专业客服' }}</div>
 
             <div v-else class="space-y-6">
-              <div v-for="g in groupedStaff" :key="g.groupKey" class="bg-gray-50 rounded-xl p-4">
+              <div v-for="g in groupedStaff" :key="g.groupKey" class="mb-6">
                 <div class="flex items-center justify-between mb-3">
                   <div class="flex items-center gap-2">
                     <div class="text-gray-800 font-medium">{{ g.roleName }}</div>
