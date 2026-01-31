@@ -128,7 +128,6 @@
                           </div>
                           <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：{{ t.account }}</div>
                         </div>
-                        <div class="text-gray-400 text-xs">ID: {{ t.id }}</div>
                       </div>
 
                       <div class="mt-3 flex gap-2">
@@ -211,7 +210,6 @@
                           <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：{{ t.account }}</div>
                           <div v-if="shouldShowWindowNo && t.window_no" class="text-gray-500 text-sm mt-1">{{ windowTerm }}：{{ t.window_no }}</div>
                         </div>
-                        <div class="text-gray-400 text-xs">ID: {{ t.id }}</div>
                       </div>
 
                       <div class="mt-3 flex gap-2">
@@ -372,10 +370,12 @@ const saveActiveType = (type) => {
 }
 
 const operationalRoles = computed(() => {
+  const proKeys = new Set((professionalRolesData.value || []).map((r) => String(r?.key || '').trim()).filter(Boolean))
   return (operationalRolesData.value || []).filter((r) => {
     if (!r) return false
     const k = String(r.key || '').trim()
     if (k === 'store_manager' || k === 'front_desk') return true
+    if (proKeys.has(k)) return false
     return String(r.role_type || '').trim() === 'operational'
   })
 })
