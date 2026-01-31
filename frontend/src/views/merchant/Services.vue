@@ -24,11 +24,6 @@
             <input type="checkbox" v-model="form.support_project" />
           </div>
 
-          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">开启直购售卡</div>
-            <input type="checkbox" v-model="form.support_direct_sale" />
-          </div>
-
 		  <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
 			<div class="text-gray-800 font-medium">开启客服</div>
 			<input type="checkbox" v-model="form.support_customer_service" @change="onCustomerServiceChange" />
@@ -59,8 +54,12 @@
             <input type="checkbox" v-model="form.support_room" :disabled="form.support_queue" />
           </div>
 
-        </div>
+          <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="text-gray-800 font-medium">开启直购售卡</div>
+            <input type="checkbox" v-model="form.support_direct_sale" />
+          </div>
 
+        </div>
 
         <button
           @click="save"
