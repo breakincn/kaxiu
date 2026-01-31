@@ -190,7 +190,7 @@
                 </div>
 
                 <!-- 其他会话 -->
-                <div class="bg-white rounded-xl shadow-sm p-4">
+                <div>
                   <div class="font-medium text-gray-800 mb-3">
                     {{ isTechnicianAuth() ? '其他服务单' : '全部服务单' }}
                     <span class="text-gray-500 text-sm font-normal">({{ filteredOtherSessions.length }})</span>
