@@ -35,7 +35,7 @@ func GetMerchantRoleAttendanceConfigs(c *gin.Context) {
 	// 运营岗位：平台默认店长/前台；专业岗位：商户自定义
 	var roles []models.ServiceRole
 	config.DB.
-		Where("is_active = ? AND ((merchant_id IS NULL AND `key` IN ('store_manager','front_desk')) OR (role_type = ? AND (merchant_id IS NULL OR merchant_id = ?)))", true, "professional", merchantID).
+		Where("is_active = ? AND ((role_type = ? AND (merchant_id IS NULL OR merchant_id = ?)) OR (role_type = ? AND (merchant_id IS NULL OR merchant_id = ?)))", true, "operational", merchantID, "professional", merchantID).
 		Order("role_type asc, sort asc, id asc").
 		Find(&roles)
 
@@ -100,9 +100,11 @@ func SetMerchantRoleAttendanceConfig(c *gin.Context) {
 		return
 	}
 
-	// 归属校验：运营角色为平台默认；专业岗位为本商户
+	// 归属校验：
+	// - 运营角色：平台默认（merchant_id IS NULL）或本商户自定义（merchant_id = 当前商户）
+	// - 专业岗位：平台默认（merchant_id IS NULL）或本商户自定义（merchant_id = 当前商户）
 	if strings.TrimSpace(role.RoleType) == "operational" {
-		if role.MerchantID != nil {
+		if role.MerchantID != nil && *role.MerchantID != merchantID {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权操作该角色"})
 			return
 		}

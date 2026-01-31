@@ -370,10 +370,10 @@ func CreateMerchantTechnician(c *gin.Context) {
 		return
 	}
 	// 角色归属校验：
-	// - 运营角色：平台默认（merchant_id IS NULL）
+	// - 运营角色：平台默认（merchant_id IS NULL）或本商户自定义（merchant_id = 当前商户）
 	// - 专业角色：商户自定义（merchant_id = 当前商户）
 	if strings.TrimSpace(role.RoleType) == "operational" {
-		if role.MerchantID != nil {
+		if role.MerchantID != nil && *role.MerchantID != merchantID {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权使用该角色"})
 			return
 		}

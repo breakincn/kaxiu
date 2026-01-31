@@ -169,6 +169,133 @@ func CreateMerchantProfessionalRole(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": role})
 }
 
+func GetMerchantOperationalRoles(c *gin.Context) {
+	authType, _ := c.Get("auth_type")
+	if authType == "staff" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
+		return
+	}
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+
+	var list []models.ServiceRole
+	// 运营岗位：平台默认 + 商户自定义
+	config.DB.
+		Where("is_active = ? AND role_type = ? AND (merchant_id IS NULL OR merchant_id = ?)", true, "operational", merchantID).
+		Order("sort asc, id asc").
+		Find(&list)
+	
+	c.JSON(http.StatusOK, gin.H{"data": list})
+}
+
+func CreateMerchantOperationalRole(c *gin.Context) {
+	authType, _ := c.Get("auth_type")
+	if authType == "staff" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
+		return
+	}
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		Name          string `json:"name" binding:"required"`
+		AccountPrefix string `json:"account_prefix" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	name := strings.TrimSpace(input.Name)
+	prefix := strings.ToLower(strings.TrimSpace(input.AccountPrefix))
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "称谓不能为空"})
+		return
+	}
+	if prefix == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀不能为空"})
+		return
+	}
+	if len(prefix) > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀最多5个英文字母"})
+		return
+	}
+	for _, ch := range prefix {
+		if ch < 'a' || ch > 'z' {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀只能包含英文字母"})
+			return
+		}
+	}
+
+	// 前缀不可重复：对齐账号生成逻辑（同商户同前缀会导致不同岗位账号混在一起）
+	var existing models.ServiceRole
+	if err := config.DB.Where("role_type = ? AND account_prefix = ? AND is_active = ? AND (merchant_id IS NULL OR merchant_id = ?)", "operational", prefix, true, merchantID).First(&existing).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该前缀已存在"})
+		return
+	}
+
+	// 称谓不可重复：平台 + 本商户口径
+	var existingByName models.ServiceRole
+	if err := config.DB.Where("role_type = ? AND is_active = ? AND name = ? AND (merchant_id IS NULL OR merchant_id = ?)", "operational", true, name, merchantID).First(&existingByName).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该岗位称谓已经存在,请不要重复添加"})
+		return
+	}
+
+	key := fmt.Sprintf("m%d_%s_%d", merchantID, prefix, time.Now().Unix())
+	role := models.ServiceRole{
+		MerchantID:            func() *uint { v := merchantID; return &v }(),
+		RoleType:              "operational",
+		Key:                   key,
+		Name:                  name,
+		AccountPrefix:         prefix,
+		Description:           "商户自定义运营客服岗位",
+		IsActive:              true,
+		AllowPermissionAdjust: true,
+		Sort:                  100,
+	}
+
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&role).Error; err != nil {
+			return err
+		}
+
+		// 默认权限：复制前台(front_desk)默认权限
+		var frontDesk models.ServiceRole
+		if err := tx.Where("`key` = ?", "front_desk").First(&frontDesk).Error; err != nil {
+			return nil
+		}
+		var base []models.RolePermission
+		tx.Where("service_role_id = ? AND allowed = ?", frontDesk.ID, true).Find(&base)
+		for _, rp := range base {
+			if rp.PermissionID == 0 {
+				continue
+			}
+			var existingRP models.RolePermission
+			err := tx.Where("service_role_id = ? AND permission_id = ?", role.ID, rp.PermissionID).First(&existingRP).Error
+			if err == nil {
+				if !existingRP.Allowed {
+					tx.Model(&models.RolePermission{}).Where("id = ?", existingRP.ID).Updates(map[string]interface{}{"allowed": true})
+				}
+				continue
+			}
+			if err != gorm.ErrRecordNotFound {
+				continue
+			}
+			tx.Create(&models.RolePermission{ServiceRoleID: role.ID, PermissionID: rp.PermissionID, Allowed: true})
+		}
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": role})
+}
+
 func AdminListServiceRoles(c *gin.Context) {
 	var list []models.ServiceRole
 	// 只返回平台创建的客服角色（merchant_id IS NULL）
