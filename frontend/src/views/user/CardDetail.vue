@@ -616,6 +616,11 @@ const getUsageStatusText = (usage) => {
     const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
     
     if (sessStatus === 'finished') return '完成'
+
+    // 自动叫号单窗口：过号插队窗口期
+    if (sessStatus === 'timeout_waiting') {
+      return '超时过号等待'
+    }
     
     // 叫号模式下 delay_pending 显示为"待扫码上号"
     if (sessStatus === 'delay_pending') {
