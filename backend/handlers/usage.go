@@ -148,24 +148,24 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 	}
 
 	type sessLite struct {
-		ID                 uint       `gorm:"column:id"`
-		InitialUsageID     uint       `gorm:"column:initial_usage_id"`
-		ProjectID          *uint      `gorm:"column:project_id"`
-		Status             string     `gorm:"column:status"`
-		RoomID             *uint      `gorm:"column:room_id"`
-		TechnicianID       *uint      `gorm:"column:technician_id"`
-		StartTimeoutCount  int        `gorm:"column:start_timeout_count"`
-		StartConfirmedAt   *time.Time `gorm:"column:start_confirmed_at"`
-		StartedAt          *time.Time `gorm:"column:started_at"`
-		ScheduledFinishAt  *time.Time `gorm:"column:scheduled_finish_at"`
-		FinishedAt         *time.Time `gorm:"column:finished_at"`
-		DurationMinutes    int        `gorm:"column:duration_minutes"`
-		UpdatedAt          *time.Time `gorm:"column:updated_at"`
-		StartPendingTimeoutSeconds int `gorm:"column:start_pending_timeout_seconds"`
-		RoomSelectDeadlineAt *time.Time `gorm:"column:room_select_deadline_at"`
-		RoomLockedAt         *time.Time `gorm:"column:room_locked_at"`
-		StaffSelectCooldownUntil *time.Time `gorm:"column:staff_select_cooldown_until"`
-		StaffSelectEnteredAt *time.Time `gorm:"column:staff_select_entered_at"`
+		ID                         uint       `gorm:"column:id"`
+		InitialUsageID             uint       `gorm:"column:initial_usage_id"`
+		ProjectID                  *uint      `gorm:"column:project_id"`
+		Status                     string     `gorm:"column:status"`
+		RoomID                     *uint      `gorm:"column:room_id"`
+		TechnicianID               *uint      `gorm:"column:technician_id"`
+		StartTimeoutCount          int        `gorm:"column:start_timeout_count"`
+		StartConfirmedAt           *time.Time `gorm:"column:start_confirmed_at"`
+		StartedAt                  *time.Time `gorm:"column:started_at"`
+		ScheduledFinishAt          *time.Time `gorm:"column:scheduled_finish_at"`
+		FinishedAt                 *time.Time `gorm:"column:finished_at"`
+		DurationMinutes            int        `gorm:"column:duration_minutes"`
+		UpdatedAt                  *time.Time `gorm:"column:updated_at"`
+		StartPendingTimeoutSeconds int        `gorm:"column:start_pending_timeout_seconds"`
+		RoomSelectDeadlineAt       *time.Time `gorm:"column:room_select_deadline_at"`
+		RoomLockedAt               *time.Time `gorm:"column:room_locked_at"`
+		StaffSelectCooldownUntil   *time.Time `gorm:"column:staff_select_cooldown_until"`
+		StaffSelectEnteredAt       *time.Time `gorm:"column:staff_select_entered_at"`
 	}
 
 	var sessions []sessLite
@@ -371,9 +371,9 @@ func autoFixUsages(usages *[]models.Usage) {
 				}
 				// 结束会话并释放资源（房间/技师）
 				config.DB.Table("service_sessions").
-					Where("id = ? AND status NOT IN ('finished','canceled')", s.ID).
+					Where("id = ? AND status NOT IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"finished", "canceled"})).
 					Updates(map[string]interface{}{
-						"status":                  "finished",
+						"status":                  models.ApplyStatusPrefix(s.Status, "finished"),
 						"finished_at":             finishedAt,
 						"technician_id":           nil,
 						"room_id":                 nil,

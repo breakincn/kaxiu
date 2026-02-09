@@ -72,7 +72,8 @@ func UserRevokeUsage(c *gin.Context) {
 		if s.StartConfirmedAt != nil || s.StartedAt != nil {
 			return apiErr{status: http.StatusBadRequest, msg: "已起单，不可撤销"}
 		}
-		if s.Status == "serving" || s.Status == "auto_finishing" || s.Status == "finished" {
+		revokeBase := models.NormalizeSessionStatus(s.Status)
+		if revokeBase == "serving" || revokeBase == "auto_finishing" || revokeBase == "finished" {
 			return apiErr{status: http.StatusBadRequest, msg: "服务已开始/已完成，不可撤销"}
 		}
 		if s.StartTimeoutCount < 2 {
@@ -98,8 +99,8 @@ func UserRevokeUsage(c *gin.Context) {
 		// 标记 usage 为失败（撤销）
 		finishedAt := now
 		if err := tx.Model(&models.Usage{}).Where("id = ? AND status = ?", u.ID, "in_progress").Updates(map[string]interface{}{
-			"status":      "failed",
-			"finished_at": &finishedAt,
+			"status":        "failed",
+			"finished_at":   &finishedAt,
 			"technician_id": nil,
 		}).Error; err != nil {
 			return err
@@ -114,14 +115,14 @@ func UserRevokeUsage(c *gin.Context) {
 
 		// 取消并释放会话资源
 		updates := map[string]interface{}{
-			"status":                  "canceled",
+			"status":                  models.ApplyStatusPrefix(s.Status, "canceled"),
 			"technician_id":           nil,
 			"room_id":                 nil,
 			"room_locked_at":          nil,
 			"room_select_deadline_at": nil,
 		}
 		return tx.Model(&models.ServiceSession{}).
-			Where("id = ? AND status NOT IN ('finished','canceled')", s.ID).
+			Where("id = ? AND status NOT IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"finished", "canceled"})).
 			Updates(updates).Error
 	})
 	if err != nil {

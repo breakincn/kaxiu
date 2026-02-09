@@ -269,7 +269,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 				}
 				return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新上号", technicianServiceStatusText(att.Status))}
 			}
-		
+
 			// start_pending -> serving（扫码上号），避免二次扫码
 			updates := map[string]interface{}{
 				"start_confirmed_at":            now,
@@ -284,7 +284,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("start_pending")).Updates(updates).Error; err != nil {
 				return err
 			}
-		
+
 			// 扫码上号成功后占用技师：仅在 idle 状态时更新为 busy，已是 busy 则跳过
 			if att.Status == "idle" {
 				if err := tx.Model(&models.TechnicianAttendance{}).
@@ -293,14 +293,14 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 					return err
 				}
 			}
-		
+
 			// 记录本次上号/服务人员（用于“今日上钟/起单”展示）
 			if s.InitialUsageID > 0 {
 				_ = tx.Model(&models.Usage{}).
 					Where("id = ? AND merchant_id = ?", s.InitialUsageID, merchantID).
 					Update("technician_id", scannerTechID).Error
 			}
-		
+
 			if err := tx.First(&out, s.ID).Error; err != nil {
 				return err
 			}
@@ -457,7 +457,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 
 	// 根据会话状态返回不同的消息
 	message := "上号成功，服务已开始"
-	if out.Status == "delay_pending" {
+	if models.NormalizeSessionStatus(out.Status) == "delay_pending" {
 		message = "起单成功，请再次扫码上号"
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
@@ -571,7 +571,8 @@ func ChooseServiceSessionRoom(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", sid, merchantID).First(&s).Error; err != nil {
 			return err
 		}
-		if s.Status == "finished" || s.Status == "canceled" {
+		baseStatus := models.NormalizeSessionStatus(s.Status)
+		if baseStatus == "finished" || baseStatus == "canceled" {
 			return apiErr{status: http.StatusBadRequest, msg: "会话已结束"}
 		}
 
@@ -587,14 +588,14 @@ func ChooseServiceSessionRoom(c *gin.Context) {
 			"room_select_deadline_at": nil,
 		}
 		if m.SupportCustomerServiceMode {
-			updates["status"] = "room_locked"
+			updates["status"] = models.ApplyStatusPrefix(s.Status, "room_locked")
 		} else {
 			delaySeconds := s.StartDelaySeconds
 			if delaySeconds <= 0 {
 				delaySeconds = 60
 			}
 			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
-			updates["status"] = "delay_pending"
+			updates["status"] = models.ApplyStatusPrefix(s.Status, "delay_pending")
 			updates["start_confirmed_at"] = now
 			updates["scheduled_start_at"] = startAt
 		}
@@ -648,7 +649,8 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", sid, merchantID).First(&s).Error; err != nil {
 			return err
 		}
-		if s.Status == "finished" || s.Status == "canceled" {
+		baseStatus := models.NormalizeSessionStatus(s.Status)
+		if baseStatus == "finished" || baseStatus == "canceled" {
 			return apiErr{status: http.StatusBadRequest, msg: "会话已结束"}
 		}
 		var m models.Merchant
@@ -667,7 +669,7 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		}
 		updates := map[string]interface{}{
 			"technician_id":                 input.TechnicianID,
-			"status":                        "start_pending",
+			"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 			"staff_select_entered_at":       nil,
 			"staff_select_cooldown_until":   nil,
 			"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
@@ -717,7 +719,7 @@ func ExtendServiceSession(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", sid, merchantID).First(&s).Error; err != nil {
 			return err
 		}
-		if s.Status == "finished" || s.Status == "canceled" {
+		if models.NormalizeSessionStatus(s.Status) == "finished" || models.NormalizeSessionStatus(s.Status) == "canceled" {
 			return apiErr{status: http.StatusBadRequest, msg: "会话已结束"}
 		}
 		var card models.Card
@@ -817,7 +819,7 @@ func ExtendServiceSessionDuration(c *gin.Context) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", sid, merchantID).First(&s).Error; err != nil {
 			return err
 		}
-		if s.Status != "serving" {
+		if models.NormalizeSessionStatus(s.Status) != "serving" {
 			return apiErr{status: http.StatusBadRequest, msg: "仅服务中可延长"}
 		}
 

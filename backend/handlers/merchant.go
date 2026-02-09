@@ -186,7 +186,7 @@ func migrateSessionsAfterDisableCustomerService(tx *gorm.DB, m *models.Merchant,
 	// 迁移目标：
 	// - 若已锁定房间（room_id 有值）或商户不支持房间：进入 delay_pending（非客服流程的“待起单”）
 	// - 若未锁定房间且支持房间：回到 room_selecting 让用户选房（不再选客服）
-	statuses := []string{"room_locked", "staff_selecting", "start_pending"}
+	statuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending"})
 
 	var sessions []models.ServiceSession
 	if err := tx.
@@ -224,7 +224,7 @@ func migrateSessionsAfterDisableCustomerService(tx *gorm.DB, m *models.Merchant,
 
 		// 已锁定房间：直接进入非客服流程 delay_pending
 		if (s.RoomID != nil && *s.RoomID > 0) || !m.SupportRoom {
-			updates["status"] = "delay_pending"
+			updates["status"] = models.ApplyStatusPrefix(s.Status, "delay_pending")
 			updates["start_confirmed_at"] = &now
 			updates["scheduled_start_at"] = &startAt
 			if m.SupportRoom {
@@ -234,7 +234,7 @@ func migrateSessionsAfterDisableCustomerService(tx *gorm.DB, m *models.Merchant,
 		} else {
 			// 未锁定房间：回到选房（不再选客服）
 			dl := now.Add(90 * time.Second)
-			updates["status"] = "room_selecting"
+			updates["status"] = models.ApplyStatusPrefix(s.Status, "room_selecting")
 			updates["room_id"] = nil
 			updates["room_locked_at"] = nil
 			updates["room_select_deadline_at"] = &dl
