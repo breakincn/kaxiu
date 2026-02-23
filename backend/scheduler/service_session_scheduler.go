@@ -684,13 +684,31 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				return nil
 			}
 
-			// 手动叫号模式：不做待上号超时回退/跳号，始终保持 start_pending 等待人工处理
+			// 手动叫号模式：不做普通的待上号超时回退/跳号，但做 12 小时或跨天兜底强制作废
 			{
 				var merchant models.Merchant
 				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 					return err
 				}
 				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "manual" {
+					abandonTimeout := 12 * time.Hour
+					baseAt := s.UpdatedAt
+					if baseAt == nil {
+						baseAt = s.CreatedAt
+					}
+					isCrossDay := false
+					if baseAt != nil {
+						baseDate := time.Date(baseAt.Year(), baseAt.Month(), baseAt.Day(), 0, 0, 0, 0, baseAt.Location())
+						nowDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+						if nowDate.After(baseDate) {
+							isCrossDay = true
+						}
+					}
+					if baseAt != nil && (now.Sub(*baseAt) >= abandonTimeout || isCrossDay) {
+						// 超过12小时或跨天未处理：强制释放作废
+						return failStartPendingAndAssignNext(tx, &s, &merchant, now)
+					}
+					// 否则：始终保持 start_pending 等待人工处理
 					return nil
 				}
 			}

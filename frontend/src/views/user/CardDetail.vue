@@ -612,7 +612,7 @@ const getUsageStatusText = (usage) => {
     
     // 判断是否为单窗口串行叫号模式（未开启客服模式 + 开启叫号 + 自动叫号 + 未开启多个客服）
     const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual') && !merchant?.support_multi_customer_service
-    // 多窗口叫号模式：按当天签到的专业技师数量并行，叫到号后进入 start_pending 等待扫码起单
+    // 多窗口叫号模式：按当天签到的专业技师数量并行，叫到号后进入 start_pending 等待扫码上号
     const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
     
     if (sessStatus === 'finished') return '完成'
@@ -644,9 +644,9 @@ const getUsageStatusText = (usage) => {
         const ttxt = tname ? `:${tname}` : ''
         return `${wtxt}${ttxt} 待上号`
       }
-      // 手动叫号模式：start_pending 显示为"待上号"
-      const isManualQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && merchant?.queue_mode === 'manual'
-      if (isManualQueueMode) {
+      // 叫号模式下 start_pending 显示为"待上号"
+      const isAnyQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')
+      if (isAnyQueueMode) {
         return '待上号'
       }
       return replaceTerms('待起单', card.value?.merchant)

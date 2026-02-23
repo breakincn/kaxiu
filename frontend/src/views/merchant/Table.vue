@@ -449,7 +449,13 @@ const sessionStatusText = (st) => {
   if (s === 'room_selecting') return '选房中'
   if (s === 'room_locked') return '房间已锁定'
   if (s === 'staff_selecting') return '选人中'
-  if (s === 'start_pending') return replaceTerms('待起单', merchant.value)
+  if (s === 'start_pending') {
+    const isAnyQueueMode = !merchant.value?.support_customer_service_mode && merchant.value?.support_queue && (merchant.value?.queue_mode === 'auto' || merchant.value?.queue_mode === 'manual')
+    if (isAnyQueueMode) {
+      return '待上号'
+    }
+    return replaceTerms('待起单', merchant.value)
+  }
   if (s === 'delay_pending') return '待上号'
   if (s === 'timeout_waiting') return '过号等待'
   if (s === 'timeout_failed') return '过号失败'
@@ -468,7 +474,13 @@ const badgeText = (it) => {
   if (sess) {
     const sst = normalizeSessionStatus(sess.status)
     const startConfirmedAt = sess.start_confirmed_at
-    if (sst === 'start_pending' && !startConfirmedAt) return replaceTerms('服务 待起单', merchant.value)
+    if (sst === 'start_pending' && !startConfirmedAt) {
+      const isAnyQueueMode = !merchant.value?.support_customer_service_mode && merchant.value?.support_queue && (merchant.value?.queue_mode === 'auto' || merchant.value?.queue_mode === 'manual')
+      if (isAnyQueueMode) {
+        return replaceTerms('服务 待上号', merchant.value)
+      }
+      return replaceTerms('服务 待起单', merchant.value)
+    }
     if (sst === 'auto_finishing') return replaceTerms('待自动下钟', merchant.value)
     return replaceTerms('服务 待结单', merchant.value)
   }

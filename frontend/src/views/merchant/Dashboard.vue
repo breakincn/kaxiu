@@ -2258,7 +2258,13 @@ const getUsageServiceStatusText = (usage) => {
     if (s === 'room_selecting') return '待选房间'
     if (s === 'room_locked') return '房间已锁定'
     if (s === 'staff_selecting') return replaceTerms('待选客服', merchant.value)
-    if (s === 'start_pending') return replaceTerms('待起单', merchant.value)
+    if (s === 'start_pending') {
+      const isAnyQueueMode = !merchant.value?.support_customer_service_mode && merchant.value?.support_queue && (merchant.value?.queue_mode === 'auto' || merchant.value?.queue_mode === 'manual')
+      if (isAnyQueueMode) {
+        return '待上号'
+      }
+      return replaceTerms('待起单', merchant.value)
+    }
     if (s === 'delay_pending') return replaceTerms('待起单', merchant.value)
     if (s === 'serving') return replaceTerms('服务中', merchant.value)
     if (s === 'auto_finishing') return replaceTerms('待自动结单', merchant.value)
@@ -2268,6 +2274,10 @@ const getUsageServiceStatusText = (usage) => {
 
   // 待起单
   if (normalizeSessionStatus(usage.service_session_status) === 'start_pending') {
+    const isAnyQueueMode = !merchant.value?.support_customer_service_mode && merchant.value?.support_queue && (merchant.value?.queue_mode === 'auto' || merchant.value?.queue_mode === 'manual')
+    if (isAnyQueueMode) {
+      return '待上号'
+    }
     return replaceTerms('待起单', merchant.value)
   }
 
