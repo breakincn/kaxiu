@@ -132,7 +132,7 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 		return 0, false, nil
 	}
 	date := now.Format("2006-01-02")
-	
+
 	// 策略1：优先从队列取下一个未叫号
 	nextUsageID = queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 	if nextUsageID > 0 {
@@ -193,12 +193,12 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 		Updates(updates).Error; err != nil {
 		return 0, false, err
 	}
-	
+
 	// 如果这个 session 有对应的 usage_id，尝试在队列中标记为已叫（如果还没叫的话）
 	if anySession.InitialUsageID > 0 {
 		_ = queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 	}
-	
+
 	return anySession.InitialUsageID, true, nil
 }
 
@@ -749,16 +749,59 @@ func TriggerContinueCalling(c *gin.Context) {
 			Order("id desc").
 			First(&s).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				// 若当前技师已有待上号(start_pending)的会话，则不应提示“暂无可分配的用户”
-				// 这里返回更准确的提示，引导先扫码上号。
+				// 若当前技师已有待上号(start_pending)的会话：
+				// - 倒计时未结束：提示等待（前端置灰继续叫号按钮）
+				// - 倒计时结束：允许跳过该号并继续叫下一个（不退核销，允许后续扫码回补）
 				var pending models.ServiceSession
-				if err2 := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				err2 := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 					Where("merchant_id = ? AND technician_id = ? AND status IN ? AND start_confirmed_at IS NULL", merchantID, techID, models.ExpandStatusWithKnownPrefixes("start_pending")).
 					Order("id desc").
-					First(&pending).Error; err2 == nil {
-					out["reason"] = "当前已有待上号用户，请先扫码上号"
-					return nil
-				} else if err2 != nil && err2 != gorm.ErrRecordNotFound {
+					First(&pending).Error
+				if err2 == nil {
+					baseAt := pending.UpdatedAt
+					if baseAt == nil {
+						baseAt = pending.CreatedAt
+					}
+					if baseAt == nil {
+						out["reason"] = "当前已有待上号用户，请先扫码上号"
+						out["pending_session_id"] = pending.ID
+						return nil
+					}
+					timeout := config.StartPendingTimeout()
+					if pending.StartPendingTimeoutSeconds > 0 {
+						timeout = time.Duration(pending.StartPendingTimeoutSeconds) * time.Second
+					}
+					deadline := baseAt.Add(timeout)
+					remain := int(deadline.Sub(now).Seconds())
+					if remain > 0 {
+						out["reason"] = "当前已有待上号用户，请等待倒计时结束后再继续叫号"
+						out["pending_session_id"] = pending.ID
+						out["need_wait"] = true
+						out["pending_remaining_seconds"] = remain
+						out["pending_timeout_seconds"] = int(timeout.Seconds())
+						return nil
+					}
+
+					// 倒计时已到：跳过该号（不退核销），释放窗口，继续分配下一号
+					skipUpdates := map[string]interface{}{
+						"status":                        models.ApplyStatusPrefix(pending.Status, "timeout_waiting"),
+						"technician_id":                 nil,
+						"staff_select_entered_at":       nil,
+						"staff_select_cooldown_until":   nil,
+						"start_pending_timeout_seconds": 0,
+						"start_timeout_count":           gorm.Expr("start_timeout_count + ?", 1),
+						"start_timeout_last_at":         now,
+					}
+					if err3 := tx.Model(&models.ServiceSession{}).
+						Where("id = ? AND merchant_id = ? AND status IN ? AND start_confirmed_at IS NULL", pending.ID, merchantID, models.ExpandStatusWithKnownPrefixes("start_pending")).
+						Updates(skipUpdates).Error; err3 != nil {
+						return err3
+					}
+					if pending.InitialUsageID > 0 && queue.Default != nil {
+						queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, pending.InitialUsageID, now)
+					}
+					out["skipped_session_id"] = pending.ID
+				} else if err2 != gorm.ErrRecordNotFound {
 					return err2
 				}
 
@@ -790,7 +833,7 @@ func TriggerContinueCalling(c *gin.Context) {
 			return err
 		}
 		out["finished_session_id"] = s.ID
-		
+
 		// 检查服务是否达到项目设定的服务时长
 		if s.StartedAt != nil && s.DurationMinutes > 0 {
 			servedMinutes := int(now.Sub(*s.StartedAt).Minutes())
@@ -803,7 +846,7 @@ func TriggerContinueCalling(c *gin.Context) {
 				return nil
 			}
 		}
-		
+
 		// 调试日志：检查为什么没有触发二次确认
 		if s.StartedAt == nil {
 			log.Printf("[DEBUG] ServiceSession %d: StartedAt is nil, skipping duration check", s.ID)
@@ -813,7 +856,7 @@ func TriggerContinueCalling(c *gin.Context) {
 			servedMinutes := int(now.Sub(*s.StartedAt).Minutes())
 			log.Printf("[DEBUG] ServiceSession %d: served %d minutes, required %d minutes, no confirmation needed", s.ID, servedMinutes, s.DurationMinutes)
 		}
-		
+
 		if err := finalizeSessionManual(tx, &merchant, &s, now); err != nil {
 			return err
 		}
@@ -929,7 +972,7 @@ func TriggerContinueCallingForce(c *gin.Context) {
 			return err
 		}
 		out["finished_session_id"] = s.ID
-		
+
 		// 强制结束，不检查服务时长
 		if err := finalizeSessionManual(tx, &merchant, &s, now); err != nil {
 			return err

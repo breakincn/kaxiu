@@ -327,35 +327,40 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 
 		// qs_ 单窗口：timeout_waiting 状态下允许在插队窗口内再次扫码上号
 		if baseStatus == "timeout_waiting" {
-			if s.SessionMode != models.SessionModeQueueAutoSingle {
-				return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
-			}
-			if merchant == nil || !merchant.SupportQueue || merchant.QueueMode != "auto" || merchant.SupportMultiCustomerService {
+			if merchant == nil || !merchant.SupportQueue {
 				return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
 			}
 			if queue.Default == nil {
 				return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
 			}
-
 			date := now.Format("2006-01-02")
-			snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
-			currentNo := 0
-			if len(snap.Tickets) > 0 {
-				currentNo = snap.Tickets[0].No
-			}
-			myNo, ok := queue.Default.GetNo(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
-			if !ok || myNo <= 0 || currentNo <= 0 {
-				return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
-			}
-			cnt := s.StartTimeoutCount
-			if models.QsTimeoutWaitingExpired(currentNo, myNo, cnt) {
-				return apiErr{status: http.StatusBadRequest, msg: "过号超时，该号已失效"}
+
+			// 自动叫号单窗口：保留原有插队窗口限制（避免无限回补）
+			if s.SessionMode == models.SessionModeQueueAutoSingle {
+				if merchant.QueueMode != "auto" || merchant.SupportMultiCustomerService {
+					return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
+				}
+				snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
+				currentNo := 0
+				if len(snap.Tickets) > 0 {
+					currentNo = snap.Tickets[0].No
+				}
+				myNo, ok := queue.Default.GetNo(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+				if !ok || myNo <= 0 || currentNo <= 0 {
+					return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
+				}
+				cnt := s.StartTimeoutCount
+				if models.QsTimeoutWaitingExpired(currentNo, myNo, cnt) {
+					return apiErr{status: http.StatusBadRequest, msg: "过号超时，该号已失效"}
+				}
 			}
 
-			// 撤销 MarkDone，让该号重新回到队列（由于号码更小，会成为 current），并重新叫号
-			queue.Default.UnmarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
-			queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
-			queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+			// 撤销 MarkDone/Uncall，让该号重新回到队列（手动叫号回补不做单窗口限制）
+			if s.InitialUsageID > 0 {
+				queue.Default.UnmarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+				queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+				queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+			}
 		}
 		// 扫码上号：优先要求工作人员扫码；若尚未绑定工作人员，则绑定为当前扫码工作人员
 		if scannerTechID == 0 {

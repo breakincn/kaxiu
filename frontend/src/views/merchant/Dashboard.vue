@@ -1040,10 +1040,10 @@
               <button
                 v-if="shouldShowContinueCall"
                 @click="doContinueCall()"
-                :disabled="continueCallLoading || queueStatusUpdating"
+                :disabled="continueCallLoading || queueStatusUpdating || continueCallBlockedSeconds > 0"
                 class="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
               >
-                {{ continueCallLoading ? '处理中...' : '继续叫号' }}
+                {{ continueCallLoading ? '处理中...' : (continueCallBlockedSeconds > 0 ? `等待上号(${continueCallBlockedSeconds}s)` : '继续叫号') }}
               </button>
             </template>
           </div>
@@ -1632,6 +1632,31 @@ const shouldShowContinueCall = computed(() => {
 
 const continueCallLoading = ref(false)
 
+const continueCallBlockedSeconds = ref(0)
+let continueCallBlockedTimer = null
+
+const stopContinueCallBlockedTimer = () => {
+  if (continueCallBlockedTimer) {
+    clearInterval(continueCallBlockedTimer)
+    continueCallBlockedTimer = null
+  }
+}
+
+const startContinueCallBlockedTimer = (seconds) => {
+  stopContinueCallBlockedTimer()
+  const n = Number(seconds || 0)
+  continueCallBlockedSeconds.value = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+  if (continueCallBlockedSeconds.value <= 0) return
+  continueCallBlockedTimer = setInterval(() => {
+    if (continueCallBlockedSeconds.value > 0) {
+      continueCallBlockedSeconds.value -= 1
+    }
+    if (continueCallBlockedSeconds.value <= 0) {
+      stopContinueCallBlockedTimer()
+    }
+  }, 1000)
+}
+
 const showServiceDurationConfirmModal = ref(false)
 const serviceDurationConfirmMessage = ref('')
 let serviceDurationConfirmResolve = null
@@ -1672,6 +1697,19 @@ const doContinueCall = async (forceFinish = false) => {
     console.log('[DEBUG] continueCall response:', res)
     const data = res?.data?.data || {}
     console.log('[DEBUG] response data:', data)
+
+    // 待上号倒计时未结束：后端返回 need_wait + remaining seconds
+    if (data?.need_wait) {
+      const remain = Number(data?.pending_remaining_seconds || 0)
+      if (remain > 0) {
+        startContinueCallBlockedTimer(remain)
+      }
+      if (data?.reason) {
+        alert(String(data.reason))
+      }
+      await fetchServiceSessions()
+      return
+    }
     
     // 优先判断是否需要二次确认（服务时长未达标）
     console.log('[DEBUG] checking need_confirm:', data?.need_confirm, 'forceFinish:', forceFinish)
@@ -1704,7 +1742,11 @@ const doContinueCall = async (forceFinish = false) => {
     } else {
       const nextUsageId = Number(data?.next_usage_id || 0)
       if (nextUsageId > 0) {
-        alert('已完成当前服务，并已触发下一号')
+        if (Number(data?.skipped_session_id || 0) > 0) {
+          alert('已跳过待上号，并已触发下一号')
+        } else {
+          alert('已完成当前服务，并已触发下一号')
+        }
       } else {
         alert('已完成当前服务')
       }
@@ -3700,6 +3742,7 @@ onBeforeRouteLeave(() => {
 onUnmounted(() => {
   stopCountdownTimer()
   stopServiceSessionTimer()
+  stopContinueCallBlockedTimer()
   scanUserCodeActive.value = false
   routeUserCode.value = ''
   if (errorTimer) {
