@@ -88,6 +88,9 @@ func enrichUsagesWithQueue(usages *[]models.Usage) {
 	if usages == nil || len(*usages) == 0 {
 		return
 	}
+	if queue.Default == nil {
+		return
+	}
 
 	// 仅填充当天现场叫号队列信息（预约走预约队列，不在使用记录里展示现场叫号）
 	now := time.Now()
@@ -116,6 +119,13 @@ func enrichUsagesWithQueue(usages *[]models.Usage) {
 		}
 		tk, ok := snap.ByID[u.ID]
 		if !ok {
+			// MarkDone 的记录会在 Snapshot 中被过滤，但队列 list 仍保留该 id（用于维持号码稳定）。
+			// 因此这里兜底用 GetNo 取号码，让 timeout_waiting/过号等待态也能展示叫号信息。
+			if no, ok2 := queue.Default.GetNo(u.MerchantID, today, queue.QueueTypeOnsite, u.ID); ok2 && no > 0 {
+				u.QueueNo = no
+				u.QueueCalledAt = nil
+				u.QueueKind = string(queue.QueueTypeOnsite)
+			}
 			if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
 				headID := uint(0)
 				if len(snap.Tickets) > 0 {
