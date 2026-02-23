@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"kabao/config"
 	"kabao/models"
 	"time"
@@ -22,7 +23,7 @@ func isRoleAttendanceRequired(tx *gorm.DB, merchantID uint, serviceRoleID uint) 
 	if err == nil {
 		return cfg.RequireAttendance, nil
 	}
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return true, err
 	}
 
@@ -51,7 +52,7 @@ func ensureAttendanceForNoCheckinRole(tx *gorm.DB, merchantID uint, technicianID
 	if err == nil {
 		return nil
 	}
-	if err != nil && err != gorm.ErrRecordNotFound {
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
 
