@@ -249,6 +249,9 @@
               <div v-if="getUsageQueueDisplayText(usage)" class="text-sm mt-0.5 font-medium">
                 叫号：<span :class="getUsageQueueNoClass(usage)">{{ getUsageQueueDisplayText(usage) }}</span>
               </div>
+              <div v-if="getUsageQueueOperatorInfo(usage)" class="text-gray-400 text-sm mt-0.5">
+                叫号人员：{{ getUsageQueueOperatorInfo(usage) }}
+              </div>
               <div v-if="getUsageQueueCountdownText(usage)" class="text-xs mt-0.5 font-mono" :class="getUsageQueueCountdownClass(usage)">
                 {{ getUsageQueueCountdownText(usage) }}
               </div>
@@ -1252,6 +1255,16 @@ const getUsageQueueNoClass = (usage) => {
   if (!isOnsiteQueueUsage(usage)) return 'text-gray-500'
   if (usage?.queue_called_at) return 'text-green-600'
   return 'text-gray-500'
+}
+
+const getUsageQueueOperatorInfo = (usage) => {
+  if (!isOnsiteQueueUsage(usage)) return ''
+  const t = usage?.service_technician
+  const account = String(t?.account || '').trim()
+  const name = String(t?.name || '').trim()
+  if (!account && !name) return ''
+  if (account && name) return `${account}（${name}）`
+  return account || name
 }
 
 const getExpectedCallAtMsForQueueNo = (queueNo) => {
