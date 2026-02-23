@@ -335,6 +335,72 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			}
 			date := now.Format("2006-01-02")
 
+			// 手动叫号：固定窗口（3个号段）+ 最小宽延时间（15分钟），两者同时超过才失效退回
+			if merchant.QueueMode == "manual" {
+				if s.InitialUsageID == 0 {
+					return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
+				}
+				snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
+				currentNo := 0
+				if len(snap.Tickets) > 0 {
+					currentNo = snap.Tickets[0].No
+				}
+				myNo, ok := queue.Default.GetNo(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+				if !ok || myNo <= 0 || currentNo <= 0 {
+					return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
+				}
+
+				endNo := myNo + 3
+				exceedNoWindow := currentNo >= endNo+1
+
+				baseAt := s.StartTimeoutLastAt
+				if baseAt == nil {
+					baseAt = s.UpdatedAt
+				}
+				if baseAt == nil {
+					baseAt = s.CreatedAt
+				}
+				exceedTimeWindow := false
+				if baseAt != nil {
+					exceedTimeWindow = now.Sub(*baseAt) > 15*time.Minute
+				}
+
+				if exceedNoWindow && exceedTimeWindow {
+					updates := map[string]interface{}{
+						"status":      models.ApplyStatusPrefix(s.Status, "timeout_failed"),
+						"finished_at": now,
+					}
+					if err := tx.Model(&models.ServiceSession{}).
+						Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("timeout_waiting")).
+						Updates(updates).Error; err != nil {
+						return err
+					}
+
+					if err := tx.Model(&models.Usage{}).
+						Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
+						Updates(map[string]interface{}{
+							"status":      "failed",
+							"finished_at": now,
+						}).Error; err != nil {
+						return err
+					}
+
+					var usage models.Usage
+					if err := tx.First(&usage, s.InitialUsageID).Error; err == nil {
+						if err := tx.Model(&models.Card{}).
+							Where("id = ?", usage.CardID).
+							Updates(map[string]interface{}{
+								"remain_times": gorm.Expr("remain_times + ?", usage.UsedTimes),
+								"used_times":   gorm.Expr("used_times - ?", usage.UsedTimes),
+							}).Error; err != nil {
+							return err
+						}
+					}
+
+					return apiErr{status: http.StatusBadRequest, msg: "过号超时，该号已失效"}
+				}
+			}
+
 			// 自动叫号单窗口：保留原有插队窗口限制（避免无限回补）
 			if s.SessionMode == models.SessionModeQueueAutoSingle {
 				if merchant.QueueMode != "auto" || merchant.SupportMultiCustomerService {

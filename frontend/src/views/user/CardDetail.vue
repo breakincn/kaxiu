@@ -562,6 +562,9 @@ const usageQrTitle = computed(() => {
   if ((isQueueMode || isMultiQueueMode) && sessStatus === 'delay_pending') {
     return '扫码上号二维码'
   }
+  if ((isQueueMode || isMultiQueueMode) && sessStatus === 'timeout_waiting') {
+    return '扫码上号二维码'
+  }
   
   return replaceTerms('起单二维码', card.value?.merchant)
 })
@@ -1409,8 +1412,8 @@ const openUsageQrModal = async (usage) => {
   const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')
   const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
   
-  // 叫号模式下的特殊处理：start_pending/delay_pending 都显示 SS 二维码，并轮询等待状态变化
-  if ((isQueueMode || isMultiQueueMode) && sessID && (sessStatus === 'start_pending' || sessStatus === 'delay_pending')) {
+  // 叫号模式下的特殊处理：start_pending/delay_pending/timeout_waiting 都显示 SS 二维码，并轮询等待状态变化
+  if ((isQueueMode || isMultiQueueMode) && sessID && (sessStatus === 'start_pending' || sessStatus === 'delay_pending' || sessStatus === 'timeout_waiting')) {
     // 多窗口叫号：delay_pending 但未分配技师时，仍在排队中，不弹出二维码
     if (isMultiQueueMode && sessStatus === 'delay_pending' && !usage?.service_technician) {
       return
@@ -1628,7 +1631,7 @@ const onUsageTouchStart = (e, usage) => {
           return
         }
         // 待扫码起单/待扫码上号状态：弹出二维码让客服扫码
-        if ((sessStatus === 'start_pending' || sessStatus === 'delay_pending') && sessID) {
+        if ((sessStatus === 'start_pending' || sessStatus === 'delay_pending' || sessStatus === 'timeout_waiting') && sessID) {
           openUsageQrModal(latest)
           return
         }

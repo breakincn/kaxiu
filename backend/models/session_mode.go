@@ -43,11 +43,8 @@ func QsTimeoutWindowEndNo(myNo int, timeoutCount int) int {
 	if myNo <= 0 {
 		return 0
 	}
-	cnt := timeoutCount
-	if cnt <= 0 {
-		cnt = 1
-	}
-	return myNo + 3 + (cnt - 1)
+	_ = timeoutCount
+	return myNo + 3
 }
 
 func QsTimeoutWaitingExpired(currentNo int, myNo int, timeoutCount int) bool {
