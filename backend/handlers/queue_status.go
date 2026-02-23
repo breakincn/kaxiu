@@ -146,6 +146,7 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 			// 找到了，分配给当前技师
 			updates := map[string]interface{}{
 				"technician_id":                 technicianID,
+				"last_technician_id":            technicianID,
 				"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 				"staff_select_entered_at":       nil,
 				"staff_select_cooldown_until":   nil,
@@ -183,6 +184,7 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 	// 找到了一个待分配的 session，分配给当前技师
 	updates := map[string]interface{}{
 		"technician_id":                 technicianID,
+		"last_technician_id":            technicianID,
 		"status":                        models.ApplyStatusPrefix(anySession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
@@ -785,6 +787,7 @@ func TriggerContinueCalling(c *gin.Context) {
 					// 倒计时已到：跳过该号（不退核销），释放窗口，继续分配下一号
 					skipUpdates := map[string]interface{}{
 						"status":                        models.ApplyStatusPrefix(pending.Status, "timeout_waiting"),
+						"last_technician_id":            techID,
 						"technician_id":                 nil,
 						"staff_select_entered_at":       nil,
 						"staff_select_cooldown_until":   nil,

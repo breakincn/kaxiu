@@ -230,6 +230,7 @@ func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now t
 
 	updates := map[string]interface{}{
 		"technician_id":                 cand.TechnicianID,
+		"last_technician_id":            cand.TechnicianID,
 		"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 		"staff_select_cooldown_until":   nil,
 		"staff_select_entered_at":       nil,

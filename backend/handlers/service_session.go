@@ -437,7 +437,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			s.TechnicianID = &v
 			if err := tx.Model(&models.ServiceSession{}).
 				Where("id = ? AND merchant_id = ? AND status IN ? AND technician_id IS NULL", s.ID, merchantID, models.ExpandStatusesWithKnownPrefixes([]string{"delay_pending", "timeout_waiting"})).
-				Update("technician_id", scannerTechID).Error; err != nil {
+				Updates(map[string]interface{}{"technician_id": scannerTechID, "last_technician_id": scannerTechID}).Error; err != nil {
 				return err
 			}
 		} else {
@@ -740,6 +740,7 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		}
 		updates := map[string]interface{}{
 			"technician_id":                 input.TechnicianID,
+			"last_technician_id":            input.TechnicianID,
 			"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 			"staff_select_entered_at":       nil,
 			"staff_select_cooldown_until":   nil,

@@ -133,6 +133,9 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `staff_select_entered_at` datetime(3) NULL COMMENT '用户进入选择客服页时间（以拉取可选客服列表为准）'")
 	// service_sessions: 待起单超时秒数（0表示使用系统默认）
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `start_pending_timeout_seconds` int NOT NULL DEFAULT 0 COMMENT '待起单超时秒数（0表示使用系统默认）'")
+	// service_sessions: 最后一次叫号/分配的工作人员ID（用于过号等待等保留展示）
+	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `last_technician_id` bigint unsigned NULL DEFAULT NULL COMMENT '最后一次叫号/分配的工作人员ID（用于过号等待等保留展示）'")
+	DB.Exec("ALTER TABLE `service_sessions` ADD INDEX `idx_service_sessions_last_technician_id` (`last_technician_id`)")
 	// service_sessions: 会话模式（用于客服/叫号模式隔离）
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `session_mode` varchar(20) NOT NULL DEFAULT '' COMMENT '会话模式'")
 

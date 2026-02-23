@@ -164,6 +164,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		Status                     string     `gorm:"column:status"`
 		RoomID                     *uint      `gorm:"column:room_id"`
 		TechnicianID               *uint      `gorm:"column:technician_id"`
+		LastTechnicianID           *uint      `gorm:"column:last_technician_id"`
 		StartTimeoutCount          int        `gorm:"column:start_timeout_count"`
 		StartConfirmedAt           *time.Time `gorm:"column:start_confirmed_at"`
 		StartedAt                  *time.Time `gorm:"column:started_at"`
@@ -181,7 +182,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions").
-		Select("id, initial_usage_id, project_id, status, room_id, technician_id, start_timeout_count, start_confirmed_at, started_at, scheduled_finish_at, finished_at, duration_minutes, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until, staff_select_entered_at").
+		Select("id, initial_usage_id, project_id, status, room_id, technician_id, last_technician_id, start_timeout_count, start_confirmed_at, started_at, scheduled_finish_at, finished_at, duration_minutes, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until, staff_select_entered_at").
 		Where("initial_usage_id IN ?", ids).
 		Order("id desc").
 		Find(&sessions).Error; err != nil {
@@ -254,6 +255,9 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		if s.TechnicianID != nil && *s.TechnicianID > 0 {
 			techIDs = append(techIDs, *s.TechnicianID)
 		}
+		if s.LastTechnicianID != nil && *s.LastTechnicianID > 0 {
+			techIDs = append(techIDs, *s.LastTechnicianID)
+		}
 	}
 
 	byRoomID := make(map[uint]*models.Room, len(roomIDs))
@@ -303,6 +307,10 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 			}
 			if s.TechnicianID != nil {
 				if t, okT := byTechID[*s.TechnicianID]; okT {
+					u.ServiceTechnician = t
+				}
+			} else if s.LastTechnicianID != nil {
+				if t, okT := byTechID[*s.LastTechnicianID]; okT {
 					u.ServiceTechnician = t
 				}
 			}

@@ -13,6 +13,7 @@ type ServiceSession struct {
 	SessionMode                string     `json:"session_mode" gorm:"column:session_mode;size:20;default:'';comment:会话模式"`
 	RoomID                     *uint      `json:"room_id" gorm:"index;comment:房间ID"`
 	TechnicianID               *uint      `json:"technician_id" gorm:"index;comment:工作人员ID"`
+	LastTechnicianID           *uint      `json:"last_technician_id" gorm:"column:last_technician_id;index;comment:最后一次叫号/分配的工作人员ID（用于过号等待等保留展示）"`
 	StartTimeoutCount          int        `json:"start_timeout_count" gorm:"column:start_timeout_count;default:0"`
 	StartTimeoutLastAt         *time.Time `json:"start_timeout_last_at" gorm:"column:start_timeout_last_at;type:datetime(3)"`
 	StaffSelectCooldownUntil   *time.Time `json:"staff_select_cooldown_until" gorm:"column:staff_select_cooldown_until;type:datetime(3);comment:选客服无空闲时冷却截止时间"`
