@@ -876,15 +876,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if len(snap.Tickets) > 0 {
 				minNo = snap.Tickets[0].No
 			}
-			maxCalledNo := 0
-			for _, tk := range snap.Tickets {
-				if tk.CalledAt == nil {
-					continue
-				}
-				if tk.No > maxCalledNo {
-					maxCalledNo = tk.No
-				}
-			}
+			maxCalledNo := snap.MaxCalledNo
 			myNo, ok := queue.Default.GetNo(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
 			if !ok || myNo <= 0 || minNo <= 0 {
 				return nil

@@ -345,15 +345,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 				if len(snap.Tickets) > 0 {
 					minNo = snap.Tickets[0].No
 				}
-				maxCalledNo := 0
-				for _, tk := range snap.Tickets {
-					if tk.CalledAt == nil {
-						continue
-					}
-					if tk.No > maxCalledNo {
-						maxCalledNo = tk.No
-					}
-				}
+				maxCalledNo := snap.MaxCalledNo
 				currentNo := maxCalledNo
 				if currentNo <= 0 {
 					currentNo = minNo

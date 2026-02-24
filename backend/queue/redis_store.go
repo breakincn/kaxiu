@@ -94,7 +94,12 @@ func (s *RedisStore) Enqueue(merchantID uint, date string, qt QueueType, id uint
 	}
 	vals, ok := res.([]interface{})
 	if !ok || len(vals) < 4 {
-		log.Printf("[queue] redis enqueue unexpected result: merchant=%d date=%s type=%s id=%d res=%T len=%d\n", merchantID, date, qt, id, res, func() int { if ok { return len(vals) }; return -1 }())
+		log.Printf("[queue] redis enqueue unexpected result: merchant=%d date=%s type=%s id=%d res=%T len=%d\n", merchantID, date, qt, id, res, func() int {
+			if ok {
+				return len(vals)
+			}
+			return -1
+		}())
 		return Ticket{}, false
 	}
 
@@ -248,6 +253,26 @@ func (s *RedisStore) Snapshot(merchantID uint, date string, qt QueueType) Snapsh
 	calledVals, _ := calledCmd.Result()
 	enqVals, _ := enqCmd.Result()
 	doneVals, _ := doneCmd.Result()
+
+	// 计算真实 MaxCalledNo：不受 done 过滤影响
+	maxCalledNo := 0
+	for idx := range ids {
+		if idx >= len(calledVals) {
+			break
+		}
+		if calledVals[idx] == nil {
+			continue
+		}
+		ms := toInt64(calledVals[idx])
+		if ms <= 0 {
+			continue
+		}
+		no := startNo + idx
+		if no > maxCalledNo {
+			maxCalledNo = no
+		}
+	}
+	out.MaxCalledNo = maxCalledNo
 
 	// 过滤已完成的记录，但保留它们的号码
 	for idx, id := range ids {

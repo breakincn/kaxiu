@@ -22,10 +22,10 @@ const (
 )
 
 type Ticket struct {
-	ID        uint
-	No        int
+	ID         uint
+	No         int
 	EnqueuedAt time.Time
-	CalledAt  *time.Time
+	CalledAt   *time.Time
 }
 
 type Snapshot struct {
@@ -34,6 +34,7 @@ type Snapshot struct {
 	CurrentID       uint
 	NextID          uint
 	CurrentCalledAt *time.Time
+	MaxCalledNo     int
 }
 
 var Default Store
