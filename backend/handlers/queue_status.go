@@ -30,6 +30,18 @@ type queuePendingItem struct {
 	UserNickname     string     `json:"user_nickname"`
 }
 
+type queueTimeoutWaitingItem struct {
+	UsageID        uint       `json:"usage_id"`
+	SessionID      uint       `json:"session_id"`
+	SessionStatus  string     `json:"session_status"`
+	TimeoutAt      *time.Time `json:"timeout_at"`
+	TechnicianID   *uint      `json:"technician_id"`
+	TechnicianName string     `json:"technician_name"`
+	WindowNo       string     `json:"window_no"`
+	ProjectName    string     `json:"project_name"`
+	UserNickname   string     `json:"user_nickname"`
+}
+
 type queueCallInfoSession struct {
 	SessionID        uint       `json:"session_id"`
 	Status           string     `json:"status"`
@@ -519,6 +531,91 @@ func GetQueuePendingList(c *gin.Context) {
 	}
 
 	// 若过滤后为空，也按空数组返回
+	c.JSON(http.StatusOK, gin.H{"data": out})
+}
+
+// GetQueueTimeoutWaitingList 获取全店“超时过号等待”列表（用于手动叫号插队窗口展示）
+// GET /queue/timeout-waiting-list
+func GetQueueTimeoutWaitingList(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, _ := merchantIDAny.(uint)
+	if merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	limit := 80
+	if s := strings.TrimSpace(c.Query("limit")); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			if n > 0 {
+				limit = n
+			}
+		}
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	// 仅返回 usage 仍处于 in_progress 的 timeout_waiting 会话
+	// 注意：timeout_waiting 可能带前缀（cs_/qs_/...），统一使用 ExpandStatusWithKnownPrefixes
+	type row struct {
+		ID             uint       `gorm:"column:id"`
+		InitialUsageID uint       `gorm:"column:initial_usage_id"`
+		Status         string     `gorm:"column:status"`
+		TimeoutAt      *time.Time `gorm:"column:timeout_at"`
+		LastTechnician *uint      `gorm:"column:last_technician_id"`
+		TechnicianName string     `gorm:"column:technician_name"`
+		WindowNo       string     `gorm:"column:window_no"`
+		ProjectName    string     `gorm:"column:project_name"`
+		UserNickname   string     `gorm:"column:user_nickname"`
+	}
+
+	var rows []row
+	q := config.DB.
+		Table("service_sessions ss").
+		Select(strings.Join([]string{
+			"ss.id",
+			"ss.initial_usage_id",
+			"ss.status",
+			"ss.start_timeout_last_at AS timeout_at",
+			"ss.last_technician_id",
+			"COALESCE(t.name,'') AS technician_name",
+			"COALESCE(t.window_no,'') AS window_no",
+			"COALESCE(p.name,'') AS project_name",
+			"COALESCE(u.nickname,'') AS user_nickname",
+		}, ", ")).
+		Joins("JOIN usages ug ON ug.id = ss.initial_usage_id AND ug.status = 'in_progress'").
+		Joins("LEFT JOIN technicians t ON t.id = ss.last_technician_id").
+		Joins("LEFT JOIN merchant_projects p ON p.id = ss.project_id").
+		Joins("LEFT JOIN users u ON u.id = ss.user_id").
+		Where("ss.merchant_id = ? AND ss.initial_usage_id > 0", merchantID).
+		Where("ss.status IN ?", models.ExpandStatusWithKnownPrefixes("timeout_waiting")).
+		Order("ss.id desc").
+		Limit(limit)
+	if err := q.Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	out := make([]queueTimeoutWaitingItem, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, queueTimeoutWaitingItem{
+			UsageID:        r.InitialUsageID,
+			SessionID:      r.ID,
+			SessionStatus:  r.Status,
+			TimeoutAt:      r.TimeoutAt,
+			TechnicianID:   r.LastTechnician,
+			TechnicianName: strings.TrimSpace(r.TechnicianName),
+			WindowNo:       strings.TrimSpace(r.WindowNo),
+			ProjectName:    r.ProjectName,
+			UserNickname:   r.UserNickname,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 

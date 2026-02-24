@@ -1067,6 +1067,29 @@
             </div>
           </div>
         </div>
+
+        <div class="mt-4">
+          <div class="text-gray-800 font-medium">超时过号等待</div>
+          <div v-if="queueTimeoutWaitingLoading" class="text-gray-500 text-sm mt-2">加载中...</div>
+          <div v-else-if="!queueTimeoutWaitingList.length" class="text-gray-500 text-sm mt-2">暂无超时过号等待用户</div>
+          <div v-else class="mt-2 space-y-2">
+            <div v-for="it in queueTimeoutWaitingList" :key="String(it.session_id || it.usage_id)" class="flex items-start justify-between bg-orange-50 rounded-lg px-3 py-2">
+              <div class="flex-1">
+                <div class="text-gray-800 text-sm font-medium">
+                  <span class="text-orange-600">超时过号等待</span>
+                  <span v-if="it.user_nickname" class="text-gray-600 font-normal ml-2">{{ it.user_nickname }}</span>
+                </div>
+                <div v-if="formatTimeoutWaitingTitle(it)" class="text-gray-600 text-sm mt-1">
+                  {{ formatTimeoutWaitingTitle(it) }}
+                </div>
+                <div class="text-gray-600 text-sm mt-1 font-mono">单号: {{ formatSessionNo(it.usage_id) }}</div>
+                <div v-if="it.project_name" class="text-gray-600 text-sm mt-1">项目: {{ it.project_name }}</div>
+                <div v-if="it.timeout_at" class="text-gray-500 text-xs mt-1">超时: {{ formatDateTime(it.timeout_at) }}</div>
+              </div>
+              <div class="text-orange-600 text-sm ml-3 whitespace-nowrap">等待插队</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 房间管理入口 -->
@@ -1384,6 +1407,9 @@ const selectTab = (tab) => {
 const queuePendingList = ref([])
 const queuePendingLoading = ref(false)
 
+const queueTimeoutWaitingList = ref([])
+const queueTimeoutWaitingLoading = ref(false)
+
 const queueCallInfo = ref(null)
 
 let queuePendingFirstLoaded = false
@@ -1408,6 +1434,7 @@ const getQueuePendingItemPhaseText = (it) => {
   if (st === 'start_pending' && !it.start_confirmed_at) return '待上号'
   if (st === 'serving' || st === 'auto_finishing' || st === 'delay_pending') return '服务中'
   if (st === 'staff_selecting') return '待分配'
+  if (st === 'timeout_waiting') return '超时过号等待'
   return st || '-'
 }
 
@@ -1483,6 +1510,35 @@ const fetchQueueCallInfo = async () => {
   } catch (e) {
     // 静默失败不置空，避免 UI 抖动
   }
+}
+
+let queueTimeoutWaitingFirstLoaded = false
+const fetchQueueTimeoutWaitingList = async (silent = false) => {
+  if (!showQueueControlInService.value) return
+  if (!silent && !queueTimeoutWaitingFirstLoaded) queueTimeoutWaitingLoading.value = true
+  try {
+    const res = await queueApi.getTimeoutWaitingList({})
+    const next = Array.isArray(res.data?.data) ? res.data.data : []
+    queueTimeoutWaitingList.value = next
+    queueTimeoutWaitingFirstLoaded = true
+  } catch (e) {
+    if (!queueTimeoutWaitingFirstLoaded) {
+      queueTimeoutWaitingList.value = []
+      queueTimeoutWaitingFirstLoaded = true
+    }
+  } finally {
+    if (!silent && queueTimeoutWaitingLoading.value) queueTimeoutWaitingLoading.value = false
+  }
+}
+
+const formatTimeoutWaitingTitle = (it) => {
+  if (!it) return ''
+  const wno = String(it.window_no || '').trim()
+  const tname = String(it.technician_name || '').trim()
+  const parts = []
+  if (wno) parts.push(`${windowTerm.value}${wno}`)
+  if (tname) parts.push(tname)
+  return parts.join(' ')
 }
 
 const getDefaultTab = () => {
@@ -3423,6 +3479,7 @@ watch(currentTab, (tab) => {
       fetchCurrentTechnicianMe()
       fetchServiceSessions()
       fetchQueuePendingList(false)
+      fetchQueueTimeoutWaitingList(false)
       fetchQueueCallInfo()
       fetchTodayUsages()
       startServiceSessionTimer()
@@ -3435,6 +3492,7 @@ const startServiceSessionTimer = () => {
   serviceSessionTimer = setInterval(() => {
     if (currentTab.value !== 'service') return
     fetchQueuePendingList(true)
+    fetchQueueTimeoutWaitingList(true)
     fetchQueueCallInfo()
   }, 3000)
 }

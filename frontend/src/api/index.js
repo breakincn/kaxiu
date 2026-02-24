@@ -290,6 +290,8 @@ export const queueApi = {
   getCallInfo: () => api.get('/merchant/queue/call-info'),
   // 全店待叫号列表（当天现场队列）
   getPendingList: (params) => api.get('/merchant/queue/pending-list', { params }),
+  // 全店“超时过号等待”列表
+  getTimeoutWaitingList: (params) => api.get('/merchant/queue/timeout-waiting-list', { params }),
   // 触发下一个叫号（手动叫号模式）
   callNext: () => api.post('/merchant/queue/call-next'),
   // 技师点击“继续叫号”（手动叫号模式）：完成当前单 + 推进下一号
