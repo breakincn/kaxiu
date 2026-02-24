@@ -853,19 +853,18 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 			return nil
 		case "timeout_waiting":
-			// qs_ 单窗口：超时过号后的等待插队窗口。
-			// 过期后才真正置失败与退卡。
+			// 叫号模式：超时过号后的等待窗口。
+			//
+			// auto 单窗口(qs_)：仅按号段窗口判断是否过期；过期后置失败与退卡。
+			// manual：按“超过号段窗口 + 超过 15 分钟”同时满足才置失败与退卡（与扫码逻辑一致）。
 			if s.InitialUsageID == 0 {
-				return nil
-			}
-			if s.SessionMode != models.SessionModeQueueAutoSingle {
 				return nil
 			}
 			var merchant models.Merchant
 			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 				return nil
 			}
-			if !merchant.SupportQueue || merchant.QueueMode != "auto" || merchant.SupportMultiCustomerService {
+			if !merchant.SupportQueue {
 				return nil
 			}
 			if queue.Default == nil {
@@ -881,11 +880,44 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			if !ok || myNo <= 0 || currentNo <= 0 {
 				return nil
 			}
-			// 基础窗口：3 个号（例如 myNo=10 则允许到 currentNo<=13，到14失败），
-			// 若同一会话多次超时（被插队回前列又再次超时），窗口按次数+1扩展。
-			cnt := s.StartTimeoutCount
-			if models.QsTimeoutWaitingExpired(currentNo, myNo, cnt) {
-				return failTimeoutWaitingAndRefund(tx, &s, &merchant, now)
+
+			if merchant.QueueMode == "auto" {
+				// 仅自动叫号单窗口需要在 scheduler 中按号段窗口自动退回
+				if merchant.SupportMultiCustomerService {
+					return nil
+				}
+				if s.SessionMode != models.SessionModeQueueAutoSingle {
+					return nil
+				}
+				// 基础窗口：3 个号（例如 myNo=10 则允许到 currentNo<=13，到14失败），
+				// 若同一会话多次超时（被插队回前列又再次超时），窗口按次数+1扩展。
+				cnt := s.StartTimeoutCount
+				if models.QsTimeoutWaitingExpired(currentNo, myNo, cnt) {
+					return failTimeoutWaitingAndRefund(tx, &s, &merchant, now)
+				}
+				return nil
+			}
+
+			if merchant.QueueMode == "manual" {
+				endNo := myNo + 3
+				exceedNoWindow := currentNo >= endNo+1
+
+				baseAt := s.StartTimeoutLastAt
+				if baseAt == nil {
+					baseAt = s.UpdatedAt
+				}
+				if baseAt == nil {
+					baseAt = s.CreatedAt
+				}
+				exceedTimeWindow := false
+				if baseAt != nil {
+					exceedTimeWindow = now.Sub(*baseAt) > 15*time.Minute
+				}
+
+				if exceedNoWindow && exceedTimeWindow {
+					return failTimeoutWaitingAndRefund(tx, &s, &merchant, now)
+				}
+				return nil
 			}
 			return nil
 		case "finished":
