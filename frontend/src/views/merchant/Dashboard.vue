@@ -1835,6 +1835,42 @@ const startContinueCallBlockedTimer = (seconds) => {
   }, 1000)
 }
 
+const syncContinueCallBlockedFromPendingSession = () => {
+  if (!isTechnicianAuth()) return
+  if (!merchant.value?.support_queue) return
+  if (merchant.value?.queue_mode !== 'manual') return
+
+  const s = pendingStartSession.value
+  if (!s) {
+    if (continueCallBlockedSeconds.value > 0) {
+      stopContinueCallBlockedTimer()
+      continueCallBlockedSeconds.value = 0
+    }
+    return
+  }
+
+  const timeoutSeconds = Number(s.start_pending_timeout_seconds || 0) > 0 ? Number(s.start_pending_timeout_seconds) : 180
+  const baseRaw = s.updated_at || s.created_at
+  if (!baseRaw) return
+
+  const baseTime = new Date(baseRaw).getTime()
+  if (!Number.isFinite(baseTime) || baseTime <= 0) return
+
+  const deadline = baseTime + timeoutSeconds * 1000
+  const remain = Math.floor((deadline - Date.now()) / 1000)
+  if (remain > 0) {
+    if (continueCallBlockedSeconds.value <= 0 || Math.abs(remain - continueCallBlockedSeconds.value) > 2) {
+      startContinueCallBlockedTimer(remain)
+    }
+    return
+  }
+
+  if (continueCallBlockedSeconds.value > 0) {
+    stopContinueCallBlockedTimer()
+    continueCallBlockedSeconds.value = 0
+  }
+}
+
 const showServiceDurationConfirmModal = ref(false)
 const serviceDurationConfirmMessage = ref('')
 let serviceDurationConfirmResolve = null
@@ -3894,6 +3930,7 @@ const fetchServiceSessions = async () => {
     if (sessionStatusFilter.value) params.status = sessionStatusFilter.value
     const res = await serviceSessionApi.listSessions(params)
     serviceSessions.value = res.data?.data || []
+    syncContinueCallBlockedFromPendingSession()
   } catch (e) {
     serviceSessions.value = []
   } finally {
