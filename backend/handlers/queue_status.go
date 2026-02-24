@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +17,18 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+type queuePendingItem struct {
+	UsageID          uint       `json:"usage_id"`
+	QueueNo          int        `json:"queue_no"`
+	QueueCalledAt    *time.Time `json:"queue_called_at"`
+	SessionID        uint       `json:"session_id"`
+	SessionStatus    string     `json:"session_status"`
+	StartConfirmedAt *time.Time `json:"start_confirmed_at"`
+	TechnicianID     *uint      `json:"technician_id"`
+	ProjectName      string     `json:"project_name"`
+	UserNickname     string     `json:"user_nickname"`
+}
 
 func isMerchantInBusinessHours(m *models.Merchant, now time.Time) bool {
 	if m == nil {
@@ -253,6 +267,149 @@ func GetQueueCallingStatus(c *gin.Context) {
 			"technician_queue_paused": technicianQueuePaused,
 		},
 	})
+}
+
+// GetQueuePendingList 获取全店待叫号列表（当天现场叫号队列）
+// GET /queue/pending-list
+func GetQueuePendingList(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, _ := merchantIDAny.(uint)
+	if merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	if queue.Default == nil {
+		c.JSON(http.StatusOK, gin.H{"data": []queuePendingItem{}})
+		return
+	}
+
+	now := time.Now()
+	date := strings.TrimSpace(c.Query("date"))
+	if date == "" {
+		date = now.Format("2006-01-02")
+	}
+
+	limit := 80
+	if s := strings.TrimSpace(c.Query("limit")); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			if n > 0 {
+				limit = n
+			}
+		}
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	snap := queue.Default.Snapshot(merchantID, date, queue.QueueTypeOnsite)
+	if len(snap.Tickets) == 0 {
+		c.JSON(http.StatusOK, gin.H{"data": []queuePendingItem{}})
+		return
+	}
+
+	// Snapshot.Tickets 理论上已按号码顺序；这里兜底排序一次
+	tickets := make([]queue.Ticket, 0, len(snap.Tickets))
+	for _, t := range snap.Tickets {
+		if t.ID == 0 || t.No <= 0 {
+			continue
+		}
+		tickets = append(tickets, t)
+	}
+	sort.Slice(tickets, func(i, j int) bool { return tickets[i].No < tickets[j].No })
+	if len(tickets) == 0 {
+		c.JSON(http.StatusOK, gin.H{"data": []queuePendingItem{}})
+		return
+	}
+	if len(tickets) > limit {
+		tickets = tickets[:limit]
+	}
+
+	usageIDs := make([]uint, 0, len(tickets))
+	for _, t := range tickets {
+		usageIDs = append(usageIDs, t.ID)
+	}
+
+	// 仅展示进行中的 usage
+	var activeUsageIDs []uint
+	if err := config.DB.Model(&models.Usage{}).
+		Where("merchant_id = ? AND id IN ? AND status = ?", merchantID, usageIDs, "in_progress").
+		Pluck("id", &activeUsageIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	activeSet := make(map[uint]struct{}, len(activeUsageIDs))
+	for _, id := range activeUsageIDs {
+		activeSet[id] = struct{}{}
+	}
+
+	// 取每个 usage 最新的一条 session
+	type sessLite struct {
+		ID               uint       `gorm:"column:id"`
+		InitialUsageID   uint       `gorm:"column:initial_usage_id"`
+		Status           string     `gorm:"column:status"`
+		StartConfirmedAt *time.Time `gorm:"column:start_confirmed_at"`
+		TechnicianID     *uint      `gorm:"column:technician_id"`
+		ProjectName      string     `gorm:"column:project_name"`
+		UserNickname     string     `gorm:"column:user_nickname"`
+	}
+
+	sub := config.DB.
+		Table("service_sessions").
+		Select("MAX(id) AS id").
+		Where("merchant_id = ? AND initial_usage_id IN ?", merchantID, usageIDs).
+		Group("initial_usage_id")
+
+	var sessions []sessLite
+	if err := config.DB.
+		Table("service_sessions ss").
+		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, ss.technician_id, COALESCE(p.name,'') AS project_name, COALESCE(u.nickname,'') AS user_nickname").
+		Joins("LEFT JOIN merchant_projects p ON p.id = ss.project_id").
+		Joins("LEFT JOIN users u ON u.id = ss.user_id").
+		Where("ss.id IN (?)", sub).
+		Find(&sessions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	byUsageIDSession := make(map[uint]sessLite, len(sessions))
+	for _, s := range sessions {
+		if s.InitialUsageID == 0 {
+			continue
+		}
+		byUsageIDSession[s.InitialUsageID] = s
+	}
+
+	out := make([]queuePendingItem, 0, len(tickets))
+	for _, t := range tickets {
+		if _, ok := activeSet[t.ID]; !ok {
+			continue
+		}
+		s, ok := byUsageIDSession[t.ID]
+		if !ok {
+			continue
+		}
+		ns := models.NormalizeSessionStatus(s.Status)
+		if ns == "finished" || ns == "canceled" {
+			continue
+		}
+		out = append(out, queuePendingItem{
+			UsageID:          t.ID,
+			QueueNo:          t.No,
+			QueueCalledAt:    t.CalledAt,
+			SessionID:        s.ID,
+			SessionStatus:    s.Status,
+			StartConfirmedAt: s.StartConfirmedAt,
+			TechnicianID:     s.TechnicianID,
+			ProjectName:      s.ProjectName,
+			UserNickname:     s.UserNickname,
+		})
+	}
+
+	// 若过滤后为空，也按空数组返回
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
 // EnqueueOnsiteUsages 补偿：将指定 usage_id 补入现场叫号队列（当日）

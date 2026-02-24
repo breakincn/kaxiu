@@ -286,6 +286,8 @@ export const queueApi = {
   // 叫号状态管理
   getCallingStatus: () => api.get('/merchant/queue/calling-status'),
   updateCallingStatus: (queuePaused) => api.put('/merchant/queue/calling-status', { queue_paused: queuePaused }),
+  // 全店待叫号列表（当天现场队列）
+  getPendingList: (params) => api.get('/merchant/queue/pending-list', { params }),
   // 触发下一个叫号（手动叫号模式）
   callNext: () => api.post('/merchant/queue/call-next'),
   // 技师点击“继续叫号”（手动叫号模式）：完成当前单 + 推进下一号

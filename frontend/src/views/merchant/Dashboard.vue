@@ -1048,6 +1048,25 @@
             </template>
           </div>
         </div>
+
+        <div class="mt-4">
+          <div class="text-gray-800 font-medium">核销待叫号</div>
+          <div v-if="queuePendingLoading" class="text-gray-500 text-sm mt-2">加载中...</div>
+          <div v-else-if="!queuePendingList.length" class="text-gray-500 text-sm mt-2">暂无待叫号用户</div>
+          <div v-else class="mt-2 space-y-2">
+            <div v-for="it in queuePendingList" :key="String(it.usage_id)" class="flex items-start justify-between bg-gray-50 rounded-lg px-3 py-2">
+              <div class="flex-1">
+                <div class="text-gray-800 text-sm font-medium">
+                  叫号顺序: {{ it.queue_no || '-' }}
+                  <span v-if="it.user_nickname" class="text-gray-600 font-normal ml-2">{{ it.user_nickname }}</span>
+                </div>
+                <div class="text-gray-600 text-sm mt-1 font-mono">单号: {{ formatSessionNo(it.usage_id) }}</div>
+                <div v-if="it.project_name" class="text-gray-600 text-sm mt-1">项目: {{ it.project_name }}</div>
+              </div>
+              <div class="text-gray-500 text-sm ml-3 whitespace-nowrap">{{ getQueuePendingItemPhaseText(it) }}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 房间管理入口 -->
@@ -1063,6 +1082,9 @@
               </div>
               <div class="text-gray-700 text-sm mt-1">
                 叫号: {{ technicianQueueNoText }}
+              </div>
+              <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1">
+                阶段: {{ technicianSessionPhaseText }}
               </div>
               <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1 font-mono">
                 单号: {{ formatSessionNo(roomManageTrackingId) }}
@@ -1356,6 +1378,31 @@ const selectTab = (tab) => {
     localStorage.setItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY, String(tab))
   } catch (e) {
     // ignore
+  }
+}
+
+const queuePendingList = ref([])
+const queuePendingLoading = ref(false)
+
+const getQueuePendingItemPhaseText = (it) => {
+  if (!it) return '-'
+  const st = normalizeSessionStatus(it.session_status)
+  if (st === 'start_pending' && !it.start_confirmed_at) return '待上号'
+  if (st === 'serving' || st === 'auto_finishing' || st === 'delay_pending') return '服务中'
+  if (st === 'staff_selecting') return '待分配'
+  return st || '-'
+}
+
+const fetchQueuePendingList = async () => {
+  if (!showQueueControlInService.value) return
+  queuePendingLoading.value = true
+  try {
+    const res = await queueApi.getPendingList({})
+    queuePendingList.value = res.data?.data || []
+  } catch (e) {
+    queuePendingList.value = []
+  } finally {
+    queuePendingLoading.value = false
   }
 }
 
@@ -1818,6 +1865,13 @@ const roomManagePhaseText = computed(() => {
   const s = roomManageSession.value
   if (!s) return ''
   if (normalizeSessionStatus(s.status) === 'start_pending' && !s.start_confirmed_at) return '待上钟'
+  return '服务中'
+})
+
+const technicianSessionPhaseText = computed(() => {
+  const s = roomManageSession.value
+  if (!s) return ''
+  if (normalizeSessionStatus(s.status) === 'start_pending' && !s.start_confirmed_at) return '待上号'
   return '服务中'
 })
 
@@ -3292,6 +3346,7 @@ watch(currentTab, (tab) => {
     } else if (tab === 'service') {
       fetchCurrentTechnicianMe()
       fetchServiceSessions()
+      fetchQueuePendingList()
       fetchTodayUsages()
       startServiceSessionTimer()
     }
@@ -3303,6 +3358,7 @@ const startServiceSessionTimer = () => {
   serviceSessionTimer = setInterval(() => {
     if (currentTab.value !== 'service') return
     fetchServiceSessions()
+    fetchQueuePendingList()
   }, 3000)
 }
 
