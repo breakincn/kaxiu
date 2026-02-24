@@ -30,6 +30,22 @@ type queuePendingItem struct {
 	UserNickname     string     `json:"user_nickname"`
 }
 
+type queueCallInfoSession struct {
+	SessionID        uint       `json:"session_id"`
+	Status           string     `json:"status"`
+	StartConfirmedAt *time.Time `json:"start_confirmed_at"`
+	InitialUsageID   uint       `json:"initial_usage_id"`
+	ProjectName      string     `json:"project_name"`
+}
+
+type queueCallInfo struct {
+	WindowNo    string                `json:"window_no"`
+	QueuePrefix string                `json:"queue_prefix"`
+	QueueNo     int                   `json:"queue_no"`
+	TrackingID  uint                  `json:"tracking_id"`
+	Session     *queueCallInfoSession `json:"session"`
+}
+
 func isMerchantInBusinessHours(m *models.Merchant, now time.Time) bool {
 	if m == nil {
 		return true
@@ -267,6 +283,100 @@ func GetQueueCallingStatus(c *gin.Context) {
 			"technician_queue_paused": technicianQueuePaused,
 		},
 	})
+}
+
+// GetQueueCallInfo 获取“叫号信息”所需的最小数据（技师端服务页用）
+// GET /queue/call-info
+func GetQueueCallInfo(c *gin.Context) {
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, _ := merchantIDAny.(uint)
+	if merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+
+	out := queueCallInfo{QueuePrefix: strings.TrimSpace(merchant.QueuePrefix)}
+
+	// 仅技师账号返回窗口号与当前会话信息
+	if authType != "staff" {
+		c.JSON(http.StatusOK, gin.H{"data": out})
+		return
+	}
+	techIDAny, ok := c.Get("technician_id")
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可查看"})
+		return
+	}
+	technicianID, _ := techIDAny.(uint)
+	if technicianID == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可查看"})
+		return
+	}
+
+	var tech models.Technician
+	if err := config.DB.Where("id = ? AND merchant_id = ?", technicianID, merchantID).First(&tech).Error; err == nil {
+		out.WindowNo = strings.TrimSpace(tech.WindowNo)
+	}
+
+	// 当前技师活跃会话（待上号/服务中）
+	type sessLite struct {
+		ID               uint       `gorm:"column:id"`
+		InitialUsageID   uint       `gorm:"column:initial_usage_id"`
+		Status           string     `gorm:"column:status"`
+		StartConfirmedAt *time.Time `gorm:"column:start_confirmed_at"`
+		ProjectName      string     `gorm:"column:project_name"`
+	}
+	var s sessLite
+	active := []string{"start_pending", "delay_pending", "serving", "auto_finishing"}
+	if err := config.DB.
+		Table("service_sessions ss").
+		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, COALESCE(p.name,'') AS project_name").
+		Joins("LEFT JOIN merchant_projects p ON p.id = ss.project_id").
+		Where("ss.merchant_id = ? AND ss.technician_id = ?", merchantID, technicianID).
+		Where("ss.status IN ?", models.ExpandStatusesWithKnownPrefixes(active)).
+		Order("ss.id desc").
+		Limit(1).
+		Scan(&s).Error; err == nil {
+		if s.ID > 0 {
+			out.Session = &queueCallInfoSession{
+				SessionID:        s.ID,
+				Status:           s.Status,
+				StartConfirmedAt: s.StartConfirmedAt,
+				InitialUsageID:   s.InitialUsageID,
+				ProjectName:      s.ProjectName,
+			}
+			// 单号口径A：优先 usage_id
+			if s.InitialUsageID > 0 {
+				out.TrackingID = s.InitialUsageID
+			} else {
+				out.TrackingID = s.ID
+			}
+		}
+	}
+
+	// 计算当前会话对应的叫号号数（若支持队列且存在 usage_id）
+	if merchant.SupportQueue && queue.Default != nil && out.Session != nil && out.Session.InitialUsageID > 0 {
+		now := time.Now()
+		date := now.Format("2006-01-02")
+		if no, ok := queue.Default.GetNo(merchantID, date, queue.QueueTypeOnsite, out.Session.InitialUsageID); ok {
+			out.QueueNo = no
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
 // GetQueuePendingList 获取全店待叫号列表（当天现场叫号队列）

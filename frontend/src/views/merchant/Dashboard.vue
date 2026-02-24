@@ -1077,20 +1077,20 @@
 
             <!-- 叫号模式 + 专业客服：显示窗口/台号、叫号、单号、项目 -->
             <template v-if="merchant.support_queue && isTechnicianAuth()">
-              <div v-if="technicianWindowNo" class="text-gray-700 text-sm mt-1">
-                {{ windowTerm }}: {{ technicianWindowNo }}
+              <div v-if="queueCallInfo?.window_no" class="text-gray-700 text-sm mt-1">
+                {{ windowTerm }}: {{ queueCallInfo.window_no }}
               </div>
               <div class="text-gray-700 text-sm mt-1">
-                叫号: {{ technicianQueueNoText }}
+                叫号: {{ queueCallQueueNoText }}
               </div>
-              <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1">
-                阶段: {{ technicianSessionPhaseText }}
+              <div v-if="queueCallInfo?.session" class="text-gray-700 text-sm mt-1">
+                阶段: {{ queueCallPhaseText }}
               </div>
-              <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1 font-mono">
-                单号: {{ formatSessionNo(roomManageTrackingId) }}
+              <div v-if="queueCallInfo?.tracking_id" class="text-gray-700 text-sm mt-1 font-mono">
+                单号: {{ formatSessionNo(queueCallInfo.tracking_id) }}
               </div>
-              <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1">
-                项目: {{ roomManageProjectName }}
+              <div v-if="queueCallInfo?.session?.project_name" class="text-gray-700 text-sm mt-1">
+                项目: {{ queueCallInfo.session.project_name }}
               </div>
             </template>
 
@@ -1384,6 +1384,24 @@ const selectTab = (tab) => {
 const queuePendingList = ref([])
 const queuePendingLoading = ref(false)
 
+const queueCallInfo = ref(null)
+
+let queuePendingFirstLoaded = false
+
+const queuePendingSignature = (list) => {
+  if (!Array.isArray(list) || list.length === 0) return ''
+  return list
+    .map(it => {
+      const usageId = Number(it?.usage_id || 0)
+      const queueNo = Number(it?.queue_no || 0)
+      const st = String(it?.session_status || '')
+      const sc = it?.start_confirmed_at ? String(it.start_confirmed_at) : ''
+      const tech = it?.technician_id != null ? String(it.technician_id) : ''
+      return `${usageId}:${queueNo}:${st}:${sc}:${tech}`
+    })
+    .join('|')
+}
+
 const getQueuePendingItemPhaseText = (it) => {
   if (!it) return '-'
   const st = normalizeSessionStatus(it.session_status)
@@ -1393,16 +1411,77 @@ const getQueuePendingItemPhaseText = (it) => {
   return st || '-'
 }
 
-const fetchQueuePendingList = async () => {
+const patchQueuePendingList = (nextList) => {
+  const prev = queuePendingList.value
+  const next = Array.isArray(nextList) ? nextList : []
+
+  const byUsageIdPrev = new Map()
+  for (const it of prev) {
+    const id = Number(it?.usage_id || 0)
+    if (id > 0) byUsageIdPrev.set(id, it)
+  }
+  const nextIds = new Set()
+
+  // 原地更新 & 新增
+  for (const raw of next) {
+    const id = Number(raw?.usage_id || 0)
+    if (!id) continue
+    nextIds.add(id)
+    const existed = byUsageIdPrev.get(id)
+    if (existed) {
+      existed.queue_no = raw.queue_no
+      existed.queue_called_at = raw.queue_called_at
+      existed.session_id = raw.session_id
+      existed.session_status = raw.session_status
+      existed.start_confirmed_at = raw.start_confirmed_at
+      existed.technician_id = raw.technician_id
+      existed.project_name = raw.project_name
+      existed.user_nickname = raw.user_nickname
+    } else {
+      prev.push(raw)
+    }
+  }
+
+  // 删除已不存在的
+  for (let i = prev.length - 1; i >= 0; i--) {
+    const id = Number(prev[i]?.usage_id || 0)
+    if (id && !nextIds.has(id)) {
+      prev.splice(i, 1)
+    }
+  }
+}
+
+let lastQueuePendingSig = ''
+const fetchQueuePendingList = async (silent = false) => {
   if (!showQueueControlInService.value) return
-  queuePendingLoading.value = true
+  if (!silent && !queuePendingFirstLoaded) queuePendingLoading.value = true
   try {
     const res = await queueApi.getPendingList({})
-    queuePendingList.value = res.data?.data || []
+    const next = res.data?.data || []
+    const sig = queuePendingSignature(next)
+    if (sig !== lastQueuePendingSig) {
+      patchQueuePendingList(next)
+      lastQueuePendingSig = sig
+    }
+    queuePendingFirstLoaded = true
   } catch (e) {
-    queuePendingList.value = []
+    // 静默轮询失败不清空列表，避免 UI 闪烁；首次加载失败则按空处理
+    if (!queuePendingFirstLoaded) {
+      queuePendingList.value = []
+      queuePendingFirstLoaded = true
+    }
   } finally {
-    queuePendingLoading.value = false
+    if (!silent && queuePendingLoading.value) queuePendingLoading.value = false
+  }
+}
+
+const fetchQueueCallInfo = async () => {
+  if (!showQueueControlInService.value) return
+  try {
+    const res = await queueApi.getCallInfo()
+    queueCallInfo.value = res.data?.data || null
+  } catch (e) {
+    // 静默失败不置空，避免 UI 抖动
   }
 }
 
@@ -1508,17 +1587,13 @@ const showTechnicianAttendancePanel = computed(() => {
   return true
 })
 
-// 当前技师正在服务/待上号的会话对应的叫号号数（从 todayUsages.queue_no 得到）
-const technicianQueueNoText = computed(() => {
+const queueCallQueueNoText = computed(() => {
   if (!merchant.value?.support_queue) return '-'
-  const s = roomManageSession.value
-  if (!s) return '-'
-  const usageId = Number(s.initial_usage_id || 0)
-  if (!usageId) return '-'
-  const u = (todayUsages.value || []).find(x => Number(x?.id) === usageId)
-  const no = Number(u?.queue_no || 0)
+  const info = queueCallInfo.value
+  if (!info) return '-'
+  const no = Number(info.queue_no || 0)
   if (!Number.isFinite(no) || no <= 0) return '-'
-  const prefix = String(merchant.value?.queue_prefix || '')
+  const prefix = String(info.queue_prefix || '')
   return `${prefix}${no}`
 })
 
@@ -1868,8 +1943,9 @@ const roomManagePhaseText = computed(() => {
   return '服务中'
 })
 
-const technicianSessionPhaseText = computed(() => {
-  const s = roomManageSession.value
+const queueCallPhaseText = computed(() => {
+  const info = queueCallInfo.value
+  const s = info?.session
   if (!s) return ''
   if (normalizeSessionStatus(s.status) === 'start_pending' && !s.start_confirmed_at) return '待上号'
   return '服务中'
@@ -3346,7 +3422,8 @@ watch(currentTab, (tab) => {
     } else if (tab === 'service') {
       fetchCurrentTechnicianMe()
       fetchServiceSessions()
-      fetchQueuePendingList()
+      fetchQueuePendingList(false)
+      fetchQueueCallInfo()
       fetchTodayUsages()
       startServiceSessionTimer()
     }
@@ -3357,8 +3434,8 @@ const startServiceSessionTimer = () => {
   stopServiceSessionTimer()
   serviceSessionTimer = setInterval(() => {
     if (currentTab.value !== 'service') return
-    fetchServiceSessions()
-    fetchQueuePendingList()
+    fetchQueuePendingList(true)
+    fetchQueueCallInfo()
   }, 3000)
 }
 

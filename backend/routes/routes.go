@@ -191,6 +191,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	// 叫号状态管理
 	auth.GET("/queue/calling-status", middleware.RequirePermission("merchant.queue.calling"), handlers.GetQueueCallingStatus)
 	auth.PUT("/queue/calling-status", middleware.RequirePermission("merchant.queue.calling"), handlers.UpdateQueueCallingStatus)
+	auth.GET("/queue/call-info", middleware.RequirePermission("merchant.queue.calling"), handlers.GetQueueCallInfo)
 	auth.GET("/queue/pending-list", middleware.RequirePermission("merchant.queue.calling"), handlers.GetQueuePendingList)
 	auth.POST("/queue/enqueue-onsite", middleware.RequirePermission("merchant.queue.calling"), handlers.EnqueueOnsiteUsages)
 	auth.POST("/queue/call-next", middleware.RequirePermission("merchant.queue.calling"), handlers.TriggerNextCalling)
