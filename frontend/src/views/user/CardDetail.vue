@@ -689,6 +689,8 @@ const getUsageStatusText = (usage) => {
         }
         return '上钟超时 重新选择客服'
       }
+
+      return '已失效'
     }
     // 上钟超时统一优先判断（避免兗底到待结单）
     const supportCSMode2 = Boolean(card.value?.merchant?.support_customer_service_mode)

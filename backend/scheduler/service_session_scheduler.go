@@ -219,9 +219,38 @@ func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Tim
 		}
 	}
 
-	return tx.Model(&models.ServiceSession{}).
+	if err := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_selecting", "room_locked", "staff_selecting"})).
-		Updates(updates).Error
+		Updates(updates).Error; err != nil {
+		return err
+	}
+
+	if s.InitialUsageID > 0 {
+		if err := tx.Model(&models.Usage{}).
+			Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
+			Updates(map[string]interface{}{
+				"status":      "failed",
+				"finished_at": now,
+			}).Error; err != nil {
+			return err
+		}
+
+		var usage models.Usage
+		if err := tx.First(&usage, s.InitialUsageID).Error; err == nil {
+			if usage.CardID > 0 && usage.UsedTimes > 0 {
+				if err := tx.Model(&models.Card{}).
+					Where("id = ?", usage.CardID).
+					Updates(map[string]interface{}{
+						"remain_times": gorm.Expr("remain_times + ?", usage.UsedTimes),
+						"used_times":   gorm.Expr("used_times - ?", usage.UsedTimes),
+					}).Error; err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) (bool, error) {
@@ -589,6 +618,12 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			st := models.NormalizeSessionStatus(s.Status)
 			if st != "timeout_waiting" && st != "timeout_failed" {
 				if now.Sub(*baseAt) >= sessionAbandonTimeout {
+					var merchant models.Merchant
+					if err := tx.First(&merchant, s.MerchantID).Error; err == nil {
+						if merchant.SupportQueue && merchant.QueueMode == "manual" {
+							return nil
+						}
+					}
 					return cancelAndReleaseSession(tx, &s, now)
 				}
 			}
@@ -692,6 +727,12 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 					baseAt = s.CreatedAt
 				}
 				if s.TechnicianID == nil && s.StartedAt == nil && baseAt != nil && now.Sub(*baseAt) >= sessionAbandonTimeout {
+					var merchant models.Merchant
+					if err := tx.First(&merchant, s.MerchantID).Error; err == nil {
+						if merchant.SupportQueue && merchant.QueueMode == "manual" {
+							return nil
+						}
+					}
 					return cancelAndReleaseSession(tx, &s, now)
 				}
 				return autoAssignRoom(tx, &s, now)
