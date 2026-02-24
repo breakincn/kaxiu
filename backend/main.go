@@ -40,8 +40,16 @@ func main() {
 
 	// 获取SSL证书的绝对路径
 	workDir, _ := os.Getwd()
-	certPath := filepath.Join(workDir, "..", "kabao/frontend", "ssl", "cert.pem")
-	keyPath := filepath.Join(workDir, "..", "kabao/frontend", "ssl", "key.pem")
+	certPath := filepath.Join(workDir, "..", "frontend", "ssl", "cert.pem")
+	keyPath := filepath.Join(workDir, "..", "frontend", "ssl", "key.pem")
+	if _, err := os.Stat(certPath); err != nil {
+		altCertPath := filepath.Join(workDir, "frontend", "ssl", "cert.pem")
+		altKeyPath := filepath.Join(workDir, "frontend", "ssl", "key.pem")
+		if _, altErr := os.Stat(altCertPath); altErr == nil {
+			certPath = altCertPath
+			keyPath = altKeyPath
+		}
+	}
 
 	// 启动服务
 	log.Println("卡包后端服务启动于 https://10.0.0.20:8080")

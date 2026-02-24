@@ -6,6 +6,9 @@ import (
 	"kabao/models"
 	"kabao/queue"
 	"log"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -19,6 +22,43 @@ const (
 	// 房间会话超时时间, 房间会话60分钟内没选技师、没开始服务则超时,自动取消房间锁定
 	sessionAbandonTimeout = 60 * time.Minute
 )
+
+func queueDebugEnabledFor(merchantID uint, sessionID uint, usageID uint) bool {
+	if os.Getenv("KABAO_QUEUE_DEBUG") != "1" {
+		return false
+	}
+	if v := strings.TrimSpace(os.Getenv("KABAO_QUEUE_DEBUG_MERCHANT")); v != "" {
+		if id, err := strconv.ParseUint(v, 10, 64); err == nil {
+			if merchantID != uint(id) {
+				return false
+			}
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv("KABAO_QUEUE_DEBUG_SESSION")); v != "" {
+		if id, err := strconv.ParseUint(v, 10, 64); err == nil {
+			if sessionID != uint(id) {
+				return false
+			}
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv("KABAO_QUEUE_DEBUG_USAGE")); v != "" {
+		if id, err := strconv.ParseUint(v, 10, 64); err == nil {
+			if usageID != uint(id) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isCrossDay(baseAt *time.Time, now time.Time) bool {
+	if baseAt == nil {
+		return false
+	}
+	baseDate := time.Date(baseAt.Year(), baseAt.Month(), baseAt.Day(), 0, 0, 0, 0, baseAt.Location())
+	nowDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	return nowDate.After(baseDate)
+}
 
 func getStartPendingTimeoutForSession(s *models.ServiceSession) time.Duration {
 	if s == nil {
@@ -337,6 +377,9 @@ func autoCallNextForMultiQueueIfPossible(tx *gorm.DB, merchant *models.Merchant,
 }
 
 func StartServiceSessionScheduler() {
+	if queueDebugEnabledFor(0, 0, 0) {
+		log.Printf("[queue-debug] service session scheduler started, tick=%s\n", schedulerTickInterval)
+	}
 	go func() {
 		ticker := time.NewTicker(schedulerTickInterval)
 		defer ticker.Stop()
@@ -373,9 +416,29 @@ func runOnce(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+	if queueDebugEnabledFor(0, 0, 0) {
+		tw := make([]string, 0)
+		for i := range sessions {
+			s := sessions[i]
+			if strings.Contains(s.Status, "timeout_waiting") {
+				tw = append(tw,
+					func() string {
+						return "id=" +
+							func() string { return strconv.FormatUint(uint64(s.ID), 10) }() +
+							" status=" + s.Status +
+							" usage=" + func() string { return strconv.FormatUint(uint64(s.InitialUsageID), 10) }()
+					}(),
+				)
+			}
+		}
+		log.Printf("[queue-debug] scheduler runOnce: sessions=%d timeout_waiting=%d [%s]\n", len(sessions), len(tw), strings.Join(tw, ", "))
+	}
 
 	for i := range sessions {
 		s := sessions[i]
+		if queueDebugEnabledFor(s.MerchantID, s.ID, s.InitialUsageID) && strings.Contains(s.Status, "timeout_waiting") {
+			log.Printf("[queue-debug] scheduler advance timeout_waiting: session=%d status=%s usage=%d\n", s.ID, s.Status, s.InitialUsageID)
+		}
 		if err := advanceOne(db, &s, now); err != nil {
 			log.Printf("advance session %d error: %v", s.ID, err)
 		}
@@ -454,6 +517,10 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&s, session.ID).Error; err != nil {
 			return err
 		}
+		if queueDebugEnabledFor(s.MerchantID, s.ID, s.InitialUsageID) && strings.Contains(s.Status, "timeout_waiting") {
+			log.Printf("[queue-debug] advanceOne reload: session=%d status=%s baseStatus=%s merchant=%d usage=%d\n",
+				s.ID, s.Status, models.NormalizeSessionStatus(s.Status), s.MerchantID, s.InitialUsageID)
+		}
 
 		// 单队列串行启动（自动叫号 + 未开启多个客服）：
 		// 核销后会话可能被创建出来但 start_confirmed_at 为空（表示仍在排队等待）。
@@ -518,8 +585,12 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			baseAt = s.CreatedAt
 		}
 		if s.TechnicianID == nil && s.StartedAt == nil && baseAt != nil {
-			if now.Sub(*baseAt) >= sessionAbandonTimeout {
-				return cancelAndReleaseSession(tx, &s, now)
+			// timeout_waiting/timeout_failed 需要走专门的过期判断，不应被 60min 兜底取消逻辑抢跑
+			st := models.NormalizeSessionStatus(s.Status)
+			if st != "timeout_waiting" && st != "timeout_failed" {
+				if now.Sub(*baseAt) >= sessionAbandonTimeout {
+					return cancelAndReleaseSession(tx, &s, now)
+				}
 			}
 		}
 
@@ -858,16 +929,36 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			// auto 单窗口(qs_)：仅按号段窗口判断是否过期；过期后置失败与退卡。
 			// manual：按“超过号段窗口 + 超过 15 分钟”同时满足才置失败与退卡（与扫码逻辑一致）。
 			if s.InitialUsageID == 0 {
+				if queueDebugEnabledFor(s.MerchantID, s.ID, s.InitialUsageID) {
+					log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
+						s.MerchantID, s.ID, s.InitialUsageID, "empty_initial_usage")
+				}
 				return nil
 			}
 			var merchant models.Merchant
 			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+				if queueDebugEnabledFor(s.MerchantID, s.ID, s.InitialUsageID) {
+					log.Printf("[queue-debug] timeout_waiting merchant load failed: merchant=%d session=%d usage=%d err=%v\n",
+						s.MerchantID, s.ID, s.InitialUsageID, err)
+				}
 				return nil
 			}
+			if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+				log.Printf("[queue-debug] timeout_waiting merchant loaded: merchant=%d session=%d usage=%d supportQueue=%v queueMode=%s supportMCS=%v\n",
+					merchant.ID, s.ID, s.InitialUsageID, merchant.SupportQueue, merchant.QueueMode, merchant.SupportMultiCustomerService)
+			}
 			if !merchant.SupportQueue {
+				if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+					log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
+						merchant.ID, s.ID, s.InitialUsageID, "merchant_support_queue_false")
+				}
 				return nil
 			}
 			if queue.Default == nil {
+				if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+					log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
+						merchant.ID, s.ID, s.InitialUsageID, "queue_default_nil")
+				}
 				return nil
 			}
 			date := now.Format("2006-01-02")
@@ -878,7 +969,42 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 			maxCalledNo := snap.MaxCalledNo
 			myNo, ok := queue.Default.GetNo(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+			if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+				log.Printf("[queue-debug] timeout_waiting check: merchant=%d session=%d usage=%d mode=%s status=%s tickets=%d minNo=%d maxCalledNo=%d getNoOk=%v myNo=%d lastAt=%v now=%v\n",
+					merchant.ID, s.ID, s.InitialUsageID, merchant.QueueMode, s.Status, len(snap.Tickets), minNo, maxCalledNo, ok, myNo, s.StartTimeoutLastAt, now)
+			}
 			if !ok || myNo <= 0 || minNo <= 0 {
+				// 方案2：GetNo 失败（找不到号）跨天后兜底失败，避免永久卡住
+				if !ok {
+					baseAt := s.StartTimeoutLastAt
+					if baseAt == nil {
+						baseAt = s.UpdatedAt
+					}
+					if baseAt == nil {
+						baseAt = s.CreatedAt
+					}
+					if isCrossDay(baseAt, now) {
+						if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+							log.Printf("[queue-debug] timeout_waiting get_no_failed cross-day -> timeout_failed: merchant=%d session=%d usage=%d baseAt=%v now=%v\n",
+								merchant.ID, s.ID, s.InitialUsageID, baseAt, now)
+						}
+						return failTimeoutWaitingAndRefund(tx, &s, &merchant, now)
+					}
+				}
+				if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+					log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
+						merchant.ID, s.ID, s.InitialUsageID,
+						func() string {
+							if !ok {
+								return "get_no_failed"
+							}
+							if myNo <= 0 {
+								return "invalid_my_no"
+							}
+							return "min_no_empty_snapshot"
+						}(),
+					)
+				}
 				return nil
 			}
 
@@ -919,8 +1045,15 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				if baseAt != nil {
 					exceedTimeWindow = now.Sub(*baseAt) > 15*time.Minute
 				}
+				if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+					log.Printf("[queue-debug] timeout_waiting manual: merchant=%d session=%d usage=%d myNo=%d currentNo=%d endNo=%d exceedNo=%v exceedTime=%v baseAt=%v\n",
+						merchant.ID, s.ID, s.InitialUsageID, myNo, currentNo, endNo, exceedNoWindow, exceedTimeWindow, baseAt)
+				}
 
 				if exceedNoWindow && exceedTimeWindow {
+					if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+						log.Printf("[queue-debug] timeout_waiting -> timeout_failed: merchant=%d session=%d usage=%d\n", merchant.ID, s.ID, s.InitialUsageID)
+					}
 					return failTimeoutWaitingAndRefund(tx, &s, &merchant, now)
 				}
 				return nil
