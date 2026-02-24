@@ -1001,8 +1001,12 @@
         </div>
       </div>
 
+      <div v-if="queueBlockedByAttendance" class="w-full py-3 bg-gray-100 text-gray-600 rounded-lg text-center">
+        上班签到后 才可进行叫号
+      </div>
+
       <!-- 叫号控制（专业客服端） -->
-      <div v-if="showQueueControlInService" class="bg-white rounded-xl p-4 shadow-sm">
+      <div v-if="showQueueControlInService && !queueBlockedByAttendance" class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-center justify-between">
           <div>
             <div class="font-medium text-gray-800">叫号管理</div>
@@ -1099,7 +1103,7 @@
             <div class="font-medium text-gray-800">{{ (merchant.support_queue && isTechnicianAuth()) ? '叫号信息' : '房间管理' }}</div>
 
             <!-- 叫号模式 + 专业客服：显示窗口/台号、叫号、单号、项目 -->
-            <template v-if="merchant.support_queue && isTechnicianAuth()">
+            <template v-if="merchant.support_queue && isTechnicianAuth() && !queueBlockedByAttendance">
               <div v-if="queueCallInfo?.window_no" class="text-gray-700 text-sm mt-1">
                 {{ windowTerm }}: {{ queueCallInfo.window_no }}
               </div>
@@ -1641,6 +1645,15 @@ const showTechnicianAttendancePanel = computed(() => {
   const requireAttendance = technicianMe.value?.service_role?.require_attendance
   if (typeof requireAttendance === 'boolean') return requireAttendance
   return true
+})
+
+const queueBlockedByAttendance = computed(() => {
+  if (!merchant.value?.support_queue) return false
+  if (!isTechnicianAuth()) return false
+  const requireAttendance = technicianMe.value?.service_role?.require_attendance
+  const roleRequiresAttendance = typeof requireAttendance === 'boolean' ? requireAttendance : true
+  if (!roleRequiresAttendance) return false
+  return isTechnicianNotCheckedIn.value
 })
 
 const queueCallQueueNoText = computed(() => {
