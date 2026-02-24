@@ -627,6 +627,10 @@ const getUsageStatusText = (usage) => {
     if (sessStatus === 'timeout_waiting') {
       return '超时过号等待'
     }
+
+    if (sessStatus === 'timeout_failed') {
+      return '已过期'
+    }
     
     // 叫号模式下 delay_pending 显示为"待扫码上号"
     if (sessStatus === 'delay_pending') {
@@ -716,8 +720,14 @@ const getUsageStatusText = (usage) => {
     return replaceTerms('待结单', card.value?.merchant)
   }
   if (s === 'success') return '完成'
-  if (s === 'failed') return '失败'
-  return s || ''
+  if (s === 'failed') {
+    const sessStatus = normalizeSessionStatus(usage?.service_session_status)
+    if (sessStatus === 'timeout_failed') return '已过期'
+    return '失败'
+  }
+  if (s === 'canceled') return '已取消'
+  if (s === 'pending') return '未开始'
+  return s || '-'
 }
 
 const getUsageStatusClass = (usage) => {

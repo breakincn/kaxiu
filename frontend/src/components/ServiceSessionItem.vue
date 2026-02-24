@@ -90,7 +90,7 @@ const getStatusText = (status) => {
     start_pending: '待起单',
     delay_pending: '待上号',
     timeout_waiting: '过号等待',
-    timeout_failed: '过号失败',
+    timeout_failed: '已过期',
     serving: '服务中',
     auto_finishing: '待结单',
     finished: '已完成',

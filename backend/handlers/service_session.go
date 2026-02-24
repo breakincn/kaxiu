@@ -341,9 +341,22 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 					return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
 				}
 				snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
-				currentNo := 0
+				minNo := 0
 				if len(snap.Tickets) > 0 {
-					currentNo = snap.Tickets[0].No
+					minNo = snap.Tickets[0].No
+				}
+				maxCalledNo := 0
+				for _, tk := range snap.Tickets {
+					if tk.CalledAt == nil {
+						continue
+					}
+					if tk.No > maxCalledNo {
+						maxCalledNo = tk.No
+					}
+				}
+				currentNo := maxCalledNo
+				if currentNo <= 0 {
+					currentNo = minNo
 				}
 				myNo, ok := queue.Default.GetNo(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
 				if !ok || myNo <= 0 || currentNo <= 0 {
