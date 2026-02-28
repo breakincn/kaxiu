@@ -1058,8 +1058,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				if s.SessionMode != models.SessionModeQueueAutoSingle {
 					return nil
 				}
-				// 基础窗口：3 个号（例如 myNo=10 则允许到 currentNo<=13，到14失败），
-				// 若同一会话多次超时（被插队回前列又再次超时），窗口按次数+1扩展。
+				// 基础窗口：3 个号（例如 myNo=10 则允许到 currentNo<=13，到14失败）
 				cnt := s.StartTimeoutCount
 				if models.QsTimeoutWaitingExpired(currentNo, myNo, cnt) {
 					return failTimeoutWaitingAndRefund(tx, &s, &merchant, now)
