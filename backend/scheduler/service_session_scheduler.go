@@ -24,7 +24,8 @@ const (
 )
 
 func queueDebugEnabledFor(merchantID uint, sessionID uint, usageID uint) bool {
-	if os.Getenv("KABAO_QUEUE_DEBUG") != "1" {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("KABAO_QUEUE_DEBUG")))
+	if v == "" || v == "0" || v == "false" || v == "off" {
 		return false
 	}
 	if v := strings.TrimSpace(os.Getenv("KABAO_QUEUE_DEBUG_MERCHANT")); v != "" {
@@ -49,6 +50,13 @@ func queueDebugEnabledFor(merchantID uint, sessionID uint, usageID uint) bool {
 		}
 	}
 	return true
+}
+
+func shouldAutoCallNextInAutoSingleQueue(merchant *models.Merchant) bool {
+	if merchant == nil {
+		return false
+	}
+	return merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService && !merchant.QueuePaused
 }
 
 func isCrossDay(baseAt *time.Time, now time.Time) bool {
@@ -122,6 +130,7 @@ func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
 	deadline := now.Add(-15 * time.Minute)
 	var merchants []models.Merchant
 	if err := db.
+		Select("id").
 		Where("support_queue = ? AND queue_mode = ? AND queue_paused = ? AND queue_ended_at IS NOT NULL AND queue_ended_at <= ?", true, "manual", true, deadline).
 		Order("queue_ended_at asc").
 		Limit(50).
@@ -138,10 +147,10 @@ func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
 		}
 
 		_ = db.Transaction(func(tx *gorm.DB) error {
-			// 选取一批未完成 usage（进行中/失败等，统一置为 success）
+			// 仅收尾进行中的 usage，避免覆盖 failed/canceled 等终态
 			var ids []uint
 			if err := tx.Model(&models.Usage{}).
-				Where("merchant_id = ? AND status != ?", m.ID, "success").
+				Where("merchant_id = ? AND status = ?", m.ID, "in_progress").
 				Order("id asc").
 				Limit(500).
 				Pluck("id", &ids).Error; err != nil {
@@ -151,7 +160,7 @@ func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
 				return nil
 			}
 			if err := tx.Model(&models.Usage{}).
-				Where("id IN ? AND merchant_id = ? AND status != ?", ids, m.ID, "success").
+				Where("id IN ? AND merchant_id = ? AND status = ?", ids, m.ID, "in_progress").
 				Updates(map[string]interface{}{
 					"status":      "success",
 					"finished_at": now,
@@ -570,6 +579,9 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 								Where("merchant_id = ? AND status IN ?", s.MerchantID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
 								Count(&activeCnt).Error; err == nil {
 								if activeCnt == 0 {
+									if merchant.QueuePaused {
+										return nil
+									}
 									// 没有活跃会话，尝试叫下一个号
 									queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 									// 重新获取 Snapshot
@@ -1246,7 +1258,7 @@ func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error
 
 	// 自动叫号模式：自动触发下一个
 	if merchant.QueueMode == "auto" {
-		if !merchant.SupportMultiCustomerService {
+		if shouldAutoCallNextInAutoSingleQueue(&merchant) {
 			queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 		}
 		// 多客服模式下，会在 releaseTechnicianIfNeeded/autoCallNextForTechnician 中触发
@@ -1283,7 +1295,9 @@ func skipCurrentAndCallNext(tx *gorm.DB, s *models.ServiceSession, merchant *mod
 			date := now.Format("2006-01-02")
 			queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
 			queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
-			queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+			if shouldAutoCallNextInAutoSingleQueue(merchant) {
+				queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+			}
 		}
 		return nil
 	}
@@ -1332,7 +1346,7 @@ func skipCurrentAndCallNext(tx *gorm.DB, s *models.ServiceSession, merchant *mod
 		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
 
 		// 自动叫下一个号
-		if merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+		if shouldAutoCallNextInAutoSingleQueue(merchant) {
 			queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 		}
 	}

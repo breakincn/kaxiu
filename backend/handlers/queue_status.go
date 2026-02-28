@@ -58,6 +58,22 @@ type queueCallInfo struct {
 	Session     *queueCallInfoSession `json:"session"`
 }
 
+func isManualQueueMode(mode string) bool {
+	return strings.TrimSpace(mode) == "manual"
+}
+
+func shouldExcludeFromPendingByStatus(normalizedStatus string) bool {
+	s := strings.TrimSpace(normalizedStatus)
+	return s == "finished" || s == "canceled" || s == "timeout_waiting" || s == "timeout_failed"
+}
+
+func normalizeStartDelaySeconds(v int) int {
+	if v <= 0 {
+		return 60
+	}
+	return v
+}
+
 func isMerchantInBusinessHours(m *models.Merchant, now time.Time) bool {
 	if m == nil {
 		return true
@@ -514,7 +530,7 @@ func GetQueuePendingList(c *gin.Context) {
 			continue
 		}
 		ns := models.NormalizeSessionStatus(s.Status)
-		if ns == "finished" || ns == "canceled" {
+		if shouldExcludeFromPendingByStatus(ns) {
 			continue
 		}
 		out = append(out, queuePendingItem{
@@ -953,12 +969,13 @@ func promoteManualSingleCalledSession(tx *gorm.DB, merchant *models.Merchant, us
 		return
 	}
 
-	startAt := now.Add(time.Duration(merchant.StartDelaySeconds) * time.Second)
+	delaySeconds := normalizeStartDelaySeconds(merchant.StartDelaySeconds)
+	startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 	updates := map[string]interface{}{
 		"start_confirmed_at":  now,
 		"scheduled_start_at":  startAt,
 		"status":              models.ApplyStatusPrefix(s.Status, "delay_pending"),
-		"start_delay_seconds": merchant.StartDelaySeconds,
+		"start_delay_seconds": delaySeconds,
 	}
 	if err := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND start_confirmed_at IS NULL AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("staff_selecting")).
@@ -996,6 +1013,10 @@ func TriggerNextCalling(c *gin.Context) {
 	// 检查是否开启了叫号
 	if !merchant.SupportQueue {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "商户未开启叫号功能"})
+		return
+	}
+	if !isManualQueueMode(merchant.QueueMode) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前非人工叫号模式"})
 		return
 	}
 
