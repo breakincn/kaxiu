@@ -183,7 +183,7 @@
                     </div>
                     <div class="space-y-2">
                       <div v-for="session in myServingSessions" :key="session.id" class="border border-blue-100 rounded-lg p-3 bg-blue-50">
-                        <ServiceSessionItem :session="session" @extend="openExtendModal" />
+                        <ServiceSessionItem :session="session" :currentTime="currentTimeMs" @extend="openExtendModal" />
                       </div>
                     </div>
                   </div>
@@ -202,7 +202,7 @@
                   
                   <div v-else class="space-y-2">
                     <div v-for="session in filteredOtherSessions" :key="session.id" class="border border-gray-100 rounded-lg p-3">
-                      <ServiceSessionItem :session="session" @extend="openExtendModal" />
+                      <ServiceSessionItem :session="session" :currentTime="currentTimeMs" @extend="openExtendModal" />
                     </div>
                   </div>
                 </div>
@@ -268,6 +268,7 @@ const loading = ref(false)
 const rooms = ref([])
 const staff = ref([])
 const currentTime = ref(new Date())
+const currentTimeMs = computed(() => currentTime.value?.getTime?.() || Date.now())
 const merchant = ref({})
 const config = ref({})
 
