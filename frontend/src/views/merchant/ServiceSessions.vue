@@ -48,7 +48,7 @@
             </div>
             <div class="space-y-2">
               <div v-for="session in myServingSessions" :key="session.id" class="border border-blue-100 rounded-lg p-3 bg-blue-50">
-                <ServiceSessionItem :session="session" @extend="openExtendModal" />
+                <ServiceSessionItem :session="session" :currentTime="currentTime" @extend="openExtendModal" />
               </div>
             </div>
           </div>
@@ -67,7 +67,7 @@
           
           <div v-else class="space-y-2">
             <div v-for="session in filteredOtherSessions" :key="session.id" class="border border-gray-100 rounded-lg p-3">
-              <ServiceSessionItem :session="session" @extend="openExtendModal" />
+              <ServiceSessionItem :session="session" :currentTime="currentTime" @extend="openExtendModal" />
             </div>
           </div>
         </div>
@@ -114,6 +114,9 @@ import { normalizeSessionStatus } from '../../utils/sessionStatus'
 const router = useRouter()
 
 const loading = ref(false)
+const currentTime = ref(Date.now())
+
+let countdownTimer = null
 const statusFilter = ref('')
 const serviceSessions = ref([])
 const extendSession = ref(null)
@@ -203,5 +206,19 @@ const doExtendSession = async () => {
 
 onMounted(() => {
   fetchServiceSessions()
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+  countdownTimer = setInterval(() => {
+    currentTime.value = Date.now()
+  }, 1000)
+})
+
+onUnmounted(() => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
 })
 </script>

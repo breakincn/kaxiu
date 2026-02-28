@@ -552,6 +552,9 @@
               <div v-if="merchant?.support_hand_card" class="text-gray-500 text-sm mt-1">手牌：{{ usage.hand_card_no || '-' }} (<span v-if="!usage.hand_card_no" class="text-red-500">未分配</span><span v-else-if="usage.hand_card_returned_at">{{ getHandCardStatusText(usage) }}</span><span v-else-if="normalizeSessionStatus(usage.service_session_status) === 'serving'">{{ getHandCardStatusText(usage) }}</span><span v-else class="text-red-500">未归还</span>)</div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
+              <div v-if="getUsageServiceRemainingSeconds(usage) !== null" class="text-gray-500 text-sm mt-1">
+                服务剩余：{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}
+              </div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             </div>
             <div class="text-right">
@@ -1118,6 +1121,9 @@
               </div>
               <div v-if="queueCallInfo?.session?.project_name" class="text-gray-700 text-sm mt-1">
                 项目: {{ queueCallInfo.session.project_name }}
+              </div>
+              <div v-if="getQueueCallSessionRemainingSeconds() !== null" class="text-blue-600 text-sm mt-1 font-medium">
+                服务剩余：{{ formatRemainingSeconds(getQueueCallSessionRemainingSeconds()) }}
               </div>
             </template>
 
@@ -2520,6 +2526,67 @@ const getUsageTrackingNumber = (usage) => {
   return String(usage.id).padStart(9, '0')
 }
 
+const getUsageServiceRemainingSeconds = (usage) => {
+  if (!usage) return null
+  const s = normalizeSessionStatus(usage.service_session_status)
+  if (s !== 'serving' && s !== 'auto_finishing') return null
+
+  let finishAt = 0
+  const finishAtRaw = usage.service_session_scheduled_finish_at
+  if (finishAtRaw) {
+    finishAt = new Date(finishAtRaw).getTime()
+  }
+  if (!finishAt || Number.isNaN(finishAt)) {
+    const startedAtRaw = usage.service_session_started_at
+    const durationMinutes = Number(usage.service_session_duration_minutes || 0)
+    if (!startedAtRaw || !Number.isFinite(durationMinutes) || durationMinutes <= 0) return null
+    const startedAt = new Date(startedAtRaw).getTime()
+    if (!startedAt || Number.isNaN(startedAt)) return null
+    finishAt = startedAt + durationMinutes * 60 * 1000
+  }
+
+  const remain = Math.floor((finishAt - currentTime.value) / 1000)
+  if (!Number.isFinite(remain)) return null
+  return Math.max(0, remain)
+}
+
+const getQueueCallSessionRemainingSeconds = () => {
+  const sess = queueCallInfo.value?.session
+  if (!sess) return null
+  const s = normalizeSessionStatus(sess.status)
+  if (s !== 'serving' && s !== 'auto_finishing') return null
+
+  let finishAt = 0
+  const finishAtRaw = sess.scheduled_finish_at
+  if (finishAtRaw) {
+    finishAt = new Date(finishAtRaw).getTime()
+  }
+  if (!finishAt || Number.isNaN(finishAt)) {
+    const startedAtRaw = sess.started_at
+    const durationMinutes = Number(sess.duration_minutes || 0)
+    if (!startedAtRaw || !Number.isFinite(durationMinutes) || durationMinutes <= 0) return null
+    const startedAt = new Date(startedAtRaw).getTime()
+    if (!startedAt || Number.isNaN(startedAt)) return null
+    finishAt = startedAt + durationMinutes * 60 * 1000
+  }
+
+  const remain = Math.floor((finishAt - currentTime.value) / 1000)
+  if (!Number.isFinite(remain)) return null
+  return Math.max(0, remain)
+}
+
+const formatRemainingSeconds = (seconds) => {
+  const n = Number(seconds)
+  if (!Number.isFinite(n) || n < 0) return ''
+  const totalSeconds = Math.floor(n)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const secs = totalSeconds % 60
+  if (hours > 0) return `${hours}小时${minutes}分${secs}秒`
+  if (minutes > 0) return `${minutes}分${secs}秒`
+  return `${secs}秒`
+}
+
 const getUsageServiceStatusText = (usage) => {
   if (!usage) return '-'
 
@@ -3493,46 +3560,63 @@ watch(currentTab, (tab) => {
     scanUserCodeActive.value = false
     routeUserCode.value = ''
   }
-  if (tab === 'queue') {
-    fetchAppointments()
-    startCountdownTimer()
-  } else if (tab === 'appointment') {
-    fetchAppointments()
+  // 倒计时：queue/appointment/verify/service 需要每秒刷新 currentTime
+  if (tab === 'queue' || tab === 'appointment' || tab === 'verify' || tab === 'service') {
     startCountdownTimer()
   } else {
     stopCountdownTimer()
-    if (tab === 'verify') {
-      // 重置为默认状态
-      showVerifyInput.value = false
-      verifyCodeInput.value = ''
-      verifyResult.value = null
-      fetchTodayUsages()
-    } else if (tab === 'start') {
-      // 上钟Tab显示今日上钟记录
-      fetchTodayStartUsages()
-    } else if (tab === 'finish') {
-      // 结单Tab显示今日结单记录
-      fetchTodayFinishedUsages()
-    } else if (tab === 'cards') {
-      // 重置显示模式为自动，让computed决定显示什么
-      displayMode.value = 'auto'
-      // 如果默认显示售卡模板，则加载售卡模板数据
-      if (currentDisplay.value === 'sellTemplates') {
-        loadSellTemplates()
-      } else if (canVerify.value) {
-        fetchIssuedCards()
-      }
-    } else if (tab === 'notice') {
-      fetchNotices()
-    } else if (tab === 'service') {
-      fetchCurrentTechnicianMe()
-      fetchServiceSessions()
-      fetchQueuePendingList(false)
-      fetchQueueTimeoutWaitingList(false)
-      fetchQueueCallInfo()
-      fetchTodayUsages()
-      startServiceSessionTimer()
+  }
+
+  if (tab === 'queue') {
+    fetchAppointments()
+    return
+  }
+  if (tab === 'appointment') {
+    fetchAppointments()
+    return
+  }
+  if (tab === 'verify') {
+    // 重置为默认状态
+    showVerifyInput.value = false
+    verifyCodeInput.value = ''
+    verifyResult.value = null
+    fetchTodayUsages()
+    return
+  }
+  if (tab === 'start') {
+    // 上钟Tab显示今日上钟记录
+    fetchTodayStartUsages()
+    return
+  }
+  if (tab === 'finish') {
+    // 结单Tab显示今日结单记录
+    fetchTodayFinishedUsages()
+    return
+  }
+  if (tab === 'cards') {
+    // 重置显示模式为自动，让computed决定显示什么
+    displayMode.value = 'auto'
+    // 如果默认显示售卡模板，则加载售卡模板数据
+    if (currentDisplay.value === 'sellTemplates') {
+      loadSellTemplates()
+    } else if (canVerify.value) {
+      fetchIssuedCards()
     }
+    return
+  }
+  if (tab === 'notice') {
+    fetchNotices()
+    return
+  }
+  if (tab === 'service') {
+    fetchCurrentTechnicianMe()
+    fetchServiceSessions()
+    fetchQueuePendingList(false)
+    fetchQueueTimeoutWaitingList(false)
+    fetchQueueCallInfo()
+    fetchTodayUsages()
+    startServiceSessionTimer()
+    return
   }
 })
 
@@ -3796,6 +3880,7 @@ onMounted(async () => {
     startCountdownTimer()
   } else if (currentTab.value === 'verify') {
     fetchTodayUsages()
+    startCountdownTimer()
   } else if (currentTab.value === 'start') {
     fetchTodayStartUsages()
   } else if (currentTab.value === 'finish') {
@@ -3814,6 +3899,7 @@ onMounted(async () => {
   } else if (currentTab.value === 'service') {
     fetchServiceSessions()
     fetchTodayUsages()
+    startCountdownTimer()
     startServiceSessionTimer()
   }
 })

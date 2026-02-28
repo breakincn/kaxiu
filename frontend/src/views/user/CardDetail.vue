@@ -987,15 +987,15 @@ const shouldShowServiceStartTime = (usage) => {
 
 const shouldShowServiceRemainTime = (usage) => {
   if (String(usage?.status || '').trim() !== 'in_progress') return false
-  
-  const precheckedAt = usage?.service_session_start_confirmed_at
+
   const sessStatus = normalizeSessionStatus(usage?.service_session_status)
-  
-  // 仅在已扫码起单确认且处于真实服务阶段时才显示剩余时间
-  // 避免“待上钟/待起单(start_pending)”阶段误显示服务剩余时长
-  if (!precheckedAt) return false
+
+  // 仅在真实服务阶段显示剩余时间，避免“待上钟/待起单”阶段误显示
   if (sessStatus !== 'serving' && sessStatus !== 'auto_finishing') return false
-  return true
+
+  const finishAtMs = getUsageServiceFinishAtMs(usage)
+  if (!finishAtMs) return false
+  return finishAtMs > nowTick.value
 }
 
 const getUsageServiceRemainText = (usage) => {

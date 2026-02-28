@@ -40,6 +40,9 @@
       <div v-if="session.duration_minutes > 0">
         服务时长：{{ session.duration_minutes }}分钟
       </div>
+      <div v-if="remainingSeconds !== null" class="text-blue-600 font-medium">
+        服务剩余：{{ formatRemainingSeconds(remainingSeconds) }}
+      </div>
     </div>
 
     <!-- 操作按钮 -->
@@ -65,6 +68,10 @@ const props = defineProps({
   session: {
     type: Object,
     required: true
+  },
+  currentTime: {
+    type: Number,
+    default: () => Date.now()
   }
 })
 
@@ -79,6 +86,41 @@ const hasTimeInfo = computed(() => {
 const canExtend = computed(() => {
   return normalizeSessionStatus(props.session.status) === 'serving'
 })
+
+const remainingSeconds = computed(() => {
+  const s = normalizeSessionStatus(props.session.status)
+  if (s !== 'serving' && s !== 'auto_finishing') return null
+
+  let finishAt = 0
+  const finishAtRaw = props.session.scheduled_finish_at
+  if (finishAtRaw) {
+    finishAt = new Date(finishAtRaw).getTime()
+  }
+  if (!finishAt || Number.isNaN(finishAt)) {
+    const startedAtRaw = props.session.started_at
+    const durationMinutes = Number(props.session.duration_minutes || 0)
+    if (!startedAtRaw || !Number.isFinite(durationMinutes) || durationMinutes <= 0) return null
+    const startedAt = new Date(startedAtRaw).getTime()
+    if (!startedAt || Number.isNaN(startedAt)) return null
+    finishAt = startedAt + durationMinutes * 60 * 1000
+  }
+
+  const remain = Math.floor((finishAt - props.currentTime) / 1000)
+  if (!Number.isFinite(remain)) return null
+  return Math.max(0, remain)
+})
+
+const formatRemainingSeconds = (seconds) => {
+  const n = Number(seconds)
+  if (!Number.isFinite(n) || n < 0) return ''
+  const totalSeconds = Math.floor(n)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const secs = totalSeconds % 60
+  if (hours > 0) return `${hours}小时${minutes}分${secs}秒`
+  if (minutes > 0) return `${minutes}分${secs}秒`
+  return `${secs}秒`
+}
 
 const getStatusText = (status) => {
   const s = normalizeSessionStatus(status)

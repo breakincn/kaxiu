@@ -43,11 +43,14 @@ type queueTimeoutWaitingItem struct {
 }
 
 type queueCallInfoSession struct {
-	SessionID        uint       `json:"session_id"`
-	Status           string     `json:"status"`
-	StartConfirmedAt *time.Time `json:"start_confirmed_at"`
-	InitialUsageID   uint       `json:"initial_usage_id"`
-	ProjectName      string     `json:"project_name"`
+	SessionID         uint       `json:"session_id"`
+	Status            string     `json:"status"`
+	StartConfirmedAt  *time.Time `json:"start_confirmed_at"`
+	InitialUsageID    uint       `json:"initial_usage_id"`
+	ProjectName       string     `json:"project_name"`
+	StartedAt         *time.Time `json:"started_at"`
+	ScheduledFinishAt *time.Time `json:"scheduled_finish_at"`
+	DurationMinutes   int        `json:"duration_minutes"`
 }
 
 type queueCallInfo struct {
@@ -361,17 +364,20 @@ func GetQueueCallInfo(c *gin.Context) {
 
 	// 当前技师活跃会话（待上号/服务中）
 	type sessLite struct {
-		ID               uint       `gorm:"column:id"`
-		InitialUsageID   uint       `gorm:"column:initial_usage_id"`
-		Status           string     `gorm:"column:status"`
-		StartConfirmedAt *time.Time `gorm:"column:start_confirmed_at"`
-		ProjectName      string     `gorm:"column:project_name"`
+		ID                uint       `gorm:"column:id"`
+		InitialUsageID    uint       `gorm:"column:initial_usage_id"`
+		Status            string     `gorm:"column:status"`
+		StartConfirmedAt  *time.Time `gorm:"column:start_confirmed_at"`
+		ProjectName       string     `gorm:"column:project_name"`
+		StartedAt         *time.Time `gorm:"column:started_at"`
+		ScheduledFinishAt *time.Time `gorm:"column:scheduled_finish_at"`
+		DurationMinutes   int        `gorm:"column:duration_minutes"`
 	}
 	var s sessLite
 	active := []string{"start_pending", "delay_pending", "serving", "auto_finishing"}
 	if err := config.DB.
 		Table("service_sessions ss").
-		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, COALESCE(p.name,'') AS project_name").
+		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, COALESCE(p.name,'') AS project_name, ss.started_at, ss.scheduled_finish_at, ss.duration_minutes").
 		Joins("LEFT JOIN merchant_projects p ON p.id = ss.project_id").
 		Where("ss.merchant_id = ? AND ss.technician_id = ?", merchantID, technicianID).
 		Where("ss.status IN ?", models.ExpandStatusesWithKnownPrefixes(active)).
@@ -380,11 +386,14 @@ func GetQueueCallInfo(c *gin.Context) {
 		Scan(&s).Error; err == nil {
 		if s.ID > 0 {
 			out.Session = &queueCallInfoSession{
-				SessionID:        s.ID,
-				Status:           s.Status,
-				StartConfirmedAt: s.StartConfirmedAt,
-				InitialUsageID:   s.InitialUsageID,
-				ProjectName:      s.ProjectName,
+				SessionID:         s.ID,
+				Status:            s.Status,
+				StartConfirmedAt:  s.StartConfirmedAt,
+				InitialUsageID:    s.InitialUsageID,
+				ProjectName:       s.ProjectName,
+				StartedAt:         s.StartedAt,
+				ScheduledFinishAt: s.ScheduledFinishAt,
+				DurationMinutes:   s.DurationMinutes,
 			}
 			// 单号口径A：优先 usage_id
 			if s.InitialUsageID > 0 {

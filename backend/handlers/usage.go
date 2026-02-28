@@ -24,6 +24,20 @@ func GetCardUsages(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": usages})
 }
 
+func resolveSessionStartConfirmedAt(status string, startConfirmedAt *time.Time, startedAt *time.Time) *time.Time {
+	if startConfirmedAt != nil {
+		return startConfirmedAt
+	}
+	if startedAt == nil {
+		return nil
+	}
+	baseStatus := models.NormalizeSessionStatus(status)
+	if baseStatus == "serving" || baseStatus == "auto_finishing" || baseStatus == "finished" {
+		return startedAt
+	}
+	return nil
+}
+
 func GetMerchantUsages(c *gin.Context) {
 	merchantID := c.Param("id")
 	var usages []models.Usage
@@ -286,9 +300,10 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		u := &(*usages)[i]
 		if s, ok := byUsageID[u.ID]; ok {
 			sid := s.ID
+			startConfirmedAt := resolveSessionStartConfirmedAt(s.Status, s.StartConfirmedAt, s.StartedAt)
 			u.ServiceSessionID = &sid
 			u.ServiceSessionStatus = s.Status
-			u.ServiceSessionStartConfirmedAt = s.StartConfirmedAt
+			u.ServiceSessionStartConfirmedAt = startConfirmedAt
 			u.ServiceSessionStartedAt = s.StartedAt
 			u.ServiceSessionScheduledFinishAt = s.ScheduledFinishAt
 			u.ServiceSessionFinishedAt = s.FinishedAt
