@@ -269,6 +269,19 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 				}
 				return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新上号", technicianServiceStatusText(att.Status))}
 			}
+			if att.Status == "busy" {
+				var activeCnt int64
+				if err := tx.Model(&models.ServiceSession{}).
+					Where("merchant_id = ? AND technician_id = ? AND id <> ? AND status IN ?",
+						merchantID, *s.TechnicianID, s.ID,
+						models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
+					Count(&activeCnt).Error; err != nil {
+					return err
+				}
+				if activeCnt > 0 {
+					return apiErr{status: http.StatusBadRequest, msg: "你目前在服务中，待服务完成后才可重新上号"}
+				}
+			}
 
 			// start_pending -> serving（扫码上号），避免二次扫码
 			updates := map[string]interface{}{
@@ -471,6 +484,19 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 				return apiErr{status: http.StatusBadRequest, msg: "你目前在暂停服务中，请更新服务状态为空闲才可继续上号"}
 			}
 			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新上号", technicianServiceStatusText(att.Status))}
+		}
+		if att.Status == "busy" {
+			var activeCnt int64
+			if err := tx.Model(&models.ServiceSession{}).
+				Where("merchant_id = ? AND technician_id = ? AND id <> ? AND status IN ?",
+					merchantID, scannerTechID, s.ID,
+					models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
+				Count(&activeCnt).Error; err != nil {
+				return err
+			}
+			if activeCnt > 0 {
+				return apiErr{status: http.StatusBadRequest, msg: "你目前在服务中，待服务完成后才可重新上号"}
+			}
 		}
 		if att.Status == "idle" {
 			if err := tx.Model(&models.TechnicianAttendance{}).
@@ -742,6 +768,17 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 				return apiErr{status: http.StatusBadRequest, msg: "无效的工作人员"}
 			}
 			return err
+		}
+		var activeServingCnt int64
+		if err := tx.Model(&models.ServiceSession{}).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ?",
+				merchantID, input.TechnicianID,
+				models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
+			Count(&activeServingCnt).Error; err != nil {
+			return err
+		}
+		if activeServingCnt > 0 {
+			return apiErr{status: http.StatusBadRequest, msg: "该工作人员当前正在服务中，请先完成当前服务再分配"}
 		}
 		updates := map[string]interface{}{
 			"technician_id":                 input.TechnicianID,
