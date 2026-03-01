@@ -521,6 +521,9 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			"status":     models.ApplyStatusPrefix(s.Status, "serving"),
 			"started_at": now,
 		}
+		if s.StartConfirmedAt == nil {
+			updates["start_confirmed_at"] = now
+		}
 		if s.DurationMinutes > 0 {
 			finishAt := now.Add(time.Duration(s.DurationMinutes) * time.Minute)
 			updates["scheduled_finish_at"] = finishAt
