@@ -214,6 +214,7 @@ func finishAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, finishedAt t
 func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
 	updates := map[string]interface{}{
 		"status":                  models.ApplyStatusPrefix(s.Status, "canceled"),
+		"finished_at":             now,
 		"room_id":                 nil,
 		"room_locked_at":          nil,
 		"room_select_deadline_at": nil,
@@ -245,7 +246,7 @@ func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Tim
 		}
 
 		var usage models.Usage
-		if err := tx.First(&usage, s.InitialUsageID).Error; err == nil {
+		if err := tx.Select("card_id", "used_times").First(&usage, s.InitialUsageID).Error; err == nil {
 			if usage.CardID > 0 && usage.UsedTimes > 0 {
 				if err := tx.Model(&models.Card{}).
 					Where("id = ?", usage.CardID).
@@ -522,7 +523,7 @@ func failStartPendingAndAssignNext(tx *gorm.DB, s *models.ServiceSession, mercha
 		}
 
 		var usage models.Usage
-		if err := tx.First(&usage, s.InitialUsageID).Error; err == nil {
+		if err := tx.Select("card_id", "used_times").First(&usage, s.InitialUsageID).Error; err == nil {
 			if err := tx.Model(&models.Card{}).
 				Where("id = ?", usage.CardID).
 				Updates(map[string]interface{}{
@@ -633,10 +634,11 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 					var merchant models.Merchant
 					if err := tx.First(&merchant, s.MerchantID).Error; err == nil {
 						if merchant.SupportQueue && merchant.QueueMode == "manual" {
-							return nil
+							// 手动叫号模式不走 60min 兜底取消（等待人工），但允许后续状态机做跨天/超时兜底回滚
+						} else {
+							return cancelAndReleaseSession(tx, &s, now)
 						}
 					}
-					return cancelAndReleaseSession(tx, &s, now)
 				}
 			}
 		}
@@ -651,7 +653,17 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 
 			// 手动叫号模式：不进行任何自动处理，等待技师手动分配
 			if merchant.SupportQueue && merchant.QueueMode == "manual" {
-				// 手动模式下，staff_selecting 状态应该保持不变，等待技师手动分配
+				// 手动模式下：通常保持不变等待人工处理，但跨天/超时需兜底释放并退回核销，避免永久脏数据
+				abandonTimeout := 12 * time.Hour
+				baseAt := s.UpdatedAt
+				if baseAt == nil {
+					baseAt = s.CreatedAt
+				}
+				if baseAt != nil {
+					if isCrossDay(baseAt, now) || now.Sub(*baseAt) >= abandonTimeout {
+						return cancelAndReleaseSession(tx, &s, now)
+					}
+				}
 				return nil
 			}
 
@@ -1147,7 +1159,7 @@ func failTimeoutWaitingAndRefund(tx *gorm.DB, s *models.ServiceSession, merchant
 	}
 
 	var usage models.Usage
-	if err := tx.First(&usage, s.InitialUsageID).Error; err == nil {
+	if err := tx.Select("card_id", "used_times").First(&usage, s.InitialUsageID).Error; err == nil {
 		if err := tx.Model(&models.Card{}).
 			Where("id = ?", usage.CardID).
 			Updates(map[string]interface{}{
@@ -1328,7 +1340,7 @@ func skipCurrentAndCallNext(tx *gorm.DB, s *models.ServiceSession, merchant *mod
 
 		// 还原卡片次数
 		var usage models.Usage
-		if err := tx.First(&usage, s.InitialUsageID).Error; err == nil {
+		if err := tx.Select("card_id", "used_times").First(&usage, s.InitialUsageID).Error; err == nil {
 			if err := tx.Model(&models.Card{}).
 				Where("id = ?", usage.CardID).
 				Updates(map[string]interface{}{

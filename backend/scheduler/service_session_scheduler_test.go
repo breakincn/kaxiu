@@ -19,7 +19,7 @@ func setupSchedulerTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Merchant{}, &models.Usage{}, &models.ServiceSession{}); err != nil {
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Card{}, &models.Usage{}, &models.ServiceSession{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 	return db
@@ -130,6 +130,97 @@ func TestFinalizeSession_WhenQueuePaused_DoesNotCallNext(t *testing.T) {
 	}
 	if fq.callNextCount != 0 {
 		t.Fatalf("want CallNextUncalled not called when queue paused, got %d", fq.callNextCount)
+	}
+}
+
+func TestAdvanceOne_ManualStaffSelecting_CrossDayCancelAndRefund(t *testing.T) {
+	oldQueue := queue.Default
+	defer func() { queue.Default = oldQueue }()
+
+	db := setupSchedulerTestDB(t)
+	fq := &fakeQueueStore{}
+	queue.Default = fq
+
+	now := time.Now()
+	// 手动叫号模式
+	m := models.Merchant{
+		Name:         "m-manual",
+		Phone:        "18800000103",
+		Password:     "pwd",
+		SupportQueue: true,
+		QueueMode:    "manual",
+	}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	// 卡初始：remain=9 used=1（模拟核销已扣一次）
+	c := models.Card{MerchantID: m.ID, UserID: 1, CardNo: "c1", CardType: "t", TotalTimes: 10, RemainTimes: 9, UsedTimes: 1}
+	if err := db.Create(&c).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+
+	// usage in_progress，used_times=1
+	u := models.Usage{MerchantID: m.ID, CardID: c.ID, UsedTimes: 1, Status: "in_progress"}
+	if err := db.Create(&u).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	// staff_selecting 且 updated_at 在昨日，触发跨天兜底
+	baseAt := now.Add(-26 * time.Hour)
+	s := models.ServiceSession{
+		MerchantID:     m.ID,
+		CardID:         c.ID,
+		InitialUsageID: u.ID,
+		Status:         "staff_selecting",
+		CreatedAt:      &baseAt,
+		UpdatedAt:      &baseAt,
+	}
+	if err := db.Create(&s).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+	// gorm 可能会自动写入 created_at/updated_at，这里强制改回跨天时间，确保兜底触发
+	if err := db.Model(&models.ServiceSession{}).Where("id = ?", s.ID).UpdateColumns(map[string]interface{}{
+		"created_at": baseAt,
+		"updated_at": baseAt,
+	}).Error; err != nil {
+		t.Fatalf("update session timestamps failed: %v", err)
+	}
+
+	if err := advanceOne(db, &s, now); err != nil {
+		t.Fatalf("advanceOne failed: %v", err)
+	}
+
+	var gotS struct {
+		Status string
+	}
+	if err := db.Table("service_sessions").Select("status").Where("id = ?", s.ID).Scan(&gotS).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if gotS.Status != "canceled" {
+		t.Fatalf("want session canceled, got %s", gotS.Status)
+	}
+
+	var gotU struct{ Status string }
+	if err := db.Table("usages").Select("status").Where("id = ?", u.ID).Scan(&gotU).Error; err != nil {
+		t.Fatalf("reload usage failed: %v", err)
+	}
+	if gotU.Status != "failed" {
+		t.Fatalf("want usage failed, got %s", gotU.Status)
+	}
+
+	var gotC struct {
+		RemainTimes int
+		UsedTimes   int
+	}
+	if err := db.Table("cards").Select("remain_times, used_times").Where("id = ?", c.ID).Scan(&gotC).Error; err != nil {
+		t.Fatalf("reload card failed: %v", err)
+	}
+	if gotC.RemainTimes != 10 {
+		t.Fatalf("want card remain_times=10, got %d", gotC.RemainTimes)
+	}
+	if gotC.UsedTimes != 0 {
+		t.Fatalf("want card used_times=0, got %d", gotC.UsedTimes)
 	}
 }
 
