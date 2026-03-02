@@ -197,6 +197,16 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 	}
 	date := now.Format("2006-01-02")
 
+	{
+		var cnt int64
+		if err := tx.Model(&models.ServiceSession{}).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchant.ID, technicianID,
+				models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
+			Count(&cnt).Error; err != nil || cnt > 0 {
+			return 0, false, nil
+		}
+	}
+
 	// 策略1：优先从队列取下一个未叫号
 	nextUsageID = queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 	if nextUsageID > 0 {
@@ -221,6 +231,20 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 				Updates(updates).Error; err != nil {
 				queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 				return 0, false, err
+			}
+			{
+				start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+				var att models.TechnicianAttendance
+				attRes := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchant.ID, technicianID, start).
+					Order("id desc").
+					Limit(1).
+					Find(&att)
+				if attRes.Error == nil && attRes.RowsAffected > 0 {
+					_ = tx.Model(&models.TechnicianAttendance{}).
+						Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchant.ID, technicianID, "idle").
+						Updates(map[string]interface{}{"status": "busy"}).Error
+				}
 			}
 			return nextUsageID, true, nil
 		} else if err != gorm.ErrRecordNotFound {
@@ -259,6 +283,20 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 		Updates(updates).Error; err != nil {
 		return 0, false, err
 	}
+	{
+		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		var att models.TechnicianAttendance
+		attRes := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchant.ID, technicianID, start).
+			Order("id desc").
+			Limit(1).
+			Find(&att)
+		if attRes.Error == nil && attRes.RowsAffected > 0 {
+			_ = tx.Model(&models.TechnicianAttendance{}).
+				Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchant.ID, technicianID, "idle").
+				Updates(map[string]interface{}{"status": "busy"}).Error
+		}
+	}
 
 	// 如果这个 session 有对应的 usage_id，尝试在队列中标记为已叫（如果还没叫的话）
 	if anySession.InitialUsageID > 0 {
@@ -266,6 +304,24 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 	}
 
 	return anySession.InitialUsageID, true, nil
+}
+
+func assignNextForAllIdleTechsManual(tx *gorm.DB, merchant *models.Merchant, now time.Time) {
+	if tx == nil || merchant == nil || merchant.ID == 0 {
+		return
+	}
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	var ids []uint
+	tx.Model(&models.TechnicianAttendance{}).
+		Distinct().
+		Where("merchant_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL AND status = ?", merchant.ID, start, "idle").
+		Pluck("technician_id", &ids)
+	for _, tid := range ids {
+		if tid == 0 {
+			continue
+		}
+		assignNextSessionToTechnicianManual(tx, merchant, tid, now)
+	}
 }
 
 // GetQueueCallingStatus 获取叫号状态
@@ -1058,6 +1114,20 @@ func TriggerNextCalling(c *gin.Context) {
 	}
 
 	now := time.Now()
+	if merchant.SupportMultiCustomerService {
+		_ = config.DB.Transaction(func(tx *gorm.DB) error {
+			assignNextForAllIdleTechsManual(tx, &merchant, now)
+			return nil
+		})
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"next_usage_id": uint(0),
+				"queue_paused":  false,
+			},
+		})
+		return
+	}
+
 	date := now.Format("2006-01-02")
 	nextUsageID := queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 	if nextUsageID > 0 {
@@ -1204,7 +1274,7 @@ func TriggerContinueCalling(c *gin.Context) {
 						return err3
 					}
 					if pending.InitialUsageID > 0 && queue.Default != nil {
-						queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, pending.InitialUsageID, now)
+						queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, pending.InitialUsageID)
 					}
 					out["skipped_session_id"] = pending.ID
 				} else if err2 != gorm.ErrRecordNotFound {
@@ -1494,6 +1564,20 @@ func TriggerNextCallingOnFinish(c *gin.Context) {
 	}
 
 	now := time.Now()
+	if merchant.SupportMultiCustomerService {
+		_ = config.DB.Transaction(func(tx *gorm.DB) error {
+			assignNextForAllIdleTechsManual(tx, &merchant, now)
+			return nil
+		})
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"triggered":     true,
+				"next_usage_id": uint(0),
+			},
+		})
+		return
+	}
+
 	date := now.Format("2006-01-02")
 	nextUsageID := queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 	if nextUsageID > 0 {

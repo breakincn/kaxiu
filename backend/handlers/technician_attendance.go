@@ -113,7 +113,7 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 
 	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchantID, nextUsageID)
-	q = q.Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked"}))
+	q = q.Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked", "timeout_waiting"}))
 
 	var nextSession models.ServiceSession
 	if err := q.Order("id desc").First(&nextSession).Error; err != nil {
@@ -218,13 +218,17 @@ func TechnicianCheckIn(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		attendance = models.TechnicianAttendance{MerchantID: merchantID, TechnicianID: techID, CheckedInAt: &now, CheckedOutAt: nil, Status: "idle", NextStatus: nil}
-		if err := config.DB.Create(&attendance).Error; err != nil {
+		if err := config.DB.Transaction(func(tx *gorm.DB) error {
+			attendance = models.TechnicianAttendance{MerchantID: merchantID, TechnicianID: techID, CheckedInAt: &now, CheckedOutAt: nil, Status: "idle", NextStatus: nil}
+			if err := tx.Create(&attendance).Error; err != nil {
+				return err
+			}
+			tryAutoCallNextForTechnician(tx, merchantID, techID, now)
+			return tx.Preload("Technician").First(&attendance, attendance.ID).Error
+		}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		tryAutoCallNextForTechnician(config.DB, merchantID, techID, now)
-		config.DB.Preload("Technician").First(&attendance, attendance.ID)
 		c.JSON(http.StatusOK, gin.H{"data": attendance})
 		return
 	}
@@ -236,12 +240,16 @@ func TechnicianCheckIn(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{"checked_in_at": now, "checked_out_at": nil, "status": "idle", "next_status": nil}
-	if err := config.DB.Model(&models.TechnicianAttendance{}).Where("id = ?", attendance.ID).Updates(updates).Error; err != nil {
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.TechnicianAttendance{}).Where("id = ?", attendance.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+		tryAutoCallNextForTechnician(tx, merchantID, techID, now)
+		return tx.Preload("Technician").First(&attendance, attendance.ID).Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	tryAutoCallNextForTechnician(config.DB, merchantID, techID, now)
-	config.DB.Preload("Technician").First(&attendance, attendance.ID)
 	c.JSON(http.StatusOK, gin.H{"data": attendance})
 }
 
