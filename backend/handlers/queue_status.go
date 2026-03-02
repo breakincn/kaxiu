@@ -19,15 +19,18 @@ import (
 )
 
 type queuePendingItem struct {
-	UsageID          uint       `json:"usage_id"`
-	QueueNo          int        `json:"queue_no"`
-	QueueCalledAt    *time.Time `json:"queue_called_at"`
-	SessionID        uint       `json:"session_id"`
-	SessionStatus    string     `json:"session_status"`
-	StartConfirmedAt *time.Time `json:"start_confirmed_at"`
-	TechnicianID     *uint      `json:"technician_id"`
-	ProjectName      string     `json:"project_name"`
-	UserNickname     string     `json:"user_nickname"`
+	UsageID           uint       `json:"usage_id"`
+	QueueNo           int        `json:"queue_no"`
+	QueueCalledAt     *time.Time `json:"queue_called_at"`
+	SessionID         uint       `json:"session_id"`
+	SessionStatus     string     `json:"session_status"`
+	StartConfirmedAt  *time.Time `json:"start_confirmed_at"`
+	StartedAt         *time.Time `json:"started_at"`
+	ScheduledFinishAt *time.Time `json:"scheduled_finish_at"`
+	DurationMinutes   int        `json:"duration_minutes"`
+	TechnicianID      *uint      `json:"technician_id"`
+	ProjectName       string     `json:"project_name"`
+	UserNickname      string     `json:"user_nickname"`
 }
 
 type queueTimeoutWaitingItem struct {
@@ -495,13 +498,16 @@ func GetQueuePendingList(c *gin.Context) {
 
 	// 取每个 usage 最新的一条 session
 	type sessLite struct {
-		ID               uint       `gorm:"column:id"`
-		InitialUsageID   uint       `gorm:"column:initial_usage_id"`
-		Status           string     `gorm:"column:status"`
-		StartConfirmedAt *time.Time `gorm:"column:start_confirmed_at"`
-		TechnicianID     *uint      `gorm:"column:technician_id"`
-		ProjectName      string     `gorm:"column:project_name"`
-		UserNickname     string     `gorm:"column:user_nickname"`
+		ID                uint       `gorm:"column:id"`
+		InitialUsageID    uint       `gorm:"column:initial_usage_id"`
+		Status            string     `gorm:"column:status"`
+		StartConfirmedAt  *time.Time `gorm:"column:start_confirmed_at"`
+		StartedAt         *time.Time `gorm:"column:started_at"`
+		ScheduledFinishAt *time.Time `gorm:"column:scheduled_finish_at"`
+		DurationMinutes   int        `gorm:"column:duration_minutes"`
+		TechnicianID      *uint      `gorm:"column:technician_id"`
+		ProjectName       string     `gorm:"column:project_name"`
+		UserNickname      string     `gorm:"column:user_nickname"`
 	}
 
 	sub := config.DB.
@@ -513,7 +519,7 @@ func GetQueuePendingList(c *gin.Context) {
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions ss").
-		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, ss.technician_id, COALESCE(p.name,'') AS project_name, COALESCE(u.nickname,'') AS user_nickname").
+		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, ss.started_at, ss.scheduled_finish_at, ss.duration_minutes, ss.technician_id, COALESCE(p.name,'') AS project_name, COALESCE(u.nickname,'') AS user_nickname").
 		Joins("LEFT JOIN merchant_projects p ON p.id = ss.project_id").
 		Joins("LEFT JOIN users u ON u.id = ss.user_id").
 		Where("ss.id IN (?)", sub).
@@ -543,15 +549,18 @@ func GetQueuePendingList(c *gin.Context) {
 			continue
 		}
 		out = append(out, queuePendingItem{
-			UsageID:          t.ID,
-			QueueNo:          t.No,
-			QueueCalledAt:    t.CalledAt,
-			SessionID:        s.ID,
-			SessionStatus:    s.Status,
-			StartConfirmedAt: s.StartConfirmedAt,
-			TechnicianID:     s.TechnicianID,
-			ProjectName:      s.ProjectName,
-			UserNickname:     s.UserNickname,
+			UsageID:           t.ID,
+			QueueNo:           t.No,
+			QueueCalledAt:     t.CalledAt,
+			SessionID:         s.ID,
+			SessionStatus:     s.Status,
+			StartConfirmedAt:  s.StartConfirmedAt,
+			StartedAt:         s.StartedAt,
+			ScheduledFinishAt: s.ScheduledFinishAt,
+			DurationMinutes:   s.DurationMinutes,
+			TechnicianID:      s.TechnicianID,
+			ProjectName:       s.ProjectName,
+			UserNickname:      s.UserNickname,
 		})
 	}
 

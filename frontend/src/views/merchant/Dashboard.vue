@@ -1057,11 +1057,11 @@
         </div>
 
         <div class="mt-4">
-          <div class="text-gray-800 font-medium">核销待叫号</div>
+          <div class="text-gray-800 font-medium">待叫号</div>
           <div v-if="queuePendingLoading" class="text-gray-500 text-sm mt-2">加载中...</div>
-          <div v-else-if="!queuePendingList.length" class="text-gray-500 text-sm mt-2">暂无待叫号用户</div>
+          <div v-else-if="!queueWaitingList.length" class="text-gray-500 text-sm mt-2">暂无待叫号用户</div>
           <div v-else class="mt-2 space-y-2">
-            <div v-for="it in queuePendingList" :key="String(it.usage_id)" class="flex items-start justify-between bg-gray-50 rounded-lg px-3 py-2">
+            <div v-for="it in queueWaitingList" :key="String(it.usage_id)" class="flex items-start justify-between bg-gray-50 rounded-lg px-3 py-2">
               <div class="flex-1">
                 <div class="text-gray-800 text-sm font-medium">
                   叫号顺序: {{ it.queue_no || '-' }}
@@ -1070,7 +1070,32 @@
                 <div class="text-gray-600 text-sm mt-1 font-mono">单号: {{ formatSessionNo(it.usage_id) }}</div>
                 <div v-if="it.project_name" class="text-gray-600 text-sm mt-1">项目: {{ it.project_name }}</div>
               </div>
-              <div class="text-gray-500 text-sm ml-3 whitespace-nowrap">{{ getQueuePendingItemPhaseText(it) }}</div>
+              <div class="text-gray-500 text-sm ml-3 whitespace-nowrap">{{ getQueueWaitingItemPhaseText(it) }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4">
+          <div class="text-gray-800 font-medium">服务中</div>
+          <div v-if="queuePendingLoading" class="text-gray-500 text-sm mt-2">加载中...</div>
+          <div v-else-if="!queueServingList.length" class="text-gray-500 text-sm mt-2">暂无服务中用户</div>
+          <div v-else class="mt-2 space-y-2">
+            <div v-for="it in queueServingList" :key="`serving-${String(it.session_id || it.usage_id)}`" class="flex items-start justify-between bg-green-50 rounded-lg px-3 py-2">
+              <div class="flex-1">
+                <div class="text-gray-800 text-sm font-medium">
+                  叫号顺序: {{ it.queue_no || '-' }}
+                  <span v-if="it.user_nickname" class="text-gray-600 font-normal ml-2">{{ it.user_nickname }}</span>
+                </div>
+                <div class="text-gray-600 text-sm mt-1 font-mono">单号: {{ formatSessionNo(it.usage_id) }}</div>
+                <div v-if="it.project_name" class="text-gray-600 text-sm mt-1">项目: {{ it.project_name }}</div>
+                <div
+                  v-if="getQueueServingItemRemainingSeconds(it) !== null"
+                  :class="['text-sm mt-1 font-medium', getQueueServingItemRemainingClass(it)]"
+                >
+                  服务剩余：{{ formatRemainingSeconds(getQueueServingItemRemainingSeconds(it)) }}
+                </div>
+              </div>
+              <div class="text-green-600 text-sm ml-3 whitespace-nowrap">{{ getQueueServingItemPhaseText(it) }}</div>
             </div>
           </div>
         </div>
@@ -1432,20 +1457,76 @@ const queuePendingSignature = (list) => {
       const queueNo = Number(it?.queue_no || 0)
       const st = String(it?.session_status || '')
       const sc = it?.start_confirmed_at ? String(it.start_confirmed_at) : ''
+      const started = it?.started_at ? String(it.started_at) : ''
+      const scheduled = it?.scheduled_finish_at ? String(it.scheduled_finish_at) : ''
+      const duration = Number(it?.duration_minutes || 0)
       const tech = it?.technician_id != null ? String(it.technician_id) : ''
-      return `${usageId}:${queueNo}:${st}:${sc}:${tech}`
+      return `${usageId}:${queueNo}:${st}:${sc}:${started}:${scheduled}:${duration}:${tech}`
     })
     .join('|')
 }
 
-const getQueuePendingItemPhaseText = (it) => {
+const getQueueWaitingItemPhaseText = (it) => {
   if (!it) return '-'
   const st = normalizeSessionStatus(it.session_status)
   if (st === 'start_pending' && !it.start_confirmed_at) return '待上号'
-  if (st === 'serving' || st === 'auto_finishing' || st === 'delay_pending') return '服务中'
   if (st === 'staff_selecting') return '待分配'
   if (st === 'timeout_waiting') return '超时过号等待'
   return st || '-'
+}
+
+const getQueueServingItemPhaseText = (it) => {
+  if (!it) return '-'
+  const st = normalizeSessionStatus(it.session_status)
+  if (st === 'delay_pending') return '待上号'
+  if (st === 'serving') return '服务中'
+  if (st === 'auto_finishing') return replaceTerms('待自动结单', merchant.value)
+  return st || '-'
+}
+
+const queueWaitingList = computed(() => {
+  return (queuePendingList.value || []).filter(it => {
+    const st = normalizeSessionStatus(it?.session_status)
+    return st === 'start_pending' || st === 'staff_selecting'
+  })
+})
+
+const queueServingList = computed(() => {
+  return (queuePendingList.value || []).filter(it => {
+    const st = normalizeSessionStatus(it?.session_status)
+    return st === 'delay_pending' || st === 'serving' || st === 'auto_finishing'
+  })
+})
+
+const getQueueServingItemRemainingSeconds = (it) => {
+  if (!it) return null
+  const st = normalizeSessionStatus(it.session_status)
+  if (st !== 'serving' && st !== 'auto_finishing') return null
+
+  let finishAt = 0
+  const scheduledFinishAtRaw = it.scheduled_finish_at
+  if (scheduledFinishAtRaw) {
+    finishAt = new Date(scheduledFinishAtRaw).getTime()
+  }
+  if (!finishAt || Number.isNaN(finishAt)) {
+    const startedAtRaw = it.started_at
+    const durationMinutes = Number(it.duration_minutes || 0)
+    if (!startedAtRaw || !Number.isFinite(durationMinutes) || durationMinutes <= 0) return null
+    const startedAt = new Date(startedAtRaw).getTime()
+    if (!startedAt || Number.isNaN(startedAt)) return null
+    finishAt = startedAt + durationMinutes * 60 * 1000
+  }
+
+  const remain = Math.floor((finishAt - currentTime.value) / 1000)
+  if (!Number.isFinite(remain)) return null
+  return Math.max(0, remain)
+}
+
+const getQueueServingItemRemainingClass = (it) => {
+  const remain = getQueueServingItemRemainingSeconds(it)
+  if (remain === null) return 'text-blue-600'
+  if (remain <= 60) return 'text-red-500'
+  return 'text-blue-600'
 }
 
 const patchQueuePendingList = (nextList) => {
@@ -1471,6 +1552,9 @@ const patchQueuePendingList = (nextList) => {
       existed.session_id = raw.session_id
       existed.session_status = raw.session_status
       existed.start_confirmed_at = raw.start_confirmed_at
+      existed.started_at = raw.started_at
+      existed.scheduled_finish_at = raw.scheduled_finish_at
+      existed.duration_minutes = raw.duration_minutes
       existed.technician_id = raw.technician_id
       existed.project_name = raw.project_name
       existed.user_nickname = raw.user_nickname
