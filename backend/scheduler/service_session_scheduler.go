@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"errors"
+	"fmt"
 	"kabao/config"
 	"kabao/models"
 	"kabao/queue"
@@ -121,6 +122,88 @@ func finalizeOverdueManualServingSessions(db *gorm.DB, now time.Time) error {
 		})
 	}
 	return nil
+}
+
+func releaseFinishedSessionTechnicians(db *gorm.DB, now time.Time) error {
+	if db == nil {
+		return nil
+	}
+
+	type finishedLite struct {
+		ID                   uint
+		MerchantID           uint
+		TechnicianID         *uint
+		AutoIdleAfterSeconds int
+		Status               string
+		FinishedAtRaw        string `gorm:"column:finished_at"`
+	}
+
+	var sessions []finishedLite
+	if err := db.Table("service_sessions").
+		Select("id", "merchant_id", "technician_id", "auto_idle_after_seconds", "status", "finished_at").
+		Where("status IN ? AND technician_id IS NOT NULL AND finished_at IS NOT NULL", models.ExpandStatusWithKnownPrefixes("finished")).
+		Order("id asc").
+		Limit(schedulerBatchLimit).
+		Find(&sessions).Error; err != nil {
+		return err
+	}
+
+	for i := range sessions {
+		s := sessions[i]
+		if strings.TrimSpace(s.FinishedAtRaw) == "" {
+			continue
+		}
+		finishedAt, err := parseFinishedAtFromDBString(s.FinishedAtRaw, now.Location())
+		if err != nil {
+			continue
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			var current struct{ Status string }
+			if err := tx.Model(&models.ServiceSession{}).Select("status").Where("id = ?", s.ID).Scan(&current).Error; err != nil {
+				return err
+			}
+			if models.NormalizeSessionStatus(current.Status) != "finished" {
+				return nil
+			}
+			copy := models.ServiceSession{
+				ID:                   s.ID,
+				MerchantID:           s.MerchantID,
+				TechnicianID:         s.TechnicianID,
+				AutoIdleAfterSeconds: s.AutoIdleAfterSeconds,
+				FinishedAt:           &finishedAt,
+			}
+			return releaseTechnicianIfNeeded(tx, &copy, now)
+		}); err != nil {
+			log.Printf("release technician for finished session %d error: %v", s.ID, err)
+		}
+	}
+
+	return nil
+}
+
+func parseFinishedAtFromDBString(raw string, loc *time.Location) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, fmt.Errorf("empty finished_at")
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+	layouts := []string{
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05.999999",
+		"2006-01-02 15:04:05.999",
+		"2006-01-02 15:04:05",
+		time.RFC3339Nano,
+		time.RFC3339,
+	}
+	for _, layout := range layouts {
+		if t, err := time.ParseInLocation(layout, raw, loc); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognized finished_at format: %s", raw)
 }
 
 func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
@@ -445,10 +528,13 @@ func runOnce(db *gorm.DB) error {
 	if err := finalizeUsagesAfterQueueEnded(db, now); err != nil {
 		log.Printf("finalize usages after queue ended error: %v", err)
 	}
+	if err := releaseFinishedSessionTechnicians(db, now); err != nil {
+		log.Printf("release finished session technicians error: %v", err)
+	}
 
 	var sessions []models.ServiceSession
 	err := db.
-		Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"room_selecting", "room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing", "finished", "timeout_waiting", "timeout_failed"})).
+		Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"room_selecting", "room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing", "timeout_waiting", "timeout_failed"})).
 		Order("id asc").
 		Limit(schedulerBatchLimit).
 		Find(&sessions).Error
@@ -1379,6 +1465,7 @@ func releaseTechnicianIfNeeded(tx *gorm.DB, s *models.ServiceSession, now time.T
 	}
 	var att models.TechnicianAttendance
 	res := tx.
+		Select("id", "status", "next_status").
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
 		Limit(1).

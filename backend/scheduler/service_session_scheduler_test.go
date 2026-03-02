@@ -19,7 +19,7 @@ func setupSchedulerTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Merchant{}, &models.Card{}, &models.Usage{}, &models.ServiceSession{}); err != nil {
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Card{}, &models.Usage{}, &models.ServiceSession{}, &models.TechnicianAttendance{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 	return db
@@ -221,6 +221,111 @@ func TestAdvanceOne_ManualStaffSelecting_CrossDayCancelAndRefund(t *testing.T) {
 	}
 	if gotC.UsedTimes != 0 {
 		t.Fatalf("want card used_times=0, got %d", gotC.UsedTimes)
+	}
+}
+
+func TestRunOnce_FinishedNotStarveActiveSessions(t *testing.T) {
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	db := setupSchedulerTestDB(t)
+	config.DB = db
+
+	now := time.Now()
+	m := models.Merchant{
+		Name:     "m-starve",
+		Phone:    "18800000104",
+		Password: "pwd",
+	}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	// 大量低ID finished 会话，模拟旧批次里会挤占 limit(200)
+	finishedAt := now.Add(-10 * time.Minute)
+	for i := 0; i < 220; i++ {
+		s := models.ServiceSession{
+			MerchantID:             m.ID,
+			Status:                 "finished",
+			FinishedAt:             &finishedAt,
+			AutoIdleAfterSeconds:   180,
+			AutoFinishDelaySeconds: 60,
+		}
+		if err := db.Create(&s).Error; err != nil {
+			t.Fatalf("create finished session failed at %d: %v", i, err)
+		}
+	}
+
+	// 一个高ID活跃会话：非叫号模式下应被推进到 delay_pending
+	active := models.ServiceSession{
+		MerchantID:        m.ID,
+		Status:            "staff_selecting",
+		StartDelaySeconds: 60,
+	}
+	if err := db.Create(&active).Error; err != nil {
+		t.Fatalf("create active session failed: %v", err)
+	}
+
+	if err := runOnce(db); err != nil {
+		t.Fatalf("runOnce failed: %v", err)
+	}
+
+	var got struct{ Status string }
+	if err := db.Table("service_sessions").Select("status").Where("id = ?", active.ID).Scan(&got).Error; err != nil {
+		t.Fatalf("reload active session failed: %v", err)
+	}
+	if got.Status != "delay_pending" {
+		t.Fatalf("want active session promoted to delay_pending, got %s", got.Status)
+	}
+}
+
+func TestReleaseFinishedSessionTechnicians_ReleasesBusyAttendance(t *testing.T) {
+	db := setupSchedulerTestDB(t)
+
+	now := time.Now()
+	m := models.Merchant{
+		Name:     "m-release",
+		Phone:    "18800000105",
+		Password: "pwd",
+	}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	techID := uint(9001)
+	checkedInAt := now.Add(-2 * time.Hour)
+	att := models.TechnicianAttendance{
+		MerchantID:   m.ID,
+		TechnicianID: techID,
+		CheckedInAt:  &checkedInAt,
+		Status:       "busy",
+	}
+	if err := db.Create(&att).Error; err != nil {
+		t.Fatalf("create attendance failed: %v", err)
+	}
+
+	finishedAt := now.Add(-5 * time.Minute)
+	s := models.ServiceSession{
+		MerchantID:           m.ID,
+		Status:               "finished",
+		TechnicianID:         &techID,
+		FinishedAt:           &finishedAt,
+		AutoIdleAfterSeconds: 1,
+	}
+	if err := db.Create(&s).Error; err != nil {
+		t.Fatalf("create finished session failed: %v", err)
+	}
+
+	if err := releaseFinishedSessionTechnicians(db, now); err != nil {
+		t.Fatalf("releaseFinishedSessionTechnicians failed: %v", err)
+	}
+
+	var gotAtt struct{ Status string }
+	if err := db.Table("technician_attendances").Select("status").Where("id = ?", att.ID).Scan(&gotAtt).Error; err != nil {
+		t.Fatalf("reload attendance failed: %v", err)
+	}
+	if gotAtt.Status != "idle" {
+		t.Fatalf("want attendance idle, got %s", gotAtt.Status)
 	}
 }
 
