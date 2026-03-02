@@ -297,6 +297,40 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		return
 	}
 
+	// 叫号模式切换保护：当存在进行中的会话时，不允许切换 queue_mode 或 support_multi_customer_service。
+	// 说明：scheduler 会按商户最新配置推进旧会话，切换可能导致进行中会话被跳号/取消。
+	{
+		targetSupportQueue := merchant.SupportQueue
+		if input.SupportQueue != nil {
+			targetSupportQueue = *input.SupportQueue
+		}
+		targetQueueMode := strings.TrimSpace(merchant.QueueMode)
+		if input.QueueMode != nil {
+			targetQueueMode = strings.TrimSpace(*input.QueueMode)
+		}
+		targetSupportMulti := merchant.SupportMultiCustomerService
+		if input.SupportMultiCustomerService != nil {
+			targetSupportMulti = *input.SupportMultiCustomerService
+		}
+
+		queueModeChanged := input.QueueMode != nil && strings.TrimSpace(merchant.QueueMode) != targetQueueMode
+		multiChanged := input.SupportMultiCustomerService != nil && merchant.SupportMultiCustomerService != targetSupportMulti
+		if (queueModeChanged || multiChanged) && (merchant.SupportQueue || targetSupportQueue) {
+			activeStatuses := []string{"staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
+			var cnt int64
+			if err := config.DB.Model(&models.ServiceSession{}).
+				Where("merchant_id = ? AND status IN ?", merchantID, models.ExpandStatusesWithKnownPrefixes(activeStatuses)).
+				Count(&cnt).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+				return
+			}
+			if cnt > 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "当前有进行中的叫号服务，请等待本轮服务全部完成后再切换"})
+				return
+			}
+		}
+	}
+
 	if input.SupportAppointment != nil && *input.SupportAppointment {
 		allDayStart := strings.TrimSpace(merchant.AllDayStart)
 		allDayEnd := strings.TrimSpace(merchant.AllDayEnd)
