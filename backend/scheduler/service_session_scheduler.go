@@ -159,7 +159,7 @@ func moveMultiQueueStartPendingToTimeoutWaiting(tx *gorm.DB, s *models.ServiceSe
 
 	if queue.Default != nil {
 		date := now.Format("2006-01-02")
-		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
 	}
 
 	if techID > 0 {
@@ -1094,6 +1094,26 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 							updates["scheduled_finish_at"] = finishAt
 						}
 					}
+
+					if merchant.SupportQueue && merchant.QueueMode == "manual" && !merchant.SupportMultiCustomerService {
+						if s.TechnicianID == nil || *s.TechnicianID == 0 {
+							start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+							var att models.TechnicianAttendance
+							attRes := tx.
+								Clauses(clause.Locking{Strength: "UPDATE"}).
+								Where("merchant_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL AND status = ?", s.MerchantID, start, "idle").
+								Order("updated_at asc").
+								Limit(1).
+								Find(&att)
+							if attRes.Error == nil && attRes.RowsAffected > 0 {
+								updates["technician_id"] = att.TechnicianID
+								updates["last_technician_id"] = att.TechnicianID
+								_ = tx.Model(&models.TechnicianAttendance{}).
+									Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, s.MerchantID, att.TechnicianID, "idle").
+									Updates(map[string]interface{}{"status": "busy"}).Error
+							}
+						}
+					}
 					return tx.Model(&models.ServiceSession{}).
 						Where("id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", s.ID, models.ExpandStatusWithKnownPrefixes("delay_pending")).
 						Updates(updates).Error
@@ -1362,6 +1382,11 @@ func failTimeoutWaitingAndRefund(tx *gorm.DB, s *models.ServiceSession, merchant
 		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("timeout_waiting")).
 		Updates(updates).Error; err != nil {
 		return err
+	}
+
+	if queue.Default != nil {
+		date := now.Format("2006-01-02")
+		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
 	}
 
 	if err := tx.Model(&models.Usage{}).
@@ -1678,6 +1703,16 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 		return nil
 	}
 
+	{
+		var cnt int64
+		err := tx.Model(&models.ServiceSession{}).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchantID, technicianID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
+			Count(&cnt).Error
+		if err != nil || cnt > 0 {
+			return nil
+		}
+	}
+
 	date := now.Format("2006-01-02")
 	nextUsageID := queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 	if nextUsageID == 0 {
@@ -1687,7 +1722,7 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 	var nextSession models.ServiceSession
 	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchantID, nextUsageID)
-	q = q.Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked"}))
+	q = q.Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked", "timeout_waiting"}))
 	if err := q.Order("id desc").First(&nextSession).Error; err != nil {
 		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 		return nil
