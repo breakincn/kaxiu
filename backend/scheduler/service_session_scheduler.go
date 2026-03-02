@@ -528,6 +528,9 @@ func runOnce(db *gorm.DB) error {
 	if err := finalizeUsagesAfterQueueEnded(db, now); err != nil {
 		log.Printf("finalize usages after queue ended error: %v", err)
 	}
+	if err := backfillServingStartConfirmedAt(db, now); err != nil {
+		log.Printf("backfill serving start_confirmed_at error: %v", err)
+	}
 	if err := releaseFinishedSessionTechnicians(db, now); err != nil {
 		log.Printf("release finished session technicians error: %v", err)
 	}
@@ -1035,7 +1038,17 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 		case "serving":
 			if s.StartConfirmedAt == nil {
-				return nil
+				// 历史脏数据兼容：serving 但 start_confirmed_at 为空会导致永远无法推进到结束
+				if s.StartedAt != nil {
+					if err := tx.Model(&models.ServiceSession{}).
+						Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusWithKnownPrefixes("serving")).
+						Update("start_confirmed_at", *s.StartedAt).Error; err != nil {
+						return err
+					}
+					s.StartConfirmedAt = s.StartedAt
+				} else {
+					return nil
+				}
 			}
 			if s.ScheduledFinishAt != nil && now.After(*s.ScheduledFinishAt) {
 				// 检查是否为叫号模式（非客服模式）
@@ -1215,6 +1228,48 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			return nil
 		}
 	})
+}
+
+func backfillServingStartConfirmedAt(db *gorm.DB, now time.Time) error {
+	if db == nil {
+		return nil
+	}
+
+	// 仅处理明显异常的数据：serving 且 started_at 有值，但 start_confirmed_at 为空。
+	// 这类数据会被 advanceOne(serving) 的前置条件永久跳过，导致服务看板长期残留“服务中”。
+	type lite struct {
+		ID        uint
+		StartedAt string `gorm:"column:started_at"`
+		Status    string
+	}
+	var rows []lite
+	if err := db.Table("service_sessions").
+		Select("id", "status", "started_at").
+		Where("status IN ? AND start_confirmed_at IS NULL AND started_at IS NOT NULL", models.ExpandStatusWithKnownPrefixes("serving")).
+		Order("id asc").
+		Limit(schedulerBatchLimit).
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+
+	for i := range rows {
+		r := rows[i]
+		if strings.TrimSpace(r.StartedAt) == "" {
+			continue
+		}
+		startedAt, err := parseFinishedAtFromDBString(r.StartedAt, now.Location())
+		if err != nil {
+			continue
+		}
+		_ = db.Model(&models.ServiceSession{}).
+			Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", r.ID, models.ExpandStatusWithKnownPrefixes("serving")).
+			Update("start_confirmed_at", startedAt).Error
+	}
+
+	return nil
 }
 
 func failTimeoutWaitingAndRefund(tx *gorm.DB, s *models.ServiceSession, merchant *models.Merchant, now time.Time) error {

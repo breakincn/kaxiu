@@ -329,6 +329,110 @@ func TestReleaseFinishedSessionTechnicians_ReleasesBusyAttendance(t *testing.T) 
 	}
 }
 
+func TestBackfillServingStartConfirmedAt_FillsFromStartedAt(t *testing.T) {
+	db := setupSchedulerTestDB(t)
+
+	now := time.Now()
+	m := models.Merchant{
+		Name:     "m-serving-backfill",
+		Phone:    "18800000106",
+		Password: "pwd",
+	}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	u := models.Usage{MerchantID: m.ID, Status: "in_progress"}
+	if err := db.Create(&u).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	// 注意：sqlite 在测试环境下会将时间列以 string 存储/读取，避免走 advanceOne 的 SELECT * 扫描。
+	startedAt := now.Add(-40 * time.Minute)
+	s := models.ServiceSession{
+		MerchantID:     m.ID,
+		InitialUsageID: u.ID,
+		Status:         "serving",
+		StartedAt:      &startedAt,
+		CreatedAt:      &startedAt,
+		UpdatedAt:      &startedAt,
+	}
+	if err := db.Create(&s).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+	if err := db.Model(&models.ServiceSession{}).Where("id = ?", s.ID).UpdateColumn("start_confirmed_at", nil).Error; err != nil {
+		t.Fatalf("clear start_confirmed_at failed: %v", err)
+	}
+
+	if err := backfillServingStartConfirmedAt(db, now); err != nil {
+		t.Fatalf("backfillServingStartConfirmedAt failed: %v", err)
+	}
+
+	var got struct{ StartConfirmedAt string }
+	if err := db.Table("service_sessions").Select("start_confirmed_at").Where("id = ?", s.ID).Scan(&got).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if got.StartConfirmedAt == "" {
+		t.Fatalf("want start_confirmed_at filled")
+	}
+}
+
+func TestFinalizeSession_FromServing_MarksFinishedAndUsageSuccess(t *testing.T) {
+	db := setupSchedulerTestDB(t)
+
+	now := time.Now()
+	m := models.Merchant{
+		Name:     "m-serving-finalize",
+		Phone:    "18800000107",
+		Password: "pwd",
+	}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	u := models.Usage{MerchantID: m.ID, Status: "in_progress"}
+	if err := db.Create(&u).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	startConfirmedAt := now.Add(-40 * time.Minute)
+	scheduledFinishAt := now.Add(-10 * time.Minute)
+	finishedAt := now
+	s := models.ServiceSession{
+		MerchantID:        m.ID,
+		InitialUsageID:    u.ID,
+		Status:            "serving",
+		StartConfirmedAt:  &startConfirmedAt,
+		ScheduledFinishAt: &scheduledFinishAt,
+		FinishedAt:        &finishedAt,
+	}
+	if err := db.Create(&s).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return finalizeSession(tx, &s, now)
+	}); err != nil {
+		t.Fatalf("finalizeSession failed: %v", err)
+	}
+
+	var gotS struct{ Status string }
+	if err := db.Table("service_sessions").Select("status").Where("id = ?", s.ID).Scan(&gotS).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if gotS.Status != "finished" {
+		t.Fatalf("want session finished, got %s", gotS.Status)
+	}
+
+	var gotU struct{ Status string }
+	if err := db.Table("usages").Select("status").Where("id = ?", u.ID).Scan(&gotU).Error; err != nil {
+		t.Fatalf("reload usage failed: %v", err)
+	}
+	if gotU.Status != "success" {
+		t.Fatalf("want usage success, got %s", gotU.Status)
+	}
+}
+
 type fakeQueueStore struct {
 	callNextCount int
 	markDoneCount int
