@@ -419,8 +419,11 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 				}
 			}
 
-			// 自动叫号单窗口：保留原有插队窗口限制（避免无限回补）
-			if s.SessionMode == models.SessionModeQueueAutoSingle {
+			// 自动叫号单窗口：保留原有插队窗口限制（避免无限回补）。
+			// 兼容历史数据 session_mode 为空但商户配置为自动单窗口的情况。
+			isQueueAutoSingleMode := s.SessionMode == models.SessionModeQueueAutoSingle ||
+				(s.SessionMode == "" && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService)
+			if isQueueAutoSingleMode {
 				if merchant.QueueMode != "auto" || merchant.SupportMultiCustomerService {
 					return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
 				}
@@ -439,11 +442,12 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 				}
 			}
 
-			// 撤销 MarkDone/Uncall，让该号重新回到队列（手动叫号回补不做单窗口限制）
+			// 撤销 MarkDone/Uncall，让该号重新回到队列（手动叫号回补不做单窗口限制）。
+			// 这里不主动 CallNextUncalled，避免将队列 current 推进到其它号码。
+			// 该会话马上会进入 serving，队列推进由后续结单/调度处理。
 			if s.InitialUsageID > 0 {
 				queue.Default.UnmarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
 				queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
-				queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 			}
 		}
 		// 扫码上号：优先要求工作人员扫码；若尚未绑定工作人员，则绑定为当前扫码工作人员

@@ -78,7 +78,7 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 	}
 	// 多窗口叫号：不依赖客服模式开关。并发上限由当天空闲技师数量天然控制。
 	// 通过对考勤记录加行锁 + 将会话置为 start_pending(带 technician_id) 实现并发控制。
-	// 注意：不要在这里把技师置为 busy，busy 仍由扫码起单时完成（见 handleQueueModeStartScan）。
+	// 分配成功后将技师置为 busy，避免并发路径重复分配。
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var att models.TechnicianAttendance
 	attRes := tx.
@@ -92,6 +92,17 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 	}
 	if att.Status != "idle" {
 		return
+	}
+
+	// 行锁后再次校验，避免“先查后改”竞态导致重复分配。
+	{
+		var cnt int64
+		err := tx.Model(&models.ServiceSession{}).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchantID, technicianID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
+			Count(&cnt).Error
+		if err != nil || cnt > 0 {
+			return
+		}
 	}
 
 	date := now.Format("2006-01-02")
@@ -117,9 +128,21 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
 	}
-	if err := tx.Model(&models.ServiceSession{}).
+	result := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchantID).
-		Updates(updates).Error; err != nil {
+		Updates(updates)
+	if result.Error != nil {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+		return
+	}
+	if result.RowsAffected == 0 {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+		return
+	}
+
+	if err := tx.Model(&models.TechnicianAttendance{}).
+		Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, technicianID, "idle").
+		Updates(map[string]interface{}{"status": "busy"}).Error; err != nil {
 		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 		return
 	}

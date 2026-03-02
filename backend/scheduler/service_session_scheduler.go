@@ -488,9 +488,21 @@ func autoCallNextForMultiQueueIfPossible(tx *gorm.DB, merchant *models.Merchant,
 		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
 	}
-	if err := tx.Model(&models.ServiceSession{}).
+	result := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchant.ID).
-		Updates(updates).Error; err != nil {
+		Updates(updates)
+	if result.Error != nil {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+		return false, nil
+	}
+
+	if err := tx.Model(&models.TechnicianAttendance{}).
+		Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchant.ID, cand.TechnicianID, "idle").
+		Updates(map[string]interface{}{"status": "busy"}).Error; err != nil {
 		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 		return false, err
 	}
@@ -1005,6 +1017,8 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 							Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("delay_pending")).
 							Updates(updates).Error
 					}
+					// 多窗口模式下 delay_pending 仅用于“等待扫码上号”；若已分配技师则不应走单窗口 skip 逻辑。
+					return nil
 				}
 
 				// 叫号模式（未开启客服模式 + 自动叫号）：需要客服扫码上号，不自动进入 serving
@@ -1429,7 +1443,9 @@ func skipCurrentAndCallNext(tx *gorm.DB, s *models.ServiceSession, merchant *mod
 	}
 
 	// qs_ 单窗口：超时进入 timeout_waiting（允许插队窗口），不立即失败/退卡。
-	if merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService && s.SessionMode == models.SessionModeQueueAutoSingle {
+	isQueueAutoSingleMode := s.SessionMode == models.SessionModeQueueAutoSingle ||
+		(s.SessionMode == "" && merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService)
+	if isQueueAutoSingleMode {
 		updates := map[string]interface{}{
 			"status":                models.ApplyStatusPrefix(s.Status, "timeout_waiting"),
 			"start_confirmed_at":    nil,
@@ -1624,9 +1640,14 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
 	}
-	if err := tx.Model(&models.ServiceSession{}).
+	result := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchantID).
-		Updates(updates).Error; err != nil {
+		Updates(updates)
+	if result.Error != nil {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+		return nil
+	}
+	if result.RowsAffected == 0 {
 		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 		return nil
 	}
@@ -1635,6 +1656,7 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 	if err := tx.Model(&models.TechnicianAttendance{}).
 		Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, technicianID, "idle").
 		Updates(map[string]interface{}{"status": "busy"}).Error; err != nil {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 		return err
 	}
 
