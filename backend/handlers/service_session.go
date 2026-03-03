@@ -84,6 +84,24 @@ func lockTechnicianAttendanceForQueueScan(tx *gorm.DB, merchantID uint, technici
 	return &att, nil
 }
 
+func ensureNoOtherActiveServingSessionForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, currentSessionID uint) error {
+	if tx == nil || merchantID == 0 || technicianID == 0 {
+		return nil
+	}
+	var activeCnt int64
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("merchant_id = ? AND technician_id = ? AND id <> ? AND status IN ?",
+			merchantID, technicianID, currentSessionID,
+			models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
+		Count(&activeCnt).Error; err != nil {
+		return err
+	}
+	if activeCnt > 0 {
+		return apiErr{status: http.StatusBadRequest, msg: "你目前在服务中，待服务完成后才可重新上号"}
+	}
+	return nil
+}
+
 func promoteQueueSessionToServing(tx *gorm.DB, s *models.ServiceSession, now time.Time, allowedBaseStatuses []string, clearPendingTimeout bool) error {
 	if tx == nil || s == nil {
 		return nil
@@ -343,6 +361,9 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			if err != nil {
 				return err
 			}
+			if err := ensureNoOtherActiveServingSessionForTechnician(tx, merchantID, *s.TechnicianID, s.ID); err != nil {
+				return err
+			}
 
 			if err := promoteQueueSessionToServing(tx, &s, now, []string{"start_pending"}, true); err != nil {
 				return err
@@ -520,6 +541,9 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 
 		att, err := lockTechnicianAttendanceForQueueScan(tx, merchantID, scannerTechID, s.ID, now)
 		if err != nil {
+			return err
+		}
+		if err := ensureNoOtherActiveServingSessionForTechnician(tx, merchantID, scannerTechID, s.ID); err != nil {
 			return err
 		}
 		if att.Status == "idle" {
