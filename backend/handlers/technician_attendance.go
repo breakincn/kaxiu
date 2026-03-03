@@ -63,11 +63,12 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 	if tech.QueuePaused {
 		return
 	}
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	// 已存在活跃会话时，不重复分配下一号
 	{
 		var cnt int64
 		err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchantID, technicianID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ? AND updated_at >= ?", merchantID, technicianID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"}), start).
 			Count(&cnt).Error
 		if err != nil {
 			return
@@ -79,7 +80,6 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 	// 多窗口叫号：不依赖客服模式开关。并发上限由当天空闲技师数量天然控制。
 	// 通过对考勤记录加行锁 + 将会话置为 start_pending(带 technician_id) 实现并发控制。
 	// 分配成功后将技师置为 busy，避免并发路径重复分配。
-	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var att models.TechnicianAttendance
 	attRes := tx.
 		Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -98,7 +98,7 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 	{
 		var cnt int64
 		err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchantID, technicianID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ? AND updated_at >= ?", merchantID, technicianID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"}), start).
 			Count(&cnt).Error
 		if err != nil || cnt > 0 {
 			return

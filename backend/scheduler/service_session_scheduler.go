@@ -486,11 +486,12 @@ func autoCallNextForMultiQueueIfPossible(tx *gorm.DB, merchant *models.Merchant,
 		Model(&models.TechnicianAttendance{}).
 		Select("technician_attendances.id, technician_attendances.technician_id").
 		Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
-		Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
+		Joins("LEFT JOIN service_roles sr ON sr.id = t.service_role_id").
 		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", merchant.ID, start).
-		Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", merchant.ID, activeSessionStatuses).
+		Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ? AND ss.updated_at >= ?)", merchant.ID, activeSessionStatuses, start).
 		Where("t.is_active = ?", true).
-		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
+		// 自动多客服叫号：按“可服务且在岗”选人，避免历史岗位 role_type 数据不一致导致空闲技师被误排除。
+		Where("(sr.id IS NULL OR sr.`key` NOT IN ('store_manager','front_desk'))").
 		Order("technician_attendances.updated_at asc").
 		Limit(1).
 		First(&cand).Error
@@ -1706,7 +1707,7 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 	{
 		var cnt int64
 		err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchantID, technicianID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ? AND updated_at >= ?", merchantID, technicianID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"}), start).
 			Count(&cnt).Error
 		if err != nil || cnt > 0 {
 			return nil

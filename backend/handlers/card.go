@@ -925,18 +925,18 @@ func VerifyCard(c *gin.Context) {
 		// 新流程：创建服务会话（核销->资源锁定->人员选择->预结单->自动结单）
 		status := "staff_selecting"
 		var roomSelectDeadlineAt *time.Time
-			// 叫号自动模式：不需要选房间，直接排队
-			if merchant.SupportQueue && merchant.QueueMode == "auto" {
-				status = "staff_selecting"
-				nextStep = ""
-			} else if effectiveSupportRoom {
-				status = "room_selecting"
-				dl := now.Add(90 * time.Second)
-				roomSelectDeadlineAt = &dl
-				nextStep = "room_select"
-			} else {
-				nextStep = "staff_select"
-			}
+		// 叫号自动模式：不需要选房间，直接排队
+		if merchant.SupportQueue && merchant.QueueMode == "auto" {
+			status = "staff_selecting"
+			nextStep = ""
+		} else if effectiveSupportRoom {
+			status = "room_selecting"
+			dl := now.Add(90 * time.Second)
+			roomSelectDeadlineAt = &dl
+			nextStep = "room_select"
+		} else {
+			nextStep = "staff_select"
+		}
 		sessionMode := models.ResolveSessionMode(&merchant)
 		isQueueMode2 := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
 		if isQueueMode2 {
@@ -1482,6 +1482,10 @@ func ScanVerifyCard(c *gin.Context) {
 				tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, autoCallFirst, now2)
 				if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
 					log.Printf("[queue-debug] scan verify enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchant.ID, date, usageID, created, tk.No, tk.CalledAt)
+				}
+				// 多客服叫号：扫码核销入队后也要立即触发一次自动分配，避免仅依赖 scheduler 兜底。
+				if merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+					tryAutoCallNextForIdleTechnicians(config.DB, merchant.ID, now2)
 				}
 			}
 		}
