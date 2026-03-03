@@ -68,18 +68,8 @@ func lockTechnicianAttendanceForQueueScan(tx *gorm.DB, merchantID uint, technici
 		}
 		return nil, apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新上号", technicianServiceStatusText(att.Status))}
 	}
-	if att.Status == "busy" {
-		var activeCnt int64
-		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND technician_id = ? AND id <> ? AND status IN ?",
-				merchantID, technicianID, sessionID,
-				models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
-			Count(&activeCnt).Error; err != nil {
-			return nil, err
-		}
-		if activeCnt > 0 {
-			return nil, apiErr{status: http.StatusBadRequest, msg: "你目前在服务中，待服务完成后才可重新上号"}
-		}
+	if err := ensureNoOtherActiveServingSessionForTechnician(tx, merchantID, technicianID, sessionID); err != nil {
+		return nil, err
 	}
 	return &att, nil
 }
@@ -361,9 +351,6 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			if err != nil {
 				return err
 			}
-			if err := ensureNoOtherActiveServingSessionForTechnician(tx, merchantID, *s.TechnicianID, s.ID); err != nil {
-				return err
-			}
 
 			if err := promoteQueueSessionToServing(tx, &s, now, []string{"start_pending"}, true); err != nil {
 				return err
@@ -541,9 +528,6 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 
 		att, err := lockTechnicianAttendanceForQueueScan(tx, merchantID, scannerTechID, s.ID, now)
 		if err != nil {
-			return err
-		}
-		if err := ensureNoOtherActiveServingSessionForTechnician(tx, merchantID, scannerTechID, s.ID); err != nil {
 			return err
 		}
 		if att.Status == "idle" {
