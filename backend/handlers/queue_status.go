@@ -258,11 +258,10 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 
 	// 策略2：队列无可叫号或队列返回的号已被分配，直接从数据库查找任意一个待分配的 session
 	var anySession models.ServiceSession
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+	qAny := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", merchant.ID).
-		Where("status IN ?", models.ExpandStatusWithKnownPrefixes("staff_selecting")).
-		Order("id asc").
-		First(&anySession).Error; err != nil {
+		Where("status IN ?", models.ExpandStatusWithKnownPrefixes("staff_selecting"))
+	if err := qAny.Order("id asc").First(&anySession).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return 0, false, nil
 		}

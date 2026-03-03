@@ -31,6 +31,98 @@ func technicianServiceStatusText(status string) string {
 	}
 }
 
+func ensureQueueSessionRoomLocked(merchant *models.Merchant, s *models.ServiceSession) error {
+	if merchant == nil || s == nil {
+		return nil
+	}
+	if !merchant.SupportRoom {
+		return nil
+	}
+	if s.RoomID == nil || *s.RoomID == 0 {
+		return apiErr{status: http.StatusBadRequest, msg: "当前无可用房间，请继续排队等待房间分配"}
+	}
+	return nil
+}
+
+func lockTechnicianAttendanceForQueueScan(tx *gorm.DB, merchantID uint, technicianID uint, sessionID uint, now time.Time) (*models.TechnicianAttendance, error) {
+	if technicianID == 0 {
+		return nil, apiErr{status: http.StatusForbidden, msg: "仅工作人员可扫码上号"}
+	}
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	var att models.TechnicianAttendance
+	attRes := tx.
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, technicianID, start).
+		Order("id desc").
+		Limit(1).
+		Find(&att)
+	if attRes.Error != nil {
+		return nil, attRes.Error
+	}
+	if attRes.RowsAffected == 0 {
+		return nil, apiErr{status: http.StatusBadRequest, msg: "未上班签到，扫码上号失败"}
+	}
+	if att.Status != "idle" && att.Status != "busy" {
+		if att.Status == "paused" {
+			return nil, apiErr{status: http.StatusBadRequest, msg: "你目前在暂停服务中，请更新服务状态为空闲才可继续上号"}
+		}
+		return nil, apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新上号", technicianServiceStatusText(att.Status))}
+	}
+	if att.Status == "busy" {
+		var activeCnt int64
+		if err := tx.Model(&models.ServiceSession{}).
+			Where("merchant_id = ? AND technician_id = ? AND id <> ? AND status IN ?",
+				merchantID, technicianID, sessionID,
+				models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
+			Count(&activeCnt).Error; err != nil {
+			return nil, err
+		}
+		if activeCnt > 0 {
+			return nil, apiErr{status: http.StatusBadRequest, msg: "你目前在服务中，待服务完成后才可重新上号"}
+		}
+	}
+	return &att, nil
+}
+
+func promoteQueueSessionToServing(tx *gorm.DB, s *models.ServiceSession, now time.Time, allowedBaseStatuses []string, clearPendingTimeout bool) error {
+	if tx == nil || s == nil {
+		return nil
+	}
+	updates := map[string]interface{}{
+		"status":     models.ApplyStatusPrefix(s.Status, "serving"),
+		"started_at": now,
+	}
+	if s.StartConfirmedAt == nil {
+		updates["start_confirmed_at"] = now
+	}
+	if clearPendingTimeout {
+		updates["start_pending_timeout_seconds"] = 0
+	}
+	if s.DurationMinutes > 0 {
+		finishAt := now.Add(time.Duration(s.DurationMinutes) * time.Minute)
+		updates["scheduled_finish_at"] = finishAt
+	}
+
+	res := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes(allowedBaseStatuses)).
+		Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		return nil
+	}
+
+	var current models.ServiceSession
+	if err := tx.Select("id", "status").First(&current, s.ID).Error; err != nil {
+		return err
+	}
+	if models.NormalizeSessionStatus(current.Status) == "serving" {
+		return nil
+	}
+	return apiErr{status: http.StatusBadRequest, msg: "当前状态不可扫码上号"}
+}
+
 func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 	code := strings.TrimSpace(raw)
 	if !strings.HasPrefix(code, "SS:") {
@@ -247,54 +339,12 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			if *s.TechnicianID != scannerTechID {
 				return apiErr{status: http.StatusBadRequest, msg: "该单已分配其他工作人员"}
 			}
-			// 上号前校验：允许技师状态为 idle 或 busy（自动叫号多客服模式分配时已置为 busy，手动叫号模式分配时仍为 idle）
-			start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-			var att models.TechnicianAttendance
-			attRes := tx.
-				Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, *s.TechnicianID, start).
-				Order("id desc").
-				Limit(1).
-				Find(&att)
-			if attRes.Error != nil {
-				return attRes.Error
-			}
-			if attRes.RowsAffected == 0 {
-				return apiErr{status: http.StatusBadRequest, msg: "未上班签到，扫码上号失败"}
-			}
-			// 允许 idle 或 busy 状态上号（兼容自动/手动叫号模式）
-			if att.Status != "idle" && att.Status != "busy" {
-				if att.Status == "paused" {
-					return apiErr{status: http.StatusBadRequest, msg: "你目前在暂停服务中，请更新服务状态为空闲才可继续上号"}
-				}
-				return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新上号", technicianServiceStatusText(att.Status))}
-			}
-			if att.Status == "busy" {
-				var activeCnt int64
-				if err := tx.Model(&models.ServiceSession{}).
-					Where("merchant_id = ? AND technician_id = ? AND id <> ? AND status IN ?",
-						merchantID, *s.TechnicianID, s.ID,
-						models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
-					Count(&activeCnt).Error; err != nil {
-					return err
-				}
-				if activeCnt > 0 {
-					return apiErr{status: http.StatusBadRequest, msg: "你目前在服务中，待服务完成后才可重新上号"}
-				}
+			att, err := lockTechnicianAttendanceForQueueScan(tx, merchantID, *s.TechnicianID, s.ID, now)
+			if err != nil {
+				return err
 			}
 
-			// start_pending -> serving（扫码上号），避免二次扫码
-			updates := map[string]interface{}{
-				"start_confirmed_at":            now,
-				"status":                        models.ApplyStatusPrefix(s.Status, "serving"),
-				"started_at":                    now,
-				"start_pending_timeout_seconds": 0,
-			}
-			if s.DurationMinutes > 0 {
-				finishAt := now.Add(time.Duration(s.DurationMinutes) * time.Minute)
-				updates["scheduled_finish_at"] = finishAt
-			}
-			if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("start_pending")).Updates(updates).Error; err != nil {
+			if err := promoteQueueSessionToServing(tx, &s, now, []string{"start_pending"}, true); err != nil {
 				return err
 			}
 
@@ -468,39 +518,9 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			}
 		}
 
-		// 校验并占用技师：仅允许 idle -> busy，避免仍显示空闲
-		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-		var att models.TechnicianAttendance
-		attRes := tx.
-			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, scannerTechID, start).
-			Order("id desc").
-			Limit(1).
-			Find(&att)
-		if attRes.Error != nil {
-			return attRes.Error
-		}
-		if attRes.RowsAffected == 0 {
-			return apiErr{status: http.StatusBadRequest, msg: "未上班签到，扫码上号失败"}
-		}
-		if att.Status != "idle" && att.Status != "busy" {
-			if att.Status == "paused" {
-				return apiErr{status: http.StatusBadRequest, msg: "你目前在暂停服务中，请更新服务状态为空闲才可继续上号"}
-			}
-			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新上号", technicianServiceStatusText(att.Status))}
-		}
-		if att.Status == "busy" {
-			var activeCnt int64
-			if err := tx.Model(&models.ServiceSession{}).
-				Where("merchant_id = ? AND technician_id = ? AND id <> ? AND status IN ?",
-					merchantID, scannerTechID, s.ID,
-					models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
-				Count(&activeCnt).Error; err != nil {
-				return err
-			}
-			if activeCnt > 0 {
-				return apiErr{status: http.StatusBadRequest, msg: "你目前在服务中，待服务完成后才可重新上号"}
-			}
+		att, err := lockTechnicianAttendanceForQueueScan(tx, merchantID, scannerTechID, s.ID, now)
+		if err != nil {
+			return err
 		}
 		if att.Status == "idle" {
 			if err := tx.Model(&models.TechnicianAttendance{}).
@@ -520,21 +540,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			}
 		}
 
-		// 直接推进到 serving 状态
-		updates := map[string]interface{}{
-			"status":     models.ApplyStatusPrefix(s.Status, "serving"),
-			"started_at": now,
-		}
-		if s.StartConfirmedAt == nil {
-			updates["start_confirmed_at"] = now
-		}
-		if s.DurationMinutes > 0 {
-			finishAt := now.Add(time.Duration(s.DurationMinutes) * time.Minute)
-			updates["scheduled_finish_at"] = finishAt
-		}
-		if err := tx.Model(&models.ServiceSession{}).
-			Where("id = ? AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"delay_pending", "timeout_waiting"})).
-			Updates(updates).Error; err != nil {
+		if err := promoteQueueSessionToServing(tx, &s, now, []string{"delay_pending", "timeout_waiting"}, false); err != nil {
 			return err
 		}
 		// 记录本次上号/服务人员（用于“今日上钟/起单”展示）
