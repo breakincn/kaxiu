@@ -717,62 +717,8 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 		// 核销后会话可能被创建出来但 start_confirmed_at 为空（表示仍在排队等待）。
 		// 只有当它成为队列头(CurrentID)且已叫号(CurrentCalledAt!=nil)，并且当前没有其他进行中的会话时，
 		// 才允许写入 start_confirmed_at/scheduled_start_at 进入 delay_pending，随后再推进到 serving。
-		if s.StartConfirmedAt == nil {
-			var merchant models.Merchant
-			if err := tx.First(&merchant, s.MerchantID).Error; err == nil {
-				if merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
-					if queue.Default != nil && s.InitialUsageID > 0 {
-						date := now.Format("2006-01-02")
-						snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
-
-						// 如果当前叫号为空或未被叫，且没有其他活跃会话，主动触发叫下一个号
-						if snap.CurrentID == 0 || snap.CurrentCalledAt == nil {
-							var activeCnt int64
-							if err := tx.Model(&models.ServiceSession{}).
-								Where("merchant_id = ? AND status IN ?", s.MerchantID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
-								Count(&activeCnt).Error; err == nil {
-								if activeCnt == 0 {
-									if merchant.QueuePaused {
-										return nil
-									}
-									// 没有活跃会话，尝试叫下一个号
-									queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
-									// 重新获取 Snapshot
-									snap = queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
-								}
-							}
-						}
-
-						if snap.CurrentID > 0 && snap.CurrentID == s.InitialUsageID && snap.CurrentCalledAt != nil {
-							var activeCnt int64
-							if err := tx.Model(&models.ServiceSession{}).
-								Where("merchant_id = ? AND id <> ? AND status IN ?", s.MerchantID, s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
-								Count(&activeCnt).Error; err == nil {
-								if activeCnt == 0 {
-									delaySeconds := merchant.StartDelaySeconds
-									if delaySeconds <= 0 {
-										delaySeconds = 60
-									}
-									startAt := now.Add(time.Duration(delaySeconds) * time.Second)
-									updates := map[string]interface{}{
-										"status":              models.ApplyStatusPrefix(s.Status, "delay_pending"),
-										"start_confirmed_at":  &now,
-										"scheduled_start_at":  &startAt,
-										"start_delay_seconds": delaySeconds,
-									}
-									if err := tx.Model(&models.ServiceSession{}).
-										Where("id = ? AND start_confirmed_at IS NULL AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked", "delay_pending"})).
-										Updates(updates).Error; err == nil {
-										s.StartConfirmedAt = &now
-										s.ScheduledStartAt = &startAt
-										s.Status = models.ApplyStatusPrefix(s.Status, "delay_pending")
-									}
-								}
-							}
-						}
-					}
-				}
-			}
+		if err := advanceQueueAutoSingleSerialIfPossible(tx, &s, now); err != nil {
+			return err
 		}
 		baseAt := s.UpdatedAt
 		if baseAt == nil {
@@ -798,531 +744,551 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 		baseStatus := models.NormalizeSessionStatus(s.Status)
 		switch baseStatus {
 		case "room_locked", "staff_selecting":
-			var merchant models.Merchant
-			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
-				return err
-			}
-
-			// 手动叫号模式：不进行任何自动处理，等待技师手动分配
-			if merchant.SupportQueue && merchant.QueueMode == "manual" {
-				// 手动模式下：通常保持不变等待人工处理，但跨天/超时需兜底释放并退回核销，避免永久脏数据
-				abandonTimeout := 12 * time.Hour
-				baseAt := s.UpdatedAt
-				if baseAt == nil {
-					baseAt = s.CreatedAt
-				}
-				if baseAt != nil {
-					if isCrossDay(baseAt, now) || now.Sub(*baseAt) >= abandonTimeout {
-						return cancelAndReleaseSession(tx, &s, now)
-					}
-				}
-				return nil
-			}
-
-			// 单队列串行模式（未开启客服模式 + 自动叫号 + 未开启多个客服）：
-			// staff_selecting 状态的会话在队列中排队，等叫到号且无其他进行中会话时推进到 delay_pending
-			if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
-				// 这种模式下 RoomID、TechnicianID、RoomLockedAt 都应该为 nil
-				// 不需要等待用户选择，直接由队列控制推进
-				// 推进逻辑已在前面的 start_confirmed_at 检查中处理（笥 185-221 行）
-				return nil
-			}
-
-			// 叫号模式 + 多窗口：周期性尝试分配空闲技师到下一位排队用户，避免依赖签到/状态切换触发
-			if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
-				if ok, err := autoCallNextForMultiQueueIfPossible(tx, &merchant, now); err != nil {
-					return err
-				} else if ok {
-					return nil
-				}
-				return nil
-			}
-
-			// 非叫号模式：降级为非客服流程（不再选客服/不自动分配客服），进入延迟起单
-			if !merchant.SupportCustomerServiceMode {
-				delaySeconds := merchant.StartDelaySeconds
-				if delaySeconds <= 0 {
-					delaySeconds = 60
-				}
-				startAt := now.Add(time.Duration(delaySeconds) * time.Second)
-				updates := map[string]interface{}{
-					"status":                      models.ApplyStatusPrefix(s.Status, "delay_pending"),
-					"technician_id":               nil,
-					"staff_select_cooldown_until": nil,
-					"staff_select_entered_at":     nil,
-					"start_confirmed_at":          &now,
-					"scheduled_start_at":          &startAt,
-					"room_select_deadline_at":     nil,
-				}
-				return tx.Model(&models.ServiceSession{}).
-					Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
-					Updates(updates).Error
-			}
-
-			// 以下是开启客服模式的处理逻辑
-			// 选客服超时：
-			// - 5分钟内：等待用户选择
-			// - 5分钟后：自动分配空闲最久的客服
-			// - 若无空闲客服：进入3分钟冷却，冷却后用户可再次选择
-			if s.RoomID == nil || s.TechnicianID != nil || s.RoomLockedAt == nil {
-				return nil
-			}
-			if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
-				return nil
-			}
-			// 必须在用户进入选择客服页后才允许开始5分钟自动分配计时
-			if s.StaffSelectEnteredAt == nil {
-				return nil
-			}
-			if !merchant.SupportCustomerServiceMode || !merchant.SupportRoom {
-				return nil
-			}
-			deadline := s.StaffSelectEnteredAt.Add(staffSelectingTimeout)
-			if now.Before(deadline) {
-				return nil
-			}
-			ok, err := autoAssignTechnicianIfPossible(tx, &s, now)
-			if err != nil {
-				return err
-			}
-			if ok {
-				return nil
-			}
-			dl := now.Add(3 * time.Minute)
-			updates := map[string]interface{}{
-				"status":                      models.ApplyStatusPrefix(s.Status, "staff_selecting"),
-				"staff_select_cooldown_until": &dl,
-			}
-			return tx.Model(&models.ServiceSession{}).
-				Where("id = ? AND technician_id IS NULL AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
-				Updates(updates).Error
+			return handleRoomLockedOrStaffSelecting(tx, &s, now)
 		case "room_selecting":
-			if s.RoomSelectDeadlineAt != nil && now.After(*s.RoomSelectDeadlineAt) {
-				baseAt := s.UpdatedAt
-				if baseAt == nil {
-					baseAt = s.CreatedAt
-				}
-				if s.TechnicianID == nil && s.StartedAt == nil && baseAt != nil && now.Sub(*baseAt) >= sessionAbandonTimeout {
-					var merchant models.Merchant
-					if err := tx.First(&merchant, s.MerchantID).Error; err == nil {
-						if merchant.SupportQueue && merchant.QueueMode == "manual" {
-							return nil
-						}
-					}
-					return cancelAndReleaseSession(tx, &s, now)
-				}
-				return autoAssignRoom(tx, &s, now)
-			}
-			return nil
+			return handleRoomSelecting(tx, &s, now)
 		case "start_pending":
-			// 若商户已关闭客服模式：降级为非客服流程，进入延迟起单（避免卡在待起单/待上钟）
-			{
-				var merchant models.Merchant
-				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
-					return err
-				}
-				skipDegradeToDelayPending := false
-				// 叫号模式（未开启客服模式）：不能自动进入 delay_pending，保持 start_pending 状态等待扫码起单
-				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue {
-					// 保持 start_pending 状态，等待工作人员扫码起单
-					// 不进行自动降级处理
-					skipDegradeToDelayPending = true
-				}
-				// 叫号 + 多客服（多窗口）模式：保持 start_pending 状态等待扫码起单，不进行自动降级处理
-				if merchant.SupportQueue && merchant.SupportMultiCustomerService {
-					// 保持 start_pending 状态，等待技师扫码起单
-					// 不进行自动降级处理
-					skipDegradeToDelayPending = true
-				}
-				// 非叫号模式：降级为非客服流程
-				if !skipDegradeToDelayPending && !merchant.SupportCustomerServiceMode {
-					delaySeconds := merchant.StartDelaySeconds
-					if delaySeconds <= 0 {
-						delaySeconds = 60
-					}
-					startAt := now.Add(time.Duration(delaySeconds) * time.Second)
-					updates := map[string]interface{}{
-						"status":                        models.ApplyStatusPrefix(s.Status, "delay_pending"),
-						"technician_id":                 nil,
-						"start_confirmed_at":            &now,
-						"scheduled_start_at":            &startAt,
-						"staff_select_entered_at":       nil,
-						"staff_select_cooldown_until":   nil,
-						"start_pending_timeout_seconds": 0,
-					}
-					// 释放技师占用（如果有）
-					if s.TechnicianID != nil && *s.TechnicianID > 0 {
-						_ = tx.Model(&models.TechnicianAttendance{}).
-							Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
-							Updates(map[string]interface{}{"status": "idle"}).Error
-					}
-					return tx.Model(&models.ServiceSession{}).
-						Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusWithKnownPrefixes("start_pending")).
-						Updates(updates).Error
-				}
-			}
-			// 待起单超时：不再支持“手动结单”。超时后仅允许用户重新选择工作人员并重新起单。
-			if s.StartConfirmedAt != nil {
-				return nil
-			}
-			if s.UpdatedAt == nil {
-				return nil
-			}
-			startDeadline := s.UpdatedAt.Add(getStartPendingTimeoutForSession(&s))
-			if now.Before(startDeadline) {
-				return nil
-			}
-
-			// 手动叫号模式：不做普通的待上号超时回退/跳号，但做 12 小时或跨天兜底强制作废
-			{
-				var merchant models.Merchant
-				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
-					return err
-				}
-				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "manual" {
-					abandonTimeout := 12 * time.Hour
-					baseAt := s.UpdatedAt
-					if baseAt == nil {
-						baseAt = s.CreatedAt
-					}
-					isCrossDay := false
-					if baseAt != nil {
-						baseDate := time.Date(baseAt.Year(), baseAt.Month(), baseAt.Day(), 0, 0, 0, 0, baseAt.Location())
-						nowDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-						if nowDate.After(baseDate) {
-							isCrossDay = true
-						}
-					}
-					if baseAt != nil && (now.Sub(*baseAt) >= abandonTimeout || isCrossDay) {
-						// 超过12小时或跨天未处理：强制释放作废
-						return failStartPendingAndAssignNext(tx, &s, &merchant, now)
-					}
-					// 否则：始终保持 start_pending 等待人工处理
-					return nil
-				}
-			}
-
-			// 叫号 + 多客服（多窗口）模式：待上号超时进入 timeout_waiting（允许一段时间内重新扫码/重新分配），并释放技师继续服务下一位。
-			{
-				var merchant models.Merchant
-				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
-					return err
-				}
-				if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
-					return moveMultiQueueStartPendingToTimeoutWaiting(tx, &s, &merchant, now)
-				}
-			}
-
-			updates := map[string]interface{}{
-				"status":                        models.ApplyStatusPrefix(s.Status, "staff_selecting"),
-				"technician_id":                 nil,
-				"staff_select_entered_at":       nil,
-				"start_pending_timeout_seconds": 0,
-				"start_timeout_count":           gorm.Expr("start_timeout_count + ?", 1),
-				"start_timeout_last_at":         now,
-			}
-			if err := tx.Model(&models.ServiceSession{}).
-				Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusWithKnownPrefixes("start_pending")).
-				Updates(updates).Error; err != nil {
-				return err
-			}
-			if s.InitialUsageID > 0 && queue.Default != nil {
-				date := now.Format("2006-01-02")
-				queue.Default.Uncall(s.MerchantID, date, queue.QueueTypeOnsite, s.InitialUsageID)
-			}
-
-			// 释放技师状态
-			if s.TechnicianID != nil && *s.TechnicianID > 0 {
-				if err := tx.Model(&models.TechnicianAttendance{}).
-					Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
-					Updates(map[string]interface{}{"status": "idle"}).Error; err != nil {
-					return err
-				}
-			}
-			return nil
+			return handleStartPending(tx, &s, now)
 		case "delay_pending":
-			{
-				var merchant models.Merchant
-				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
-					return err
-				}
-
-				// 多窗口叫号：delay_pending 必须是“已分配到具体技师/窗口后”的状态。
-				// 若未分配技师却进入 delay_pending，会导致超时后被 skipCurrentAndCallNext 标记 failed。
-				// 这里强制回退到排队态 staff_selecting，并取消叫号，等待后续有技师空闲/签到后再自动分配到 start_pending。
-				if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
-					if s.TechnicianID == nil || *s.TechnicianID == 0 {
-						if queue.Default != nil && s.InitialUsageID > 0 {
-							date := now.Format("2006-01-02")
-							queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
-						}
-						updates := map[string]interface{}{
-							"status":                      models.ApplyStatusPrefix(s.Status, "staff_selecting"),
-							"start_confirmed_at":          nil,
-							"scheduled_start_at":          nil,
-							"technician_id":               nil,
-							"staff_select_entered_at":     nil,
-							"staff_select_cooldown_until": nil,
-						}
-						return tx.Model(&models.ServiceSession{}).
-							Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("delay_pending")).
-							Updates(updates).Error
-					}
-					// 多窗口模式下 delay_pending 仅用于“等待扫码上号”；若已分配技师则不应走单窗口 skip 逻辑。
-					return nil
-				}
-
-				// 叫号模式（未开启客服模式 + 自动叫号）：需要客服扫码上号，不自动进入 serving
-				if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" {
-					if s.ScheduledStartAt != nil {
-						timeoutAt := s.ScheduledStartAt.Add(config.StartScanTimeout())
-						if now.After(timeoutAt) {
-							return skipCurrentAndCallNext(tx, &s, &merchant, now)
-						}
-					}
-					return nil
-				}
-
-				// 客服模式或非叫号模式：到达 scheduled_start_at 后自动进入 serving
-				if s.ScheduledStartAt != nil && !now.Before(*s.ScheduledStartAt) {
-					updates := map[string]interface{}{
-						"status":     models.ApplyStatusPrefix(s.Status, "serving"),
-						"started_at": now,
-					}
-					if s.ScheduledFinishAt == nil {
-						if s.DurationMinutes > 0 {
-							finishAt := now.Add(time.Duration(s.DurationMinutes) * time.Minute)
-							updates["scheduled_finish_at"] = finishAt
-						}
-					}
-
-					if merchant.SupportQueue && merchant.QueueMode == "manual" && !merchant.SupportMultiCustomerService {
-						if s.TechnicianID == nil || *s.TechnicianID == 0 {
-							start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-							var att models.TechnicianAttendance
-							attRes := tx.
-								Clauses(clause.Locking{Strength: "UPDATE"}).
-								Where("merchant_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL AND status = ?", s.MerchantID, start, "idle").
-								Order("updated_at asc").
-								Limit(1).
-								Find(&att)
-							if attRes.Error == nil && attRes.RowsAffected > 0 {
-								updates["technician_id"] = att.TechnicianID
-								updates["last_technician_id"] = att.TechnicianID
-								_ = tx.Model(&models.TechnicianAttendance{}).
-									Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, s.MerchantID, att.TechnicianID, "idle").
-									Updates(map[string]interface{}{"status": "busy"}).Error
-							}
-						}
-					}
-					return tx.Model(&models.ServiceSession{}).
-						Where("id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", s.ID, models.ExpandStatusWithKnownPrefixes("delay_pending")).
-						Updates(updates).Error
-				}
-				return nil
-			}
+			return handleDelayPending(tx, &s, now)
 		case "serving":
-			if s.StartConfirmedAt == nil {
-				// 历史脏数据兼容：serving 但 start_confirmed_at 为空会导致永远无法推进到结束
-				if s.StartedAt != nil {
-					if err := tx.Model(&models.ServiceSession{}).
-						Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusWithKnownPrefixes("serving")).
-						Update("start_confirmed_at", *s.StartedAt).Error; err != nil {
-						return err
-					}
-					s.StartConfirmedAt = s.StartedAt
-				} else {
-					return nil
-				}
-			}
-			if s.ScheduledFinishAt != nil && now.After(*s.ScheduledFinishAt) {
-				// 检查是否为叫号模式（非客服模式）
-				var merchant models.Merchant
-				if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
-					return err
-				}
-
-				// 叫号 + 多客服（多窗口）模式：服务结束后直接结束会话（不走客服模式的自动结单流程）
-				if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
-					return finalizeSession(tx, &s, now)
-				}
-
-				// 叫号模式（未开启客服模式）：服务时间到达后直接进入 finished 状态
-				if !merchant.SupportCustomerServiceMode {
-					// 直接结束会话
-					return finalizeSession(tx, &s, now)
-				}
-
-				// 客服模式：进入 auto_finishing 状态，延迟结单
-				finishAt := s.ScheduledFinishAt.Add(time.Duration(s.AutoFinishDelaySeconds) * time.Second)
-				updates := map[string]interface{}{
-					"status":      models.ApplyStatusPrefix(s.Status, "auto_finishing"),
-					"finished_at": finishAt,
-				}
-				return tx.Model(&models.ServiceSession{}).
-					Where("id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", s.ID, models.ExpandStatusWithKnownPrefixes("serving")).
-					Updates(updates).Error
-			}
-			return nil
+			return handleServing(tx, &s, now)
 		case "auto_finishing":
-			if s.StartConfirmedAt == nil {
-				return nil
-			}
-			if s.FinishedAt != nil && !now.Before(*s.FinishedAt) {
-				return finalizeSession(tx, &s, now)
-			}
-			return nil
+			return handleAutoFinishing(tx, &s, now)
 		case "timeout_waiting":
-			// 叫号模式：超时过号后的等待窗口。
-			//
-			// auto 单窗口(qs_)：仅按号段窗口判断是否过期；过期后置失败与退卡。
-			// manual：按“超过号段窗口 + 超过 15 分钟”同时满足才置失败与退卡（与扫码逻辑一致）。
-			if s.InitialUsageID == 0 {
-				if queueDebugEnabledFor(s.MerchantID, s.ID, s.InitialUsageID) {
-					log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
-						s.MerchantID, s.ID, s.InitialUsageID, "empty_initial_usage")
-				}
-				return nil
-			}
-			var merchant models.Merchant
-			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
-				if queueDebugEnabledFor(s.MerchantID, s.ID, s.InitialUsageID) {
-					log.Printf("[queue-debug] timeout_waiting merchant load failed: merchant=%d session=%d usage=%d err=%v\n",
-						s.MerchantID, s.ID, s.InitialUsageID, err)
-				}
-				return nil
-			}
-			if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
-				log.Printf("[queue-debug] timeout_waiting merchant loaded: merchant=%d session=%d usage=%d supportQueue=%v queueMode=%s supportMCS=%v\n",
-					merchant.ID, s.ID, s.InitialUsageID, merchant.SupportQueue, merchant.QueueMode, merchant.SupportMultiCustomerService)
-			}
-			if !merchant.SupportQueue {
-				if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
-					log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
-						merchant.ID, s.ID, s.InitialUsageID, "merchant_support_queue_false")
-				}
-				return nil
-			}
-			if queue.Default == nil {
-				if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
-					log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
-						merchant.ID, s.ID, s.InitialUsageID, "queue_default_nil")
-				}
-				return nil
-			}
-			date := now.Format("2006-01-02")
-			snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
-			minNo := 0
-			if len(snap.Tickets) > 0 {
-				minNo = snap.Tickets[0].No
-			}
-			maxCalledNo := snap.MaxCalledNo
-			myNo, ok := queue.Default.GetNo(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
-			if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
-				log.Printf("[queue-debug] timeout_waiting check: merchant=%d session=%d usage=%d mode=%s status=%s tickets=%d minNo=%d maxCalledNo=%d getNoOk=%v myNo=%d lastAt=%v now=%v\n",
-					merchant.ID, s.ID, s.InitialUsageID, merchant.QueueMode, s.Status, len(snap.Tickets), minNo, maxCalledNo, ok, myNo, s.StartTimeoutLastAt, now)
-			}
-			if !ok || myNo <= 0 || minNo <= 0 {
-				// 方案2：GetNo 失败（找不到号）跨天后兜底失败，避免永久卡住
-				if !ok {
-					baseAt := s.StartTimeoutLastAt
-					if baseAt == nil {
-						baseAt = s.UpdatedAt
-					}
-					if baseAt == nil {
-						baseAt = s.CreatedAt
-					}
-					if isCrossDay(baseAt, now) {
-						if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
-							log.Printf("[queue-debug] timeout_waiting get_no_failed cross-day -> timeout_failed: merchant=%d session=%d usage=%d baseAt=%v now=%v\n",
-								merchant.ID, s.ID, s.InitialUsageID, baseAt, now)
-						}
-						return failTimeoutWaitingAndRefund(tx, &s, &merchant, now)
-					}
-				}
-				if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
-					log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
-						merchant.ID, s.ID, s.InitialUsageID,
-						func() string {
-							if !ok {
-								return "get_no_failed"
-							}
-							if myNo <= 0 {
-								return "invalid_my_no"
-							}
-							return "min_no_empty_snapshot"
-						}(),
-					)
-				}
-				return nil
-			}
-
-			if merchant.QueueMode == "auto" {
-				currentNo := minNo
-				// 仅自动叫号单窗口需要在 scheduler 中按号段窗口自动退回
-				if merchant.SupportMultiCustomerService {
-					baseAt := s.StartTimeoutLastAt
-					if baseAt == nil {
-						baseAt = s.UpdatedAt
-					}
-					if baseAt == nil {
-						baseAt = s.CreatedAt
-					}
-					if baseAt != nil && now.Sub(*baseAt) > 15*time.Minute {
-						return failTimeoutWaitingAndRefund(tx, &s, &merchant, now)
-					}
-					return nil
-				}
-				if s.SessionMode != models.SessionModeQueueAutoSingle {
-					return nil
-				}
-				// 基础窗口：3 个号（例如 myNo=10 则允许到 currentNo<=13，到14失败）
-				cnt := s.StartTimeoutCount
-				if models.QsTimeoutWaitingExpired(currentNo, myNo, cnt) {
-					return failTimeoutWaitingAndRefund(tx, &s, &merchant, now)
-				}
-				return nil
-			}
-
-			if merchant.QueueMode == "manual" {
-				currentNo := maxCalledNo
-				if currentNo <= 0 {
-					currentNo = minNo
-				}
-				endNo := myNo + 3
-				exceedNoWindow := currentNo >= endNo+1
-
-				baseAt := s.StartTimeoutLastAt
-				if baseAt == nil {
-					baseAt = s.UpdatedAt
-				}
-				if baseAt == nil {
-					baseAt = s.CreatedAt
-				}
-				exceedTimeWindow := false
-				if baseAt != nil {
-					exceedTimeWindow = now.Sub(*baseAt) > 15*time.Minute
-				}
-				if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
-					log.Printf("[queue-debug] timeout_waiting manual: merchant=%d session=%d usage=%d myNo=%d currentNo=%d endNo=%d exceedNo=%v exceedTime=%v baseAt=%v\n",
-						merchant.ID, s.ID, s.InitialUsageID, myNo, currentNo, endNo, exceedNoWindow, exceedTimeWindow, baseAt)
-				}
-
-				if exceedNoWindow && exceedTimeWindow {
-					if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
-						log.Printf("[queue-debug] timeout_waiting -> timeout_failed: merchant=%d session=%d usage=%d\n", merchant.ID, s.ID, s.InitialUsageID)
-					}
-					return failTimeoutWaitingAndRefund(tx, &s, &merchant, now)
-				}
-				return nil
-			}
-			return nil
+			return handleTimeoutWaiting(tx, &s, now)
 		case "finished":
 			return releaseTechnicianIfNeeded(tx, &s, now)
 		default:
 			return nil
 		}
 	})
+}
+
+func advanceQueueAutoSingleSerialIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
+	if tx == nil || s == nil {
+		return nil
+	}
+	if s.StartConfirmedAt != nil {
+		return nil
+	}
+	var merchant models.Merchant
+	if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+		return nil
+	}
+	if !merchant.SupportQueue || merchant.QueueMode != "auto" || merchant.SupportMultiCustomerService {
+		return nil
+	}
+	if queue.Default == nil || s.InitialUsageID == 0 {
+		return nil
+	}
+	date := now.Format("2006-01-02")
+	snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
+	if snap.CurrentID == 0 || snap.CurrentCalledAt == nil {
+		var activeCnt int64
+		if err := tx.Model(&models.ServiceSession{}).
+			Where("merchant_id = ? AND status IN ?", s.MerchantID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
+			Count(&activeCnt).Error; err == nil {
+			if activeCnt == 0 {
+				if merchant.QueuePaused {
+					return nil
+				}
+				queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
+				snap = queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
+			}
+		}
+	}
+	if snap.CurrentID > 0 && snap.CurrentID == s.InitialUsageID && snap.CurrentCalledAt != nil {
+		var activeCnt int64
+		if err := tx.Model(&models.ServiceSession{}).
+			Where("merchant_id = ? AND id <> ? AND status IN ?", s.MerchantID, s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
+			Count(&activeCnt).Error; err == nil {
+			if activeCnt == 0 {
+				delaySeconds := merchant.StartDelaySeconds
+				if delaySeconds <= 0 {
+					delaySeconds = 60
+				}
+				startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+				updates := map[string]interface{}{
+					"status":              models.ApplyStatusPrefix(s.Status, "delay_pending"),
+					"start_confirmed_at":  &now,
+					"scheduled_start_at":  &startAt,
+					"start_delay_seconds": delaySeconds,
+				}
+				if err := tx.Model(&models.ServiceSession{}).
+					Where("id = ? AND start_confirmed_at IS NULL AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked", "delay_pending"})).
+					Updates(updates).Error; err == nil {
+					s.StartConfirmedAt = &now
+					s.ScheduledStartAt = &startAt
+					s.Status = models.ApplyStatusPrefix(s.Status, "delay_pending")
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func handleRoomLockedOrStaffSelecting(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
+	var merchant models.Merchant
+	if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+		return err
+	}
+	if merchant.SupportQueue && merchant.QueueMode == "manual" {
+		abandonTimeout := 12 * time.Hour
+		baseAt := s.UpdatedAt
+		if baseAt == nil {
+			baseAt = s.CreatedAt
+		}
+		if baseAt != nil {
+			if isCrossDay(baseAt, now) || now.Sub(*baseAt) >= abandonTimeout {
+				return cancelAndReleaseSession(tx, s, now)
+			}
+		}
+		return nil
+	}
+	if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
+		return nil
+	}
+	if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+		if ok, err := autoCallNextForMultiQueueIfPossible(tx, &merchant, now); err != nil {
+			return err
+		} else if ok {
+			return nil
+		}
+		return nil
+	}
+	if !merchant.SupportCustomerServiceMode {
+		delaySeconds := merchant.StartDelaySeconds
+		if delaySeconds <= 0 {
+			delaySeconds = 60
+		}
+		startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+		updates := map[string]interface{}{
+			"status":                      models.ApplyStatusPrefix(s.Status, "delay_pending"),
+			"technician_id":               nil,
+			"staff_select_cooldown_until": nil,
+			"staff_select_entered_at":     nil,
+			"start_confirmed_at":          &now,
+			"scheduled_start_at":          &startAt,
+			"room_select_deadline_at":     nil,
+		}
+		return tx.Model(&models.ServiceSession{}).
+			Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
+			Updates(updates).Error
+	}
+	if s.RoomID == nil || s.TechnicianID != nil || s.RoomLockedAt == nil {
+		return nil
+	}
+	if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
+		return nil
+	}
+	if s.StaffSelectEnteredAt == nil {
+		return nil
+	}
+	if !merchant.SupportCustomerServiceMode || !merchant.SupportRoom {
+		return nil
+	}
+	deadline := s.StaffSelectEnteredAt.Add(staffSelectingTimeout)
+	if now.Before(deadline) {
+		return nil
+	}
+	ok, err := autoAssignTechnicianIfPossible(tx, s, now)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return nil
+	}
+	dl := now.Add(3 * time.Minute)
+	updates := map[string]interface{}{
+		"status":                      models.ApplyStatusPrefix(s.Status, "staff_selecting"),
+		"staff_select_cooldown_until": &dl,
+	}
+	return tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND technician_id IS NULL AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
+		Updates(updates).Error
+}
+
+func handleRoomSelecting(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
+	if s.RoomSelectDeadlineAt != nil && now.After(*s.RoomSelectDeadlineAt) {
+		baseAt := s.UpdatedAt
+		if baseAt == nil {
+			baseAt = s.CreatedAt
+		}
+		if s.TechnicianID == nil && s.StartedAt == nil && baseAt != nil && now.Sub(*baseAt) >= sessionAbandonTimeout {
+			var merchant models.Merchant
+			if err := tx.First(&merchant, s.MerchantID).Error; err == nil {
+				if merchant.SupportQueue && merchant.QueueMode == "manual" {
+					return nil
+				}
+			}
+			return cancelAndReleaseSession(tx, s, now)
+		}
+		return autoAssignRoom(tx, s, now)
+	}
+	return nil
+}
+
+func handleStartPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
+	{
+		var merchant models.Merchant
+		if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+			return err
+		}
+		skipDegradeToDelayPending := false
+		if !merchant.SupportCustomerServiceMode && merchant.SupportQueue {
+			skipDegradeToDelayPending = true
+		}
+		if merchant.SupportQueue && merchant.SupportMultiCustomerService {
+			skipDegradeToDelayPending = true
+		}
+		if !skipDegradeToDelayPending && !merchant.SupportCustomerServiceMode {
+			delaySeconds := merchant.StartDelaySeconds
+			if delaySeconds <= 0 {
+				delaySeconds = 60
+			}
+			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+			updates := map[string]interface{}{
+				"status":                        models.ApplyStatusPrefix(s.Status, "delay_pending"),
+				"technician_id":                 nil,
+				"start_confirmed_at":            &now,
+				"scheduled_start_at":            &startAt,
+				"staff_select_entered_at":       nil,
+				"staff_select_cooldown_until":   nil,
+				"start_pending_timeout_seconds": 0,
+			}
+			if s.TechnicianID != nil && *s.TechnicianID > 0 {
+				_ = tx.Model(&models.TechnicianAttendance{}).
+					Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+					Updates(map[string]interface{}{"status": "idle"}).Error
+			}
+			return tx.Model(&models.ServiceSession{}).
+				Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusWithKnownPrefixes("start_pending")).
+				Updates(updates).Error
+		}
+	}
+	if s.StartConfirmedAt != nil {
+		return nil
+	}
+	if s.UpdatedAt == nil {
+		return nil
+	}
+	startDeadline := s.UpdatedAt.Add(getStartPendingTimeoutForSession(s))
+	if now.Before(startDeadline) {
+		return nil
+	}
+	{
+		var merchant models.Merchant
+		if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+			return err
+		}
+		if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "manual" {
+			abandonTimeout := 12 * time.Hour
+			baseAt := s.UpdatedAt
+			if baseAt == nil {
+				baseAt = s.CreatedAt
+			}
+			isCrossDay2 := false
+			if baseAt != nil {
+				baseDate := time.Date(baseAt.Year(), baseAt.Month(), baseAt.Day(), 0, 0, 0, 0, baseAt.Location())
+				nowDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+				if nowDate.After(baseDate) {
+					isCrossDay2 = true
+				}
+			}
+			if baseAt != nil && (now.Sub(*baseAt) >= abandonTimeout || isCrossDay2) {
+				return failStartPendingAndAssignNext(tx, s, &merchant, now)
+			}
+			return nil
+		}
+	}
+	{
+		var merchant models.Merchant
+		if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+			return err
+		}
+		if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+			return moveMultiQueueStartPendingToTimeoutWaiting(tx, s, &merchant, now)
+		}
+	}
+	updates := map[string]interface{}{
+		"status":                        models.ApplyStatusPrefix(s.Status, "staff_selecting"),
+		"technician_id":                 nil,
+		"staff_select_entered_at":       nil,
+		"start_pending_timeout_seconds": 0,
+		"start_timeout_count":           gorm.Expr("start_timeout_count + ?", 1),
+		"start_timeout_last_at":         now,
+	}
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusWithKnownPrefixes("start_pending")).
+		Updates(updates).Error; err != nil {
+		return err
+	}
+	if s.InitialUsageID > 0 && queue.Default != nil {
+		date := now.Format("2006-01-02")
+		queue.Default.Uncall(s.MerchantID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+	}
+	if s.TechnicianID != nil && *s.TechnicianID > 0 {
+		if err := tx.Model(&models.TechnicianAttendance{}).
+			Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+			Updates(map[string]interface{}{"status": "idle"}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func handleDelayPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
+	var merchant models.Merchant
+	if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+		return err
+	}
+	if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+		if s.TechnicianID == nil || *s.TechnicianID == 0 {
+			if queue.Default != nil && s.InitialUsageID > 0 {
+				date := now.Format("2006-01-02")
+				queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+			}
+			updates := map[string]interface{}{
+				"status":                      models.ApplyStatusPrefix(s.Status, "staff_selecting"),
+				"start_confirmed_at":          nil,
+				"scheduled_start_at":          nil,
+				"technician_id":               nil,
+				"staff_select_entered_at":     nil,
+				"staff_select_cooldown_until": nil,
+			}
+			return tx.Model(&models.ServiceSession{}).
+				Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("delay_pending")).
+				Updates(updates).Error
+		}
+		return nil
+	}
+	if !merchant.SupportCustomerServiceMode && merchant.SupportQueue && merchant.QueueMode == "auto" {
+		if s.ScheduledStartAt != nil {
+			timeoutAt := s.ScheduledStartAt.Add(config.StartScanTimeout())
+			if now.After(timeoutAt) {
+				return skipCurrentAndCallNext(tx, s, &merchant, now)
+			}
+		}
+		return nil
+	}
+	if s.ScheduledStartAt != nil && !now.Before(*s.ScheduledStartAt) {
+		updates := map[string]interface{}{
+			"status":     models.ApplyStatusPrefix(s.Status, "serving"),
+			"started_at": now,
+		}
+		if s.ScheduledFinishAt == nil {
+			if s.DurationMinutes > 0 {
+				finishAt := now.Add(time.Duration(s.DurationMinutes) * time.Minute)
+				updates["scheduled_finish_at"] = finishAt
+			}
+		}
+		if merchant.SupportQueue && merchant.QueueMode == "manual" && !merchant.SupportMultiCustomerService {
+			if s.TechnicianID == nil || *s.TechnicianID == 0 {
+				start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+				var att models.TechnicianAttendance
+				attRes := tx.
+					Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("merchant_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL AND status = ?", s.MerchantID, start, "idle").
+					Order("updated_at asc").
+					Limit(1).
+					Find(&att)
+				if attRes.Error == nil && attRes.RowsAffected > 0 {
+					updates["technician_id"] = att.TechnicianID
+					updates["last_technician_id"] = att.TechnicianID
+					_ = tx.Model(&models.TechnicianAttendance{}).
+						Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, s.MerchantID, att.TechnicianID, "idle").
+						Updates(map[string]interface{}{"status": "busy"}).Error
+				}
+			}
+		}
+		return tx.Model(&models.ServiceSession{}).
+			Where("id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", s.ID, models.ExpandStatusWithKnownPrefixes("delay_pending")).
+			Updates(updates).Error
+	}
+	return nil
+}
+
+func handleServing(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
+	if s.StartConfirmedAt == nil {
+		if s.StartedAt != nil {
+			if err := tx.Model(&models.ServiceSession{}).
+				Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusWithKnownPrefixes("serving")).
+				Update("start_confirmed_at", *s.StartedAt).Error; err != nil {
+				return err
+			}
+			s.StartConfirmedAt = s.StartedAt
+		} else {
+			return nil
+		}
+	}
+	if s.ScheduledFinishAt != nil && now.After(*s.ScheduledFinishAt) {
+		var merchant models.Merchant
+		if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+			return err
+		}
+		if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+			return finalizeSession(tx, s, now)
+		}
+		if !merchant.SupportCustomerServiceMode {
+			return finalizeSession(tx, s, now)
+		}
+		finishAt := s.ScheduledFinishAt.Add(time.Duration(s.AutoFinishDelaySeconds) * time.Second)
+		updates := map[string]interface{}{
+			"status":      models.ApplyStatusPrefix(s.Status, "auto_finishing"),
+			"finished_at": finishAt,
+		}
+		return tx.Model(&models.ServiceSession{}).
+			Where("id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", s.ID, models.ExpandStatusWithKnownPrefixes("serving")).
+			Updates(updates).Error
+	}
+	return nil
+}
+
+func handleAutoFinishing(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
+	if s.StartConfirmedAt == nil {
+		return nil
+	}
+	if s.FinishedAt != nil && !now.Before(*s.FinishedAt) {
+		return finalizeSession(tx, s, now)
+	}
+	return nil
+}
+
+func handleTimeoutWaiting(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
+	if s.InitialUsageID == 0 {
+		if queueDebugEnabledFor(s.MerchantID, s.ID, s.InitialUsageID) {
+			log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
+				s.MerchantID, s.ID, s.InitialUsageID, "empty_initial_usage")
+		}
+		return nil
+	}
+	var merchant models.Merchant
+	if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+		if queueDebugEnabledFor(s.MerchantID, s.ID, s.InitialUsageID) {
+			log.Printf("[queue-debug] timeout_waiting merchant load failed: merchant=%d session=%d usage=%d err=%v\n",
+				s.MerchantID, s.ID, s.InitialUsageID, err)
+		}
+		return nil
+	}
+	if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+		log.Printf("[queue-debug] timeout_waiting merchant loaded: merchant=%d session=%d usage=%d supportQueue=%v queueMode=%s supportMCS=%v\n",
+			merchant.ID, s.ID, s.InitialUsageID, merchant.SupportQueue, merchant.QueueMode, merchant.SupportMultiCustomerService)
+	}
+	if !merchant.SupportQueue {
+		if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+			log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
+				merchant.ID, s.ID, s.InitialUsageID, "merchant_support_queue_false")
+		}
+		return nil
+	}
+	if queue.Default == nil {
+		if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+			log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
+				merchant.ID, s.ID, s.InitialUsageID, "queue_default_nil")
+		}
+		return nil
+	}
+	date := now.Format("2006-01-02")
+	snap := queue.Default.Snapshot(merchant.ID, date, queue.QueueTypeOnsite)
+	minNo := 0
+	if len(snap.Tickets) > 0 {
+		minNo = snap.Tickets[0].No
+	}
+	maxCalledNo := snap.MaxCalledNo
+	myNo, ok := queue.Default.GetNo(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
+	if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+		log.Printf("[queue-debug] timeout_waiting check: merchant=%d session=%d usage=%d mode=%s status=%s tickets=%d minNo=%d maxCalledNo=%d getNoOk=%v myNo=%d lastAt=%v now=%v\n",
+			merchant.ID, s.ID, s.InitialUsageID, merchant.QueueMode, s.Status, len(snap.Tickets), minNo, maxCalledNo, ok, myNo, s.StartTimeoutLastAt, now)
+	}
+	if !ok || myNo <= 0 || minNo <= 0 {
+		if !ok {
+			baseAt := s.StartTimeoutLastAt
+			if baseAt == nil {
+				baseAt = s.UpdatedAt
+			}
+			if baseAt == nil {
+				baseAt = s.CreatedAt
+			}
+			if isCrossDay(baseAt, now) {
+				if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+					log.Printf("[queue-debug] timeout_waiting get_no_failed cross-day -> timeout_failed: merchant=%d session=%d usage=%d baseAt=%v now=%v\n",
+						merchant.ID, s.ID, s.InitialUsageID, baseAt, now)
+				}
+				return failTimeoutWaitingAndRefund(tx, s, &merchant, now)
+			}
+		}
+		if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+			log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
+				merchant.ID, s.ID, s.InitialUsageID,
+				func() string {
+					if !ok {
+						return "get_no_failed"
+					}
+					if myNo <= 0 {
+						return "invalid_my_no"
+					}
+					return "min_no_empty_snapshot"
+				}(),
+			)
+		}
+		return nil
+	}
+	if merchant.QueueMode == "auto" {
+		currentNo := minNo
+		if merchant.SupportMultiCustomerService {
+			baseAt := s.StartTimeoutLastAt
+			if baseAt == nil {
+				baseAt = s.UpdatedAt
+			}
+			if baseAt == nil {
+				baseAt = s.CreatedAt
+			}
+			if baseAt != nil && now.Sub(*baseAt) > 15*time.Minute {
+				return failTimeoutWaitingAndRefund(tx, s, &merchant, now)
+			}
+			return nil
+		}
+		if s.SessionMode != models.SessionModeQueueAutoSingle {
+			return nil
+		}
+		cnt := s.StartTimeoutCount
+		if models.QsTimeoutWaitingExpired(currentNo, myNo, cnt) {
+			return failTimeoutWaitingAndRefund(tx, s, &merchant, now)
+		}
+		return nil
+	}
+	if merchant.QueueMode == "manual" {
+		currentNo := maxCalledNo
+		if currentNo <= 0 {
+			currentNo = minNo
+		}
+		endNo := myNo + 3
+		exceedNoWindow := currentNo >= endNo+1
+		baseAt := s.StartTimeoutLastAt
+		if baseAt == nil {
+			baseAt = s.UpdatedAt
+		}
+		if baseAt == nil {
+			baseAt = s.CreatedAt
+		}
+		exceedTimeWindow := false
+		if baseAt != nil {
+			exceedTimeWindow = now.Sub(*baseAt) > 15*time.Minute
+		}
+		if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+			log.Printf("[queue-debug] timeout_waiting manual: merchant=%d session=%d usage=%d myNo=%d currentNo=%d endNo=%d exceedNo=%v exceedTime=%v baseAt=%v\n",
+				merchant.ID, s.ID, s.InitialUsageID, myNo, currentNo, endNo, exceedNoWindow, exceedTimeWindow, baseAt)
+		}
+		if exceedNoWindow && exceedTimeWindow {
+			if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
+				log.Printf("[queue-debug] timeout_waiting -> timeout_failed: merchant=%d session=%d usage=%d\n", merchant.ID, s.ID, s.InitialUsageID)
+			}
+			return failTimeoutWaitingAndRefund(tx, s, &merchant, now)
+		}
+		return nil
+	}
+	return nil
 }
 
 func backfillServingStartConfirmedAt(db *gorm.DB, now time.Time) error {
