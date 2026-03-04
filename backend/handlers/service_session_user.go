@@ -143,12 +143,12 @@ func UserResumeServiceSession(c *gin.Context) {
 
 		newStatus := "staff_selecting"
 		updates := map[string]interface{}{
-			"status":                      models.ApplyStatusPrefix(s.Status, newStatus),
-			"technician_id":               nil,
-			"staff_select_cooldown_until": nil,
-			"staff_select_entered_at":     nil,
+			"status":                        models.ApplyStatusPrefix(s.Status, newStatus),
+			"technician_id":                 nil,
+			"staff_select_cooldown_until":   nil,
+			"staff_select_entered_at":       nil,
 			"start_pending_timeout_seconds": 0,
-			"updated_at":                  now,
+			"updated_at":                    now,
 		}
 
 		if merchant.SupportCustomerServiceMode && merchant.SupportRoom {
@@ -271,6 +271,10 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 		if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 			return err
 		}
+		// 模式守卫：拒绝跨模式操作
+		if err := models.ValidateSessionModeForEntry(&s, &merchant); err != nil {
+			return apiErr{status: http.StatusBadRequest, msg: err.Error()}
+		}
 		if !merchant.SupportCustomerServiceMode || !merchant.SupportRoom {
 			return apiErr{status: http.StatusBadRequest, msg: "当前不支持选房"}
 		}
@@ -337,7 +341,7 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 				delaySeconds = 60
 			}
 			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
-			updates["status"] = "delay_pending"
+			updates["status"] = models.ApplyStatusPrefix(s.Status, "delay_pending")
 			updates["start_confirmed_at"] = now
 			updates["scheduled_start_at"] = startAt
 		}
@@ -467,6 +471,10 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 		if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 			return err
 		}
+		// 模式守卫：拒绝跨模式操作
+		if err := models.ValidateSessionModeForEntry(&s, &merchant); err != nil {
+			return apiErr{status: http.StatusBadRequest, msg: err.Error()}
+		}
 		if merchant.SupportCustomerServiceMode && merchant.SupportRoom && s.RoomID == nil {
 			return apiErr{status: http.StatusBadRequest, msg: "请先选择房间"}
 		}
@@ -499,10 +507,10 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 		}
 
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
-			"technician_id": input.TechnicianID,
-			"status":        models.ApplyStatusPrefix(s.Status, "start_pending"),
-			"staff_select_entered_at": nil,
-			"staff_select_cooldown_until": nil,
+			"technician_id":                 input.TechnicianID,
+			"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
+			"staff_select_entered_at":       nil,
+			"staff_select_cooldown_until":   nil,
 			"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
 		}).Error; err != nil {
 			return err

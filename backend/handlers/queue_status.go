@@ -1308,6 +1308,10 @@ func TriggerContinueCalling(c *gin.Context) {
 			return err
 		}
 		out["finished_session_id"] = s.ID
+		// 模式守卫：拒绝跨模式操作
+		if err := models.ValidateSessionModeForEntry(&s, &merchant); err != nil {
+			return apiErr{status: http.StatusBadRequest, msg: err.Error()}
+		}
 
 		// 检查服务是否达到项目设定的服务时长
 		if s.StartedAt != nil && s.DurationMinutes > 0 {
@@ -1447,6 +1451,10 @@ func TriggerContinueCallingForce(c *gin.Context) {
 			return err
 		}
 		out["finished_session_id"] = s.ID
+		// 模式守卫：拒绝跨模式操作
+		if err := models.ValidateSessionModeForEntry(&s, &merchant); err != nil {
+			return apiErr{status: http.StatusBadRequest, msg: err.Error()}
+		}
 
 		// 强制结束，不检查服务时长
 		if err := finalizeSessionManual(tx, &merchant, &s, now); err != nil {

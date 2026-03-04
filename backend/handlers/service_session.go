@@ -198,6 +198,10 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", uint(sid64), merchantID).First(&s).Error; err != nil {
 			return err
 		}
+		// 模式守卫：拒绝跨模式操作（如 queue 会话被 CS 入口处理）
+		if err := models.ValidateSessionModeForEntry(&s, &merchant); err != nil {
+			return apiErr{status: http.StatusBadRequest, msg: err.Error()}
+		}
 		baseStatus := models.NormalizeSessionStatus(s.Status)
 
 		if merchant.SupportRoom && s.RoomID == nil {
@@ -330,6 +334,10 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 		var s models.ServiceSession
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", sessionID, merchantID).First(&s).Error; err != nil {
 			return err
+		}
+		// 模式守卫：拒绝跨模式操作（如 CS 会话被叫号入口处理）
+		if err := models.ValidateSessionModeForEntry(&s, merchant); err != nil {
+			return apiErr{status: http.StatusBadRequest, msg: err.Error()}
 		}
 
 		// 叫号模式下，支持两种状态：
@@ -478,9 +486,8 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 			}
 
 			// 自动叫号单窗口：保留原有插队窗口限制（避免无限回补）。
-			// 兼容历史数据 session_mode 为空但商户配置为自动单窗口的情况。
-			isQueueAutoSingleMode := s.SessionMode == models.SessionModeQueueAutoSingle ||
-				(s.SessionMode == "" && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService)
+			// NormalizeLegacySessionMode 统一处理历史空 session_mode 的回退逻辑。
+			isQueueAutoSingleMode := models.NormalizeLegacySessionMode(&s, merchant) == models.SessionModeQueueAutoSingle
 			if isQueueAutoSingleMode {
 				if merchant.QueueMode != "auto" || merchant.SupportMultiCustomerService {
 					return apiErr{status: http.StatusBadRequest, msg: "该号已被跳过"}
@@ -703,6 +710,10 @@ func ChooseServiceSessionRoom(c *gin.Context) {
 		if err := tx.First(&m, merchantID).Error; err != nil {
 			return err
 		}
+		// 模式守卫：拒绝跨模式操作
+		if err := models.ValidateSessionModeForEntry(&s, &m); err != nil {
+			return apiErr{status: http.StatusBadRequest, msg: err.Error()}
+		}
 		lockedAt := now
 
 		updates := map[string]interface{}{
@@ -779,6 +790,10 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		var m models.Merchant
 		if err := tx.First(&m, merchantID).Error; err != nil {
 			return err
+		}
+		// 模式守卫：拒绝跨模式操作
+		if err := models.ValidateSessionModeForEntry(&s, &m); err != nil {
+			return apiErr{status: http.StatusBadRequest, msg: err.Error()}
 		}
 		if m.SupportRoom && s.RoomID == nil {
 			return apiErr{status: http.StatusBadRequest, msg: "请先选择房间"}

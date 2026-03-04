@@ -120,6 +120,11 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 		return
 	}
+	// 模式守卫：跳过跨模式会话（商户配置切换后的历史会话防护）
+	if models.ValidateSessionModeForEntry(&nextSession, &merchant) != nil {
+		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+		return
+	}
 
 	updates := map[string]interface{}{
 		"technician_id":                 technicianID,

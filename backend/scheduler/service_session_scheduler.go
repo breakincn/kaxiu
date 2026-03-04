@@ -741,6 +741,13 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 		}
 
+		// 模式一致性守卫：若 session_mode 与 status 前缀矛盾则跳过，
+		// 避免跨模式错误推进（如商户切换模式后残留的异常会话）。
+		if !models.IsModeConsistentWithStatus(&s) {
+			log.Printf("[mode-guard] advanceOne skip: session=%d status=%s mode=%s (mode/status prefix mismatch)\n",
+				s.ID, s.Status, s.SessionMode)
+			return nil
+		}
 		baseStatus := models.NormalizeSessionStatus(s.Status)
 		switch baseStatus {
 		case "room_locked", "staff_selecting":
@@ -1249,7 +1256,8 @@ func handleTimeoutWaiting(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 			}
 			return nil
 		}
-		if s.SessionMode != models.SessionModeQueueAutoSingle {
+		// NormalizeLegacySessionMode 统一处理历史空 session_mode 的回退逻辑。
+		if models.NormalizeLegacySessionMode(s, &merchant) != models.SessionModeQueueAutoSingle {
 			return nil
 		}
 		cnt := s.StartTimeoutCount
@@ -1495,8 +1503,8 @@ func skipCurrentAndCallNext(tx *gorm.DB, s *models.ServiceSession, merchant *mod
 	}
 
 	// qs_ 单窗口：超时进入 timeout_waiting（允许插队窗口），不立即失败/退卡。
-	isQueueAutoSingleMode := s.SessionMode == models.SessionModeQueueAutoSingle ||
-		(s.SessionMode == "" && merchant.SupportQueue && merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService)
+	// NormalizeLegacySessionMode 统一处理历史空 session_mode 的回退逻辑。
+	isQueueAutoSingleMode := models.NormalizeLegacySessionMode(s, merchant) == models.SessionModeQueueAutoSingle
 	if isQueueAutoSingleMode {
 		updates := map[string]interface{}{
 			"status":                models.ApplyStatusPrefix(s.Status, "timeout_waiting"),
