@@ -27,6 +27,7 @@
 
 ## 4. 业务隔离、调用链分析与防串台机制 (Isolation & Crosstalk Prevention)
 - **4.1 模式隔离机制**：统一 `ServiceSession` 避免“平行状态机”冲突。
+- **4.1.1 客服/叫号互斥结论**：当前代码实现下，是否进入叫号链路要求 `support_customer_service_mode=false`，因此客服模式与叫号模式在运行时互斥。
 - **4.2 并发与防串台控制**：
   - 技师服务互斥：`serving/auto_finishing` 会话冲突校验。
   - 资源抢占锁：房间、手牌与技师资源的 `FOR UPDATE` 行锁与条件更新。
