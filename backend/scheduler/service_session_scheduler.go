@@ -713,6 +713,15 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 				s.ID, s.Status, models.NormalizeSessionStatus(s.Status), s.MerchantID, s.InitialUsageID)
 		}
 
+		// 模式一致性守卫：若 session_mode 与 status 前缀矛盾则跳过，
+		// 避免跨模式错误推进（如商户切换模式后残留的异常会话）。
+		// 必须放在任何可能写库推进状态的逻辑之前（例如 advanceQueueAutoSingleSerialIfPossible）。
+		if !models.IsModeConsistentWithStatus(&s) {
+			log.Printf("[mode-guard] advanceOne skip: session=%d status=%s mode=%s (mode/status prefix mismatch)\n",
+				s.ID, s.Status, s.SessionMode)
+			return nil
+		}
+
 		// 单队列串行启动（自动叫号 + 未开启多个客服）：
 		// 核销后会话可能被创建出来但 start_confirmed_at 为空（表示仍在排队等待）。
 		// 只有当它成为队列头(CurrentID)且已叫号(CurrentCalledAt!=nil)，并且当前没有其他进行中的会话时，
@@ -741,13 +750,6 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			}
 		}
 
-		// 模式一致性守卫：若 session_mode 与 status 前缀矛盾则跳过，
-		// 避免跨模式错误推进（如商户切换模式后残留的异常会话）。
-		if !models.IsModeConsistentWithStatus(&s) {
-			log.Printf("[mode-guard] advanceOne skip: session=%d status=%s mode=%s (mode/status prefix mismatch)\n",
-				s.ID, s.Status, s.SessionMode)
-			return nil
-		}
 		baseStatus := models.NormalizeSessionStatus(s.Status)
 		switch baseStatus {
 		case "room_locked", "staff_selecting":

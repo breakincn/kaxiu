@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"kabao/config"
 	"kabao/middleware"
 	"kabao/models"
@@ -217,6 +218,11 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 
 		var nextSession models.ServiceSession
 		if err := q.Order("id desc").First(&nextSession).Error; err == nil {
+			// 模式守卫：拒绝跨模式会话被叫号流程推进
+			if err := models.ValidateSessionModeForEntry(&nextSession, merchant); err != nil {
+				queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
+				return 0, false, nil
+			}
 			// 找到了，分配给当前技师
 			updates := map[string]interface{}{
 				"technician_id":                 technicianID,
@@ -266,6 +272,10 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 			return 0, false, nil
 		}
 		return 0, false, err
+	}
+	// 模式守卫：拒绝跨模式会话被叫号流程推进
+	if err := models.ValidateSessionModeForEntry(&anySession, merchant); err != nil {
+		return 0, false, nil
 	}
 
 	// 找到了一个待分配的 session，分配给当前技师
@@ -1041,6 +1051,13 @@ func promoteManualSingleCalledSession(tx *gorm.DB, merchant *models.Merchant, us
 		}
 		return
 	}
+	// 模式守卫：拒绝跨模式会话被叫号流程推进
+	if err := models.ValidateSessionModeForEntry(&s, merchant); err != nil {
+		if queue.Default != nil {
+			queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, usageID)
+		}
+		return
+	}
 
 	delaySeconds := normalizeStartDelaySeconds(merchant.StartDelaySeconds)
 	startAt := now.Add(time.Duration(delaySeconds) * time.Second)
@@ -1359,6 +1376,11 @@ func TriggerContinueCalling(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -1480,6 +1502,11 @@ func TriggerContinueCallingForce(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -1568,6 +1595,46 @@ func TriggerNextCallingOnFinish(c *gin.Context) {
 	if queue.Default == nil {
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{"triggered": false, "reason": "叫号服务未初始化"}})
 		return
+	}
+
+	// 模式守卫：finish-call-next 是“结单后推进下一号”的入口。
+	// 为避免跨模式串用（如误把非手动叫号会话当作叫号会话推进），这里锁定当前进行中的会话并做一致性校验。
+	// 若当前无进行中会话，则仅触发叫号，不做校验（保持原行为）。
+	{
+		authTypeAny, _ := c.Get("auth_type")
+		authType, _ := authTypeAny.(string)
+		if authType == "staff" {
+			techIDAny, _ := c.Get("technician_id")
+			techID, _ := techIDAny.(uint)
+			if techID > 0 {
+				err := config.DB.Transaction(func(tx *gorm.DB) error {
+					var s models.ServiceSession
+					err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+						Where("merchant_id = ? AND technician_id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", merchantID, techID, models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
+						Order("id desc").
+						First(&s).Error
+					if err != nil {
+						if errors.Is(err, gorm.ErrRecordNotFound) {
+							return nil
+						}
+						return err
+					}
+					if err := models.ValidateSessionModeForEntry(&s, &merchant); err != nil {
+						return apiErr{status: http.StatusBadRequest, msg: err.Error()}
+					}
+					return nil
+				})
+				if err != nil {
+					var ae apiErr
+					if errors.As(err, &ae) {
+						c.JSON(ae.status, gin.H{"error": ae.msg})
+						return
+					}
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+			}
+		}
 	}
 
 	now := time.Now()
