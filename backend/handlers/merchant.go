@@ -198,6 +198,7 @@ func migrateSessionsAfterDisableCustomerService(tx *gorm.DB, m *models.Merchant,
 	if len(sessions) == 0 {
 		return nil
 	}
+	log.Printf("[merchant-config] migrate sessions after disabling customer service mode: merchant=%d affected_sessions=%d", m.ID, len(sessions))
 
 	delaySeconds := m.StartDelaySeconds
 	if delaySeconds <= 0 {
@@ -266,7 +267,7 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
 		return
 	}
-	oldSupportCustomerService := merchant.SupportCustomerService
+	oldSupportCustomerServiceMode := merchant.SupportCustomerServiceMode
 
 	var input struct {
 		SupportAppointment          *bool   `json:"support_appointment"`
@@ -494,8 +495,8 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		if err := tx.First(&merchant, merchantID).Error; err != nil {
 			return err
 		}
-		// 关闭客服模式后：将进行中的“选客服相关会话”迁移到非客服流程，避免流程卡死
-		oldSupportCustomerServiceMode := oldSupportCustomerService || merchant.SupportCustomerServiceMode
+		// 仅在 support_customer_service_mode 真正由 true -> false 时迁移会话，
+		// 避免手牌等无关开关更新触发跨流程迁移。
 		if oldSupportCustomerServiceMode && !merchant.SupportCustomerServiceMode {
 			return migrateSessionsAfterDisableCustomerService(tx, &merchant, time.Now())
 		}

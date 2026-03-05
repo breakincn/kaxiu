@@ -556,16 +556,19 @@ const usageQrTitle = computed(() => {
   
   // 叫号模式下显示“扫码上号二维码”
   const merchant = card.value?.merchant
+  const rawSessStatus = String(selectedUsage.value?.service_session_status || '').trim()
+  const isQueueSessionByPrefix = rawSessStatus.startsWith('qs_') || rawSessStatus.startsWith('qm_') || rawSessStatus.startsWith('qms_') || rawSessStatus.startsWith('qmm_')
   const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')
   const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
+  const isQueueSession = isQueueSessionByPrefix || isQueueMode || isMultiQueueMode
   const sessStatus = normalizeSessionStatus(selectedUsage.value?.service_session_status)
-  if ((isQueueMode || isMultiQueueMode) && sessStatus === 'start_pending') {
+  if (isQueueSession && sessStatus === 'start_pending') {
     return '扫码上号二维码'
   }
-  if ((isQueueMode || isMultiQueueMode) && sessStatus === 'delay_pending') {
+  if (isQueueSession && sessStatus === 'delay_pending') {
     return '扫码上号二维码'
   }
-  if ((isQueueMode || isMultiQueueMode) && sessStatus === 'timeout_waiting') {
+  if (isQueueSession && sessStatus === 'timeout_waiting') {
     return '扫码上号二维码'
   }
   
@@ -605,6 +608,22 @@ const isUsageStartTimeout = (usage) => {
   )
 }
 
+const getQueueSessionMeta = (usage, merchant) => {
+  const raw = String(usage?.service_session_status || '').trim()
+  if (raw.startsWith('qm_') || raw.startsWith('qmm_')) {
+    return { isQueueSession: true, isMultiQueueSession: true }
+  }
+  if (raw.startsWith('qs_') || raw.startsWith('qms_')) {
+    return { isQueueSession: true, isMultiQueueSession: false }
+  }
+  const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')
+  const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
+  return {
+    isQueueSession: Boolean(isQueueMode || isMultiQueueMode),
+    isMultiQueueSession: Boolean(isMultiQueueMode)
+  }
+}
+
 const getUsageStatusText = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s === 'in_progress') {
@@ -615,11 +634,7 @@ const getUsageStatusText = (usage) => {
     const precheckedAt = usage?.service_session_start_confirmed_at
     const now = nowTick.value
     const merchant = card.value?.merchant
-    
-    // 判断是否为单窗口串行叫号模式（未开启客服模式 + 开启叫号 + 自动叫号 + 未开启多个客服）
-    const isQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual') && !merchant?.support_multi_customer_service
-    // 多窗口叫号模式：按当天签到的专业技师数量并行，叫到号后进入 start_pending 等待扫码上号
-    const isMultiQueueMode = merchant?.support_queue && merchant?.queue_mode === 'auto' && merchant?.support_multi_customer_service
+    const { isQueueSession, isMultiQueueSession } = getQueueSessionMeta(usage, merchant)
     
     if (sessStatus === 'finished') return '完成'
 
@@ -634,18 +649,17 @@ const getUsageStatusText = (usage) => {
     
     // 叫号模式下 delay_pending 显示为"待扫码上号"
     if (sessStatus === 'delay_pending') {
-      if (isQueueMode) return '待扫码上号'
-      if (isMultiQueueMode) {
+      if (isQueueSession) {
         // 多窗口叫号：只有已分配到具体技师/窗口后才进入“待扫码上号”的交互
-        if (usage?.service_technician) return '待扫码上号'
-        return '待叫号'
+        if (isMultiQueueSession && !usage?.service_technician) return '待叫号'
+        return '待扫码上号'
       }
       return replaceTerms('待起单', card.value?.merchant)
     }
     
     // 优先按会话状态本身展示（不要依赖当前商户开关；历史会话在关闭客服后仍需正确展示）
     if (sessStatus === 'start_pending') {
-      if (isMultiQueueMode) {
+      if (isQueueSession && isMultiQueueSession) {
         const term = String(merchant?.queue_window_term || '窗口')
         const tech = usage?.service_technician
         const wno = String(tech?.window_no || '').trim()
@@ -654,9 +668,7 @@ const getUsageStatusText = (usage) => {
         const ttxt = tname ? `:${tname}` : ''
         return `${wtxt}${ttxt} 待上号`
       }
-      // 叫号模式下 start_pending 显示为"待上号"
-      const isAnyQueueMode = !merchant?.support_customer_service_mode && merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')
-      if (isAnyQueueMode) {
+      if (isQueueSession) {
         return '待上号'
       }
       return replaceTerms('待起单', card.value?.merchant)
@@ -665,6 +677,9 @@ const getUsageStatusText = (usage) => {
     if (sessStatus === 'auto_finishing') return replaceTerms('待自动结单', card.value?.merchant)
     if (supportCSMode && supportRoom && sessStatus === 'room_selecting') return '待选房间'
     if (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') {
+      if (isQueueSession) {
+        return '待叫号'
+      }
       // 若客服模式已关闭：走不开启客服模式的流程，不允许再进入"待选客服"
       const supportCSMode = Boolean(merchant?.support_customer_service_mode)
       if (!supportCSMode) {
