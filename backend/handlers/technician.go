@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/rand"
 	"fmt"
 	"kabao/config"
 	"kabao/models"
@@ -208,6 +209,75 @@ func BindTechnicianPhone(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": updated})
 }
 
+func ResetTechnicianPassword(c *gin.Context) {
+	authType, _ := c.Get("auth_type")
+	if authType != "staff" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅技师账号可操作"})
+		return
+	}
+
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+	technicianIDAny, ok := c.Get("technician_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	technicianID, ok := technicianIDAny.(uint)
+	if !ok || technicianID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	var input struct {
+		OldPassword string `json:"old_password" binding:"required"`
+		NewPassword string `json:"new_password" binding:"required,min=8"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	input.OldPassword = strings.TrimSpace(input.OldPassword)
+	input.NewPassword = strings.TrimSpace(input.NewPassword)
+	if len(input.NewPassword) < 8 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "新密码至少8位"})
+		return
+	}
+	if input.OldPassword == input.NewPassword {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "新旧密码不能一致"})
+		return
+	}
+
+	var tech models.Technician
+	if err := config.DB.Where("id = ? AND merchant_id = ?", technicianID, merchantID).First(&tech).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "技师不存在"})
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(tech.Password), []byte(input.OldPassword)); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "原密码错误"})
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		return
+	}
+	if err := config.DB.Model(&models.Technician{}).
+		Where("id = ? AND merchant_id = ?", technicianID, merchantID).
+		Updates(map[string]interface{}{
+			"password":            string(hashedPassword),
+			"password_need_reset": false,
+		}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "修改密码失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 func GetMerchantTechnicians(c *gin.Context) {
 	authType, _ := c.Get("auth_type")
 	if authType == "staff" {
@@ -334,7 +404,23 @@ func DeleteMerchantTechnician(c *gin.Context) {
 		return
 	}
 
-	if err := config.DB.Where("id = ? AND merchant_id = ?", uint(id64), merchantID).Delete(&models.Technician{}).Error; err != nil {
+	targetID := uint(id64)
+	activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{
+		"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing", "timeout_waiting",
+	})
+	var activeCount int64
+	if err := config.DB.Model(&models.ServiceSession{}).
+		Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchantID, targetID, activeStatuses).
+		Count(&activeCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除前校验失败"})
+		return
+	}
+	if activeCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该技师存在进行中的服务会话，无法删除"})
+		return
+	}
+
+	if err := config.DB.Where("id = ? AND merchant_id = ?", targetID, merchantID).Delete(&models.Technician{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
 		return
 	}
@@ -415,19 +501,23 @@ func CreateMerchantTechnician(c *gin.Context) {
 			return err
 		}
 		account := prefix + code
-		defaultPassword = account + "123"
+		defaultPassword, err = generateTemporaryPassword(12)
+		if err != nil {
+			return err
+		}
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(defaultPassword), bcrypt.DefaultCost)
 		if err != nil {
 			return err
 		}
 		tech = models.Technician{
-			MerchantID:    merchantID,
-			ServiceRoleID: role.ID,
-			Name:          name,
-			Code:          code,
-			Account:       account,
-			Password:      string(hashedPassword),
-			IsActive:      true,
+			MerchantID:        merchantID,
+			ServiceRoleID:     role.ID,
+			Name:              name,
+			Code:              code,
+			Account:           account,
+			Password:          string(hashedPassword),
+			PasswordNeedReset: true,
+			IsActive:          true,
 		}
 		return tx.Create(&tech).Error
 	}); err != nil {
@@ -437,20 +527,20 @@ func CreateMerchantTechnician(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"id":               tech.ID,
-			"merchant_id":      tech.MerchantID,
-			"name":             tech.Name,
-			"code":             tech.Code,
-			"account":          tech.Account,
-			"default_password": defaultPassword,
+			"id":                  tech.ID,
+			"merchant_id":         tech.MerchantID,
+			"name":                tech.Name,
+			"code":                tech.Code,
+			"account":             tech.Account,
+			"password_need_reset": tech.PasswordNeedReset,
+			"default_password":    defaultPassword,
 		},
 	})
 }
 
 func GetTechniciansByMerchantID(c *gin.Context) {
-	merchantID := c.Param("id")
-	if strings.TrimSpace(merchantID) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "商户ID不能为空"})
+	merchantID, ok := ensureMerchantScope(c, "id")
+	if !ok {
 		return
 	}
 
@@ -464,28 +554,73 @@ func GetTechniciansByMerchantID(c *gin.Context) {
 	// 获取所有技师
 	var list []models.Technician
 	config.DB.Where("merchant_id = ? AND is_active = ?", merchantID, true).Order("id desc").Find(&list)
+	if len(list) == 0 {
+		c.JSON(http.StatusOK, gin.H{"data": []models.Technician{}})
+		return
+	}
+
+	roleIDs := make([]uint, 0, len(list))
+	seenRole := make(map[uint]struct{}, len(list))
+	for _, tech := range list {
+		if tech.ServiceRoleID == 0 {
+			continue
+		}
+		if _, exists := seenRole[tech.ServiceRoleID]; exists {
+			continue
+		}
+		seenRole[tech.ServiceRoleID] = struct{}{}
+		roleIDs = append(roleIDs, tech.ServiceRoleID)
+	}
+	if len(roleIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{"data": []models.Technician{}})
+		return
+	}
+
+	var overrides []models.MerchantRolePermissionOverride
+	config.DB.Where("merchant_id = ? AND permission_id = ? AND service_role_id IN ?", merchantID, appointmentViewPerm.ID, roleIDs).Find(&overrides)
+	overrideAllowed := make(map[uint]bool, len(overrides))
+	overrideExists := make(map[uint]bool, len(overrides))
+	for _, ov := range overrides {
+		overrideExists[ov.ServiceRoleID] = true
+		overrideAllowed[ov.ServiceRoleID] = ov.Allowed
+	}
+
+	var rolePerms []models.RolePermission
+	config.DB.Where("permission_id = ? AND allowed = ? AND service_role_id IN ?", appointmentViewPerm.ID, true, roleIDs).Find(&rolePerms)
+	globalAllowed := make(map[uint]bool, len(rolePerms))
+	for _, rp := range rolePerms {
+		globalAllowed[rp.ServiceRoleID] = true
+	}
 
 	// 过滤出具有预约权限的技师
-	var result []models.Technician
-	merchantIDUint, _ := strconv.ParseUint(merchantID, 10, 32)
+	result := make([]models.Technician, 0, len(list))
 	for _, tech := range list {
-		// 检查商户级别的权限覆盖
-		var override models.MerchantRolePermissionOverride
-		err := config.DB.Where("merchant_id = ? AND service_role_id = ? AND permission_id = ?", uint(merchantIDUint), tech.ServiceRoleID, appointmentViewPerm.ID).First(&override).Error
-		if err == nil {
-			if override.Allowed {
+		if overrideExists[tech.ServiceRoleID] {
+			if overrideAllowed[tech.ServiceRoleID] {
 				result = append(result, tech)
 			}
 			continue
 		}
-
-		// 检查全局角色权限
-		var rolePerm models.RolePermission
-		err = config.DB.Where("service_role_id = ? AND permission_id = ? AND allowed = ?", tech.ServiceRoleID, appointmentViewPerm.ID, true).First(&rolePerm).Error
-		if err == nil {
+		if globalAllowed[tech.ServiceRoleID] {
 			result = append(result, tech)
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": result})
+}
+
+func generateTemporaryPassword(length int) (string, error) {
+	if length < 10 {
+		length = 10
+	}
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+	buf := make([]byte, length)
+	for i := 0; i < length; i++ {
+		var b [1]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return "", err
+		}
+		buf[i] = alphabet[int(b[0])%len(alphabet)]
+	}
+	return string(buf), nil
 }

@@ -61,7 +61,7 @@ func SendSMSCode(c *gin.Context) {
 			"expires_in": 300,
 		},
 	}
-	if gin.Mode() != gin.ReleaseMode {
+	if config.SMSDebugEnabled() {
 		resp["data"].(gin.H)["debug_code"] = code
 	}
 	c.JSON(http.StatusOK, resp)

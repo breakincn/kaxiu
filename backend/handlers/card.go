@@ -71,16 +71,28 @@ func nextMerchantCardNo(tx *gorm.DB, merchantID uint) (string, error) {
 }
 
 func GetCards(c *gin.Context) {
+	userID, ok := mustUserID(c)
+	if !ok {
+		return
+	}
 	var cards []models.Card
-	config.DB.Preload("User").Preload("Merchant").Find(&cards)
+	config.DB.Preload("User").Preload("Merchant").Where("user_id = ?", userID).Order("id desc").Find(&cards)
 	c.JSON(http.StatusOK, gin.H{"data": cards})
 }
 
 func GetCard(c *gin.Context) {
+	userID, ok := mustUserID(c)
+	if !ok {
+		return
+	}
 	id := c.Param("id")
 	var card models.Card
 	if err := config.DB.Preload("User").Preload("Merchant").First(&card, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "卡片不存在"})
+		return
+	}
+	if card.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问此卡"})
 		return
 	}
 
@@ -197,7 +209,15 @@ func GetNextMerchantCardNo(c *gin.Context) {
 }
 
 func GetUserCards(c *gin.Context) {
+	authUserID, ok := mustUserID(c)
+	if !ok {
+		return
+	}
 	userID := c.Param("id")
+	if v, err := strconv.ParseUint(strings.TrimSpace(userID), 10, 32); err != nil || uint(v) != authUserID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问其他用户数据"})
+		return
+	}
 	status := c.Query("status")
 
 	var cards []models.Card
@@ -247,6 +267,9 @@ func GetUserCards(c *gin.Context) {
 }
 
 func GetMerchantCards(c *gin.Context) {
+	if _, ok := ensureMerchantScope(c, "id"); !ok {
+		return
+	}
 	merchantIDAny, ok := c.Get("merchant_id")
 	if !ok {
 		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可查看"})
@@ -336,7 +359,11 @@ func parseUserCodeToUserID(code string) (uint, error) {
 	}
 
 	msg := uidStr + ":" + expStr
-	mac := hmac.New(sha256.New, []byte("your-secret-key"))
+	secret := config.UserCodeSecret()
+	if secret == "" {
+		return 0, errors.New("用户码服务未配置")
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(msg))
 	expected := hex.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(strings.ToLower(expected)), []byte(strings.ToLower(sig))) {
@@ -1496,7 +1523,10 @@ func ScanVerifyCard(c *gin.Context) {
 }
 
 func GetTodayVerify(c *gin.Context) {
-	merchantID := c.Param("id")
+	merchantID, ok := ensureMerchantScope(c, "id")
+	if !ok {
+		return
+	}
 	today := time.Now().Format("2006-01-02")
 
 	var count int64

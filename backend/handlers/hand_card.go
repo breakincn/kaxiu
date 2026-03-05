@@ -320,12 +320,16 @@ func UnlockCardByMerchant(c *gin.Context) {
 		updates["unlocked_by"] = nil
 	}
 
-	if err := config.DB.Model(&models.Card{}).
-		Where("id = ? AND merchant_id = ?", cardID, merchantID).
-		Updates(updates).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	result := config.DB.Model(&models.Card{}).
+		Where("id = ? AND merchant_id = ? AND locked = ?", cardID, merchantID, true).
+		Updates(updates)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusOK, gin.H{"ok": true, "no_op": true})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "no_op": false})
 }

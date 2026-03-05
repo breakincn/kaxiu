@@ -123,9 +123,11 @@ func autoCancelAppointmentIfOverdue(appointment *models.Appointment, now time.Ti
 	return true, nil
 }
 
-
 func GetMerchantAppointments(c *gin.Context) {
-	merchantID := c.Param("id")
+	merchantID, ok := ensureMerchantScope(c, "id")
+	if !ok {
+		return
+	}
 	status := c.Query("status")
 
 	var appointments []models.Appointment
@@ -137,32 +139,28 @@ func GetMerchantAppointments(c *gin.Context) {
 
 	// 如果是技师登录，且只有预约权限（没有管理预约权限），则只显示预约自己的预约
 	authType, _ := c.Get("auth_type")
-	if authType == "technician" {
+	if authType == "staff" {
 		technicianIDAny, ok := c.Get("technician_id")
 		if ok {
 			if technicianID, ok := technicianIDAny.(uint); ok && technicianID > 0 {
 				// 检查是否有管理预约权限
 				hasManagePermission := false
-				if merchantIDAny, ok := c.Get("merchant_id"); ok {
-					if mID, ok := merchantIDAny.(uint); ok {
-						if serviceRoleIDAny, ok := c.Get("service_role_id"); ok {
-							if serviceRoleID, ok := serviceRoleIDAny.(uint); ok {
-								// 查找管理预约权限
-								var managePerm models.Permission
-								if err := config.DB.Where("`key` = ?", "merchant.appointment.manage").First(&managePerm).Error; err == nil {
-									// 检查商户级别的权限覆盖
-									var override models.MerchantRolePermissionOverride
-									err := config.DB.Where("merchant_id = ? AND service_role_id = ? AND permission_id = ?", mID, serviceRoleID, managePerm.ID).First(&override).Error
-									if err == nil {
-										hasManagePermission = override.Allowed
-									} else {
-										// 检查全局角色权限
-										var rolePerm models.RolePermission
-										err = config.DB.Where("service_role_id = ? AND permission_id = ? AND allowed = ?", serviceRoleID, managePerm.ID, true).First(&rolePerm).Error
-										if err == nil {
-											hasManagePermission = true
-										}
-									}
+				if serviceRoleIDAny, ok := c.Get("service_role_id"); ok {
+					if serviceRoleID, ok := serviceRoleIDAny.(uint); ok {
+						// 查找管理预约权限
+						var managePerm models.Permission
+						if err := config.DB.Where("`key` = ?", "merchant.appointment.manage").First(&managePerm).Error; err == nil {
+							// 检查商户级别的权限覆盖
+							var override models.MerchantRolePermissionOverride
+							err := config.DB.Where("merchant_id = ? AND service_role_id = ? AND permission_id = ?", merchantID, serviceRoleID, managePerm.ID).First(&override).Error
+							if err == nil {
+								hasManagePermission = override.Allowed
+							} else {
+								// 检查全局角色权限
+								var rolePerm models.RolePermission
+								err = config.DB.Where("service_role_id = ? AND permission_id = ? AND allowed = ?", serviceRoleID, managePerm.ID, true).First(&rolePerm).Error
+								if err == nil {
+									hasManagePermission = true
 								}
 							}
 						}
@@ -182,18 +180,35 @@ func GetMerchantAppointments(c *gin.Context) {
 }
 
 func GetUserAppointments(c *gin.Context) {
-	userID := c.Param("id")
+	authUserID, ok := mustUserID(c)
+	if !ok {
+		return
+	}
+	userIDStr := strings.TrimSpace(c.Param("id"))
+	uid, err := strconv.ParseUint(userIDStr, 10, 32)
+	if err != nil || uint(uid) != authUserID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问其他用户数据"})
+		return
+	}
 	var appointments []models.Appointment
-	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Where("user_id = ?", userID).Order("appointment_time DESC").Find(&appointments)
+	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Where("user_id = ?", authUserID).Order("appointment_time DESC").Find(&appointments)
 	c.JSON(http.StatusOK, gin.H{"data": appointments})
 }
 
 func GetCardAppointment(c *gin.Context) {
+	authUserID, ok := mustUserID(c)
+	if !ok {
+		return
+	}
 	cardID := c.Param("id")
 
 	var card models.Card
 	if err := config.DB.First(&card, cardID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "卡片不存在"})
+		return
+	}
+	if card.UserID != authUserID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问此卡"})
 		return
 	}
 
@@ -269,7 +284,7 @@ func CreateAppointment(c *gin.Context) {
 	var input struct {
 		CardID          uint   `json:"card_id" binding:"required"`
 		MerchantID      uint   `json:"merchant_id" binding:"required"`
-		UserID          uint   `json:"user_id" binding:"required"`
+		UserID          *uint  `json:"user_id"`
 		ProjectID       *uint  `json:"project_id"`
 		TechnicianID    *uint  `json:"technician_id"`
 		AppointmentTime string `json:"appointment_time" binding:"required"`
@@ -277,6 +292,14 @@ func CreateAppointment(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	authUserID, ok := mustUserID(c)
+	if !ok {
+		return
+	}
+	if input.UserID != nil && *input.UserID != authUserID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "user_id 与登录态不一致"})
 		return
 	}
 
@@ -294,7 +317,7 @@ func CreateAppointment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
-	if card.UserID != input.UserID || card.MerchantID != input.MerchantID {
+	if card.UserID != authUserID || card.MerchantID != input.MerchantID {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的卡片"})
 		return
 	}
@@ -343,7 +366,7 @@ func CreateAppointment(c *gin.Context) {
 	// 检查该卡片在该商户是否已有活跃的预约
 	var existingAppointment models.Appointment
 	err := config.DB.Where("card_id = ? AND merchant_id = ? AND user_id = ? AND status IN ('pending', 'confirmed')",
-		input.CardID, input.MerchantID, input.UserID).First(&existingAppointment).Error
+		input.CardID, input.MerchantID, authUserID).First(&existingAppointment).Error
 
 	if err == nil {
 		if autoCanceled, autoCancelErr := autoCancelAppointmentIfOverdue(&existingAppointment, time.Now()); autoCancelErr != nil {
@@ -359,7 +382,7 @@ func CreateAppointment(c *gin.Context) {
 		return
 	}
 
-	log.Printf("创建新预约: 用户ID=%d, 商户ID=%d, 时间=%s", input.UserID, input.MerchantID, input.AppointmentTime)
+	log.Printf("创建新预约: 用户ID=%d, 商户ID=%d, 时间=%s", authUserID, input.MerchantID, input.AppointmentTime)
 
 	appointmentTime, err := time.ParseInLocation("2006-01-02 15:04:05", input.AppointmentTime, loc)
 	if err != nil {
@@ -398,7 +421,7 @@ func CreateAppointment(c *gin.Context) {
 	appointment := models.Appointment{
 		CardID:          input.CardID,
 		MerchantID:      input.MerchantID,
-		UserID:          input.UserID,
+		UserID:          authUserID,
 		ProjectID:       input.ProjectID,
 		TechnicianID:    input.TechnicianID,
 		AppointmentTime: &appointmentTime,
@@ -447,13 +470,13 @@ func ConfirmAppointment(c *gin.Context) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
 			return
 		}
-		
+
 		// 检查预约是否属于当前商户
 		if appointment.MerchantID != merchantID {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权限：不属于您的商户"})
 			return
 		}
-		
+
 		// 检查管理权限
 		if serviceRoleIDAny, ok := c.Get("service_role_id"); ok {
 			if serviceRoleID, ok := serviceRoleIDAny.(uint); ok {
@@ -619,7 +642,10 @@ func CancelAppointment(c *gin.Context) {
 }
 
 func GetQueueStatus(c *gin.Context) {
-	merchantID := c.Param("id")
+	merchantID, ok := ensureMerchantScope(c, "id")
+	if !ok {
+		return
+	}
 
 	var merchant models.Merchant
 	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
@@ -650,7 +676,10 @@ func GetQueueStatus(c *gin.Context) {
 
 // GetAvailableTimeSlots 获取商户的可用预约时间段
 func GetAvailableTimeSlots(c *gin.Context) {
-	merchantID := c.Param("id")
+	merchantID, ok := ensureMerchantScope(c, "id")
+	if !ok {
+		return
+	}
 	date := c.Query("date") // 格式: 2024-01-01
 	projectIDStr := strings.TrimSpace(c.Query("project_id"))
 	var projectID uint
@@ -662,7 +691,7 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		}
 		projectID = uint(pid)
 	}
-	log.Printf("GetAvailableTimeSlots: merchant_id=%s date=%s project_id=%d", merchantID, date, projectID)
+	log.Printf("GetAvailableTimeSlots: merchant_id=%d date=%s project_id=%d", merchantID, date, projectID)
 	loc, locErr := time.LoadLocation("Asia/Shanghai")
 	if locErr != nil {
 		loc = time.Local
@@ -758,9 +787,9 @@ func GetAvailableTimeSlots(c *gin.Context) {
 
 	// 标记已被占用的时间段（按各自预约项目时长占用）
 	type TimeSlot struct {
-		Time      string `json:"time"`
-		Available bool   `json:"available"`
-		UserName  string `json:"user_name,omitempty"`
+		Time          string `json:"time"`
+		Available     bool   `json:"available"`
+		UserName      string `json:"user_name,omitempty"`
 		TechnicianIDs []uint `json:"technician_ids,omitempty"`
 	}
 
@@ -834,10 +863,10 @@ func GetAvailableTimeSlots(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"date":                  date,
-			"service_minutes":       serviceMinutes,
-			"time_slots":            timeSlots,
-			"technicians":           technicians,
+			"date":            date,
+			"service_minutes": serviceMinutes,
+			"time_slots":      timeSlots,
+			"technicians":     technicians,
 		},
 	})
 }

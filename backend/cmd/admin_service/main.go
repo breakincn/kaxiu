@@ -14,6 +14,9 @@ import (
 
 func main() {
 	config.LoadEnv()
+	if err := config.ValidateCriticalSecrets(); err != nil {
+		log.Fatal("安全配置错误:", err)
+	}
 	config.InitDB()
 	if err := queue.InitDefaultStoreFromEnv(); err != nil {
 		log.Fatal("初始化Redis队列失败:", err)

@@ -117,19 +117,26 @@ func MerchantLogin(c *gin.Context) {
 
 	account := strings.TrimSpace(input.Phone)
 	password := strings.TrimSpace(input.Password)
+	rlKey, ok := enforceLoginRateLimit(c, "merchant", account)
+	if !ok {
+		return
+	}
 	if strings.HasPrefix(strings.ToLower(account), "js") {
+		recordLoginFailure(rlKey)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "技师账号请使用店铺登录地址 /s/:slug/login"})
 		return
 	}
 
 	var merchant models.Merchant
 	if err := config.DB.Where("phone = ?", account).First(&merchant).Error; err != nil {
+		recordLoginFailure(rlKey)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "手机号或密码错误"})
 		return
 	}
 
 	// 验证密码
 	if err := bcrypt.CompareHashAndPassword([]byte(merchant.Password), []byte(password)); err != nil {
+		recordLoginFailure(rlKey)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "手机号或密码错误"})
 		return
 	}
@@ -142,12 +149,18 @@ func MerchantLogin(c *gin.Context) {
 		"exp":         time.Now().Add(time.Hour * 24 * 7).Unix(),
 	})
 
-	tokenString, err := token.SignedString([]byte("your-secret-key"))
+	secret := config.JWTSecret()
+	if secret == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "登录服务未配置"})
+		return
+	}
+	tokenString, err := token.SignedString([]byte(secret))
 	if err != nil {
 		log.Printf("生成token失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "登录失败"})
 		return
 	}
+	recordLoginSuccess(rlKey)
 
 	log.Printf("商户登录成功: ID=%d, 手机号=%s", merchant.ID, merchant.Phone)
 
@@ -169,6 +182,10 @@ func GetMerchants(c *gin.Context) {
 }
 
 func GetMerchant(c *gin.Context) {
+	_, ok := ensureMerchantScope(c, "id")
+	if !ok {
+		return
+	}
 	id := c.Param("id")
 	var merchant models.Merchant
 	if err := config.DB.First(&merchant, id).Error; err != nil {
@@ -529,6 +546,11 @@ func CreateMerchant(c *gin.Context) {
 }
 
 func UpdateMerchant(c *gin.Context) {
+	if _, hasMerchant := c.Get("merchant_id"); hasMerchant {
+		if _, ok := ensureMerchantScope(c, "id"); !ok {
+			return
+		}
+	}
 	id := c.Param("id")
 	var merchant models.Merchant
 	if err := config.DB.First(&merchant, id).Error; err != nil {

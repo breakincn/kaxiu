@@ -16,6 +16,9 @@ import (
 
 func main() {
 	config.LoadEnv()
+	if err := config.ValidateCriticalSecrets(); err != nil {
+		log.Fatal("安全配置错误:", err)
+	}
 	// 初始化数据库
 	config.InitDB()
 	if err := queue.InitDefaultStoreFromEnv(); err != nil {

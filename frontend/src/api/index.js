@@ -21,6 +21,41 @@ const host = typeof window !== 'undefined' ? window.location.host : ''
 const isMerchantApp = host === 'kabao.shop' || host.endsWith('.kabao.shop')
 
 const isTechnicianLoginPath = (pathname) => /^\/s\/[^/]+\/login$/.test(pathname)
+const isLoginPagePath = (pathname) => {
+  const p = String(pathname || '')
+  return p === '/login' || isTechnicianLoginPath(p) || p.startsWith('/platform-admin/login')
+}
+
+const normalizeRequestPath = (config) => {
+  const raw = String(config?.url || '').trim()
+  if (!raw) return ''
+  try {
+    const u = raw.startsWith('http://') || raw.startsWith('https://')
+      ? new URL(raw)
+      : new URL(raw, window.location.origin)
+    const path = String(u.pathname || '').trim()
+    return path.startsWith('/api/') ? path.slice(4) : path
+  } catch (_) {
+    const path = raw.split('?')[0].split('#')[0].trim()
+    if (path.startsWith('/api/')) return path.slice(4)
+    return path
+  }
+}
+
+const isPublicAuthRequest = (config) => {
+  const method = String(config?.method || 'get').toLowerCase()
+  if (method !== 'post') return false
+  const path = normalizeRequestPath(config)
+  if (!path) return false
+  if (path === '/user/login') return true
+  if (path === '/user/register') return true
+  if (path === '/user/sms/send') return true
+  if (path === '/merchant/login') return true
+  if (path === '/merchant/register') return true
+  if (path === '/platform-admin/login') return true
+  if (/^\/merchant\/s\/[^/]+\/login$/.test(path)) return true
+  return false
+}
 
 const isMerchantContextPath = (pathname) => {
   if (isMerchantApp) return true
@@ -32,6 +67,15 @@ const isPlatformAdminPath = (pathname) => pathname.startsWith('/platform-admin')
 // 请求拦截器 - 添加 token
 api.interceptors.request.use(
   (config) => {
+    // 匿名鉴权接口必须不携带任何历史 token，避免旧 token 污染登录链路
+    if (isPublicAuthRequest(config)) {
+      if (config.headers) {
+        delete config.headers.Authorization
+        delete config.headers['X-Platform-Admin-Token']
+      }
+      return config
+    }
+
     // 根据当前路径判断是用户还是商户
     const isMerchant = isMerchantContextPath(window.location.pathname)
 
@@ -62,17 +106,16 @@ api.interceptors.response.use(
     console.log('API响应错误:', error.response?.status, error.config?.url)
     if (error.response && error.response.status === 401) {
       console.log('收到401错误，检查错误类型和请求上下文')
-      
-      // 检查是否是主动登录请求的失败
-      const isLoginRequest = error.config?.url?.includes('/login')
-      const isPostMethod = error.config?.method?.toLowerCase() === 'post'
-      
-      // 如果是主动登录请求失败，不清空现有登录态，但清除临时状态
-      if (isLoginRequest && isPostMethod) {
-        console.log('主动登录请求失败，不清空现有登录态')
-        // 清除可能的临时状态，避免状态污染
-        sessionStorage.removeItem('merchantActiveAuth')
-        sessionStorage.removeItem('technicianShopSlug')
+
+      // 匿名鉴权接口的401（例如登录密码错误）只向上抛出，不触发全局登出逻辑
+      if (isPublicAuthRequest(error.config)) {
+        console.log('public-auth 401，跳过全局登录态清理')
+        return Promise.reject(error)
+      }
+
+      // 当前已在登录页时，401只交给页面自身处理，避免二次跳转循环
+      if (isLoginPagePath(window.location.pathname)) {
+        console.log('login-page 401，跳过全局重定向')
         return Promise.reject(error)
       }
       

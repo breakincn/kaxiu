@@ -22,13 +22,15 @@ type internalQueueSnapshot struct {
 }
 
 func InternalGetOnsiteQueueSnapshot(c *gin.Context) {
-	// 如果配置了 token，则要求携带 X-Internal-Token
-	if tok := strings.TrimSpace(os.Getenv("KABAO_INTERNAL_TOKEN")); tok != "" {
-		got := strings.TrimSpace(c.GetHeader("X-Internal-Token"))
-		if got == "" || got != tok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
-			return
-		}
+	tok := strings.TrimSpace(os.Getenv("KABAO_INTERNAL_TOKEN"))
+	if tok == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "internal endpoint disabled"})
+		return
+	}
+	got := strings.TrimSpace(c.GetHeader("X-Internal-Token"))
+	if got == "" || got != tok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
 	}
 
 	merchantIDStr := c.Param("id")

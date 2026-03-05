@@ -70,6 +70,22 @@ func InitDB() {
 		log.Println("数据库迁移完成")
 	*/
 
+	if !IsTruthyEnv("KABAO_ENABLE_LEGACY_INLINE_DDL") {
+		if err := RunMigrations(DB); err != nil {
+			log.Fatal("数据库迁移失败:", err)
+		}
+		migrateLegacyMerchantProjects()
+		log.Println("数据库初始化成功")
+
+		// 初始化商户注册邀请码（幂等）
+		initInviteCodes()
+		initServiceRoles()
+		initPermissions()
+		initRolePermissions()
+		initTestData()
+		return
+	}
+
 	migrateLegacyMerchantProjects()
 
 	// 兼容历史数据：为旧用户补充默认 username，避免新增唯一索引导致异常

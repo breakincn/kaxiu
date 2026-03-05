@@ -903,3 +903,38 @@ flowchart TD
    - [ ] 新接口是否有 IDOR 风险？是否校验资源归属？
    - [ ] 是否在 GET handler 中引入了写操作？
 5. **版本标识**：Wiki 文件名包含 commit 短 ID，确保可追溯
+
+---
+
+## 10. OPEN 一日修复实施记录（2026-03-05）
+
+### 10.1 已完成项
+
+- `P0-1` 用户登录 token 已切换为 JWT（`type=user`），中间件强校验 `type/exp`；legacy token 默认禁用，仅在 `KABAO_ALLOW_LEGACY_USER_TOKEN=true` 时兼容。
+- `P0-2` 已移除硬编码密钥；统一改为环境变量：`KABAO_JWT_SECRET`、`KABAO_USER_JWT_SECRET`、`KABAO_USER_CODE_SECRET`；服务启动前执行密钥校验。
+- `P0-3` 用户侧核心 IDOR 已收口：`/user/cards`、`/user/cards/:id`、`/user/cards/:id/usages`、`/user/cards/:id/appointment`、`/user/users/:id/appointments`。
+- `P0-4` `POST /user/appointments` 不再信任 body `user_id`；与登录态不一致直接 `403`。
+- `P0-5` 通知 CRUD 已按商户隔离：create 取 token 商户，delete/pin 走 `id + merchant_id`。
+- `P1-1` 预约列表技师分支修正：`auth_type` 已按 `staff` 识别。
+- `P1-2` 新增统一商户边界校验函数 `ensureMerchantScope`，并接入商户关键 `:id` 路由处理器。
+- `P1-3` 看板 GET 已移除写库触发点（不再在看板查询时执行释放逻辑）。
+- `P1-4` 删除技师前新增活跃会话阻断校验。
+- `P1-5` 技师预约权限查询已改为批量查询（去 N+1）。
+- `P1-7` 解锁卡只对 `locked=true` 生效，未锁卡返回 `no_op`。
+- `P2-1` 内部队列接口未配置 `KABAO_INTERNAL_TOKEN` 时禁用；token 缺失/错误返回 `401`。
+- `P2-2` 直购下单改为服务端立即落库 `pending`；确认仅允许确认归属用户的已存在 `pending` 订单。
+- `P2-3` 商户确认开卡卡号改为商户维度递增（`nextMerchantCardNo`）。
+- `P2-4` 技师默认密码改为随机临时密码；新增 `password_need_reset` 与首登改密流程。
+- `P2-5` 登录限流已落地（IP + 账号维度，进程内实现）。
+- `P2-6` 短信 `debug_code` 仅在 `KABAO_SMS_DEBUG=true` 时返回。
+- `P2-7` usage 查询已移除写副作用，超时自动收尾逻辑下沉到调度器。
+- `P2-8` 已新增 `schema_migrations` + 版本执行器（`config.RunMigrations`），并重写 `cmd/migrate`；`InitDB` 默认迁移路径不再执行内联 DDL（保留 `KABAO_ENABLE_LEGACY_INLINE_DDL` 兼容开关）。
+
+### 10.2 验证结果
+
+- 后端全量测试：`go test ./...` 通过。
+- 新增回归测试覆盖：
+  - 预约创建 `user_id` 篡改拒绝
+  - 用户卡片列表隔离
+  - 内部队列接口未配置 token 时禁用
+  - 迁移执行器幂等

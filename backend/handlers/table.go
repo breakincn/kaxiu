@@ -93,8 +93,6 @@ func TableRooms(c *gin.Context) {
 		return
 	}
 
-	lazyReleaseStartPendingTimeout(merchantID, time.Now())
-
 	var rooms []models.Room
 	config.DB.Where("merchant_id = ?", merchantID).Order("id asc").Find(&rooms)
 
@@ -229,8 +227,6 @@ func TableStaff(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效type，支持: professional / operation"})
 		return
 	}
-
-	lazyReleaseStartPendingTimeout(merchantID, time.Now())
 
 	// 专业客服（排除店长/前台）；运营客服不排除
 	var techs []models.Technician

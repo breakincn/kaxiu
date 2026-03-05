@@ -322,6 +322,94 @@ func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
 	return nil
 }
 
+func autoFinalizeStaleUsages(db *gorm.DB, now time.Time) error {
+	if db == nil {
+		return nil
+	}
+	cutoff := now.Add(-12 * time.Hour)
+	var usages []models.Usage
+	if err := db.
+		Preload("Merchant").
+		Preload("Project").
+		Where("used_at IS NOT NULL AND used_at <= ? AND status <> ?", cutoff, "failed").
+		Order("id asc").
+		Limit(schedulerBatchLimit).
+		Find(&usages).Error; err != nil {
+		return err
+	}
+	for i := range usages {
+		u := usages[i]
+		if u.UsedAt == nil {
+			continue
+		}
+		if u.Merchant.SupportCustomerServiceMode {
+			finishedAt := u.UsedAt.Add(12 * time.Hour)
+			if err := db.Transaction(func(tx *gorm.DB) error {
+				var s struct {
+					ID               uint       `gorm:"column:id"`
+					Status           string     `gorm:"column:status"`
+					TechnicianID     *uint      `gorm:"column:technician_id"`
+					StartConfirmedAt *time.Time `gorm:"column:start_confirmed_at"`
+				}
+				err := tx.Table("service_sessions").
+					Select("id,status,technician_id,start_confirmed_at").
+					Where("initial_usage_id = ?", u.ID).
+					Order("id desc").
+					First(&s).Error
+				if err == nil {
+					if s.StartConfirmedAt != nil {
+						return nil
+					}
+					if s.TechnicianID != nil && *s.TechnicianID > 0 {
+						_ = tx.Model(&models.TechnicianAttendance{}).
+							Where("merchant_id = ? AND technician_id = ? AND status = ?", u.MerchantID, *s.TechnicianID, "busy").
+							Updates(map[string]interface{}{"status": "idle"}).Error
+					}
+					_ = tx.Table("service_sessions").
+						Where("id = ? AND status NOT IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"finished", "canceled"})).
+						Updates(map[string]interface{}{
+							"status":                  models.ApplyStatusPrefix(s.Status, "finished"),
+							"finished_at":             finishedAt,
+							"technician_id":           nil,
+							"room_id":                 nil,
+							"room_locked_at":          nil,
+							"room_select_deadline_at": nil,
+						}).Error
+				}
+				return tx.Model(&models.Usage{}).
+					Where("id = ?", u.ID).
+					Updates(map[string]interface{}{
+						"status":        "success",
+						"technician_id": nil,
+						"finished_at":   finishedAt,
+					}).Error
+			}); err != nil {
+				log.Printf("auto finalize stale usage failed: usage=%d err=%v", u.ID, err)
+			}
+			continue
+		}
+
+		if u.Status == "success" && u.TechnicianID == nil {
+			continue
+		}
+		durationMinutes := 15
+		if u.Project != nil && u.Project.Duration > 0 {
+			durationMinutes = u.Project.Duration
+		}
+		finishedAt := u.UsedAt.Add(time.Duration(durationMinutes+5) * time.Minute)
+		if err := db.Model(&models.Usage{}).
+			Where("id = ?", u.ID).
+			Updates(map[string]interface{}{
+				"status":        "success",
+				"technician_id": nil,
+				"finished_at":   finishedAt,
+			}).Error; err != nil {
+			log.Printf("auto finalize stale usage failed: usage=%d err=%v", u.ID, err)
+		}
+	}
+	return nil
+}
+
 func finishAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, finishedAt time.Time) error {
 	updates := map[string]interface{}{
 		"status":                  models.ApplyStatusPrefix(s.Status, "finished"),
@@ -590,6 +678,9 @@ func runOnce(db *gorm.DB) error {
 	}
 	if err := finalizeUsagesAfterQueueEnded(db, now); err != nil {
 		log.Printf("finalize usages after queue ended error: %v", err)
+	}
+	if err := autoFinalizeStaleUsages(db, now); err != nil {
+		log.Printf("auto finalize stale usages error: %v", err)
 	}
 	if err := backfillServingStartConfirmedAt(db, now); err != nil {
 		log.Printf("backfill serving start_confirmed_at error: %v", err)

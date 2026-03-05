@@ -15,12 +15,24 @@ import (
 )
 
 func GetCardUsages(c *gin.Context) {
+	userID, ok := mustUserID(c)
+	if !ok {
+		return
+	}
 	cardID := c.Param("id")
+	var card models.Card
+	if err := config.DB.First(&card, cardID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "卡片不存在"})
+		return
+	}
+	if card.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问此卡"})
+		return
+	}
 	var usages []models.Usage
 	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Preload("Project").Where("card_id = ?", cardID).Order("used_at DESC").Find(&usages)
 	enrichUsagesWithServiceSession(&usages)
 	enrichUsagesWithQueue(&usages)
-	autoFixUsages(&usages)
 	c.JSON(http.StatusOK, gin.H{"data": usages})
 }
 
@@ -39,7 +51,10 @@ func resolveSessionStartConfirmedAt(status string, startConfirmedAt *time.Time, 
 }
 
 func GetMerchantUsages(c *gin.Context) {
-	merchantID := c.Param("id")
+	merchantID, ok := ensureMerchantScope(c, "id")
+	if !ok {
+		return
+	}
 	var usages []models.Usage
 
 	dateStr := c.Query("date")
@@ -94,7 +109,6 @@ func GetMerchantUsages(c *gin.Context) {
 	query.Find(&usages)
 	enrichUsagesWithServiceSession(&usages)
 	enrichUsagesWithQueue(&usages)
-	autoFixUsages(&usages)
 	c.JSON(http.StatusOK, gin.H{"data": usages})
 }
 

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -132,14 +133,19 @@ func GetUserCode(c *gin.Context) {
 	expStr := strconv.FormatInt(exp, 10)
 	msg := uidStr + ":" + expStr
 
-	mac := hmac.New(sha256.New, []byte("your-secret-key"))
+	secret := config.UserCodeSecret()
+	if secret == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "用户码服务未配置"})
+		return
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(msg))
 	sig := hex.EncodeToString(mac.Sum(nil))
 
 	code := fmt.Sprintf("kabao-user:%s:%s:%s", uidStr, expStr, sig)
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"code":      code,
+			"code":       code,
 			"expires_at": exp,
 		},
 	})
@@ -245,7 +251,11 @@ func UserRegister(c *gin.Context) {
 
 	registeredUserAny, _ := c.Get("_registered_user")
 	registeredUser, _ := registeredUserAny.(models.User)
-	token := generateToken(registeredUser.ID)
+	token, err := generateToken(registeredUser.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "签发token失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
@@ -270,22 +280,32 @@ func UserLogin(c *gin.Context) {
 		return
 	}
 	loginReq.Username = strings.TrimSpace(loginReq.Username)
+	rlKey, ok := enforceLoginRateLimit(c, "user", loginReq.Username)
+	if !ok {
+		return
+	}
 
 	var user models.User
 	// 兼容旧用户：允许用手机号登录
 	if err := config.DB.Where("username = ? OR phone = ?", loginReq.Username, loginReq.Username).First(&user).Error; err != nil {
+		recordLoginFailure(rlKey)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
 		return
 	}
 
 	// 验证密码
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(loginReq.Password)); err != nil {
+		recordLoginFailure(rlKey)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
 		return
 	}
 
-	// 生成简单的 token（实际项目中应使用 JWT）
-	token := generateToken(user.ID)
+	token, err := generateToken(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "签发token失败"})
+		return
+	}
+	recordLoginSuccess(rlKey)
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
@@ -298,11 +318,17 @@ func UserLogin(c *gin.Context) {
 	})
 }
 
-// 生成简单的 token
-func generateToken(userID uint) string {
-	// 简化版本，实际应该使用 JWT
-	// 这里暂时返回格式: "user_{userID}_{timestamp}"
-	return fmt.Sprintf("user_%d_%d", userID, time.Now().Unix())
+func generateToken(userID uint) (string, error) {
+	secret := config.UserJWTSecret()
+	if secret == "" {
+		return "", fmt.Errorf("missing KABAO_USER_JWT_SECRET")
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"type":    "user",
+		"user_id": userID,
+		"exp":     time.Now().Add(7 * 24 * time.Hour).Unix(),
+	})
+	return token.SignedString([]byte(secret))
 }
 
 // 获取当前登录用户信息

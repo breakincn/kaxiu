@@ -32,9 +32,14 @@ func TechnicianLogin(c *gin.Context) {
 
 	account := strings.TrimSpace(input.Account)
 	password := strings.TrimSpace(input.Password)
+	rlKey, ok := enforceLoginRateLimit(c, "staff", slug+"|"+account)
+	if !ok {
+		return
+	}
 
 	var shopSlug models.MerchantShopSlug
 	if err := config.DB.Where("slug = ?", slug).First(&shopSlug).Error; err != nil {
+		recordLoginFailure(rlKey)
 		c.JSON(http.StatusNotFound, gin.H{"error": "店铺不存在"})
 		return
 	}
@@ -43,16 +48,19 @@ func TechnicianLogin(c *gin.Context) {
 
 	var tech models.Technician
 	if err := config.DB.Preload("ServiceRole").Where("merchant_id = ? AND account = ?", merchantID, account).First(&tech).Error; err != nil {
+		recordLoginFailure(rlKey)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "账号或密码错误"})
 		return
 	}
 
 	if !tech.IsActive {
+		recordLoginFailure(rlKey)
 		c.JSON(http.StatusForbidden, gin.H{"error": "账号已禁用"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(tech.Password), []byte(password)); err != nil {
+		recordLoginFailure(rlKey)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "账号或密码错误"})
 		return
 	}
@@ -75,12 +83,18 @@ func TechnicianLogin(c *gin.Context) {
 		"exp":             time.Now().Add(time.Hour * 24 * 7).Unix(),
 	})
 
-	tokenString, err := token.SignedString([]byte("your-secret-key"))
+	secret := config.JWTSecret()
+	if secret == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "登录服务未配置"})
+		return
+	}
+	tokenString, err := token.SignedString([]byte(secret))
 	if err != nil {
 		log.Printf("生成token失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "登录失败"})
 		return
 	}
+	recordLoginSuccess(rlKey)
 
 	log.Printf("技师登录成功(店铺路径): ID=%d, 账号=%s, merchant_id=%d, slug=%s", tech.ID, tech.Account, merchantID, slug)
 
@@ -90,10 +104,11 @@ func TechnicianLogin(c *gin.Context) {
 			"id": merchantID,
 		},
 		"technician": gin.H{
-			"id":      tech.ID,
-			"name":    tech.Name,
-			"code":    tech.Code,
-			"account": tech.Account,
+			"id":                  tech.ID,
+			"name":                tech.Name,
+			"code":                tech.Code,
+			"account":             tech.Account,
+			"password_need_reset": tech.PasswordNeedReset,
 			"service_role": gin.H{
 				"id":   tech.ServiceRole.ID,
 				"key":  tech.ServiceRole.Key,

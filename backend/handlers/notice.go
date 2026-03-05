@@ -10,7 +10,10 @@ import (
 )
 
 func GetMerchantNotices(c *gin.Context) {
-	merchantID := c.Param("id")
+	merchantID, ok := ensureMerchantScope(c, "id")
+	if !ok {
+		return
+	}
 	limit := c.DefaultQuery("limit", "10")
 
 	var notices []models.Notice
@@ -25,8 +28,13 @@ func GetMerchantNotices(c *gin.Context) {
 }
 
 func CreateNotice(c *gin.Context) {
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+
 	var input struct {
-		MerchantID uint   `json:"merchant_id" binding:"required"`
+		MerchantID *uint  `json:"merchant_id"`
 		Title      string `json:"title" binding:"required"`
 		Content    string `json:"content" binding:"required"`
 	}
@@ -35,17 +43,21 @@ func CreateNotice(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if input.MerchantID != nil && *input.MerchantID != merchantID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "merchant_id 与登录态不一致"})
+		return
+	}
 
 	// 检查该商户的通知数量
 	var count int64
-	config.DB.Model(&models.Notice{}).Where("merchant_id = ?", input.MerchantID).Count(&count)
+	config.DB.Model(&models.Notice{}).Where("merchant_id = ?", merchantID).Count(&count)
 	if count >= 3 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "最多只能发布3条通知，请先删除一条后再发布"})
 		return
 	}
 
 	notice := models.Notice{
-		MerchantID: input.MerchantID,
+		MerchantID: merchantID,
 		Title:      input.Title,
 		Content:    input.Content,
 		IsPinned:   false,
@@ -57,10 +69,14 @@ func CreateNotice(c *gin.Context) {
 
 // 删除通知
 func DeleteNotice(c *gin.Context) {
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
 	noticeID := c.Param("id")
 
 	var notice models.Notice
-	if err := config.DB.First(&notice, noticeID).Error; err != nil {
+	if err := config.DB.Where("id = ? AND merchant_id = ?", noticeID, merchantID).First(&notice).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "通知不存在"})
 		return
 	}
@@ -71,10 +87,14 @@ func DeleteNotice(c *gin.Context) {
 
 // 置顶/取消置顶通知
 func TogglePinNotice(c *gin.Context) {
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
 	noticeID := c.Param("id")
 
 	var notice models.Notice
-	if err := config.DB.First(&notice, noticeID).Error; err != nil {
+	if err := config.DB.Where("id = ? AND merchant_id = ?", noticeID, merchantID).First(&notice).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "通知不存在"})
 		return
 	}

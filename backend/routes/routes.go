@@ -152,6 +152,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	// 技师自身
 	auth.GET("/technician/me", handlers.GetCurrentTechnician)
 	auth.POST("/technician/bind-phone", handlers.BindTechnicianPhone)
+	auth.POST("/technician/password/reset", handlers.ResetTechnicianPassword)
 
 	// 技师账号管理
 	auth.GET("/technicians", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantTechnicians)

@@ -68,10 +68,30 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 
+const clearConflictingAuthStateBeforeUserLogin = () => {
+  // 仅清理与当前用户登录场景冲突的商户/技师状态，避免旧token干扰
+  localStorage.removeItem('merchantToken')
+  localStorage.removeItem('merchantId')
+  localStorage.removeItem('merchantName')
+  localStorage.removeItem('merchantPhone')
+  localStorage.removeItem('technicianToken')
+  localStorage.removeItem('technicianMerchantId')
+  localStorage.removeItem('technicianMerchantName')
+  localStorage.removeItem('technicianMerchantPhone')
+  sessionStorage.removeItem('merchantActiveAuth')
+  sessionStorage.removeItem('technicianShopSlug')
+  sessionStorage.removeItem('technicianId')
+  sessionStorage.removeItem('technicianName')
+  sessionStorage.removeItem('technicianCode')
+  sessionStorage.removeItem('technicianAccount')
+  sessionStorage.removeItem('technicianRoleName')
+}
+
 const handleLogin = async () => {
   loading.value = true
   
   try {
+    clearConflictingAuthStateBeforeUserLogin()
     const res = await authApi.login(username.value, password.value)
     const { token, user_id, nickname } = res.data.data
     
