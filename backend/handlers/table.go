@@ -187,7 +187,11 @@ func TableRooms(c *gin.Context) {
 			}
 
 			if models.NormalizeSessionStatus(s.Status) == "start_pending" && s.StartConfirmedAt == nil && s.UpdatedAt != nil {
-				startDeadline := s.UpdatedAt.Add(config.StartPendingTimeout())
+				timeout := config.StartPendingTimeout()
+				if s.StartPendingTimeoutSeconds > 0 {
+					timeout = time.Duration(s.StartPendingTimeoutSeconds) * time.Second
+				}
+				startDeadline := s.UpdatedAt.Add(timeout)
 				startRemain := int64(startDeadline.Sub(now).Seconds())
 				if startRemain < 0 {
 					startRemain = 0
@@ -349,7 +353,11 @@ func TableStaff(c *gin.Context) {
 			}
 
 			if models.NormalizeSessionStatus(s.Status) == "start_pending" && s.StartConfirmedAt == nil && s.UpdatedAt != nil {
-				startDeadline := s.UpdatedAt.Add(config.StartPendingTimeout())
+				timeout := config.StartPendingTimeout()
+				if s.StartPendingTimeoutSeconds > 0 {
+					timeout = time.Duration(s.StartPendingTimeoutSeconds) * time.Second
+				}
+				startDeadline := s.UpdatedAt.Add(timeout)
 				startRemain := int64(startDeadline.Sub(now).Seconds())
 				if startRemain < 0 {
 					startRemain = 0

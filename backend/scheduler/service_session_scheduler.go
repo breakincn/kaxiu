@@ -857,12 +857,65 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			return handleAutoFinishing(tx, &s, now)
 		case "timeout_waiting":
 			return handleTimeoutWaiting(tx, &s, now)
+		case "timeout_failed":
+			return handleTimeoutFailed(tx, &s, now)
 		case "finished":
 			return releaseTechnicianIfNeeded(tx, &s, now)
 		default:
 			return nil
 		}
 	})
+}
+
+func handleTimeoutFailed(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
+	if tx == nil || s == nil {
+		return nil
+	}
+	if s.InitialUsageID == 0 {
+		return nil
+	}
+
+	finishedAt := now
+	if s.FinishedAt != nil {
+		finishedAt = *s.FinishedAt
+	}
+
+	var merchant models.Merchant
+	if err := tx.Select("id", "support_queue").First(&merchant, s.MerchantID).Error; err == nil {
+		if merchant.SupportQueue && queue.Default != nil {
+			date := now.Format("2006-01-02")
+			queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
+		}
+	}
+
+	var usage models.Usage
+	if err := tx.Select("id", "card_id", "used_times", "status").First(&usage, s.InitialUsageID).Error; err != nil {
+		return nil
+	}
+
+	if usage.Status == "in_progress" {
+		if err := tx.Model(&models.Usage{}).
+			Where("id = ? AND status = ?", usage.ID, "in_progress").
+			Updates(map[string]interface{}{
+				"status":      "failed",
+				"finished_at": finishedAt,
+			}).Error; err != nil {
+			return err
+		}
+
+		if usage.CardID > 0 && usage.UsedTimes > 0 {
+			if err := tx.Model(&models.Card{}).
+				Where("id = ?", usage.CardID).
+				Updates(map[string]interface{}{
+					"remain_times": gorm.Expr("remain_times + ?", usage.UsedTimes),
+					"used_times":   gorm.Expr("used_times - ?", usage.UsedTimes),
+				}).Error; err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func advanceQueueAutoSingleSerialIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {

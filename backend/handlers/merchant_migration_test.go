@@ -243,3 +243,38 @@ func TestUpdateCurrentMerchantServices_DowngradesQueueModeWhenSupportOrderComple
 		t.Fatalf("queue_mode should become manual, got %s", got.QueueMode)
 	}
 }
+
+func TestUpdateCurrentMerchantServices_RejectsQueueAndCustomerServiceModeConflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupMerchantHandlerTestDB(t)
+
+	m := models.Merchant{
+		Name:                       "m",
+		Phone:                      "18800001005",
+		Password:                   "pwd",
+		SupportQueue:               false,
+		SupportCustomerService:     true,
+		SupportCustomerServiceMode: false,
+		QueueMode:                  "manual",
+	}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"support_queue":                true,
+		"support_customer_service_mode": true,
+	})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/services", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("merchant_id", m.ID)
+
+	UpdateCurrentMerchantServices(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}

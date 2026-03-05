@@ -14,7 +14,7 @@ import (
 
 func setupSchedulerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := "file:scheduler_service_session_test?mode=memory&cache=shared&_loc=auto"
+	dsn := "file:scheduler_service_session_test?mode=memory&cache=shared&_loc=auto&_time_format=2006-01-02 15:04:05.999"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
@@ -224,6 +224,104 @@ func TestAdvanceOne_ManualStaffSelecting_CrossDayCancelAndRefund(t *testing.T) {
 	}
 }
 
+func TestAdvanceOne_TimeoutFailed_DoesIdempotentCleanup(t *testing.T) {
+	oldQueue := queue.Default
+	defer func() { queue.Default = oldQueue }()
+
+	db := setupSchedulerTestDB(t)
+	fq := &fakeQueueStore{}
+	queue.Default = fq
+
+	now := time.Now()
+	m := models.Merchant{
+		Name:         "m-timeout-failed",
+		Phone:        "18800000108",
+		Password:     "pwd",
+		SupportQueue: true,
+		QueueMode:    "manual",
+	}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	// 卡初始：remain=9 used=1（模拟核销已扣一次）
+	c := models.Card{MerchantID: m.ID, UserID: 1, CardNo: "c-timeout", CardType: "t", TotalTimes: 10, RemainTimes: 9, UsedTimes: 1}
+	if err := db.Create(&c).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+
+	// usage in_progress，used_times=1
+	u := models.Usage{MerchantID: m.ID, CardID: c.ID, UsedTimes: 1, Status: "in_progress"}
+	if err := db.Create(&u).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	s := models.ServiceSession{
+		MerchantID:     m.ID,
+		CardID:         c.ID,
+		InitialUsageID: u.ID,
+		Status:         "timeout_failed",
+		CreatedAt:      &now,
+		UpdatedAt:      &now,
+	}
+	if err := db.Create(&s).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	if err := advanceOne(db, &s, now); err != nil {
+		t.Fatalf("advanceOne failed: %v", err)
+	}
+	if fq.markDoneCount == 0 {
+		t.Fatalf("want MarkDone called at least once")
+	}
+
+	var gotU struct {
+		Status     string
+		FinishedAt string `gorm:"column:finished_at"`
+	}
+	if err := db.Table("usages").Select("status, finished_at").Where("id = ?", u.ID).Scan(&gotU).Error; err != nil {
+		t.Fatalf("reload usage failed: %v", err)
+	}
+	if gotU.Status != "failed" {
+		t.Fatalf("want usage failed, got %s", gotU.Status)
+	}
+	if gotU.FinishedAt == "" {
+		t.Fatalf("want usage finished_at set")
+	}
+
+	var gotC struct {
+		RemainTimes int
+		UsedTimes   int
+	}
+	if err := db.Table("cards").Select("remain_times, used_times").Where("id = ?", c.ID).Scan(&gotC).Error; err != nil {
+		t.Fatalf("reload card failed: %v", err)
+	}
+	if gotC.RemainTimes != 10 {
+		t.Fatalf("want card remain_times=10, got %d", gotC.RemainTimes)
+	}
+	if gotC.UsedTimes != 0 {
+		t.Fatalf("want card used_times=0, got %d", gotC.UsedTimes)
+	}
+
+	markDoneAfterFirst := fq.markDoneCount
+	if err := advanceOne(db, &s, now.Add(5*time.Second)); err != nil {
+		t.Fatalf("advanceOne second run failed: %v", err)
+	}
+	if fq.markDoneCount < markDoneAfterFirst {
+		t.Fatalf("markDoneCount should not decrease")
+	}
+	var gotC2 struct {
+		RemainTimes int
+		UsedTimes   int
+	}
+	if err := db.Table("cards").Select("remain_times, used_times").Where("id = ?", c.ID).Scan(&gotC2).Error; err != nil {
+		t.Fatalf("reload card second run failed: %v", err)
+	}
+	if gotC2.RemainTimes != 10 || gotC2.UsedTimes != 0 {
+		t.Fatalf("card times should remain idempotent, got remain=%d used=%d", gotC2.RemainTimes, gotC2.UsedTimes)
+	}
+}
+
 func TestRunOnce_FinishedNotStarveActiveSessions(t *testing.T) {
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
@@ -231,7 +329,6 @@ func TestRunOnce_FinishedNotStarveActiveSessions(t *testing.T) {
 	db := setupSchedulerTestDB(t)
 	config.DB = db
 
-	now := time.Now()
 	m := models.Merchant{
 		Name:     "m-starve",
 		Phone:    "18800000104",
@@ -242,12 +339,10 @@ func TestRunOnce_FinishedNotStarveActiveSessions(t *testing.T) {
 	}
 
 	// 大量低ID finished 会话，模拟旧批次里会挤占 limit(200)
-	finishedAt := now.Add(-10 * time.Minute)
 	for i := 0; i < 220; i++ {
 		s := models.ServiceSession{
 			MerchantID:             m.ID,
 			Status:                 "finished",
-			FinishedAt:             &finishedAt,
 			AutoIdleAfterSeconds:   180,
 			AutoFinishDelaySeconds: 60,
 		}

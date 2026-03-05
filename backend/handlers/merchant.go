@@ -315,6 +315,23 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		return
 	}
 
+	// 配置互斥：客服模式 与 叫号模式 不允许同时开启。
+	// 说明：运行时 ResolveSessionMode 会以客服模式优先，但允许冲突值落库会增加排障成本。
+	{
+		targetSupportQueue := merchant.SupportQueue
+		if input.SupportQueue != nil {
+			targetSupportQueue = *input.SupportQueue
+		}
+		targetSupportCustomerServiceMode := merchant.SupportCustomerServiceMode
+		if input.SupportCustomerServiceMode != nil {
+			targetSupportCustomerServiceMode = *input.SupportCustomerServiceMode
+		}
+		if targetSupportQueue && targetSupportCustomerServiceMode {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "客服模式与叫号模式互斥，请先关闭其中一个"})
+			return
+		}
+	}
+
 	// 叫号模式切换保护：当存在进行中的会话时，不允许切换 queue_mode 或 support_multi_customer_service。
 	// 说明：scheduler 会按商户最新配置推进旧会话，切换可能导致进行中会话被跳号/取消。
 	{

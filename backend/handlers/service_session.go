@@ -460,6 +460,8 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 						return err
 					}
 
+					queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
+
 					if err := tx.Model(&models.Usage{}).
 						Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
 						Updates(map[string]interface{}{
