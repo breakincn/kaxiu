@@ -30,6 +30,8 @@ type apiErr struct {
 
 func (e apiErr) Error() string { return e.msg }
 
+const verifyHandCardUnreturnedGuardWindow = 8*time.Minute + 5*time.Second
+
 func parseDatePtr(v string) (*time.Time, error) {
 	if v == "" {
 		return nil, nil
@@ -68,6 +70,42 @@ func nextMerchantCardNo(tx *gorm.DB, merchantID uint) (string, error) {
 		seq = 1
 	}
 	return fmt.Sprintf("%05d", seq), nil
+}
+
+func verifyHandCardUnreturnedAgeGuard(tx *gorm.DB, merchantID uint, supportHandCard bool, now time.Time) error {
+	if !supportHandCard {
+		return nil
+	}
+
+	cutoff := now.Add(-verifyHandCardUnreturnedGuardWindow)
+	var usage models.Usage
+	err := tx.
+		Select("hand_card_no").
+		Where("merchant_id = ?", merchantID).
+		Where("hand_card_returned_at IS NULL").
+		Where("hand_card_no IS NOT NULL AND hand_card_no <> ''").
+		Where("(hand_card_assigned_at IS NOT NULL AND hand_card_assigned_at <= ?) OR (hand_card_assigned_at IS NULL AND used_at IS NOT NULL AND used_at <= ?)", cutoff, cutoff).
+		Order("COALESCE(hand_card_assigned_at, used_at) asc, id asc").
+		First(&usage).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+
+	no := ""
+	if usage.HandCardNo != nil {
+		no = strings.TrimSpace(*usage.HandCardNo)
+	}
+	if no == "" {
+		return nil
+	}
+
+	return apiErr{
+		status: http.StatusBadRequest,
+		msg:    fmt.Sprintf("你尚有未归还的手牌%s，请先归还手牌再核销", no),
+	}
 }
 
 func GetCards(c *gin.Context) {
@@ -786,6 +824,9 @@ func VerifyCard(c *gin.Context) {
 		if card.MerchantID != merchantID {
 			return apiErr{status: http.StatusForbidden, msg: "无权核销此卡"}
 		}
+		if err := verifyHandCardUnreturnedAgeGuard(tx, merchantID, merchant.SupportHandCard, now); err != nil {
+			return err
+		}
 
 		if card.Locked {
 			msg := "卡片已锁定"
@@ -1239,6 +1280,9 @@ func ScanVerifyCard(c *gin.Context) {
 			}
 			if card.MerchantID != merchantID {
 				return apiErr{status: http.StatusForbidden, msg: "无权核销此卡"}
+			}
+			if err := verifyHandCardUnreturnedAgeGuard(tx, merchantID, merchant.SupportHandCard, now); err != nil {
+				return err
 			}
 			if card.Locked {
 				msg := "卡片已锁定"
