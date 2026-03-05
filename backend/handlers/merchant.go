@@ -405,8 +405,9 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	}
 	if input.SupportOrderComplete != nil {
 		updates["support_order_complete"] = *input.SupportOrderComplete
-		// 关闭结单时：若此前开启了自动叫号，则同步降级为人工叫号
-		if !*input.SupportOrderComplete {
+		// 仅在本次请求真实发生 true->false 时才允许联动降级，
+		// 避免手牌等无关开关保存时（前端会回传 support_order_complete 当前值）误改 queue_mode。
+		if merchant.SupportOrderComplete && !*input.SupportOrderComplete && input.QueueMode == nil {
 			if strings.TrimSpace(merchant.QueueMode) == "auto" {
 				updates["queue_mode"] = "manual"
 			}
