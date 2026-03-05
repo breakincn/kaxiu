@@ -192,13 +192,6 @@ const registerForm = ref({
   invite_code: ''
 })
 
-const clearConflictingAuthStateBeforeMerchantLogin = () => {
-  // 仅清理与商户/技师登录冲突的用户侧状态，避免旧token污染请求
-  localStorage.removeItem('userToken')
-  localStorage.removeItem('userId')
-  localStorage.removeItem('userName')
-}
-
 const startCountdown = () => {
   countdown.value = 60
   timer = setInterval(() => {
@@ -244,7 +237,6 @@ const handleLogin = async () => {
   loading.value = true
   
   try {
-    clearConflictingAuthStateBeforeMerchantLogin()
     const res = isTechnicianLogin.value
       ? await shopApi.technicianLogin(shopSlug.value, phone.value, password.value)
       : await merchantApi.login(phone.value, password.value)

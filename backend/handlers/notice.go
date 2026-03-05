@@ -4,14 +4,29 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 func GetMerchantNotices(c *gin.Context) {
-	merchantID, ok := ensureMerchantScope(c, "id")
-	if !ok {
+	merchantIDParam := strings.TrimSpace(c.Param("id"))
+	merchantID64, err := strconv.ParseUint(merchantIDParam, 10, 32)
+	if err != nil || merchantID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的商户ID"})
+		return
+	}
+	merchantID := uint(merchantID64)
+
+	// 商户端请求必须满足租户边界；用户端允许读取商户通知用于展示。
+	if _, hasMerchant := c.Get("merchant_id"); hasMerchant {
+		if _, ok := ensureMerchantScope(c, "id"); !ok {
+			return
+		}
+	} else if _, hasUser := c.Get("user_id"); !hasUser {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
 		return
 	}
 	limit := c.DefaultQuery("limit", "10")

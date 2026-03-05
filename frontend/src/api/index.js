@@ -36,7 +36,10 @@ const normalizeRequestPath = (config) => {
     const path = String(u.pathname || '').trim()
     return path.startsWith('/api/') ? path.slice(4) : path
   } catch (_) {
-    const path = raw.split('?')[0].split('#')[0].trim()
+    let path = raw.split('?')[0].split('#')[0].trim()
+    if (path && !path.startsWith('/')) {
+      path = `/${path}`
+    }
     if (path.startsWith('/api/')) return path.slice(4)
     return path
   }
@@ -54,6 +57,17 @@ const isPublicAuthRequest = (config) => {
   if (path === '/merchant/register') return true
   if (path === '/platform-admin/login') return true
   if (/^\/merchant\/s\/[^/]+\/login$/.test(path)) return true
+  return false
+}
+
+const isCrossContextRequest = (config) => {
+  const path = normalizeRequestPath(config)
+  if (!path) return false
+  const isMerchantReq = path.startsWith('/merchant/')
+  const isUserReq = path.startsWith('/user/')
+  const currentIsMerchant = isMerchantContextPath(window.location.pathname)
+  if (isMerchantReq && !currentIsMerchant) return true
+  if (isUserReq && currentIsMerchant) return true
   return false
 }
 
@@ -116,6 +130,12 @@ api.interceptors.response.use(
       // 当前已在登录页时，401只交给页面自身处理，避免二次跳转循环
       if (isLoginPagePath(window.location.pathname)) {
         console.log('login-page 401，跳过全局重定向')
+        return Promise.reject(error)
+      }
+
+      // 跨上下文请求（如用户页误打商户接口）不触发全局登出，避免误伤登录流程
+      if (isCrossContextRequest(error.config)) {
+        console.log('cross-context 401，跳过全局登录态清理')
         return Promise.reject(error)
       }
       
