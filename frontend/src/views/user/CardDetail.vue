@@ -936,6 +936,27 @@ const getStartPendingTimeoutMs = (usage) => {
   return fromCard * 1000
 }
 
+const getUsageSessionStartPendingRemainingSeconds = (usage) => {
+  const n = Number(usage?.service_session_start_pending_remaining_seconds || 0)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  return Math.floor(n)
+}
+
+const getQueueStartPendingRemainMs = (usage, nowMs) => {
+  const remainSeconds = getUsageSessionStartPendingRemainingSeconds(usage)
+  if (remainSeconds > 0) return remainSeconds * 1000
+
+  const baseMs = getUsageSessionUpdatedAtMs(usage)
+  if (!baseMs) return 0
+  const timeoutSeconds = Number(usage?.service_session_start_pending_timeout_seconds || 0) > 0
+    ? Number(usage?.service_session_start_pending_timeout_seconds)
+    : 180
+  const deadlineMs = baseMs + timeoutSeconds * 1000
+  const diff = deadlineMs - nowMs
+  if (!Number.isFinite(diff) || diff <= 0) return 0
+  return diff
+}
+
 const getStartScanTimeoutMs = () => {
   const fromCard = Number(card.value?.start_scan_timeout_seconds || 0)
   if (Number.isFinite(fromCard) && fromCard > 0) return fromCard * 1000
@@ -1121,12 +1142,26 @@ const getUsageStatusCountdownText = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s !== 'in_progress') return ''
 
+  const merchant = card.value?.merchant
   const supportRoom = Boolean(card.value?.merchant?.support_room)
   const supportCSMode = Boolean(card.value?.merchant?.support_customer_service_mode)
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = normalizeSessionStatus(usage?.service_session_status)
   const precheckedAt = usage?.service_session_start_confirmed_at
   const now = nowTick.value
+  const { isQueueSession, isMultiQueueSession } = getQueueSessionMeta(usage, merchant)
+
+  // 叫号模式待上号倒计时：与客服端保持同一口径
+  if (isQueueSession && sessStatus === 'start_pending' && !precheckedAt) {
+    if (isMultiQueueSession && !usage?.service_technician) return ''
+    const diff = getQueueStartPendingRemainMs(usage, now)
+    if (diff <= 0) return ''
+    const totalSeconds = Math.floor(diff / 1000)
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    const pad2 = (n) => String(n).padStart(2, '0')
+    return `待上号倒计时 ${minutes}:${pad2(seconds)}`
+  }
 
   // 待选房间倒计时（90秒）
   if (supportCSMode && supportRoom && sessStatus === 'room_selecting' && usage?.room_select_deadline_at) {
@@ -1242,6 +1277,12 @@ const getUsageStatusCountdownClass = (usage) => {
   const supportCS = Boolean(card.value?.merchant?.support_customer_service)
   const sessStatus = normalizeSessionStatus(usage?.service_session_status)
   const precheckedAt = usage?.service_session_start_confirmed_at
+  const { isQueueSession, isMultiQueueSession } = getQueueSessionMeta(usage, card.value?.merchant)
+
+  if (isQueueSession && sessStatus === 'start_pending' && !precheckedAt) {
+    if (isMultiQueueSession && !usage?.service_technician) return 'text-gray-400'
+    return 'text-red-500'
+  }
 
   // 待选房间倒计时（橙色）
   if (supportCSMode && supportRoom && sessStatus === 'room_selecting' && usage?.room_select_deadline_at) {

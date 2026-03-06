@@ -646,6 +646,7 @@ func GetServiceSession(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "会话不存在"})
 		return
 	}
+	s.StartPendingRemainingSeconds = computeStartPendingRemainingSecondsForSession(&s, time.Now())
 	c.JSON(http.StatusOK, gin.H{"data": s})
 }
 
@@ -672,6 +673,10 @@ func ListServiceSessions(c *gin.Context) {
 
 	var list []models.ServiceSession
 	q.Order("id desc").Limit(200).Find(&list)
+	now := time.Now()
+	for i := range list {
+		list[i].StartPendingRemainingSeconds = computeStartPendingRemainingSecondsForSession(&list[i], now)
+	}
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
 

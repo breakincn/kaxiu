@@ -20,32 +20,32 @@ func (User) TableComment() string {
 }
 
 type Merchant struct {
-	ID                       uint   `json:"id" gorm:"primaryKey;comment:商户ID"`
-	Name                     string `json:"name" gorm:"size:100;comment:商户名称"`
-	Phone                    string `json:"phone" gorm:"size:20;uniqueIndex;comment:手机号"`
-	Password                 string `json:"-" gorm:"size:255;comment:登录密码（bcrypt加密）"`
-	Type                     string `json:"type" gorm:"size:50;comment:商户类型（如：理发、美容等）"`
-	SupportAppointment       bool   `json:"support_appointment" gorm:"default:false;comment:是否支持预约（0-不支持，1-支持）"`
-	SupportQueue             bool   `json:"support_queue" gorm:"default:false;comment:是否支持叫号/排队（0-不支持，1-支持）"`
-	SupportProject           bool   `json:"support_project" gorm:"default:false;comment:是否开启项目服务（0-不开启，1-开启）"`
-	SupportRoom              bool   `json:"support_room" gorm:"default:false;comment:是否启用房间/教室功能（0-不启用，1-启用）"`
-	SupportTechnicianCheckin bool   `json:"support_technician_checkin" gorm:"default:false;comment:是否启用工作人员签到（0-不启用，1-启用）"`
-	SupportHandCard          bool   `json:"support_hand_card" gorm:"default:false;comment:是否开启发手牌功能（0-不开启，1-开启）"`
-	QueuePrefix              string `json:"queue_prefix" gorm:"size:20;default:'';comment:叫号前缀（如A、B）"`
-	QueueStartNo             int    `json:"queue_start_no" gorm:"default:1;comment:叫号起始号码"`
-	QueueMode                string `json:"queue_mode" gorm:"size:20;default:'auto';comment:叫号模式（auto-自动叫号，manual-人工叫号）"`
-	QueueWindowTerm          string `json:"queue_window_term" gorm:"size:20;default:'窗口';comment:叫号窗口自定义名词（默认：窗口，可自定义如：台号、工位等）"`
-	QueuePaused              bool   `json:"queue_paused" gorm:"default:false;comment:叫号是否全局暂停（0-正常，1-暂停）"`
-	QueueEndedAt             *time.Time `json:"queue_ended_at" gorm:"type:datetime(3);comment:结束叫号时间（用于打烊后自动收尾）"`
-	SupportDirectSale        bool   `json:"support_direct_sale" gorm:"default:false;comment:是否支持直购售卡（0-不支持，1-支持）"`
-	SupportCustomerService   bool   `json:"support_customer_service" gorm:"default:false;comment:是否开启客服账号设置功能（0-不开启，1-开启）"`
-	SupportCustomerServiceMode bool `json:"support_customer_service_mode" gorm:"default:false;comment:是否开启客服选择模式（0-不开启，1-开启，需先开启SupportCustomerService）"`
-	SupportMultiCustomerService bool `json:"support_multi_customer_service" gorm:"default:false;comment:是否开启多个客服（多窗口叫号）"`
-	SupportOrderComplete     bool   `json:"support_order_complete" gorm:"default:false;comment:是否开启结单功能（0-不开启，1-开启）"`
-	StartDelaySeconds        int    `json:"start_delay_seconds" gorm:"default:60;comment:核销起单延迟秒数（未开启客服但开启结单时使用）"`
-	TechnicianAlias          string `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
-	StartTerm               string `json:"start_term" gorm:"size:20;default:'';comment:起单显示名词（可为空）"`
-	FinishTerm              string `json:"finish_term" gorm:"size:20;default:'';comment:结单显示名词（可为空）"`
+	ID                          uint       `json:"id" gorm:"primaryKey;comment:商户ID"`
+	Name                        string     `json:"name" gorm:"size:100;comment:商户名称"`
+	Phone                       string     `json:"phone" gorm:"size:20;uniqueIndex;comment:手机号"`
+	Password                    string     `json:"-" gorm:"size:255;comment:登录密码（bcrypt加密）"`
+	Type                        string     `json:"type" gorm:"size:50;comment:商户类型（如：理发、美容等）"`
+	SupportAppointment          bool       `json:"support_appointment" gorm:"default:false;comment:是否支持预约（0-不支持，1-支持）"`
+	SupportQueue                bool       `json:"support_queue" gorm:"default:false;comment:是否支持叫号/排队（0-不支持，1-支持）"`
+	SupportProject              bool       `json:"support_project" gorm:"default:false;comment:是否开启项目服务（0-不开启，1-开启）"`
+	SupportRoom                 bool       `json:"support_room" gorm:"default:false;comment:是否启用房间/教室功能（0-不启用，1-启用）"`
+	SupportTechnicianCheckin    bool       `json:"support_technician_checkin" gorm:"default:false;comment:是否启用工作人员签到（0-不启用，1-启用）"`
+	SupportHandCard             bool       `json:"support_hand_card" gorm:"default:false;comment:是否开启发手牌功能（0-不开启，1-开启）"`
+	QueuePrefix                 string     `json:"queue_prefix" gorm:"size:20;default:'';comment:叫号前缀（如A、B）"`
+	QueueStartNo                int        `json:"queue_start_no" gorm:"default:1;comment:叫号起始号码"`
+	QueueMode                   string     `json:"queue_mode" gorm:"size:20;default:'auto';comment:叫号模式（auto-自动叫号，manual-人工叫号）"`
+	QueueWindowTerm             string     `json:"queue_window_term" gorm:"size:20;default:'窗口';comment:叫号窗口自定义名词（默认：窗口，可自定义如：台号、工位等）"`
+	QueuePaused                 bool       `json:"queue_paused" gorm:"default:false;comment:叫号是否全局暂停（0-正常，1-暂停）"`
+	QueueEndedAt                *time.Time `json:"queue_ended_at" gorm:"type:datetime(3);comment:结束叫号时间（用于打烊后自动收尾）"`
+	SupportDirectSale           bool       `json:"support_direct_sale" gorm:"default:false;comment:是否支持直购售卡（0-不支持，1-支持）"`
+	SupportCustomerService      bool       `json:"support_customer_service" gorm:"default:false;comment:是否开启客服账号设置功能（0-不开启，1-开启）"`
+	SupportCustomerServiceMode  bool       `json:"support_customer_service_mode" gorm:"default:false;comment:是否开启客服选择模式（0-不开启，1-开启，需先开启SupportCustomerService）"`
+	SupportMultiCustomerService bool       `json:"support_multi_customer_service" gorm:"default:false;comment:是否开启多个客服（多窗口叫号）"`
+	SupportOrderComplete        bool       `json:"support_order_complete" gorm:"default:false;comment:是否开启结单功能（0-不开启，1-开启）"`
+	StartDelaySeconds           int        `json:"start_delay_seconds" gorm:"default:60;comment:核销起单延迟秒数（未开启客服但开启结单时使用）"`
+	TechnicianAlias             string     `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
+	StartTerm                   string     `json:"start_term" gorm:"size:20;default:'';comment:起单显示名词（可为空）"`
+	FinishTerm                  string     `json:"finish_term" gorm:"size:20;default:'';comment:结单显示名词（可为空）"`
 	// 手牌设置
 	HandCardPrefix  string `json:"hand_card_prefix" gorm:"size:20;default:'H';comment:手牌前缀"`
 	HandCardStartNo int    `json:"hand_card_start_no" gorm:"default:1;comment:手牌起始号码"`
@@ -144,24 +144,25 @@ type Usage struct {
 	HandCardReturnedAt *time.Time `json:"hand_card_returned_at" gorm:"type:datetime(3);comment:手牌归还时间"`
 	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
-	ServiceSessionID        *uint      `json:"service_session_id" gorm:"-"`
-	ServiceSessionStatus    string     `json:"service_session_status" gorm:"-"`
-	ServiceSessionStartConfirmedAt *time.Time `json:"service_session_start_confirmed_at" gorm:"-"`
-	ServiceSessionStartedAt *time.Time `json:"service_session_started_at" gorm:"-"`
-	ServiceSessionScheduledFinishAt *time.Time `json:"service_session_scheduled_finish_at" gorm:"-"`
-	ServiceSessionFinishedAt *time.Time `json:"service_session_finished_at" gorm:"-"`
-	ServiceSessionDurationMinutes int `json:"service_session_duration_minutes" gorm:"-"`
-	ServiceSessionUpdatedAt *time.Time `json:"service_session_updated_at" gorm:"-"`
-	ServiceSessionStartPendingTimeoutSeconds int `json:"service_session_start_pending_timeout_seconds" gorm:"-"`
-	RoomSelectDeadlineAt    *time.Time `json:"room_select_deadline_at" gorm:"-"`
-	RoomLockedAt            *time.Time `json:"room_locked_at" gorm:"-"`
-	StaffSelectCooldownUntil *time.Time `json:"staff_select_cooldown_until" gorm:"-"`
-	StaffSelectEnteredAt    *time.Time `json:"staff_select_entered_at" gorm:"-"`
-	ServiceRoom             *Room      `json:"service_room" gorm:"-"`
-	ServiceTechnician       *Technician `json:"service_technician" gorm:"-"`
-	StartTimeoutCount       int        `json:"start_timeout_count" gorm:"-"`
-	RevokeDeadlineAt        *time.Time `json:"revoke_deadline_at" gorm:"-"`
-	CanRevoke               bool       `json:"can_revoke" gorm:"-"`
+	ServiceSessionID                           *uint       `json:"service_session_id" gorm:"-"`
+	ServiceSessionStatus                       string      `json:"service_session_status" gorm:"-"`
+	ServiceSessionStartConfirmedAt             *time.Time  `json:"service_session_start_confirmed_at" gorm:"-"`
+	ServiceSessionStartedAt                    *time.Time  `json:"service_session_started_at" gorm:"-"`
+	ServiceSessionScheduledFinishAt            *time.Time  `json:"service_session_scheduled_finish_at" gorm:"-"`
+	ServiceSessionFinishedAt                   *time.Time  `json:"service_session_finished_at" gorm:"-"`
+	ServiceSessionDurationMinutes              int         `json:"service_session_duration_minutes" gorm:"-"`
+	ServiceSessionUpdatedAt                    *time.Time  `json:"service_session_updated_at" gorm:"-"`
+	ServiceSessionStartPendingTimeoutSeconds   int         `json:"service_session_start_pending_timeout_seconds" gorm:"-"`
+	ServiceSessionStartPendingRemainingSeconds int         `json:"service_session_start_pending_remaining_seconds" gorm:"-"`
+	RoomSelectDeadlineAt                       *time.Time  `json:"room_select_deadline_at" gorm:"-"`
+	RoomLockedAt                               *time.Time  `json:"room_locked_at" gorm:"-"`
+	StaffSelectCooldownUntil                   *time.Time  `json:"staff_select_cooldown_until" gorm:"-"`
+	StaffSelectEnteredAt                       *time.Time  `json:"staff_select_entered_at" gorm:"-"`
+	ServiceRoom                                *Room       `json:"service_room" gorm:"-"`
+	ServiceTechnician                          *Technician `json:"service_technician" gorm:"-"`
+	StartTimeoutCount                          int         `json:"start_timeout_count" gorm:"-"`
+	RevokeDeadlineAt                           *time.Time  `json:"revoke_deadline_at" gorm:"-"`
+	CanRevoke                                  bool        `json:"can_revoke" gorm:"-"`
 
 	Card       Card             `json:"card" gorm:"foreignKey:CardID"`
 	Merchant   Merchant         `json:"merchant" gorm:"foreignKey:MerchantID"`
@@ -210,10 +211,10 @@ type Appointment struct {
 	FailedReason    string     `json:"failed_reason" gorm:"size:255;default:'';comment:失败原因（自动分配失败时说明）"`
 	CreatedAt       *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
-	User       User        `json:"user" gorm:"foreignKey:UserID"`
-	Merchant   Merchant    `json:"merchant" gorm:"foreignKey:MerchantID"`
+	User       User             `json:"user" gorm:"foreignKey:UserID"`
+	Merchant   Merchant         `json:"merchant" gorm:"foreignKey:MerchantID"`
 	Project    *MerchantProject `json:"project" gorm:"foreignKey:ProjectID"`
-	Technician *Technician `json:"technician" gorm:"foreignKey:TechnicianID"`
+	Technician *Technician      `json:"technician" gorm:"foreignKey:TechnicianID"`
 }
 
 func (Appointment) TableName() string {

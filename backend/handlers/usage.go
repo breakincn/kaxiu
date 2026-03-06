@@ -199,6 +199,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		ScheduledFinishAt          *time.Time `gorm:"column:scheduled_finish_at"`
 		FinishedAt                 *time.Time `gorm:"column:finished_at"`
 		DurationMinutes            int        `gorm:"column:duration_minutes"`
+		CreatedAt                  *time.Time `gorm:"column:created_at"`
 		UpdatedAt                  *time.Time `gorm:"column:updated_at"`
 		StartPendingTimeoutSeconds int        `gorm:"column:start_pending_timeout_seconds"`
 		RoomSelectDeadlineAt       *time.Time `gorm:"column:room_select_deadline_at"`
@@ -210,7 +211,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions").
-		Select("id, initial_usage_id, project_id, status, room_id, technician_id, last_technician_id, start_timeout_count, start_confirmed_at, started_at, scheduled_finish_at, finished_at, duration_minutes, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until, staff_select_entered_at").
+		Select("id, initial_usage_id, project_id, status, room_id, technician_id, last_technician_id, start_timeout_count, start_confirmed_at, started_at, scheduled_finish_at, finished_at, duration_minutes, created_at, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until, staff_select_entered_at").
 		Where("initial_usage_id IN ?", ids).
 		Order("id desc").
 		Find(&sessions).Error; err != nil {
@@ -310,6 +311,8 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		}
 	}
 
+	remainNow := time.Now()
+
 	for i := range *usages {
 		u := &(*usages)[i]
 		if s, ok := byUsageID[u.ID]; ok {
@@ -324,6 +327,14 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 			u.ServiceSessionDurationMinutes = s.DurationMinutes
 			u.ServiceSessionUpdatedAt = s.UpdatedAt
 			u.ServiceSessionStartPendingTimeoutSeconds = s.StartPendingTimeoutSeconds
+			sessForRemain := models.ServiceSession{
+				Status:                     s.Status,
+				StartConfirmedAt:           startConfirmedAt,
+				StartPendingTimeoutSeconds: s.StartPendingTimeoutSeconds,
+				CreatedAt:                  s.CreatedAt,
+				UpdatedAt:                  s.UpdatedAt,
+			}
+			u.ServiceSessionStartPendingRemainingSeconds = computeStartPendingRemainingSecondsForSession(&sessForRemain, remainNow)
 			u.StartTimeoutCount = s.StartTimeoutCount
 			u.RoomSelectDeadlineAt = s.RoomSelectDeadlineAt
 			u.RoomLockedAt = s.RoomLockedAt

@@ -1952,6 +1952,15 @@ const syncContinueCallBlockedFromPendingSession = () => {
     return
   }
 
+  const remainFromServer = Number(s.start_pending_remaining_seconds || 0)
+  if (Number.isFinite(remainFromServer) && remainFromServer > 0) {
+    const remain = Math.floor(remainFromServer)
+    if (continueCallBlockedSeconds.value <= 0 || Math.abs(remain - continueCallBlockedSeconds.value) > 2) {
+      startContinueCallBlockedTimer(remain)
+    }
+    return
+  }
+
   const timeoutSeconds = Number(s.start_pending_timeout_seconds || 0) > 0 ? Number(s.start_pending_timeout_seconds) : 180
   const baseRaw = s.updated_at || s.created_at
   if (!baseRaw) return
