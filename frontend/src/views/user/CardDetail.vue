@@ -511,9 +511,6 @@ const estimatedMinutes = ref(0)
 const countdown = ref(0)
 let countdownTimer = null
 
-// 跟踪已刷新的自动结单记录，避免重复刷新
-const autoFinishingRefreshed = ref(new Set())
-
 
 const verifyCode = ref('')
 const codeExpireTime = ref('')
@@ -1007,6 +1004,43 @@ const getUsageServiceFinishAtMs = (usage) => {
   return 0
 }
 
+const getUsageRoomSelectDeadlineAtMs = (usage) => {
+  const raw = usage?.room_select_deadline_at
+  if (!raw) return 0
+  const ms = new Date(raw).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
+const getUsageStaffSelectCooldownDeadlineAtMs = (usage) => {
+  const raw = usage?.staff_select_cooldown_until
+  if (!raw) return 0
+  const ms = new Date(raw).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
+const getUsageStaffSelectAutoAssignDeadlineAtMs = (usage) => {
+  const baseRaw = usage?.staff_select_entered_at || usage?.room_locked_at
+  if (!baseRaw) return 0
+  const baseMs = new Date(baseRaw).getTime()
+  if (!Number.isFinite(baseMs) || baseMs <= 0) return 0
+  return baseMs + 5 * 60 * 1000
+}
+
+const getUsageStartTimeoutAutoAssignDeadlineAtMs = (usage) => {
+  const raw = usage?.staff_select_entered_at
+  if (!raw) return 0
+  const enteredAtMs = new Date(raw).getTime()
+  if (!Number.isFinite(enteredAtMs) || enteredAtMs <= 0) return 0
+  return enteredAtMs + 5 * 60 * 1000
+}
+
+const getUsageAutoFinishingDeadlineAtMs = (usage) => {
+  const raw = usage?.service_session_finished_at
+  if (!raw) return 0
+  const ms = new Date(raw).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
 const getUsageServiceStartAtText = (usage) => {
   if (String(usage?.status || '').trim() !== 'in_progress') return ''
   const ms = getUsageServiceStartAtMs(usage)
@@ -1145,6 +1179,220 @@ const startAutoAssignPollIfNeeded = () => {
   }, 2000)
 }
 
+const usageDeadlineTriggeredKeys = new Set()
+const usageDeadlineRetryState = new Map()
+let usageDeadlineMonitorRunning = false
+
+const getUsageCountdownRefreshMilestones = (usage) => {
+  const merchant = card.value?.merchant
+  const supportRoom = Boolean(merchant?.support_room)
+  const supportCSMode = Boolean(merchant?.support_customer_service_mode)
+  const supportCS = Boolean(merchant?.support_customer_service)
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
+  const precheckedAt = usage?.service_session_start_confirmed_at
+  const { isQueueSession, isMultiQueueSession } = getQueueSessionMeta(usage, merchant)
+  const milestones = []
+  const usageId = Number(usage?.id || 0)
+  if (!usageId) return milestones
+
+  if (isQueueSession && sessStatus === 'start_pending' && !precheckedAt) {
+    if (!(isMultiQueueSession && !usage?.service_technician)) {
+      const deadlineMs = getPrecheckDeadlineAtMs(usage)
+      if (deadlineMs > 0) {
+        milestones.push({ key: `usage:${usageId}:queue_start_pending_deadline`, deadlineMs, kind: 'queue_start_pending', usageId })
+      }
+    }
+  }
+
+  if (!isQueueSession && supportCS && sessStatus === 'start_pending' && !precheckedAt) {
+    const deadlineMs = getPrecheckDeadlineAtMs(usage)
+    if (deadlineMs > 0) {
+      milestones.push({ key: `usage:${usageId}:cs_start_pending_deadline`, deadlineMs, kind: 'cs_start_pending', usageId })
+    }
+  }
+
+  if (supportCSMode && supportRoom && sessStatus === 'room_selecting') {
+    const deadlineMs = getUsageRoomSelectDeadlineAtMs(usage)
+    if (deadlineMs > 0) {
+      milestones.push({ key: `usage:${usageId}:room_select_deadline`, deadlineMs, kind: 'room_select', usageId })
+    }
+  }
+
+  if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) {
+    const cooldownDeadlineMs = getUsageStaffSelectCooldownDeadlineAtMs(usage)
+    if (cooldownDeadlineMs > 0) {
+      milestones.push({ key: `usage:${usageId}:staff_select_cooldown_deadline`, deadlineMs: cooldownDeadlineMs, kind: 'staff_select_cooldown', usageId })
+    } else {
+      const autoAssignDeadlineMs = getUsageStaffSelectAutoAssignDeadlineAtMs(usage)
+      if (autoAssignDeadlineMs > 0) {
+        milestones.push({ key: `usage:${usageId}:staff_select_auto_assign_deadline`, deadlineMs: autoAssignDeadlineMs, kind: 'staff_select_auto_assign', usageId })
+      }
+    }
+  }
+
+  if (supportCS && isUsageStartTimeout(usage)) {
+    const deadlineMs = getUsageStartTimeoutAutoAssignDeadlineAtMs(usage)
+    if (deadlineMs > 0) {
+      milestones.push({ key: `usage:${usageId}:start_timeout_auto_assign_deadline`, deadlineMs, kind: 'start_timeout_auto_assign', usageId })
+    }
+  }
+
+  if (sessStatus === 'serving') {
+    const deadlineMs = getUsageServiceFinishAtMs(usage)
+    if (deadlineMs > 0) {
+      milestones.push({ key: `usage:${usageId}:service_finish_deadline`, deadlineMs, kind: 'service_finish', usageId })
+    }
+  }
+
+  if (sessStatus === 'auto_finishing') {
+    const deadlineMs = getUsageAutoFinishingDeadlineAtMs(usage)
+    if (deadlineMs > 0) {
+      milestones.push({ key: `usage:${usageId}:auto_finishing_deadline`, deadlineMs, kind: 'auto_finishing', usageId })
+    }
+  }
+
+  return milestones
+}
+
+const usageStillMatchesMilestoneKind = (usage, kind) => {
+  if (!usage) return false
+  const merchant = card.value?.merchant
+  const supportRoom = Boolean(merchant?.support_room)
+  const supportCSMode = Boolean(merchant?.support_customer_service_mode)
+  const supportCS = Boolean(merchant?.support_customer_service)
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
+  const precheckedAt = usage?.service_session_start_confirmed_at
+  const { isQueueSession, isMultiQueueSession } = getQueueSessionMeta(usage, merchant)
+
+  if (kind === 'queue_start_pending') {
+    return isQueueSession && sessStatus === 'start_pending' && !precheckedAt && !(isMultiQueueSession && !usage?.service_technician)
+  }
+  if (kind === 'cs_start_pending') {
+    return !isQueueSession && supportCS && sessStatus === 'start_pending' && !precheckedAt
+  }
+  if (kind === 'room_select') {
+    return supportCSMode && supportRoom && sessStatus === 'room_selecting'
+  }
+  if (kind === 'staff_select_cooldown') {
+    return supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') && getUsageStaffSelectCooldownDeadlineAtMs(usage) > 0
+  }
+  if (kind === 'staff_select_auto_assign') {
+    return supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') && getUsageStaffSelectCooldownDeadlineAtMs(usage) <= 0 && getUsageStaffSelectAutoAssignDeadlineAtMs(usage) > 0
+  }
+  if (kind === 'start_timeout_auto_assign') {
+    return supportCS && isUsageStartTimeout(usage) && getUsageStartTimeoutAutoAssignDeadlineAtMs(usage) > 0
+  }
+  if (kind === 'service_finish') {
+    return sessStatus === 'serving'
+  }
+  if (kind === 'auto_finishing') {
+    return sessStatus === 'auto_finishing'
+  }
+  return false
+}
+
+const clearInactiveUsageDeadlineState = () => {
+  const activeKeys = new Set()
+  for (const usage of usages.value || []) {
+    for (const milestone of getUsageCountdownRefreshMilestones(usage)) {
+      activeKeys.add(milestone.key)
+    }
+  }
+
+  for (const key of Array.from(usageDeadlineTriggeredKeys)) {
+    if (!activeKeys.has(key)) {
+      usageDeadlineTriggeredKeys.delete(key)
+    }
+  }
+
+  for (const [key] of Array.from(usageDeadlineRetryState.entries())) {
+    if (!activeKeys.has(key)) {
+      usageDeadlineRetryState.delete(key)
+    }
+  }
+}
+
+const scheduleUsageDeadlineRetry = (milestone, attempts = 4) => {
+  if (!milestone?.key) return
+  usageDeadlineRetryState.set(milestone.key, {
+    key: milestone.key,
+    usageId: milestone.usageId,
+    kind: milestone.kind,
+    remainingAttempts: attempts,
+    nextAtMs: nowTick.value + 1000
+  })
+}
+
+const triggerUsageDeadlineRefresh = async (milestone, options = {}) => {
+  if (!milestone?.key) return
+  const { withRetry = true } = options
+  await fetchUsages()
+  if (!withRetry) return
+
+  const latest = (usages.value || []).find(u => Number(u?.id || 0) === Number(milestone.usageId || 0))
+  if (latest && usageStillMatchesMilestoneKind(latest, milestone.kind)) {
+    scheduleUsageDeadlineRetry(milestone, 4)
+    return
+  }
+
+  usageDeadlineRetryState.delete(milestone.key)
+}
+
+const monitorUsageCountdownMilestones = async () => {
+  const due = []
+  for (const usage of usages.value || []) {
+    for (const milestone of getUsageCountdownRefreshMilestones(usage)) {
+      if (milestone.deadlineMs > nowTick.value) continue
+      if (usageDeadlineTriggeredKeys.has(milestone.key)) continue
+      usageDeadlineTriggeredKeys.add(milestone.key)
+      due.push(milestone)
+    }
+  }
+
+  if (due.length === 0) return
+
+  for (const milestone of due) {
+    await triggerUsageDeadlineRefresh(milestone, { withRetry: true })
+  }
+}
+
+const processUsageDeadlineRetries = async () => {
+  const dueRetries = Array.from(usageDeadlineRetryState.values())
+    .filter(item => Number(item?.nextAtMs || 0) <= nowTick.value)
+
+  if (dueRetries.length === 0) return
+
+  for (const item of dueRetries) {
+    const latest = (usages.value || []).find(u => Number(u?.id || 0) === Number(item.usageId || 0))
+    if (!latest || !usageStillMatchesMilestoneKind(latest, item.kind)) {
+      usageDeadlineRetryState.delete(item.key)
+      continue
+    }
+    if (Number(item.remainingAttempts || 0) <= 0) {
+      usageDeadlineRetryState.delete(item.key)
+      continue
+    }
+
+    usageDeadlineRetryState.set(item.key, {
+      ...item,
+      remainingAttempts: Number(item.remainingAttempts || 0) - 1,
+      nextAtMs: nowTick.value + 1000
+    })
+    await triggerUsageDeadlineRefresh(item, { withRetry: false })
+  }
+}
+
+const runUsageDeadlineMonitorTick = async () => {
+  if (usageDeadlineMonitorRunning) return
+  usageDeadlineMonitorRunning = true
+  try {
+    await monitorUsageCountdownMilestones()
+    await processUsageDeadlineRetries()
+  } finally {
+    usageDeadlineMonitorRunning = false
+  }
+}
+
 const getUsageStatusCountdownText = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s !== 'in_progress') return ''
@@ -1260,15 +1508,6 @@ const getUsageStatusCountdownText = (usage) => {
       const minutes = Math.floor(totalSeconds / 60)
       const seconds = totalSeconds % 60
       return `${minutes}分${seconds}秒后自动${replaceTerms('结单', card.value?.merchant)}`
-    } else {
-      // 倒计时归0，检查是否需要刷新
-      const usageId = String(usage?.id || '')
-      if (usageId && !autoFinishingRefreshed.value.has(usageId)) {
-        autoFinishingRefreshed.value.add(usageId)
-        setTimeout(() => {
-          fetchUsages()
-        }, 500)
-      }
     }
   }
 
@@ -1896,6 +2135,56 @@ const goBack = () => {
   router.push('/user/cards')
 }
 
+const shouldKeepUsageQrModalOpenForUsage = (usage) => {
+  if (!usage) return false
+
+  const merchant = card.value?.merchant
+  const supportCS = Boolean(merchant?.support_customer_service)
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
+  const precheckedAt = usage?.service_session_start_confirmed_at
+  const sessID = usage?.service_session_id
+  const { isQueueSession, isMultiQueueSession } = getQueueSessionMeta(usage, merchant)
+
+  if (!sessID) return false
+
+  if (isQueueSession) {
+    if (sessStatus === 'start_pending') return true
+    if (sessStatus === 'timeout_waiting') return true
+    if (sessStatus === 'delay_pending') {
+      if (isMultiQueueSession && !usage?.service_technician) return false
+      return true
+    }
+    return false
+  }
+
+  if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
+    const deadlineMs = getPrecheckDeadlineAtMs(usage)
+    if (deadlineMs && nowTick.value >= deadlineMs) return false
+    return true
+  }
+
+  return false
+}
+
+const syncSelectedUsageAfterRefresh = () => {
+  if (!selectedUsage.value) return
+
+  const selectedId = Number(selectedUsage.value?.id || 0)
+  const latest = (usages.value || []).find(u => Number(u?.id || 0) === selectedId)
+  if (!latest) {
+    if (showUsageQrModal.value) closeUsageQrModal()
+    else selectedUsage.value = null
+    return
+  }
+
+  selectedUsage.value = latest
+  if (showUsageQrModal.value && !shouldKeepUsageQrModalOpenForUsage(latest)) {
+    closeUsageQrModal()
+  }
+}
+
+let fetchUsagesPromise = null
+
 const fetchCard = async () => {
   try {
     const res = await cardApi.getCard(route.params.id)
@@ -1913,45 +2202,50 @@ const fetchCard = async () => {
 }
 
 const fetchUsages = async () => {
-  try {
-    const res = await usageApi.getCardUsages(route.params.id)
-    const allUsages = res.data.data || []
-    usagesSnapshotAtMs.value = Date.now()
-    
-    // 过滤掉超过12小时的失败记录
-    const now = Date.now()
-    usages.value = allUsages.filter(u => {
-      if (u.status !== 'failed') return true
-      if (!u.used_at) return true
-      const usedAtMs = new Date(u.used_at).getTime()
-      const diffHours = (now - usedAtMs) / (1000 * 60 * 60)
-      return diffHours <= 12
-    })
-    
-    // 重置自动结单刷新跟踪状态
-    autoFinishingRefreshed.value.clear()
+  if (fetchUsagesPromise) return fetchUsagesPromise
 
-		// 记录“已开始计时等待用户选技师”的 usage
-		try {
-			for (const u of (usages.value || [])) {
-				recordAutoAssignCountdownIfNeeded(u)
-			}
-		} catch (_) {
-			// ignore
-		}
+  fetchUsagesPromise = (async () => {
+    try {
+      const res = await usageApi.getCardUsages(route.params.id)
+      const allUsages = res.data.data || []
+      usagesSnapshotAtMs.value = Date.now()
 
-		// 每次刷新使用记录后，尝试检测“自动分配成功”并自动弹出待上钟二维码（5秒自动关闭）
-		try {
-			await maybeAutoOpenPrecheckQrAfterAssigned()
-		} catch (_) {
-			// ignore
-		}
+      // 过滤掉超过12小时的失败记录
+      const now = Date.now()
+      usages.value = allUsages.filter(u => {
+        if (u.status !== 'failed') return true
+        if (!u.used_at) return true
+        const usedAtMs = new Date(u.used_at).getTime()
+        const diffHours = (now - usedAtMs) / (1000 * 60 * 60)
+        return diffHours <= 12
+      })
 
-		// 可能存在计时任务，确保轮询启动；若已无计时任务则停止
-		startAutoAssignPollIfNeeded()
-  } catch (err) {
-    console.error('获取使用记录失败:', err)
-  }
+      syncSelectedUsageAfterRefresh()
+      clearInactiveUsageDeadlineState()
+
+      try {
+        for (const u of (usages.value || [])) {
+          recordAutoAssignCountdownIfNeeded(u)
+        }
+      } catch (_) {
+        // ignore
+      }
+
+      try {
+        await maybeAutoOpenPrecheckQrAfterAssigned()
+      } catch (_) {
+        // ignore
+      }
+
+      startAutoAssignPollIfNeeded()
+    } catch (err) {
+      console.error('获取使用记录失败:', err)
+    } finally {
+      fetchUsagesPromise = null
+    }
+  })()
+
+  return fetchUsagesPromise
 }
 
 const fetchNotices = async (merchantId) => {
@@ -2515,6 +2809,10 @@ const scrollToNotice = async () => {
   }
 }
 
+watch(nowTick, () => {
+  runUsageDeadlineMonitorTick()
+})
+
 onMounted(async () => {
   await fetchCard()
   startNowTickTimer()
@@ -2529,6 +2827,8 @@ onUnmounted(() => {
   stopNowTickTimer()
   stopCountdownTimer()
   stopVerifyStatusPoll()
+  usageDeadlineTriggeredKeys.clear()
+  usageDeadlineRetryState.clear()
   if (verifyExpireTimer) {
     clearTimeout(verifyExpireTimer)
     verifyExpireTimer = null
