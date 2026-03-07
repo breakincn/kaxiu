@@ -20,18 +20,22 @@ import (
 )
 
 type queuePendingItem struct {
-	UsageID           uint       `json:"usage_id"`
-	QueueNo           int        `json:"queue_no"`
-	QueueCalledAt     *time.Time `json:"queue_called_at"`
-	SessionID         uint       `json:"session_id"`
-	SessionStatus     string     `json:"session_status"`
-	StartConfirmedAt  *time.Time `json:"start_confirmed_at"`
-	StartedAt         *time.Time `json:"started_at"`
-	ScheduledFinishAt *time.Time `json:"scheduled_finish_at"`
-	DurationMinutes   int        `json:"duration_minutes"`
-	TechnicianID      *uint      `json:"technician_id"`
-	ProjectName       string     `json:"project_name"`
-	UserNickname      string     `json:"user_nickname"`
+	UsageID                      uint       `json:"usage_id"`
+	QueueNo                      int        `json:"queue_no"`
+	QueueCalledAt                *time.Time `json:"queue_called_at"`
+	SessionID                    uint       `json:"session_id"`
+	SessionStatus                string     `json:"session_status"`
+	StartConfirmedAt             *time.Time `json:"start_confirmed_at"`
+	StartPendingTimeoutSeconds   int        `json:"start_pending_timeout_seconds"`
+	StartPendingRemainingSeconds int        `json:"start_pending_remaining_seconds"`
+	StartedAt                    *time.Time `json:"started_at"`
+	ScheduledFinishAt            *time.Time `json:"scheduled_finish_at"`
+	DurationMinutes              int        `json:"duration_minutes"`
+	TechnicianID                 *uint      `json:"technician_id"`
+	ProjectName                  string     `json:"project_name"`
+	UserNickname                 string     `json:"user_nickname"`
+	CreatedAt                    *time.Time `json:"created_at"`
+	UpdatedAt                    *time.Time `json:"updated_at"`
 }
 
 type queueTimeoutWaitingItem struct {
@@ -47,14 +51,18 @@ type queueTimeoutWaitingItem struct {
 }
 
 type queueCallInfoSession struct {
-	SessionID         uint       `json:"session_id"`
-	Status            string     `json:"status"`
-	StartConfirmedAt  *time.Time `json:"start_confirmed_at"`
-	InitialUsageID    uint       `json:"initial_usage_id"`
-	ProjectName       string     `json:"project_name"`
-	StartedAt         *time.Time `json:"started_at"`
-	ScheduledFinishAt *time.Time `json:"scheduled_finish_at"`
-	DurationMinutes   int        `json:"duration_minutes"`
+	SessionID                    uint       `json:"session_id"`
+	Status                       string     `json:"status"`
+	StartConfirmedAt             *time.Time `json:"start_confirmed_at"`
+	StartPendingTimeoutSeconds   int        `json:"start_pending_timeout_seconds"`
+	StartPendingRemainingSeconds int        `json:"start_pending_remaining_seconds"`
+	InitialUsageID               uint       `json:"initial_usage_id"`
+	ProjectName                  string     `json:"project_name"`
+	StartedAt                    *time.Time `json:"started_at"`
+	ScheduledFinishAt            *time.Time `json:"scheduled_finish_at"`
+	DurationMinutes              int        `json:"duration_minutes"`
+	CreatedAt                    *time.Time `json:"created_at"`
+	UpdatedAt                    *time.Time `json:"updated_at"`
 }
 
 type queueCallInfo struct {
@@ -432,20 +440,23 @@ func GetQueueCallInfo(c *gin.Context) {
 
 	// 当前技师活跃会话（待上号/服务中）
 	type sessLite struct {
-		ID                uint       `gorm:"column:id"`
-		InitialUsageID    uint       `gorm:"column:initial_usage_id"`
-		Status            string     `gorm:"column:status"`
-		StartConfirmedAt  *time.Time `gorm:"column:start_confirmed_at"`
-		ProjectName       string     `gorm:"column:project_name"`
-		StartedAt         *time.Time `gorm:"column:started_at"`
-		ScheduledFinishAt *time.Time `gorm:"column:scheduled_finish_at"`
-		DurationMinutes   int        `gorm:"column:duration_minutes"`
+		ID                         uint       `gorm:"column:id"`
+		InitialUsageID             uint       `gorm:"column:initial_usage_id"`
+		Status                     string     `gorm:"column:status"`
+		StartConfirmedAt           *time.Time `gorm:"column:start_confirmed_at"`
+		StartPendingTimeoutSeconds int        `gorm:"column:start_pending_timeout_seconds"`
+		ProjectName                string     `gorm:"column:project_name"`
+		StartedAt                  *time.Time `gorm:"column:started_at"`
+		ScheduledFinishAt          *time.Time `gorm:"column:scheduled_finish_at"`
+		DurationMinutes            int        `gorm:"column:duration_minutes"`
+		CreatedAt                  *time.Time `gorm:"column:created_at"`
+		UpdatedAt                  *time.Time `gorm:"column:updated_at"`
 	}
 	var s sessLite
 	active := []string{"start_pending", "delay_pending", "serving", "auto_finishing"}
 	if err := config.DB.
 		Table("service_sessions ss").
-		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, COALESCE(p.name,'') AS project_name, ss.started_at, ss.scheduled_finish_at, ss.duration_minutes").
+		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, ss.start_pending_timeout_seconds, COALESCE(p.name,'') AS project_name, ss.started_at, ss.scheduled_finish_at, ss.duration_minutes, ss.created_at, ss.updated_at").
 		Joins("LEFT JOIN merchant_projects p ON p.id = ss.project_id").
 		Where("ss.merchant_id = ? AND ss.technician_id = ?", merchantID, technicianID).
 		Where("ss.status IN ?", models.ExpandStatusesWithKnownPrefixes(active)).
@@ -453,15 +464,26 @@ func GetQueueCallInfo(c *gin.Context) {
 		Limit(1).
 		Scan(&s).Error; err == nil {
 		if s.ID > 0 {
+			sessModel := models.ServiceSession{
+				Status:                     s.Status,
+				StartConfirmedAt:           s.StartConfirmedAt,
+				StartPendingTimeoutSeconds: s.StartPendingTimeoutSeconds,
+				CreatedAt:                  s.CreatedAt,
+				UpdatedAt:                  s.UpdatedAt,
+			}
 			out.Session = &queueCallInfoSession{
-				SessionID:         s.ID,
-				Status:            s.Status,
-				StartConfirmedAt:  s.StartConfirmedAt,
-				InitialUsageID:    s.InitialUsageID,
-				ProjectName:       s.ProjectName,
-				StartedAt:         s.StartedAt,
-				ScheduledFinishAt: s.ScheduledFinishAt,
-				DurationMinutes:   s.DurationMinutes,
+				SessionID:                    s.ID,
+				Status:                       s.Status,
+				StartConfirmedAt:             s.StartConfirmedAt,
+				StartPendingTimeoutSeconds:   s.StartPendingTimeoutSeconds,
+				StartPendingRemainingSeconds: computeStartPendingRemainingSecondsForSession(&sessModel, time.Now()),
+				InitialUsageID:               s.InitialUsageID,
+				ProjectName:                  s.ProjectName,
+				StartedAt:                    s.StartedAt,
+				ScheduledFinishAt:            s.ScheduledFinishAt,
+				DurationMinutes:              s.DurationMinutes,
+				CreatedAt:                    s.CreatedAt,
+				UpdatedAt:                    s.UpdatedAt,
 			}
 			// 单号口径A：优先 usage_id
 			if s.InitialUsageID > 0 {
@@ -563,16 +585,19 @@ func GetQueuePendingList(c *gin.Context) {
 
 	// 取每个 usage 最新的一条 session
 	type sessLite struct {
-		ID                uint       `gorm:"column:id"`
-		InitialUsageID    uint       `gorm:"column:initial_usage_id"`
-		Status            string     `gorm:"column:status"`
-		StartConfirmedAt  *time.Time `gorm:"column:start_confirmed_at"`
-		StartedAt         *time.Time `gorm:"column:started_at"`
-		ScheduledFinishAt *time.Time `gorm:"column:scheduled_finish_at"`
-		DurationMinutes   int        `gorm:"column:duration_minutes"`
-		TechnicianID      *uint      `gorm:"column:technician_id"`
-		ProjectName       string     `gorm:"column:project_name"`
-		UserNickname      string     `gorm:"column:user_nickname"`
+		ID                         uint       `gorm:"column:id"`
+		InitialUsageID             uint       `gorm:"column:initial_usage_id"`
+		Status                     string     `gorm:"column:status"`
+		StartConfirmedAt           *time.Time `gorm:"column:start_confirmed_at"`
+		StartPendingTimeoutSeconds int        `gorm:"column:start_pending_timeout_seconds"`
+		StartedAt                  *time.Time `gorm:"column:started_at"`
+		ScheduledFinishAt          *time.Time `gorm:"column:scheduled_finish_at"`
+		DurationMinutes            int        `gorm:"column:duration_minutes"`
+		TechnicianID               *uint      `gorm:"column:technician_id"`
+		ProjectName                string     `gorm:"column:project_name"`
+		UserNickname               string     `gorm:"column:user_nickname"`
+		CreatedAt                  *time.Time `gorm:"column:created_at"`
+		UpdatedAt                  *time.Time `gorm:"column:updated_at"`
 	}
 
 	sub := config.DB.
@@ -584,7 +609,7 @@ func GetQueuePendingList(c *gin.Context) {
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions ss").
-		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, ss.started_at, ss.scheduled_finish_at, ss.duration_minutes, ss.technician_id, COALESCE(p.name,'') AS project_name, COALESCE(u.nickname,'') AS user_nickname").
+		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, ss.start_pending_timeout_seconds, ss.started_at, ss.scheduled_finish_at, ss.duration_minutes, ss.technician_id, COALESCE(p.name,'') AS project_name, COALESCE(u.nickname,'') AS user_nickname, ss.created_at, ss.updated_at").
 		Joins("LEFT JOIN merchant_projects p ON p.id = ss.project_id").
 		Joins("LEFT JOIN users u ON u.id = ss.user_id").
 		Where("ss.id IN (?)", sub).
@@ -613,19 +638,30 @@ func GetQueuePendingList(c *gin.Context) {
 		if shouldExcludeFromPendingByStatus(ns) {
 			continue
 		}
+		sessModel := models.ServiceSession{
+			Status:                     s.Status,
+			StartConfirmedAt:           s.StartConfirmedAt,
+			StartPendingTimeoutSeconds: s.StartPendingTimeoutSeconds,
+			CreatedAt:                  s.CreatedAt,
+			UpdatedAt:                  s.UpdatedAt,
+		}
 		out = append(out, queuePendingItem{
-			UsageID:           t.ID,
-			QueueNo:           t.No,
-			QueueCalledAt:     t.CalledAt,
-			SessionID:         s.ID,
-			SessionStatus:     s.Status,
-			StartConfirmedAt:  s.StartConfirmedAt,
-			StartedAt:         s.StartedAt,
-			ScheduledFinishAt: s.ScheduledFinishAt,
-			DurationMinutes:   s.DurationMinutes,
-			TechnicianID:      s.TechnicianID,
-			ProjectName:       s.ProjectName,
-			UserNickname:      s.UserNickname,
+			UsageID:                      t.ID,
+			QueueNo:                      t.No,
+			QueueCalledAt:                t.CalledAt,
+			SessionID:                    s.ID,
+			SessionStatus:                s.Status,
+			StartConfirmedAt:             s.StartConfirmedAt,
+			StartPendingTimeoutSeconds:   s.StartPendingTimeoutSeconds,
+			StartPendingRemainingSeconds: computeStartPendingRemainingSecondsForSession(&sessModel, now),
+			StartedAt:                    s.StartedAt,
+			ScheduledFinishAt:            s.ScheduledFinishAt,
+			DurationMinutes:              s.DurationMinutes,
+			TechnicianID:                 s.TechnicianID,
+			ProjectName:                  s.ProjectName,
+			UserNickname:                 s.UserNickname,
+			CreatedAt:                    s.CreatedAt,
+			UpdatedAt:                    s.UpdatedAt,
 		})
 	}
 

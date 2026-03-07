@@ -1069,6 +1069,12 @@
                 </div>
                 <div class="text-gray-600 text-sm mt-1 font-mono">单号: {{ formatSessionNo(it.usage_id) }}</div>
                 <div v-if="it.project_name" class="text-gray-600 text-sm mt-1">项目: {{ it.project_name }}</div>
+                <div
+                  v-if="getQueueWaitingItemStartPendingRemainingSeconds(it) !== null"
+                  :class="['text-sm mt-1 font-medium', getQueueWaitingItemStartPendingRemainingClass(it)]"
+                >
+                  待上号倒计时：{{ formatRemainingSeconds(getQueueWaitingItemStartPendingRemainingSeconds(it)) }}
+                </div>
               </div>
               <div class="text-gray-500 text-sm ml-3 whitespace-nowrap">{{ getQueueWaitingItemPhaseText(it) }}</div>
             </div>
@@ -1140,6 +1146,12 @@
               </div>
               <div v-if="queueCallInfo?.session" class="text-gray-700 text-sm mt-1">
                 阶段: {{ queueCallPhaseText }}
+              </div>
+              <div
+                v-if="getQueueCallSessionStartPendingRemainingSeconds() !== null"
+                :class="['text-sm mt-1 font-medium', getQueueCallSessionStartPendingRemainingClass()]"
+              >
+                待上号倒计时：{{ formatRemainingSeconds(getQueueCallSessionStartPendingRemainingSeconds()) }}
               </div>
               <div v-if="queueCallInfo?.tracking_id" class="text-gray-700 text-sm mt-1 font-mono">
                 单号: {{ formatSessionNo(queueCallInfo.tracking_id) }}
@@ -1529,9 +1541,56 @@ const getQueueServingItemRemainingClass = (it) => {
   return 'text-blue-600'
 }
 
+const getStartPendingRemainingSeconds = (sessionLike) => {
+  if (!sessionLike) return null
+  const status = normalizeSessionStatus(sessionLike.session_status || sessionLike.status)
+  if (status !== 'start_pending') return null
+  if (sessionLike.start_confirmed_at) return null
+
+  const timeoutSeconds = Number(sessionLike.start_pending_timeout_seconds || 0) > 0
+    ? Number(sessionLike.start_pending_timeout_seconds)
+    : 180
+
+  const baseRaw = sessionLike.updated_at || sessionLike.created_at
+  if (baseRaw) {
+    const baseTime = new Date(baseRaw).getTime()
+    if (Number.isFinite(baseTime) && baseTime > 0) {
+      const remain = Math.floor((baseTime + timeoutSeconds * 1000 - currentTime.value) / 1000)
+      if (Number.isFinite(remain)) {
+        return Math.max(0, remain)
+      }
+    }
+  }
+
+  const remainFromServer = Number(sessionLike.start_pending_remaining_seconds || 0)
+  const fetchedAt = Number(sessionLike._countdown_fetched_at || 0)
+  if (Number.isFinite(remainFromServer) && remainFromServer > 0 && Number.isFinite(fetchedAt) && fetchedAt > 0) {
+    const elapsed = Math.floor((currentTime.value - fetchedAt) / 1000)
+    return Math.max(0, remainFromServer - Math.max(0, elapsed))
+  }
+
+  if (Number.isFinite(remainFromServer) && remainFromServer > 0) {
+    return Math.floor(remainFromServer)
+  }
+
+  return null
+}
+
+const getQueueWaitingItemStartPendingRemainingSeconds = (it) => {
+  return getStartPendingRemainingSeconds(it)
+}
+
+const getQueueWaitingItemStartPendingRemainingClass = (it) => {
+  const remain = getQueueWaitingItemStartPendingRemainingSeconds(it)
+  if (remain === null) return 'text-blue-600'
+  if (remain <= 60) return 'text-red-500'
+  return 'text-blue-600'
+}
+
 const patchQueuePendingList = (nextList) => {
   const prev = queuePendingList.value
   const next = Array.isArray(nextList) ? nextList : []
+  const fetchedAt = Date.now()
 
   const byUsageIdPrev = new Map()
   for (const it of prev) {
@@ -1552,13 +1611,19 @@ const patchQueuePendingList = (nextList) => {
       existed.session_id = raw.session_id
       existed.session_status = raw.session_status
       existed.start_confirmed_at = raw.start_confirmed_at
+      existed.start_pending_timeout_seconds = raw.start_pending_timeout_seconds
+      existed.start_pending_remaining_seconds = raw.start_pending_remaining_seconds
       existed.started_at = raw.started_at
       existed.scheduled_finish_at = raw.scheduled_finish_at
       existed.duration_minutes = raw.duration_minutes
       existed.technician_id = raw.technician_id
       existed.project_name = raw.project_name
       existed.user_nickname = raw.user_nickname
+      existed.updated_at = raw.updated_at
+      existed.created_at = raw.created_at
+      existed._countdown_fetched_at = fetchedAt
     } else {
+      raw._countdown_fetched_at = fetchedAt
       prev.push(raw)
     }
   }
@@ -1600,7 +1665,11 @@ const fetchQueueCallInfo = async () => {
   if (!showQueueControlInService.value) return
   try {
     const res = await queueApi.getCallInfo()
-    queueCallInfo.value = res.data?.data || null
+    const next = res.data?.data || null
+    if (next?.session) {
+      next.session._countdown_fetched_at = Date.now()
+    }
+    queueCallInfo.value = next
   } catch (e) {
     // 静默失败不置空，避免 UI 抖动
   }
@@ -2154,6 +2223,17 @@ const queueCallPhaseText = computed(() => {
   if (normalizeSessionStatus(s.status) === 'start_pending' && !s.start_confirmed_at) return '待上号'
   return '服务中'
 })
+
+const getQueueCallSessionStartPendingRemainingSeconds = () => {
+  return getStartPendingRemainingSeconds(queueCallInfo.value?.session)
+}
+
+const getQueueCallSessionStartPendingRemainingClass = () => {
+  const remain = getQueueCallSessionStartPendingRemainingSeconds()
+  if (remain === null) return 'text-blue-600'
+  if (remain <= 60) return 'text-red-500'
+  return 'text-blue-600'
+}
 
 const roomManageRoomText = computed(() => {
   const s = roomManageSession.value
