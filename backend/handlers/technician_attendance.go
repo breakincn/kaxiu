@@ -131,7 +131,7 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 		"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
-		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
+		"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(&merchant),
 	}
 	result := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchantID).

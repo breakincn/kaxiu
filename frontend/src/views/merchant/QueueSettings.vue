@@ -99,6 +99,21 @@
               />
               <div class="text-gray-500 text-xs mt-2">在“设置客服”中为每个专业客服设置服务窗口时，使用此名词</div>
             </div>
+
+            <div v-if="form.support_multi_customer_service" class="mt-4 pt-4 border-t border-gray-100">
+              <div class="text-gray-700 text-sm font-medium mb-2">等待上号时间</div>
+              <div class="relative">
+                <input
+                  v-model.number="form.queue_waiting_start_seconds"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">秒</span>
+              </div>
+              <div class="text-gray-500 text-xs mt-2">叫号后进入待上号状态的倒计时时间，默认 180 秒</div>
+            </div>
           </div>
         </div>
 
@@ -131,6 +146,7 @@ const form = ref({
   queue_start_no: 1,
   queue_mode: 'auto',
   queue_window_term: '窗口',
+  queue_waiting_start_seconds: 180,
   support_multi_customer_service: false
 })
 
@@ -158,6 +174,7 @@ const load = async () => {
       queue_start_no: m.queue_start_no || 1,
       queue_mode: m.queue_mode || 'auto',
       queue_window_term: m.queue_window_term || '窗口',
+      queue_waiting_start_seconds: m.queue_waiting_start_seconds || 180,
       support_multi_customer_service: !!m.support_multi_customer_service
     }
 
@@ -191,6 +208,11 @@ const save = async () => {
     return
   }
 
+  if (!form.value.queue_waiting_start_seconds || form.value.queue_waiting_start_seconds < 1 || form.value.queue_waiting_start_seconds > 3600) {
+    alert('等待上号时间范围应为1-3600秒')
+    return
+  }
+
   saving.value = true
   try {
     await merchantApi.updateCurrentMerchantServices({
@@ -198,6 +220,7 @@ const save = async () => {
       queue_start_no: form.value.queue_start_no,
       queue_mode: form.value.queue_mode,
       queue_window_term: form.value.queue_window_term,
+      queue_waiting_start_seconds: form.value.queue_waiting_start_seconds,
       support_multi_customer_service: !!form.value.support_multi_customer_service
     })
     alert('保存成功')

@@ -829,7 +829,7 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 			"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 			"staff_select_entered_at":       nil,
 			"staff_select_cooldown_until":   nil,
-			"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
+			"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(&m),
 		}
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err

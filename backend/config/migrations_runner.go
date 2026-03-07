@@ -22,6 +22,13 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE technicians ADD COLUMN password_need_reset BOOLEAN NOT NULL DEFAULT 0",
 		},
 	},
+	{
+		Version: "2026030701",
+		Name:    "add_merchant_queue_waiting_start_seconds",
+		Statements: []string{
+			"ALTER TABLE merchants ADD COLUMN queue_waiting_start_seconds INT NOT NULL DEFAULT 180",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

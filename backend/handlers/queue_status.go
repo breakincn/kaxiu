@@ -230,7 +230,7 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 				"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 				"staff_select_entered_at":       nil,
 				"staff_select_cooldown_until":   nil,
-				"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
+				"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(merchant),
 			}
 			if err := tx.Model(&models.ServiceSession{}).
 				Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchant.ID).
@@ -285,7 +285,7 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 		"status":                        models.ApplyStatusPrefix(anySession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
-		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
+		"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(merchant),
 	}
 	if err := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", anySession.ID, merchant.ID).

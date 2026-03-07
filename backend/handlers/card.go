@@ -134,7 +134,7 @@ func GetCard(c *gin.Context) {
 		return
 	}
 
-	card.StartPendingTimeoutSeconds = int64(config.StartPendingTimeout().Seconds())
+	card.StartPendingTimeoutSeconds = int64(config.MerchantQueueWaitingStartSeconds(&card.Merchant))
 	card.StartScanTimeoutSeconds = int64(config.StartScanTimeout().Seconds())
 
 	// 查询卡片关联项目

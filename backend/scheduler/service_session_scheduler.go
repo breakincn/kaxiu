@@ -528,13 +528,18 @@ func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now t
 		return false, err
 	}
 
+	var merchant models.Merchant
+	if err := tx.Select("id", "queue_waiting_start_seconds").First(&merchant, s.MerchantID).Error; err != nil {
+		return false, err
+	}
+
 	updates := map[string]interface{}{
 		"technician_id":                 cand.TechnicianID,
 		"last_technician_id":            cand.TechnicianID,
 		"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 		"staff_select_cooldown_until":   nil,
 		"staff_select_entered_at":       nil,
-		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
+		"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(&merchant),
 	}
 	if err := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND technician_id IS NULL AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
@@ -625,7 +630,7 @@ func autoCallNextForMultiQueueIfPossible(tx *gorm.DB, merchant *models.Merchant,
 		"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
-		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
+		"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(merchant),
 	}
 	result := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchant.ID).
@@ -1854,7 +1859,7 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 		"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
-		"start_pending_timeout_seconds": int(config.StartPendingTimeout().Seconds()),
+		"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(&merchant),
 	}
 	result := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchantID).

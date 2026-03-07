@@ -16,6 +16,9 @@ func TestRunMigrationsIsIdempotent(t *testing.T) {
 	if err := db.Exec("CREATE TABLE technicians (id integer primary key)").Error; err != nil {
 		t.Fatalf("create technicians failed: %v", err)
 	}
+	if err := db.Exec("CREATE TABLE merchants (id integer primary key)").Error; err != nil {
+		t.Fatalf("create merchants failed: %v", err)
+	}
 
 	if err := RunMigrations(db); err != nil {
 		t.Fatalf("first run failed: %v", err)

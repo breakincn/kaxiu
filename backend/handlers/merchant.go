@@ -303,6 +303,7 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		QueueStartNo                *int    `json:"queue_start_no"`
 		QueueMode                   *string `json:"queue_mode"`
 		QueueWindowTerm             *string `json:"queue_window_term"`
+		QueueWaitingStartSeconds    *int    `json:"queue_waiting_start_seconds"`
 		HandCardPrefix              *string `json:"hand_card_prefix"`
 		HandCardStartNo             *int    `json:"hand_card_start_no"`
 		HandCardEndNo               *int    `json:"hand_card_end_no"`
@@ -481,6 +482,13 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 			term = "窗口"
 		}
 		updates["queue_window_term"] = term
+	}
+	if input.QueueWaitingStartSeconds != nil {
+		if *input.QueueWaitingStartSeconds < 1 || *input.QueueWaitingStartSeconds > 3600 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "等待上号时间范围应为 1-3600 秒"})
+			return
+		}
+		updates["queue_waiting_start_seconds"] = *input.QueueWaitingStartSeconds
 	}
 	if input.HandCardPrefix != nil {
 		updates["hand_card_prefix"] = strings.TrimSpace(*input.HandCardPrefix)
