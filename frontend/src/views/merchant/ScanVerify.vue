@@ -60,44 +60,6 @@
       </div>
     </div>
 
-    <div v-if="showHandCardModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click="onHandCardMaskClick">
-      <div class="w-full max-w-sm bg-white rounded-xl p-4 shadow-lg" @click.stop>
-        <div class="flex items-center justify-between">
-          <div class="text-gray-800 font-medium text-base">分配手牌</div>
-          <button @click="closeHandCardModal" class="p-1 text-gray-500">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-        <div class="text-gray-500 text-sm mt-1">请输入本次核销对应的手牌号</div>
-        <input
-          v-model="handCardInput"
-          type="text"
-          inputmode="numeric"
-          pattern="[0-9]*"
-          placeholder="例如：H001"
-          class="w-full mt-3 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-        />
-        <div v-if="handCardError" class="text-red-600 text-sm mt-2">{{ handCardError }}</div>
-        <div class="mt-4 flex gap-2">
-          <button
-            @click="submitHandCard(false)"
-            :disabled="submittingHandCard"
-            class="px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium disabled:opacity-50"
-          >
-            跳过分配
-          </button>
-          <button
-            @click="submitHandCard(true)"
-            :disabled="submittingHandCard"
-            class="flex-1 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
-          >
-            {{ submittingHandCard ? '提交中...' : '确认绑定' }}
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -140,22 +102,15 @@ const errorText = ref('')
 const resultText = ref('')
 const resultSuccess = ref(false)
 
-const showHandCardModal = ref(false)
-const submittingHandCard = ref(false)
-const handCardInput = ref('')
-const handCardError = ref('')
-const pendingVerifyToken = ref('')
-
-
 const currentCameraIndex = ref(0)
 const cameras = ref([])
 
 let html5QrCode = null
 let lastScannedAt = 0
 let jumpTimer = null
+const PENDING_VERIFY_STORAGE_KEY = 'kabao_pending_verify_commit'
 
 const goBack = () => {
-  if (showHandCardModal.value) return
   router.back()
 }
 
@@ -266,7 +221,7 @@ const switchCamera = async () => {
 }
 
 const onDecoded = async (decodedText) => {
-  if (verifying.value || showHandCardModal.value) return
+  if (verifying.value) return
 
   const code = (decodedText || '').trim()
   if (!code) return
@@ -293,12 +248,22 @@ const onDecoded = async (decodedText) => {
       throw new Error('核销令牌生成失败')
     }
     if (prepareData.need_hand_card) {
-      pendingVerifyToken.value = verifyToken
-      handCardInput.value = ''
-      handCardError.value = ''
-      showHandCardModal.value = true
-      resultSuccess.value = false
-      resultText.value = '请先分配手牌，再完成核销'
+      try {
+        sessionStorage.setItem(PENDING_VERIFY_STORAGE_KEY, JSON.stringify({
+          verify_token: verifyToken,
+          created_at: Date.now()
+        }))
+      } catch (_) {
+        throw new Error('暂存核销状态失败，请重试')
+      }
+      await stop()
+      router.replace({
+        path: getReturnPath(),
+        query: {
+          tab: getReturnTab(),
+          pending_verify_commit: '1'
+        }
+      })
       return
     }
 
@@ -335,59 +300,6 @@ const handleCommitSuccess = (data) => {
   jumpTimer = setTimeout(() => {
     jump()
   }, 1000)
-}
-
-const closeHandCardModal = () => {
-  if (!showHandCardModal.value) return
-  const no = String(handCardInput.value || '').trim()
-  if (!no) {
-    if (!confirm('关闭后本次核销不会提交，确定关闭吗？')) return
-  }
-
-  showHandCardModal.value = false
-  pendingVerifyToken.value = ''
-  handCardInput.value = ''
-  handCardError.value = ''
-  resultSuccess.value = false
-  resultText.value = '已取消本次核销'
-}
-
-const onHandCardMaskClick = () => {
-  closeHandCardModal()
-}
-
-
-const submitHandCard = async (doBind) => {
-  if (submittingHandCard.value) return
-  handCardError.value = ''
-
-  const verifyToken = String(pendingVerifyToken.value || '').trim()
-  if (!verifyToken) {
-    showHandCardModal.value = false
-    return
-  }
-
-  submittingHandCard.value = true
-  try {
-    const no = String(handCardInput.value || '').trim()
-    if (doBind) {
-      if (!no) {
-        handCardError.value = '请输入手牌号'
-        return
-      }
-    } else if (!confirm('确认本次核销跳过手牌分配吗？')) {
-      return
-    }
-    const res = await cardApi.commitVerify(verifyToken, no, !doBind)
-    showHandCardModal.value = false
-    pendingVerifyToken.value = ''
-    handCardInput.value = ''
-    handleCommitSuccess(res?.data?.data || {})
-  } catch (e) {
-    handCardError.value = e?.response?.data?.error || '核销提交失败'
-  } finally {
-    submittingHandCard.value = false
-  }
 }
 
 onMounted(() => {

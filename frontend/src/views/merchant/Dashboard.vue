@@ -57,6 +57,45 @@
       </div>
     </div>
 
+    <div v-if="showHandCardModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click="onHandCardMaskClick">
+      <div class="w-full max-w-sm bg-white rounded-xl p-4 shadow-lg" @click.stop>
+        <div class="flex items-center justify-between">
+          <div class="text-gray-800 font-medium text-base">分配手牌</div>
+          <button @click="closeHandCardModal" class="p-1 text-gray-500">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="text-gray-500 text-sm mt-1">请输入本次核销对应的手牌号</div>
+        <input
+          v-model="handCardInput"
+          type="text"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          placeholder="例如：H001"
+          class="w-full mt-3 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+        />
+        <div v-if="handCardError" class="text-red-600 text-sm mt-2">{{ handCardError }}</div>
+        <div class="mt-4 flex gap-2">
+          <button
+            @click="submitPendingVerifyHandCard(false)"
+            :disabled="submittingHandCard"
+            class="px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium disabled:opacity-50"
+          >
+            跳过分配
+          </button>
+          <button
+            @click="submitPendingVerifyHandCard(true)"
+            :disabled="submittingHandCard"
+            class="flex-1 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
+          >
+            {{ submittingHandCard ? '提交中...' : '确认绑定' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 营业状态按钮 -->
     <div class="px-4 pt-4">
       <button
@@ -1820,6 +1859,12 @@ const verifyCodeInput = ref('')
 const verifying = ref(false)
 const verifyResult = ref(null)
 const showVerifyInput = ref(false)
+const showHandCardModal = ref(false)
+const submittingHandCard = ref(false)
+const handCardInput = ref('')
+const handCardError = ref('')
+const pendingVerifyToken = ref('')
+const PENDING_VERIFY_STORAGE_KEY = 'kabao_pending_verify_commit'
 
 const returnHandCardNo = ref('')
 const queryingReturnHandCard = ref(false)
@@ -3250,6 +3295,93 @@ const verifyCard = async () => {
   }
 }
 
+const clearPendingVerifyCommitState = (clearRoute = true) => {
+  pendingVerifyToken.value = ''
+  handCardInput.value = ''
+  handCardError.value = ''
+  showHandCardModal.value = false
+  try {
+    sessionStorage.removeItem(PENDING_VERIFY_STORAGE_KEY)
+  } catch (_) {
+    // ignore
+  }
+  if (clearRoute && route.query.pending_verify_commit) {
+    const nextQuery = { ...route.query }
+    delete nextQuery.pending_verify_commit
+    router.replace({ path: route.path, query: nextQuery })
+  }
+}
+
+const openHandCardModalFromPendingVerify = () => {
+  if (route.query.pending_verify_commit !== '1') return
+
+  let payload = null
+  try {
+    payload = JSON.parse(sessionStorage.getItem(PENDING_VERIFY_STORAGE_KEY) || 'null')
+  } catch (_) {
+    payload = null
+  }
+
+  const verifyToken = String(payload?.verify_token || '').trim()
+  if (!verifyToken) {
+    clearPendingVerifyCommitState(true)
+    return
+  }
+
+  pendingVerifyToken.value = verifyToken
+  handCardInput.value = ''
+  handCardError.value = ''
+  showHandCardModal.value = true
+
+  const nextQuery = { ...route.query }
+  delete nextQuery.pending_verify_commit
+  router.replace({ path: route.path, query: nextQuery })
+}
+
+const submitPendingVerifyHandCard = async (doBind) => {
+  if (submittingHandCard.value) return
+  handCardError.value = ''
+
+  const verifyToken = String(pendingVerifyToken.value || '').trim()
+  if (!verifyToken) {
+    clearPendingVerifyCommitState(false)
+    return
+  }
+
+  submittingHandCard.value = true
+  try {
+    const no = String(handCardInput.value || '').trim()
+    if (doBind) {
+      if (!no) {
+        handCardError.value = '请输入手牌号'
+        return
+      }
+    } else if (!confirm('确认本次核销跳过手牌分配吗？')) {
+      return
+    }
+
+    const res = await cardApi.commitVerify(verifyToken, no, !doBind)
+    clearPendingVerifyCommitState(false)
+    fetchQueueStatus()
+    fetchTodayUsages()
+    alert(`核销成功！剩余次数: ${res?.data?.data?.remain_times ?? '-'}`)
+  } catch (e) {
+    handCardError.value = e?.response?.data?.error || '核销提交失败'
+  } finally {
+    submittingHandCard.value = false
+  }
+}
+
+const closeHandCardModal = () => {
+  if (!showHandCardModal.value) return
+  if (!confirm('关闭后本次核销不会提交，确定关闭吗？')) return
+  clearPendingVerifyCommitState(false)
+}
+
+const onHandCardMaskClick = () => {
+  closeHandCardModal()
+}
+
 const cancelReturnHandCard = () => {
   returnHandCardNo.value = ''
   returnHandCardError.value = ''
@@ -3804,6 +3936,9 @@ onMounted(async () => {
   console.log('Merchant loaded:', merchant.value)
 
   await fetchCurrentTechnicianMe()
+  nextTick(() => {
+    openHandCardModalFromPendingVerify()
+  })
 
   // 根据权限选择默认Tab
   if (!tabParam) {
@@ -4162,6 +4297,15 @@ onActivated(() => {
     fetchTodayFinishedUsages()
   }
 })
+
+watch(
+  () => route.query.pending_verify_commit,
+  () => {
+    nextTick(() => {
+      openHandCardModalFromPendingVerify()
+    })
+  }
+)
 
 const getHandCardStatusText = (usage) => {
   if (!usage) return '未分配'
