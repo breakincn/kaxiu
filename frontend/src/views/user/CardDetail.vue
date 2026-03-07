@@ -503,6 +503,7 @@ const route = useRoute()
 
 const card = ref({})
 const usages = ref([])
+const usagesSnapshotAtMs = ref(0)
 const notices = ref([])
 const appointment = ref(null)
 const queueBefore = ref(0)
@@ -944,7 +945,13 @@ const getUsageSessionStartPendingRemainingSeconds = (usage) => {
 
 const getQueueStartPendingRemainMs = (usage, nowMs) => {
   const remainSeconds = getUsageSessionStartPendingRemainingSeconds(usage)
-  if (remainSeconds > 0) return remainSeconds * 1000
+  if (remainSeconds > 0) {
+    const snapshotAt = Number(usagesSnapshotAtMs.value || 0)
+    const elapsed = snapshotAt > 0 ? nowMs - snapshotAt : 0
+    const remain = remainSeconds * 1000 - (Number.isFinite(elapsed) ? elapsed : 0)
+    if (remain > 0) return remain
+    return 0
+  }
 
   const baseMs = getUsageSessionUpdatedAtMs(usage)
   if (!baseMs) return 0
@@ -1909,6 +1916,7 @@ const fetchUsages = async () => {
   try {
     const res = await usageApi.getCardUsages(route.params.id)
     const allUsages = res.data.data || []
+    usagesSnapshotAtMs.value = Date.now()
     
     // 过滤掉超过12小时的失败记录
     const now = Date.now()
