@@ -1359,6 +1359,19 @@ func handleTimeoutWaiting(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 		log.Printf("[queue-debug] timeout_waiting check: merchant=%d session=%d usage=%d mode=%s status=%s tickets=%d minNo=%d maxCalledNo=%d getNoOk=%v myNo=%d lastAt=%v now=%v\n",
 			merchant.ID, s.ID, s.InitialUsageID, merchant.QueueMode, s.Status, len(snap.Tickets), minNo, maxCalledNo, ok, myNo, s.StartTimeoutLastAt, now)
 	}
+	if merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
+		baseAt := s.StartTimeoutLastAt
+		if baseAt == nil {
+			baseAt = s.UpdatedAt
+		}
+		if baseAt == nil {
+			baseAt = s.CreatedAt
+		}
+		if baseAt != nil && now.Sub(*baseAt) > 15*time.Minute {
+			return failTimeoutWaitingAndRefund(tx, s, &merchant, now)
+		}
+		return nil
+	}
 	if !ok || myNo <= 0 || minNo <= 0 {
 		if !ok {
 			baseAt := s.StartTimeoutLastAt
@@ -1394,19 +1407,6 @@ func handleTimeoutWaiting(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 	}
 	if merchant.QueueMode == "auto" {
 		currentNo := minNo
-		if merchant.SupportMultiCustomerService {
-			baseAt := s.StartTimeoutLastAt
-			if baseAt == nil {
-				baseAt = s.UpdatedAt
-			}
-			if baseAt == nil {
-				baseAt = s.CreatedAt
-			}
-			if baseAt != nil && now.Sub(*baseAt) > 15*time.Minute {
-				return failTimeoutWaitingAndRefund(tx, s, &merchant, now)
-			}
-			return nil
-		}
 		// NormalizeLegacySessionMode 统一处理历史空 session_mode 的回退逻辑。
 		if models.NormalizeLegacySessionMode(s, &merchant) != models.SessionModeQueueAutoSingle {
 			return nil

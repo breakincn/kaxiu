@@ -551,3 +551,120 @@ func (f *fakeQueueStore) Uncall(merchantID uint, date string, qt queue.QueueType
 func (f *fakeQueueStore) Snapshot(merchantID uint, date string, qt queue.QueueType) queue.Snapshot {
 	return queue.Snapshot{}
 }
+
+type timeoutWaitingEmptySnapshotQueueStore struct {
+	markDoneCount int
+	noByID        map[uint]int
+}
+
+func (f *timeoutWaitingEmptySnapshotQueueStore) Enqueue(merchantID uint, date string, qt queue.QueueType, id uint, startNo int, autoCallFirst bool, now time.Time) (queue.Ticket, bool) {
+	return queue.Ticket{}, false
+}
+func (f *timeoutWaitingEmptySnapshotQueueStore) MarkDone(merchantID uint, date string, qt queue.QueueType, doneID uint, now time.Time) {
+	f.markDoneCount++
+}
+func (f *timeoutWaitingEmptySnapshotQueueStore) UnmarkDone(merchantID uint, date string, qt queue.QueueType, id uint) {
+}
+func (f *timeoutWaitingEmptySnapshotQueueStore) GetNo(merchantID uint, date string, qt queue.QueueType, id uint) (int, bool) {
+	if f.noByID == nil {
+		return 0, false
+	}
+	no, ok := f.noByID[id]
+	return no, ok
+}
+func (f *timeoutWaitingEmptySnapshotQueueStore) CallNextUncalled(merchantID uint, date string, qt queue.QueueType, now time.Time) uint {
+	return 0
+}
+func (f *timeoutWaitingEmptySnapshotQueueStore) Uncall(merchantID uint, date string, qt queue.QueueType, id uint) {
+}
+func (f *timeoutWaitingEmptySnapshotQueueStore) Snapshot(merchantID uint, date string, qt queue.QueueType) queue.Snapshot {
+	return queue.Snapshot{}
+}
+
+func TestAdvanceOne_AutoMultiTimeoutWaiting_ExpiresEvenWhenSnapshotEmpty(t *testing.T) {
+	oldQueue := queue.Default
+	defer func() { queue.Default = oldQueue }()
+
+	db := setupSchedulerTestDB(t)
+	fq := &timeoutWaitingEmptySnapshotQueueStore{noByID: map[uint]int{}}
+	queue.Default = fq
+
+	now := time.Now()
+	m := models.Merchant{
+		Name:                        "m-auto-multi-timeout",
+		Phone:                       "18800000999",
+		Password:                    "pwd",
+		SupportQueue:                true,
+		QueueMode:                   "auto",
+		SupportMultiCustomerService: true,
+	}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	c := models.Card{MerchantID: m.ID, UserID: 1, CardNo: "c-auto-multi", CardType: "t", TotalTimes: 10, RemainTimes: 9, UsedTimes: 1}
+	if err := db.Create(&c).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+
+	u := models.Usage{MerchantID: m.ID, CardID: c.ID, UsedTimes: 1, Status: "in_progress"}
+	if err := db.Create(&u).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	timeoutAt := now.Add(-16 * time.Minute)
+	s := models.ServiceSession{
+		MerchantID:     m.ID,
+		CardID:         c.ID,
+		InitialUsageID: u.ID,
+		Status:         "timeout_waiting",
+		CreatedAt:      &timeoutAt,
+		UpdatedAt:      &timeoutAt,
+	}
+	if err := db.Create(&s).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+	fq.noByID[u.ID] = 12
+
+	if err := advanceOne(db, &s, now); err != nil {
+		t.Fatalf("advanceOne failed: %v", err)
+	}
+
+	var gotS struct {
+		Status     string
+		FinishedAt string `gorm:"column:finished_at"`
+	}
+	if err := db.Table("service_sessions").Select("status, finished_at").Where("id = ?", s.ID).Scan(&gotS).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if gotS.Status != "timeout_failed" {
+		t.Fatalf("want session timeout_failed, got %s", gotS.Status)
+	}
+	if gotS.FinishedAt == "" {
+		t.Fatalf("want session finished_at set")
+	}
+
+	var gotU struct {
+		Status string
+	}
+	if err := db.Table("usages").Select("status").Where("id = ?", u.ID).Scan(&gotU).Error; err != nil {
+		t.Fatalf("reload usage failed: %v", err)
+	}
+	if gotU.Status != "failed" {
+		t.Fatalf("want usage failed, got %s", gotU.Status)
+	}
+
+	var gotC struct {
+		RemainTimes int
+		UsedTimes   int
+	}
+	if err := db.Table("cards").Select("remain_times, used_times").Where("id = ?", c.ID).Scan(&gotC).Error; err != nil {
+		t.Fatalf("reload card failed: %v", err)
+	}
+	if gotC.RemainTimes != 10 || gotC.UsedTimes != 0 {
+		t.Fatalf("want refunded card remain=10 used=0, got remain=%d used=%d", gotC.RemainTimes, gotC.UsedTimes)
+	}
+	if fq.markDoneCount == 0 {
+		t.Fatalf("want MarkDone called when timeout_waiting expires")
+	}
+}
