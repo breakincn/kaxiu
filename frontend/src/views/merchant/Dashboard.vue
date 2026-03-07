@@ -57,38 +57,6 @@
       </div>
     </div>
 
-    <div v-if="showHandCardModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click="onHandCardMaskClick">
-      <div class="w-full max-w-sm bg-white rounded-xl p-4 shadow-lg" @click.stop>
-        <div class="flex items-center justify-between">
-          <div class="text-gray-800 font-medium text-base">分配手牌</div>
-          <button @click="closeHandCardModal" class="p-1 text-gray-500">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-        <div class="text-gray-500 text-sm mt-1">请输入本次核销对应的手牌号</div>
-        <input
-          v-model="handCardInput"
-          type="text"
-          inputmode="numeric"
-          pattern="[0-9]*"
-          placeholder="例如：H001"
-          class="w-full mt-3 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-        />
-        <div v-if="handCardError" class="text-red-600 text-sm mt-2">{{ handCardError }}</div>
-        <div class="mt-4 flex gap-2">
-          <button
-            @click="submitHandCard"
-            :disabled="submittingHandCard"
-            class="flex-1 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
-          >
-            {{ submittingHandCard ? '提交中...' : '确认绑定' }}
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- 营业状态按钮 -->
     <div class="px-4 pt-4">
       <button
@@ -1853,12 +1821,6 @@ const verifying = ref(false)
 const verifyResult = ref(null)
 const showVerifyInput = ref(false)
 
-const showHandCardModal = ref(false)
-const submittingHandCard = ref(false)
-const handCardInput = ref('')
-const handCardError = ref('')
-const pendingBindUsageId = ref(null)
-
 const returnHandCardNo = ref('')
 const queryingReturnHandCard = ref(false)
 const returnHandCardError = ref('')
@@ -3288,65 +3250,6 @@ const verifyCard = async () => {
   }
 }
 
-const openHandCardModalFromRoute = () => {
-  const usageId = String(route.query.hand_card_usage_id || '').trim()
-  if (!usageId) return
-  if (!merchant.value?.support_hand_card) return
-
-  pendingBindUsageId.value = usageId
-  handCardInput.value = ''
-  handCardError.value = ''
-  showHandCardModal.value = true
-
-  const nextQuery = { ...route.query }
-  delete nextQuery.hand_card_usage_id
-  router.replace({ path: route.path, query: nextQuery })
-}
-
-const submitHandCard = async () => {
-  if (submittingHandCard.value) return
-  handCardError.value = ''
-
-  const usageId = pendingBindUsageId.value
-  if (!usageId) {
-    showHandCardModal.value = false
-    return
-  }
-
-  const no = String(handCardInput.value || '').trim()
-  if (!no) {
-    handCardError.value = '请输入手牌号'
-    return
-  }
-
-  submittingHandCard.value = true
-  try {
-    await cardApi.bindUsageHandCard(usageId, no)
-    pendingBindUsageId.value = null
-    showHandCardModal.value = false
-    fetchQueueStatus()
-    fetchTodayUsages()
-  } catch (e) {
-    handCardError.value = e?.response?.data?.error || '绑定失败'
-  } finally {
-    submittingHandCard.value = false
-  }
-}
-
-const closeHandCardModal = () => {
-  if (!showHandCardModal.value) return
-  const no = String(handCardInput.value || '').trim()
-  if (!no) {
-    if (!confirm('你尚未分配手牌，确定关闭吗？')) return
-  }
-  pendingBindUsageId.value = null
-  showHandCardModal.value = false
-}
-
-const onHandCardMaskClick = () => {
-  closeHandCardModal()
-}
-
 const cancelReturnHandCard = () => {
   returnHandCardNo.value = ''
   returnHandCardError.value = ''
@@ -3902,11 +3805,6 @@ onMounted(async () => {
 
   await fetchCurrentTechnicianMe()
 
-  // 扫码核销回跳后的“分配手牌”弹窗（需要商户信息已加载）
-  nextTick(() => {
-    openHandCardModalFromRoute()
-  })
-  
   // 根据权限选择默认Tab
   if (!tabParam) {
     // 如果已经从 localStorage 恢复了 tab，并且该 tab 有权限显示，则保持不变
@@ -4264,15 +4162,6 @@ onActivated(() => {
     fetchTodayFinishedUsages()
   }
 })
-
-watch(
-  () => route.query.hand_card_usage_id,
-  () => {
-    nextTick(() => {
-      openHandCardModalFromRoute()
-    })
-  }
-)
 
 const getHandCardStatusText = (usage) => {
   if (!usage) return '未分配'

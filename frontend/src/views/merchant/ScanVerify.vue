@@ -82,6 +82,13 @@
         <div v-if="handCardError" class="text-red-600 text-sm mt-2">{{ handCardError }}</div>
         <div class="mt-4 flex gap-2">
           <button
+            @click="submitHandCard(false)"
+            :disabled="submittingHandCard"
+            class="px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium disabled:opacity-50"
+          >
+            跳过分配
+          </button>
+          <button
             @click="submitHandCard(true)"
             :disabled="submittingHandCard"
             class="flex-1 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
@@ -98,12 +105,11 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Html5Qrcode } from 'html5-qrcode'
-import { cardApi, merchantApi } from '../../api'
+import { cardApi } from '../../api'
 import PwaInstallGuide from '../../components/PwaInstallGuide.vue'
 
-import { getMerchantId, getMerchantToken } from '../../utils/auth'
+import { getMerchantToken } from '../../utils/auth'
 import { replaceTerms } from '../../utils/terms'
-import { formatDateTime } from '../../utils/dateFormat'
 
 const router = useRouter()
 const route = useRoute()
@@ -134,13 +140,11 @@ const errorText = ref('')
 const resultText = ref('')
 const resultSuccess = ref(false)
 
-const supportHandCard = ref(false)
 const showHandCardModal = ref(false)
 const submittingHandCard = ref(false)
 const handCardInput = ref('')
 const handCardError = ref('')
-const pendingBindUsageId = ref(null)
-const pendingJump = ref(null)
+const pendingVerifyToken = ref('')
 
 
 const currentCameraIndex = ref(0)
@@ -262,7 +266,7 @@ const switchCamera = async () => {
 }
 
 const onDecoded = async (decodedText) => {
-  if (verifying.value) return
+  if (verifying.value || showHandCardModal.value) return
 
   const code = (decodedText || '').trim()
   if (!code) return
@@ -276,82 +280,76 @@ const onDecoded = async (decodedText) => {
 
   verifying.value = true
   try {
-    const res = await cardApi.scanVerify(code)
-    const action = res?.data?.data?.action || 'verify'
-    const usageId = res?.data?.data?.usage_id
-    resultSuccess.value = true
-    if (action === 'start') {
-      const sid = res?.data?.data?.session_id
-      resultText.value = replaceTerms(`起单成功！服务单#${sid ?? '-'}，已开始计时。`)
-    } else {
-      const remainTimes = res?.data?.data?.remain_times
-      resultText.value = `核销成功！剩余次数: ${remainTimes ?? '-'}`
-    }
-
-    // 回到 dashboard 并切到对应 tab
-    const backTab = action === 'start' ? getReturnTab() : getReturnTab()
-    console.log('扫码成功，将在30秒后跳转到', backTab, 'tab')
-    
-    const returnPath = getReturnPath()
-    const jump = () => {
-      router.replace({ path: returnPath, query: { tab: backTab } })
-    }
-
-    // 开启手牌 + 核销成功：先跳回上一页，再由上一页弹窗分配手牌
-    if (action === 'verify' && supportHandCard.value && usageId) {
-      if (jumpTimer) {
-        clearTimeout(jumpTimer)
-        jumpTimer = null
-      }
-      router.replace({
-        path: returnPath,
-        query: {
-          tab: backTab,
-          hand_card_usage_id: usageId
-        }
-      })
+    if (isStartOnlyMode()) {
+      const res = await cardApi.scanVerify(code)
+      handleCommitSuccess(res?.data?.data || {})
       return
     }
 
-    // 清除之前的定时器（如果有）
-    if (jumpTimer) {
-      clearTimeout(jumpTimer)
+    const prepareRes = await cardApi.prepareVerify(code)
+    const prepareData = prepareRes?.data?.data || {}
+    const verifyToken = String(prepareData.verify_token || '').trim()
+    if (!verifyToken) {
+      throw new Error('核销令牌生成失败')
     }
-    jumpTimer = setTimeout(() => {
-      jump()
-    }, 1000)
+    if (prepareData.need_hand_card) {
+      pendingVerifyToken.value = verifyToken
+      handCardInput.value = ''
+      handCardError.value = ''
+      showHandCardModal.value = true
+      resultSuccess.value = false
+      resultText.value = '请先分配手牌，再完成核销'
+      return
+    }
+
+    const commitRes = await cardApi.commitVerify(verifyToken, '', false)
+    handleCommitSuccess(commitRes?.data?.data || {})
   } catch (err) {
     resultSuccess.value = false
     const errorMsg = err.response?.data?.error || '扫码失败'
     resultText.value = errorMsg
-
-    // 直接跳回 dashboard 并带上错误信息（避免 back + replace 导致 Dashboard 不刷新）
-    const backTab = getReturnTab()
-    const returnPath = getReturnPath()
-    router.replace({ path: returnPath, query: { error: errorMsg, tab: backTab } })
   } finally {
     verifying.value = false
   }
+}
+
+const handleCommitSuccess = (data) => {
+  const action = data?.action || 'verify'
+  resultSuccess.value = true
+  if (action === 'start') {
+    const sid = data?.session_id
+    resultText.value = replaceTerms(`起单成功！服务单#${sid ?? '-'}，已开始计时。`)
+  } else {
+    const remainTimes = data?.remain_times
+    resultText.value = `核销成功！剩余次数: ${remainTimes ?? '-'}`
+  }
+
+  const returnPath = getReturnPath()
+  const backTab = getReturnTab()
+  const jump = () => {
+    router.replace({ path: returnPath, query: { tab: backTab } })
+  }
+  if (jumpTimer) {
+    clearTimeout(jumpTimer)
+  }
+  jumpTimer = setTimeout(() => {
+    jump()
+  }, 1000)
 }
 
 const closeHandCardModal = () => {
   if (!showHandCardModal.value) return
   const no = String(handCardInput.value || '').trim()
   if (!no) {
-    if (!confirm('你尚未分配手牌，确定关闭吗？')) return
+    if (!confirm('关闭后本次核销不会提交，确定关闭吗？')) return
   }
 
   showHandCardModal.value = false
-  pendingBindUsageId.value = null
-  const jump = pendingJump.value
-  pendingJump.value = null
-  if (jumpTimer) {
-    clearTimeout(jumpTimer)
-    jumpTimer = null
-  }
-  setTimeout(() => {
-    jump?.()
-  }, 200)
+  pendingVerifyToken.value = ''
+  handCardInput.value = ''
+  handCardError.value = ''
+  resultSuccess.value = false
+  resultText.value = '已取消本次核销'
 }
 
 const onHandCardMaskClick = () => {
@@ -363,11 +361,9 @@ const submitHandCard = async (doBind) => {
   if (submittingHandCard.value) return
   handCardError.value = ''
 
-  const usageId = pendingBindUsageId.value
-  if (!usageId) {
+  const verifyToken = String(pendingVerifyToken.value || '').trim()
+  if (!verifyToken) {
     showHandCardModal.value = false
-    pendingJump.value?.()
-    pendingJump.value = null
     return
   }
 
@@ -379,21 +375,16 @@ const submitHandCard = async (doBind) => {
         handCardError.value = '请输入手牌号'
         return
       }
-      await cardApi.bindUsageHandCard(usageId, no)
+    } else if (!confirm('确认本次核销跳过手牌分配吗？')) {
+      return
     }
+    const res = await cardApi.commitVerify(verifyToken, no, !doBind)
     showHandCardModal.value = false
-    pendingBindUsageId.value = null
-    const jump = pendingJump.value
-    pendingJump.value = null
-    if (jumpTimer) {
-      clearTimeout(jumpTimer)
-      jumpTimer = null
-    }
-    setTimeout(() => {
-      jump?.()
-    }, 200)
+    pendingVerifyToken.value = ''
+    handCardInput.value = ''
+    handleCommitSuccess(res?.data?.data || {})
   } catch (e) {
-    handCardError.value = e?.response?.data?.error || '绑定手牌失败'
+    handCardError.value = e?.response?.data?.error || '核销提交失败'
   } finally {
     submittingHandCard.value = false
   }
@@ -404,8 +395,7 @@ onMounted(() => {
   pageTitle.value = isStartOnlyMode() ? replaceTerms('扫码起单') : replaceTerms('扫码核销')
 
   const token = getMerchantToken()
-  const id = getMerchantId()
-  if (!token || !id) {
+  if (!token) {
     router.replace('/login')
     return
   }
@@ -413,13 +403,6 @@ onMounted(() => {
   loadCameras()
   // 默认自动启动一次
   start()
-
-  merchantApi.getCurrentMerchant().then(res => {
-    const m = res?.data?.data || {}
-    supportHandCard.value = !!m.support_hand_card
-  }).catch(() => {
-    supportHandCard.value = false
-  })
 })
 
 onUnmounted(() => {

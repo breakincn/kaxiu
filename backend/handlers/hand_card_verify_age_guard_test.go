@@ -20,7 +20,7 @@ import (
 
 func setupHandCardVerifyAgeGuardTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := "file:handlers_hand_card_verify_age_guard_test?mode=memory&cache=shared&_loc=auto"
+	dsn := fmt.Sprintf("file:handlers_hand_card_verify_age_guard_test_%d?mode=memory&cache=shared&_loc=auto", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
@@ -143,7 +143,7 @@ func TestVerifyCardRejectsWhenOldUnreturnedHandCardExists(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "你尚有未归还的手牌021，请先归还手牌再核销") {
+	if !strings.Contains(rec.Body.String(), "该商户已启用手牌，请使用新的扫码核销流程") {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
 	assertNoVerifySideEffects(t, config.DB, verifyCode.ID, card.ID, usageCountBefore)
@@ -175,7 +175,7 @@ func TestScanVerifyCardRejectsWhenOldUnreturnedHandCardExists(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "你尚有未归还的手牌021，请先归还手牌再核销") {
+	if !strings.Contains(rec.Body.String(), "该商户已启用手牌，请升级到新的扫码核销流程") {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
 	assertNoVerifySideEffects(t, config.DB, verifyCode.ID, card.ID, usageCountBefore)

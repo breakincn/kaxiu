@@ -755,6 +755,20 @@ func VerifyCard(c *gin.Context) {
 		return
 	}
 
+	var currentMerchant models.Merchant
+	if err := config.DB.Select("id, support_hand_card").First(&currentMerchant, merchantID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if currentMerchant.SupportHandCard {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该商户已启用手牌，请使用新的扫码核销流程"})
+		return
+	}
+
 	var verifyCode models.VerifyCode
 	var card models.Card
 	var merchant models.Merchant
@@ -1190,6 +1204,22 @@ func ScanVerifyCard(c *gin.Context) {
 	if code == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "code 不能为空"})
 		return
+	}
+
+	if !strings.HasPrefix(code, "SS:") {
+		var currentMerchant models.Merchant
+		if err := config.DB.Select("id, support_hand_card").First(&currentMerchant, merchantID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if currentMerchant.SupportHandCard {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该商户已启用手牌，请升级到新的扫码核销流程"})
+			return
+		}
 	}
 
 	// 仅“结单权限”账号（无核销权限）只能扫码起单（SS:<session_id>），禁止扫码核销。

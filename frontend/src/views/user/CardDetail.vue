@@ -281,7 +281,7 @@
                 {{ getUsageProjectText(usage) }}
               </div>
               <div v-if="card?.merchant?.support_hand_card && !(usage.hand_card_no && !usage.hand_card_returned_at)" class="text-gray-400 text-sm mt-0.5">
-                手牌：{{ usage.hand_card_no || '-' }}（<span v-if="!usage.hand_card_no" class="text-red-500">未分配</span><span v-else>{{ getHandCardStatusText(usage) }}</span>）
+                手牌：{{ usage.hand_card_no || '-' }}（<span v-if="!usage.hand_card_no" :class="isUsageHandCardPendingAssignment(usage) ? 'text-orange-500' : 'text-red-500'">{{ isUsageHandCardPendingAssignment(usage) ? '待分配' : '未分配' }}</span><span v-else>{{ getHandCardStatusText(usage) }}</span>）
               </div>
             </div>
             <div class="text-right flex-shrink-0 ml-3">
@@ -802,6 +802,16 @@ const getHandCardStatusText = (usage) => {
   if (usage.hand_card_returned_at) return '已归还'
   if (usage.hand_card_assigned_at) return '已分配'
   return '未分配'
+}
+
+const isUsageHandCardPendingAssignment = (usage) => {
+  if (!card.value?.merchant?.support_hand_card) return false
+  if (!usage || usage.hand_card_no) return false
+  const status = String(usage.status || '').trim()
+  if (status !== 'success' && status !== 'in_progress') return false
+  const usedAtMs = getUsageUsedAtMs(usage)
+  if (!usedAtMs) return false
+  return nowTick.value- usedAtMs < 20 * 1000
 }
 
 const isUsageSessionFinishedButUsageInProgress = () => false

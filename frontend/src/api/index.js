@@ -306,6 +306,12 @@ export const cardApi = {
   updateCard: (id, data) => api.put(`/merchant/cards/${id}`, data),
   generateVerifyCode: (cardId, data) => api.post(`/user/cards/${cardId}/verify-code`, data),
   verifyCard: (code) => api.post('/merchant/verify', { code }),
+  prepareVerify: (code) => api.post('/merchant/verify/prepare', { code }),
+  commitVerify: (verifyToken, handCardNo, skipHandCard = false) => api.post('/merchant/verify/commit', {
+    verify_token: verifyToken,
+    hand_card_no: handCardNo || '',
+    skip_hand_card: !!skipHandCard
+  }),
   scanVerify: (code) => api.post('/merchant/verify/scan', { code }),
   getTodayVerify: (merchantId) => api.get(`/merchant/merchants/${merchantId}/today-verify`),
   bindUsageHandCard: (usageId, handCardNo) => api.put(`/merchant/usages/${usageId}/hand-card`, { hand_card_no: handCardNo }),
