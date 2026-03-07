@@ -3,6 +3,7 @@
 .qoder/
 frontend/dist/
 frontend/dist-user/
+frontend/dist-merchant/
 frontend/node_modules/
 node_modules/
 backend/config/conf.go
