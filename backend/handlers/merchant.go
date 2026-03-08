@@ -333,8 +333,9 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		}
 	}
 
-	// 叫号模式切换保护：当存在进行中的会话时，不允许切换 queue_mode 或 support_multi_customer_service。
-	// 说明：scheduler 会按商户最新配置推进旧会话，切换可能导致进行中会话被跳号/取消。
+	// 叫号模式切换保护：当存在进行中的会话时，不允许切换 queue_mode / support_multi_customer_service，
+	// 也不允许直接关闭 support_queue 或切到 support_customer_service_mode。
+	// 说明：scheduler 会按商户最新配置推进旧会话，切换可能导致进行中会话被跳号、漏清队列或跨模式推进。
 	{
 		targetSupportQueue := merchant.SupportQueue
 		if input.SupportQueue != nil {
@@ -348,10 +349,19 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		if input.SupportMultiCustomerService != nil {
 			targetSupportMulti = *input.SupportMultiCustomerService
 		}
+		targetSupportCustomerServiceMode := merchant.SupportCustomerServiceMode
+		if input.SupportCustomerServiceMode != nil {
+			targetSupportCustomerServiceMode = *input.SupportCustomerServiceMode
+		}
 
 		queueModeChanged := input.QueueMode != nil && strings.TrimSpace(merchant.QueueMode) != targetQueueMode
 		multiChanged := input.SupportMultiCustomerService != nil && merchant.SupportMultiCustomerService != targetSupportMulti
-		if (queueModeChanged || multiChanged) && (merchant.SupportQueue || targetSupportQueue) {
+		queueSupportChanged := input.SupportQueue != nil && merchant.SupportQueue != targetSupportQueue
+		customerServiceModeChanged := input.SupportCustomerServiceMode != nil && merchant.SupportCustomerServiceMode != targetSupportCustomerServiceMode
+		affectsQueueRuntime := queueModeChanged || multiChanged ||
+			(queueSupportChanged && (merchant.SupportQueue || targetSupportQueue)) ||
+			(customerServiceModeChanged && (merchant.SupportQueue || targetSupportQueue))
+		if affectsQueueRuntime {
 			activeStatuses := []string{"staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
 			var cnt int64
 			if err := config.DB.Model(&models.ServiceSession{}).

@@ -278,3 +278,98 @@ func TestUpdateCurrentMerchantServices_RejectsQueueAndCustomerServiceModeConflic
 		t.Fatalf("want status 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestUpdateCurrentMerchantServices_RejectsDisablingQueueWithActiveQueueSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupMerchantHandlerTestDB(t)
+
+	m := models.Merchant{
+		Name:         "m",
+		Phone:        "18800001006",
+		Password:     "pwd",
+		SupportQueue: true,
+		QueueMode:    "manual",
+	}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	now := time.Now()
+	s := models.ServiceSession{
+		MerchantID:       m.ID,
+		InitialUsageID:   201,
+		SessionMode:      models.SessionModeQueueManualSingle,
+		Status:           "qms_serving",
+		StartConfirmedAt: &now,
+		CreatedAt:        &now,
+		UpdatedAt:        &now,
+	}
+	if err := config.DB.Create(&s).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"support_queue": false,
+	})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/services", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("merchant_id", m.ID)
+
+	UpdateCurrentMerchantServices(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateCurrentMerchantServices_RejectsSwitchingToCustomerServiceModeWithActiveQueueSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupMerchantHandlerTestDB(t)
+
+	m := models.Merchant{
+		Name:                       "m",
+		Phone:                      "18800001007",
+		Password:                   "pwd",
+		SupportQueue:               true,
+		QueueMode:                  "manual",
+		SupportCustomerService:     true,
+		SupportCustomerServiceMode: false,
+	}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	now := time.Now()
+	s := models.ServiceSession{
+		MerchantID:       m.ID,
+		InitialUsageID:   202,
+		SessionMode:      models.SessionModeQueueManualSingle,
+		Status:           "qms_delay_pending",
+		StartConfirmedAt: &now,
+		CreatedAt:        &now,
+		UpdatedAt:        &now,
+	}
+	if err := config.DB.Create(&s).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"support_queue":                false,
+		"support_customer_service_mode": true,
+	})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/services", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("merchant_id", m.ID)
+
+	UpdateCurrentMerchantServices(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
