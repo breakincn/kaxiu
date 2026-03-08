@@ -89,6 +89,26 @@ func normalizeStartDelaySeconds(v int) int {
 	return v
 }
 
+func currentQueueScopedTechnicianID(c *gin.Context) *uint {
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+	if authType != "staff" {
+		return nil
+	}
+
+	techIDAny, ok := c.Get("technician_id")
+	if !ok {
+		return nil
+	}
+
+	techID, _ := techIDAny.(uint)
+	if techID == 0 {
+		return nil
+	}
+
+	return &techID
+}
+
 func isMerchantInBusinessHours(m *models.Merchant, now time.Time) bool {
 	if m == nil {
 		return true
@@ -523,6 +543,7 @@ func GetQueuePendingList(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"data": []queuePendingItem{}})
 		return
 	}
+	scopedTechID := currentQueueScopedTechnicianID(c)
 
 	now := time.Now()
 	date := strings.TrimSpace(c.Query("date"))
@@ -622,6 +643,11 @@ func GetQueuePendingList(c *gin.Context) {
 		if s.InitialUsageID == 0 {
 			continue
 		}
+		if scopedTechID != nil {
+			if s.TechnicianID == nil || *s.TechnicianID != *scopedTechID {
+				continue
+			}
+		}
 		byUsageIDSession[s.InitialUsageID] = s
 	}
 
@@ -682,6 +708,7 @@ func GetQueueTimeoutWaitingList(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
 		return
 	}
+	scopedTechID := currentQueueScopedTechnicianID(c)
 
 	limit := 80
 	if s := strings.TrimSpace(c.Query("limit")); s != "" {
@@ -731,6 +758,9 @@ func GetQueueTimeoutWaitingList(c *gin.Context) {
 		Where("ss.status IN ?", models.ExpandStatusWithKnownPrefixes("timeout_waiting")).
 		Order("ss.id desc").
 		Limit(limit)
+	if scopedTechID != nil {
+		q = q.Where("ss.last_technician_id = ?", *scopedTechID)
+	}
 	if err := q.Scan(&rows).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
