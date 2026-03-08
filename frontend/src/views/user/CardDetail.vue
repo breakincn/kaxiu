@@ -239,7 +239,7 @@
           >
             <div class="min-w-0">
               <!-- 已分配手牌显示 -->
-              <div v-if="card?.merchant?.support_hand_card && usage.hand_card_no && !usage.hand_card_returned_at" class="text-red-500 font-medium mb-2">
+              <div v-if="card?.merchant?.support_hand_card && usage.hand_card_no && !isUsageHandCardReturned(usage)" class="text-red-500 font-medium mb-2">
                 {{ usage.status === 'success' ? '未归还手牌' : '已分配手牌' }}：<span class="text-lg font-bold">{{ usage.hand_card_no }}</span>
               </div>
               <div class="text-gray-800">核销次数：{{ card.total_times }} / <span :class="getUsageCurrentTimesClass(usage, index)">{{ getUsageSequence(index) }}</span></div>
@@ -280,8 +280,8 @@
               <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageProjectText(usage) }}
               </div>
-              <div v-if="card?.merchant?.support_hand_card && !(usage.hand_card_no && !usage.hand_card_returned_at)" class="text-gray-400 text-sm mt-0.5">
-                手牌：{{ usage.hand_card_no || '-' }}（<span v-if="!usage.hand_card_no" :class="isUsageHandCardPendingAssignment(usage) ? 'text-orange-500' : 'text-red-500'">{{ isUsageHandCardPendingAssignment(usage) ? '待分配' : '未分配' }}</span><span v-else>{{ getHandCardStatusText(usage) }}</span>）
+              <div v-if="card?.merchant?.support_hand_card && !(usage.hand_card_no && !isUsageHandCardReturned(usage))" class="text-gray-400 text-sm mt-0.5">
+                手牌：{{ usage.hand_card_no || '-' }}（<span v-if="!usage.hand_card_no && !isUsageHandCardReturned(usage)" :class="isUsageHandCardPendingAssignment(usage) ? 'text-orange-500' : 'text-red-500'">{{ isUsageHandCardPendingAssignment(usage) ? '待分配' : '未分配' }}</span><span v-else>{{ getHandCardStatusText(usage) }}</span>）
               </div>
             </div>
             <div class="text-right flex-shrink-0 ml-3">
@@ -796,10 +796,14 @@ const getUsageStatusClass = (usage) => {
   return ''
 }
 
+const isUsageHandCardReturned = (usage) => {
+  return Boolean(usage?.hand_card_returned_at)
+}
+
 const getHandCardStatusText = (usage) => {
   if (!usage) return '未分配'
+  if (isUsageHandCardReturned(usage)) return '已归还'
   if (!usage.hand_card_no) return '未分配'
-  if (usage.hand_card_returned_at) return '已归还'
   if (usage.hand_card_assigned_at) return '已分配'
   return '未分配'
 }
