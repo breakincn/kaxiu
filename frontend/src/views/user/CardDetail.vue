@@ -661,9 +661,10 @@ const getUsageStatusText = (usage) => {
         const tech = usage?.service_technician
         const wno = String(tech?.window_no || '').trim()
         const tname = String(tech?.name || '').trim()
-        const wtxt = wno ? `${term}${wno}` : term
-        const ttxt = tname ? `:${tname}` : ''
-        return `${wtxt}${ttxt} 待上号`
+        if (wno && tname) return `${term}${wno}:${tname} 待上号`
+        if (wno) return `${term}${wno} 待上号`
+        if (tname) return `${tname} 待上号`
+        return '待上号'
       }
       if (isQueueSession) {
         return '待上号'
