@@ -19,7 +19,7 @@ func setupSchedulerTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Merchant{}, &models.Card{}, &models.Usage{}, &models.ServiceSession{}, &models.TechnicianAttendance{}); err != nil {
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Technician{}, &models.Card{}, &models.Usage{}, &models.ServiceSession{}, &models.TechnicianAttendance{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 	return db
@@ -130,6 +130,89 @@ func TestFinalizeSession_WhenQueuePaused_DoesNotCallNext(t *testing.T) {
 	}
 	if fq.callNextCount != 0 {
 		t.Fatalf("want CallNextUncalled not called when queue paused, got %d", fq.callNextCount)
+	}
+}
+
+func TestMoveMultiQueueStartPendingToTimeoutWaitingPreservesLastTechnician(t *testing.T) {
+	oldDB := config.DB
+	oldQueue := queue.Default
+	defer func() {
+		config.DB = oldDB
+		queue.Default = oldQueue
+	}()
+
+	db := setupSchedulerTestDB(t)
+	config.DB = db
+	queue.Default = &fakeQueueStore{}
+
+	now := time.Now()
+	m := models.Merchant{
+		Name:                        "m-auto-multi-timeout",
+		Phone:                       "18800000109",
+		Password:                    "pwd",
+		SupportQueue:                true,
+		QueueMode:                   "auto",
+		SupportMultiCustomerService: true,
+	}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	tech := models.Technician{
+		MerchantID:    m.ID,
+		ServiceRoleID: 1,
+		Name:          "大漂亮",
+		Code:          "0001",
+		Account:       "js0001",
+		Password:      "pwd",
+		IsActive:      true,
+		WindowNo:      "A1",
+	}
+	if err := db.Create(&tech).Error; err != nil {
+		t.Fatalf("create technician failed: %v", err)
+	}
+
+	u := models.Usage{MerchantID: m.ID, Status: "in_progress"}
+	if err := db.Create(&u).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	s := models.ServiceSession{
+		MerchantID:                 m.ID,
+		InitialUsageID:             u.ID,
+		TechnicianID:               &tech.ID,
+		Status:                     "qm_start_pending",
+		StartPendingTimeoutSeconds: 180,
+		CreatedAt:                  &now,
+		UpdatedAt:                  &now,
+	}
+	if err := db.Create(&s).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return moveMultiQueueStartPendingToTimeoutWaiting(tx, &s, &m, now)
+	}); err != nil {
+		t.Fatalf("moveMultiQueueStartPendingToTimeoutWaiting failed: %v", err)
+	}
+
+	var got struct {
+		Status           string
+		TechnicianID     *uint
+		LastTechnicianID *uint
+	}
+	if err := db.Table("service_sessions").Select("status, technician_id, last_technician_id").Where("id = ?", s.ID).Scan(&got).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+
+	if models.NormalizeSessionStatus(got.Status) != "timeout_waiting" {
+		t.Fatalf("want timeout_waiting, got %s", got.Status)
+	}
+	if got.TechnicianID != nil {
+		t.Fatalf("want technician_id cleared, got %v", *got.TechnicianID)
+	}
+	if got.LastTechnicianID == nil || *got.LastTechnicianID != tech.ID {
+		t.Fatalf("want last_technician_id=%d, got %v", tech.ID, got.LastTechnicianID)
 	}
 }
 

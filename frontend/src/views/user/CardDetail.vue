@@ -638,7 +638,8 @@ const getUsageStatusText = (usage) => {
 
     // 自动叫号单窗口：过号插队窗口期
     if (sessStatus === 'timeout_waiting') {
-      return '超时过号等待'
+      const assignee = getUsageQueueAssigneeSummary(usage)
+      return assignee ? `${assignee} 超时过号等待` : '超时过号等待'
     }
 
     if (sessStatus === 'timeout_failed') {
@@ -1593,6 +1594,26 @@ const getUsageQueueOperatorInfo = (usage) => {
   if (!account && !name) return ''
   if (account && name) return `${account}（${name}）`
   return account || name
+}
+
+const getUsageQueueAssigneeSummary = (usage) => {
+  if (!isOnsiteQueueUsage(usage)) return ''
+  const merchant = card.value?.merchant
+  const tech = usage?.service_technician
+  if (!tech) return ''
+
+  const term = String(merchant?.queue_window_term || '窗口')
+  const windowNo = String(tech?.window_no || '').trim()
+  const name = String(tech?.name || '').trim()
+
+  const parts = []
+  if (windowNo) {
+    parts.push(`${term}${windowNo}`)
+  }
+  if (name) {
+    parts.push(name)
+  }
+  return parts.join(':')
 }
 
 const getExpectedCallAtMsForQueueNo = (queueNo) => {
