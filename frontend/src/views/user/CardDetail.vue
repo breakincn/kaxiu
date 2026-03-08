@@ -249,15 +249,11 @@
               <div v-if="getUsageQueueDisplayText(usage)" class="text-sm mt-0.5 font-medium">
                 叫号：<span :class="getUsageQueueNoClass(usage)">{{ getUsageQueueDisplayText(usage) }}</span>
               </div>
-              <div v-if="getUsageQueueOperatorInfo(usage)" class="text-gray-400 text-sm mt-0.5">
+              <div v-if="getUsageQueueOperatorInfo(usage)" class="col-span-2 text-gray-400 text-sm mt-0.5 whitespace-nowrap">
                 叫号人员：{{ getUsageQueueOperatorInfo(usage) }}
               </div>
               <div v-if="getUsageQueueCountdownText(usage)" class="text-xs mt-0.5 font-mono" :class="getUsageQueueCountdownClass(usage)">
                 {{ getUsageQueueCountdownText(usage) }}
-              </div>
-              <div class="flex items-center gap-2">
-                <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
-                <span class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</span>
               </div>
               <div v-if="isUsageSessionFinishedButUsageInProgress(usage) && getUsageServiceEndAtTextForFinishedSession(usage)" class="text-gray-400 text-sm mt-0.5">
                 服务结束：{{ getUsageServiceEndAtTextForFinishedSession(usage) }}
@@ -303,9 +299,12 @@
                 {{ getUsageStatusCountdownText(usage) }}
               </div>
             </div>
-
             <div v-if="getUsageOperatorInfo(usage)" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
               <span v-if="getUsageOperatorInfo(usage)">{{ getUsageOperatorInfo(usage) }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
+              <span class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</span>
             </div>
           </div>
         </div>
@@ -638,8 +637,7 @@ const getUsageStatusText = (usage) => {
 
     // 自动叫号单窗口：过号插队窗口期
     if (sessStatus === 'timeout_waiting') {
-      const assignee = getUsageQueueAssigneeSummary(usage)
-      return assignee ? `${assignee} 超时过号等待` : '超时过号等待'
+      return '超时过号等待'
     }
 
     if (sessStatus === 'timeout_failed') {
@@ -1594,26 +1592,6 @@ const getUsageQueueOperatorInfo = (usage) => {
   if (!account && !name) return ''
   if (account && name) return `${account}（${name}）`
   return account || name
-}
-
-const getUsageQueueAssigneeSummary = (usage) => {
-  if (!isOnsiteQueueUsage(usage)) return ''
-  const merchant = card.value?.merchant
-  const tech = usage?.service_technician
-  if (!tech) return ''
-
-  const term = String(merchant?.queue_window_term || '窗口')
-  const windowNo = String(tech?.window_no || '').trim()
-  const name = String(tech?.name || '').trim()
-
-  const parts = []
-  if (windowNo) {
-    parts.push(`${term}${windowNo}`)
-  }
-  if (name) {
-    parts.push(name)
-  }
-  return parts.join(':')
 }
 
 const getExpectedCallAtMsForQueueNo = (queueNo) => {
