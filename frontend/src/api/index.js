@@ -256,6 +256,10 @@ export const merchantApi = {
   },
   createTechnician: (data) => api.post('/merchant/technicians', data),
   updateTechnician: (id, data) => api.put(`/merchant/technicians/${id}`, data),
+  getTechnicianOriginalPassword: (id) => api.get(`/merchant/technicians/${id}/original-password`),
+  resetTechnicianPassword: (id, newPassword) => api.post(`/merchant/technicians/${id}/reset-password`, {
+    new_password: newPassword || ''
+  }),
   deleteTechnician: (id) => api.delete(`/merchant/technicians/${id}`),
 
   // 专业客服岗位（商户自定义）

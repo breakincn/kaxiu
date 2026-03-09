@@ -15,6 +15,34 @@ import (
 	"gorm.io/gorm"
 )
 
+func buildMerchantTechnicianResponse(tech models.Technician) gin.H {
+	return gin.H{
+		"id":                         tech.ID,
+		"merchant_id":                tech.MerchantID,
+		"service_role_id":            tech.ServiceRoleID,
+		"phone":                      tech.Phone,
+		"name":                       tech.Name,
+		"code":                       tech.Code,
+		"account":                    tech.Account,
+		"password_need_reset":        tech.PasswordNeedReset,
+		"window_no":                  tech.WindowNo,
+		"queue_paused":               tech.QueuePaused,
+		"is_active":                  tech.IsActive,
+		"created_at":                 tech.CreatedAt,
+		"updated_at":                 tech.UpdatedAt,
+		"service_role":               tech.ServiceRole,
+		"can_view_original_password": strings.TrimSpace(tech.OriginalPassword) != "",
+	}
+}
+
+func buildMerchantTechnicianListResponse(list []models.Technician) []gin.H {
+	out := make([]gin.H, 0, len(list))
+	for _, tech := range list {
+		out = append(out, buildMerchantTechnicianResponse(tech))
+	}
+	return out
+}
+
 func nextTechnicianCode4(tx *gorm.DB, merchantID uint, serviceRoleID uint, roleType string) (string, error) {
 	// 运营客服用3位编号（001），专业客服用4位编号（0001）
 	digits := 4
@@ -23,11 +51,14 @@ func nextTechnicianCode4(tx *gorm.DB, merchantID uint, serviceRoleID uint, roleT
 	}
 
 	var last string
-	err := tx.Raw(
-		fmt.Sprintf("SELECT code FROM technicians WHERE merchant_id = ? AND service_role_id = ? AND code REGEXP '^[0-9]{%d}$' ORDER BY code DESC LIMIT 1 FOR UPDATE", digits),
-		merchantID,
-		serviceRoleID,
-	).Scan(&last).Error
+	query := fmt.Sprintf("SELECT code FROM technicians WHERE merchant_id = ? AND service_role_id = ? AND code REGEXP '^[0-9]{%d}$' ORDER BY code DESC LIMIT 1", digits)
+	args := []interface{}{merchantID, serviceRoleID}
+	if tx.Dialector.Name() == "sqlite" {
+		query = fmt.Sprintf("SELECT code FROM technicians WHERE merchant_id = ? AND service_role_id = ? AND code GLOB '%s' ORDER BY code DESC LIMIT 1", strings.Repeat("[0-9]", digits))
+	} else {
+		query += " FOR UPDATE"
+	}
+	err := tx.Raw(query, args...).Scan(&last).Error
 	if err != nil {
 		return "", err
 	}
@@ -61,11 +92,16 @@ func nextTechnicianCodeByPrefix(tx *gorm.DB, merchantID uint, prefix string, rol
 	// 例：js0003 > js0002
 	var lastAccount string
 	pattern := fmt.Sprintf("^%s[0-9]{%d}$", p, digits)
-	err := tx.Raw(
-		"SELECT account FROM technicians WHERE merchant_id = ? AND account REGEXP ? ORDER BY account DESC LIMIT 1 FOR UPDATE",
-		merchantID,
-		pattern,
-	).Scan(&lastAccount).Error
+	query := "SELECT account FROM technicians WHERE merchant_id = ? AND account REGEXP ? ORDER BY account DESC LIMIT 1"
+	args := []interface{}{merchantID, pattern}
+	if tx.Dialector.Name() == "sqlite" {
+		pattern = p + strings.Repeat("[0-9]", digits)
+		query = "SELECT account FROM technicians WHERE merchant_id = ? AND account GLOB ? ORDER BY account DESC LIMIT 1"
+		args = []interface{}{merchantID, pattern}
+	} else {
+		query += " FOR UPDATE"
+	}
+	err := tx.Raw(query, args...).Scan(&lastAccount).Error
 	if err != nil {
 		return "", err
 	}
@@ -270,6 +306,7 @@ func ResetTechnicianPassword(c *gin.Context) {
 		Updates(map[string]interface{}{
 			"password":            string(hashedPassword),
 			"password_need_reset": false,
+			"original_password":   "",
 		}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "修改密码失败"})
 		return
@@ -306,7 +343,7 @@ func GetMerchantTechnicians(c *gin.Context) {
 
 	var list []models.Technician
 	q.Preload("ServiceRole").Order("id desc").Find(&list)
-	c.JSON(http.StatusOK, gin.H{"data": list})
+	c.JSON(http.StatusOK, gin.H{"data": buildMerchantTechnicianListResponse(list)})
 }
 
 func UpdateMerchantTechnician(c *gin.Context) {
@@ -381,8 +418,8 @@ func UpdateMerchantTechnician(c *gin.Context) {
 	}
 
 	var updated models.Technician
-	config.DB.First(&updated, tech.ID)
-	c.JSON(http.StatusOK, gin.H{"data": updated})
+	config.DB.Preload("ServiceRole").First(&updated, tech.ID)
+	c.JSON(http.StatusOK, gin.H{"data": buildMerchantTechnicianResponse(updated)})
 }
 
 func DeleteMerchantTechnician(c *gin.Context) {
@@ -520,6 +557,7 @@ func CreateMerchantTechnician(c *gin.Context) {
 			Account:           account,
 			Password:          string(hashedPassword),
 			PasswordNeedReset: true,
+			OriginalPassword:  defaultPassword,
 			IsActive:          true,
 		}
 		return tx.Create(&tech).Error
@@ -537,6 +575,121 @@ func CreateMerchantTechnician(c *gin.Context) {
 			"account":             tech.Account,
 			"password_need_reset": tech.PasswordNeedReset,
 			"default_password":    defaultPassword,
+		},
+	})
+}
+
+func GetMerchantTechnicianOriginalPassword(c *gin.Context) {
+	authType, _ := c.Get("auth_type")
+	if authType == "staff" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
+		return
+	}
+
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+
+	idStr := strings.TrimSpace(c.Param("id"))
+	id64, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil || id64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的技师ID"})
+		return
+	}
+
+	var tech models.Technician
+	if err := config.DB.Where("id = ? AND merchant_id = ?", uint(id64), merchantID).First(&tech).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "技师不存在"})
+		return
+	}
+
+	originalPassword := strings.TrimSpace(tech.OriginalPassword)
+	if originalPassword == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "暂无可查看的原始密码"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"technician_id":       tech.ID,
+			"name":                tech.Name,
+			"account":             tech.Account,
+			"original_password":   originalPassword,
+			"password_need_reset": tech.PasswordNeedReset,
+		},
+	})
+}
+
+func ResetMerchantTechnicianPassword(c *gin.Context) {
+	authType, _ := c.Get("auth_type")
+	if authType == "staff" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
+		return
+	}
+
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+
+	idStr := strings.TrimSpace(c.Param("id"))
+	id64, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil || id64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的技师ID"})
+		return
+	}
+
+	var input struct {
+		NewPassword string `json:"new_password"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var tech models.Technician
+	if err := config.DB.Where("id = ? AND merchant_id = ?", uint(id64), merchantID).First(&tech).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "技师不存在"})
+		return
+	}
+
+	newPassword := strings.TrimSpace(input.NewPassword)
+	if newPassword == "" {
+		newPassword, err = generateTemporaryPassword(12)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "生成密码失败"})
+			return
+		}
+	} else if len(newPassword) < 8 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "新密码至少8位"})
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		return
+	}
+
+	if err := config.DB.Model(&models.Technician{}).
+		Where("id = ? AND merchant_id = ?", tech.ID, merchantID).
+		Updates(map[string]interface{}{
+			"password":            string(hashedPassword),
+			"password_need_reset": true,
+			"original_password":   newPassword,
+		}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置密码失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": gin.H{
+			"technician_id":       tech.ID,
+			"name":                tech.Name,
+			"account":             tech.Account,
+			"original_password":   newPassword,
+			"password_need_reset": true,
 		},
 	})
 }

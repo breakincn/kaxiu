@@ -98,6 +98,7 @@ func InitDB() {
 	// 尝试删除旧的 account 唯一索引（不同环境下索引名可能不同，忽略错误即可）
 	DB.Exec("ALTER TABLE `technicians` DROP INDEX `idx_technicians_account`")
 	DB.Exec("ALTER TABLE `technicians` DROP INDEX `account`")
+	DB.Exec("ALTER TABLE `technicians` ADD COLUMN `original_password` varchar(100) NOT NULL DEFAULT '' COMMENT '最近一次系统生成或重置的原始密码（改密后清空）'")
 
 	// 修正 technicians 表唯一索引：确保每个 (商户, 角色) 的编号独立自增
 	// 1. 清理可能存在的错误索引名

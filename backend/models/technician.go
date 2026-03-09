@@ -12,6 +12,7 @@ type Technician struct {
 	Account           string     `json:"account" gorm:"size:50;uniqueIndex:uidx_merchant_account;comment:登录账号（如js0001）"`
 	Password          string     `json:"-" gorm:"size:255;comment:登录密码（bcrypt加密）"`
 	PasswordNeedReset bool       `json:"password_need_reset" gorm:"default:false;comment:是否需要首次改密"`
+	OriginalPassword  string     `json:"-" gorm:"size:100;default:'';comment:最近一次系统生成或重置的原始密码（改密后清空）"`
 	WindowNo          string     `json:"window_no" gorm:"size:20;default:'';comment:服务窗口号（仅在开启叫号模式时使用）"`
 	QueuePaused       bool       `json:"queue_paused" gorm:"default:false;comment:该客服叫号是否暂停（0-正常，1-暂停）"`
 	IsActive          bool       `json:"is_active" gorm:"default:true;comment:是否启用"`

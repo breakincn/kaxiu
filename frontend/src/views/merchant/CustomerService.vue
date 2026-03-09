@@ -148,6 +148,14 @@
                         >
                           {{ t.is_active ? '禁用' : '启用' }}
                         </button>
+                        <button
+                          v-if="t.can_view_original_password"
+                          type="button"
+                          class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
+                          @click="viewOriginalPassword(t)"
+                        >
+                          查看原始密码
+                        </button>
                         <div class="flex-1"></div>
                         <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
                       </div>
@@ -238,6 +246,14 @@
                         >
                           {{ t.is_active ? '禁用' : '启用' }}
                         </button>
+                        <button
+                          v-if="t.can_view_original_password"
+                          type="button"
+                          class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
+                          @click="viewOriginalPassword(t)"
+                        >
+                          查看原始密码
+                        </button>
                         <div class="flex-1"></div>
                         <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
                       </div>
@@ -286,7 +302,20 @@
           </div>
 
           <div v-if="!isEdit" class="text-gray-500 text-sm mb-5">
-            系统将自动生成账号（前缀+4位编号自增），默认密码为账号+123
+            系统将自动生成账号和默认密码，创建后可查看并复制原始密码
+          </div>
+
+          <div v-if="isEdit" class="mb-5">
+            <label class="block text-gray-700 text-sm font-medium mb-2">重置密码</label>
+            <button
+              type="button"
+              class="w-full py-3 border border-primary text-primary rounded-lg font-medium disabled:opacity-50"
+              :disabled="saving"
+              @click="openResetPasswordModal"
+            >
+              重置密码
+            </button>
+            <div class="text-gray-500 text-xs mt-2">可留空按系统规则自动生成新密码，或手动输入新密码</div>
           </div>
 
           <button
@@ -349,6 +378,73 @@
       </div>
     </div>
 
+    <div v-if="showPasswordModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-4 z-50" @click.self="closePasswordModal">
+      <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+          <div class="font-medium text-gray-800">{{ passwordModalTitle }}</div>
+          <button type="button" class="text-gray-400" @click="closePasswordModal">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="px-5 py-5">
+          <div class="text-sm text-gray-600 mb-2">{{ passwordModalName }}</div>
+          <div class="px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-gray-800 font-mono break-all">{{ passwordModalPassword }}</div>
+          <button type="button" class="w-full mt-4 py-3 bg-primary text-white rounded-lg font-medium" @click="copyPassword">
+            复制密码
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showResetPasswordConfirm" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-4 z-50" @click.self="closeResetPasswordModal">
+      <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+          <div class="font-medium text-gray-800">重置密码</div>
+          <button type="button" class="text-gray-400" @click="closeResetPasswordModal">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="px-5 py-5">
+          <div class="text-sm text-gray-600 mb-4">确认重置“{{ form.name || '该工作人员' }}”的密码？如不填写，系统将自动生成新密码。</div>
+          <div class="mb-5">
+            <label class="block text-gray-700 text-sm font-medium mb-2">新密码（可选）</label>
+            <input
+              v-model="resetPasswordForm.newPassword"
+              type="text"
+              placeholder="留空则自动生成"
+              class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+            />
+            <div class="text-gray-500 text-xs mt-2">手动输入时至少 8 位</div>
+          </div>
+
+          <div class="flex gap-3">
+            <button
+              type="button"
+              class="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium"
+              :disabled="resettingPassword"
+              @click="closeResetPasswordModal"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              class="flex-1 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
+              :disabled="resettingPassword"
+              @click="confirmResetPassword"
+            >
+              {{ resettingPassword ? '重置中...' : '确认重置' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -362,6 +458,7 @@ const router = useRouter()
 const loading = ref(false)
 const saving = ref(false)
 const savingRole = ref(false)
+const resettingPassword = ref(false)
 const techs = ref([])
 
 const attendanceConfigLoading = ref(false)
@@ -530,6 +627,14 @@ const form = ref({
   code: '',
   window_no: ''
 })
+const showPasswordModal = ref(false)
+const passwordModalTitle = ref('查看原始密码')
+const passwordModalName = ref('')
+const passwordModalPassword = ref('')
+const showResetPasswordConfirm = ref(false)
+const resetPasswordForm = ref({
+  newPassword: ''
+})
 
 const showAddRole = ref(false)
 const roleForm = ref({
@@ -594,6 +699,30 @@ const closeAdd = () => {
   form.value = { id: 0, name: '', window_no: '' }
 }
 
+const openPasswordModal = ({ title, name, password }) => {
+  passwordModalTitle.value = title || '查看原始密码'
+  passwordModalName.value = name || ''
+  passwordModalPassword.value = password || ''
+  showPasswordModal.value = true
+}
+
+const closePasswordModal = () => {
+  showPasswordModal.value = false
+  passwordModalTitle.value = '查看原始密码'
+  passwordModalName.value = ''
+  passwordModalPassword.value = ''
+}
+
+const copyPassword = async () => {
+  if (!passwordModalPassword.value) return
+  try {
+    await navigator.clipboard.writeText(passwordModalPassword.value)
+    alert('已复制')
+  } catch (e) {
+    alert('复制失败')
+  }
+}
+
 const openCreate = () => {
   isEdit.value = false
   form.value = { id: 0, name: '', window_no: '' }
@@ -641,6 +770,57 @@ const openEdit = (t) => {
   showAdd.value = true
 }
 
+const openResetPasswordModal = () => {
+  if (!isEdit.value || !form.value.id) return
+  resetPasswordForm.value = { newPassword: '' }
+  showResetPasswordConfirm.value = true
+}
+
+const closeResetPasswordModal = () => {
+  showResetPasswordConfirm.value = false
+  resetPasswordForm.value = { newPassword: '' }
+}
+
+const confirmResetPassword = async () => {
+  if (!form.value.id || resettingPassword.value) return
+  resettingPassword.value = true
+  try {
+    const res = await merchantApi.resetTechnicianPassword(form.value.id, resetPasswordForm.value.newPassword)
+    const pwd = res?.data?.data?.original_password || ''
+    closeResetPasswordModal()
+    await load()
+    if (pwd) {
+      openPasswordModal({
+        title: '密码已重置',
+        name: form.value.name,
+        password: pwd
+      })
+    } else {
+      alert('密码已重置')
+    }
+  } catch (e) {
+    alert(e.response?.data?.error || '重置密码失败')
+  } finally {
+    resettingPassword.value = false
+  }
+}
+
+const viewOriginalPassword = async (t) => {
+  if (!t || !t.id) return
+  try {
+    const res = await merchantApi.getTechnicianOriginalPassword(t.id)
+    const data = res?.data?.data || {}
+    openPasswordModal({
+      title: '查看原始密码',
+      name: data.name || t.name || '',
+      password: data.original_password || ''
+    })
+  } catch (e) {
+    alert(e.response?.data?.error || '获取原始密码失败')
+    await load()
+  }
+}
+
 const submit = async () => {
   if (saving.value) return
   if (!form.value.name) {
@@ -675,7 +855,11 @@ const submit = async () => {
       })
       const pwd = res?.data?.data?.default_password
       if (pwd) {
-        alert(`创建成功！默认密码：${pwd}`)
+        openPasswordModal({
+          title: '创建成功',
+          name: form.value.name,
+          password: pwd
+        })
       } else {
         alert('创建成功')
       }
