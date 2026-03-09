@@ -332,6 +332,7 @@
               placeholder="如：zj"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
               @input="onRolePrefixInput"
+              @click="onRolePrefixClick"
             />
             <div class="text-gray-500 text-sm mt-2">最多5个英文字母，如：zj / js</div>
           </div>
@@ -536,6 +537,7 @@ const roleForm = ref({
   account_prefix: ''
 })
 const rolePrefixAutoMode = ref(true)
+const rolePrefixLastClickAt = ref(0)
 
 const roleModalTitle = computed(() => {
   return activeType.value === 'operational' ? '添加运营岗位' : '添加专业岗位'
@@ -854,12 +856,22 @@ const onRoleNameInput = () => {
 const onRolePrefixInput = () => {
   const current = String(roleForm.value.account_prefix || '').trim().toLowerCase()
   roleForm.value.account_prefix = current
-  if (!current) {
-    rolePrefixAutoMode.value = true
-    roleForm.value.account_prefix = generateRolePrefix(roleForm.value.name)
+  rolePrefixAutoMode.value = false
+}
+
+const onRolePrefixDblClick = () => {
+  roleForm.value.account_prefix = ''
+  rolePrefixAutoMode.value = false
+}
+
+const onRolePrefixClick = () => {
+  const now = Date.now()
+  if (now - rolePrefixLastClickAt.value <= 300) {
+    onRolePrefixDblClick()
+    rolePrefixLastClickAt.value = 0
     return
   }
-  rolePrefixAutoMode.value = current === generateRolePrefix(roleForm.value.name)
+  rolePrefixLastClickAt.value = now
 }
 
 const submitRole = async () => {
