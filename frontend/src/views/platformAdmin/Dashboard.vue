@@ -11,20 +11,18 @@
     <div class="px-4 py-4 space-y-4">
       <div class="bg-white rounded-xl shadow-sm p-4">
         <div class="flex items-center justify-between">
-          <div class="text-gray-800 font-medium">客服类型（ServiceRole）</div>
-          <button type="button" class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium" @click="openCreateRole">
-            新增
+          <div class="text-gray-800 font-medium">固定角色（ServiceRole）</div>
+          <button type="button" class="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-medium" @click="openProfessionalBasePerms">
+            配置专业客服基础默认权限
           </button>
         </div>
+        <div class="mt-2 text-sm text-gray-500">平台后台仅保留固定角色默认权限配置，不再新增、编辑或删除客服角色。</div>
 
         <div v-if="loadingRoles" class="text-center text-gray-400 py-10">加载中...</div>
         <div v-else>
-          <div v-if="roles.length === 0" class="text-center text-gray-400 py-10">暂无角色</div>
-          <div v-else class="mt-4 space-y-6">
-            <div>
-              <div class="text-gray-700 text-sm font-medium mb-2">运营客服</div>
-              <div class="space-y-3">
-                <div v-for="r in operationalRoles" :key="r.id" class="border border-gray-100 rounded-xl p-4">
+          <div v-if="operationalRoles.length === 0" class="text-center text-gray-400 py-10">暂无固定角色</div>
+          <div v-else class="mt-4 space-y-3">
+            <div v-for="r in operationalRoles" :key="r.id" class="border border-gray-100 rounded-xl p-4">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <div class="flex items-center gap-2">
@@ -39,75 +37,11 @@
                 </div>
                 <div class="text-gray-400 text-xs">ID: {{ r.id }}</div>
               </div>
-
               <div class="mt-3 flex gap-2">
-                <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEditRole(r)">编辑</button>
-                <button
-                  type="button"
-                  class="px-3 py-2 rounded-lg text-sm font-medium"
-                  :class="r.is_active ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'"
-                  @click="toggleRoleActive(r)"
-                >
-                  {{ r.is_active ? '禁用' : '启用' }}
-                </button>
                 <button type="button" class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium" @click="openRolePerms(r)">
                   配置默认权限
                 </button>
-                <div class="flex-1"></div>
-                <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="deleteRole(r)">
-                  删除
-                </button>
               </div>
-            </div>
-              </div>
-              <div v-if="operationalRoles.length === 0" class="text-gray-400 text-sm py-6 text-center">暂无运营客服</div>
-            </div>
-
-            <div>
-              <div class="flex items-center justify-between mb-2">
-                <div class="text-gray-700 text-sm font-medium">专业客服</div>
-                <button type="button" class="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-medium" @click="openProfessionalBasePerms">
-                  配置基础默认权限
-                </button>
-              </div>
-              <div class="space-y-3">
-                <div v-for="r in professionalRoles" :key="r.id" class="border border-gray-100 rounded-xl p-4">
-                  <div class="flex items-start justify-between gap-3">
-                    <div>
-                      <div class="flex items-center gap-2">
-                        <div class="text-gray-800 font-medium">{{ r.name }}</div>
-                        <span class="px-2 py-0.5 rounded text-xs" :class="r.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'">
-                          {{ r.is_active ? '启用' : '禁用' }}
-                        </span>
-                        <span v-if="r.allow_permission_adjust" class="px-2 py-0.5 rounded text-xs bg-blue-50 text-blue-600">可微调</span>
-                      </div>
-                      <div class="text-gray-500 text-sm mt-1">key：{{ r.key }}　sort：{{ r.sort }}</div>
-                      <div v-if="r.description" class="text-gray-400 text-sm mt-1">{{ r.description }}</div>
-                    </div>
-                    <div class="text-gray-400 text-xs">ID: {{ r.id }}</div>
-                  </div>
-
-                  <div class="mt-3 flex gap-2">
-                    <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEditRole(r)">编辑</button>
-                    <button
-                      type="button"
-                      class="px-3 py-2 rounded-lg text-sm font-medium"
-                      :class="r.is_active ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'"
-                      @click="toggleRoleActive(r)"
-                    >
-                      {{ r.is_active ? '禁用' : '启用' }}
-                    </button>
-                    <button type="button" class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium" @click="openRolePerms(r)">
-                      配置默认权限
-                    </button>
-                    <div class="flex-1"></div>
-                    <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="deleteRole(r)">
-                      删除
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div v-if="professionalRoles.length === 0" class="text-gray-400 text-sm py-6 text-center">暂无专业客服</div>
             </div>
           </div>
         </div>
@@ -141,45 +75,6 @@
               </div>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 角色弹窗 -->
-    <div v-if="showRoleModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-4 z-50" @click.self="closeRoleModal">
-      <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden">
-        <div class="px-5 py-4 border-b flex items-center justify-between">
-          <div class="font-medium text-gray-800">{{ roleForm.id ? '编辑角色' : '新增角色' }}</div>
-          <button type="button" class="text-gray-400" @click="closeRoleModal">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-        <div class="px-5 py-5">
-          <div class="mb-4" v-if="!roleForm.id">
-            <label class="block text-gray-700 text-sm font-medium mb-2">key</label>
-            <input v-model="roleForm.key" type="text" placeholder="如 technician" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary" />
-          </div>
-          <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">name</label>
-            <input v-model="roleForm.name" type="text" placeholder="如 技师" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary" />
-          </div>
-          <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">description</label>
-            <input v-model="roleForm.description" type="text" placeholder="描述" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary" />
-          </div>
-          <div class="mb-4">
-            <label class="block text-gray-700 text-sm font-medium mb-2">sort</label>
-            <input v-model.number="roleForm.sort" type="number" class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary" />
-          </div>
-          <div class="mb-5 flex items-center gap-4">
-            <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="roleForm.is_active" />启用</label>
-            <label class="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" v-model="roleForm.allow_permission_adjust" />允许商户微调</label>
-          </div>
-          <button type="button" class="w-full py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50" :disabled="saving" @click="saveRole">
-            {{ saving ? '保存中...' : '保存' }}
-          </button>
         </div>
       </div>
     </div>
@@ -307,9 +202,6 @@ const loadingRoles = ref(false)
 const loadingPerms = ref(false)
 const saving = ref(false)
 
-const showRoleModal = ref(false)
-const roleForm = ref({ id: 0, key: '', name: '', description: '', sort: 0, is_active: true, allow_permission_adjust: false })
-
 const showPermModal = ref(false)
 const permForm = ref({ id: 0, key: '', name: '', group: '', description: '', sort: 0 })
 
@@ -319,7 +211,6 @@ const rolePermItems = ref([])
 const loadingRolePerms = ref(false)
 
 const operationalRoles = ref([])
-const professionalRoles = ref([])
 
 const showProfessionalBasePermModal = ref(false)
 const professionalBasePermItems = ref([])
@@ -344,25 +235,7 @@ const loadRoles = async () => {
   try {
     const res = await platformAdminApi.listServiceRoles()
     roles.value = res.data?.data || []
-    const ops = []
-    const pros = []
-    for (const r of roles.value) {
-      if ((r.role_type || '').trim() === 'operational') {
-        ops.push(r)
-      } else if ((r.role_type || '').trim() === 'professional') {
-        pros.push(r)
-      } else {
-        // 兼容旧数据：role_type 为空时按描述前缀推断
-        const d = (r.description || '').trim()
-        if (d.startsWith('运营客服')) {
-          ops.push(r)
-        } else {
-          pros.push(r)
-        }
-      }
-    }
-    operationalRoles.value = ops
-    professionalRoles.value = pros
+    operationalRoles.value = (roles.value || []).filter((r) => (r.role_type || '').trim() === 'operational')
   } finally {
     loadingRoles.value = false
   }
@@ -410,94 +283,6 @@ const loadPerms = async () => {
     perms.value = res.data?.data || []
   } finally {
     loadingPerms.value = false
-  }
-}
-
-const openCreateRole = () => {
-  roleForm.value = { id: 0, key: '', name: '', description: '', sort: 0, is_active: true, allow_permission_adjust: false }
-  showRoleModal.value = true
-}
-
-const openEditRole = (r) => {
-  roleForm.value = {
-    id: r.id,
-    key: r.key,
-    name: r.name,
-    description: r.description || '',
-    sort: r.sort || 0,
-    is_active: !!r.is_active,
-    allow_permission_adjust: !!r.allow_permission_adjust
-  }
-  showRoleModal.value = true
-}
-
-const closeRoleModal = () => {
-  showRoleModal.value = false
-}
-
-const saveRole = async () => {
-  if (saving.value) return
-  if (!roleForm.value.name) {
-    alert('请输入 name')
-    return
-  }
-  if (!roleForm.value.id && !roleForm.value.key) {
-    alert('请输入 key')
-    return
-  }
-  saving.value = true
-  try {
-    if (roleForm.value.id) {
-      await platformAdminApi.updateServiceRole(roleForm.value.id, {
-        name: roleForm.value.name,
-        description: roleForm.value.description,
-        sort: roleForm.value.sort,
-        is_active: roleForm.value.is_active,
-        allow_permission_adjust: roleForm.value.allow_permission_adjust
-      })
-    } else {
-      await platformAdminApi.createServiceRole({
-        key: roleForm.value.key,
-        name: roleForm.value.name,
-        description: roleForm.value.description,
-        sort: roleForm.value.sort,
-        is_active: roleForm.value.is_active,
-        allow_permission_adjust: roleForm.value.allow_permission_adjust
-      })
-    }
-    closeRoleModal()
-    await loadRoles()
-  } catch (e) {
-    alert(e.response?.data?.error || '保存失败')
-  } finally {
-    saving.value = false
-  }
-}
-
-const toggleRoleActive = async (r) => {
-  if (saving.value) return
-  saving.value = true
-  try {
-    await platformAdminApi.updateServiceRole(r.id, { is_active: !r.is_active })
-    await loadRoles()
-  } catch (e) {
-    alert(e.response?.data?.error || '操作失败')
-  } finally {
-    saving.value = false
-  }
-}
-
-const deleteRole = async (r) => {
-  if (!confirm('确定要删除该角色吗？')) return
-  if (saving.value) return
-  saving.value = true
-  try {
-    await platformAdminApi.deleteServiceRole(r.id)
-    await loadRoles()
-  } catch (e) {
-    alert(e.response?.data?.error || '删除失败')
-  } finally {
-    saving.value = false
   }
 }
 

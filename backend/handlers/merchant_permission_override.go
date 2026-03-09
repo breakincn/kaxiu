@@ -63,14 +63,12 @@ func GetMerchantRolePermissionOverrides(c *gin.Context) {
 	}
 
 	var role models.ServiceRole
-	if err := config.DB.Where("`key` = ?", roleKey).First(&role).Error; err != nil {
+	roleRef, err := config.FindMerchantUsableRole(config.DB, merchantID, roleKey)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "角色不存在"})
 		return
 	}
-	if role.MerchantID != nil && *role.MerchantID != merchantID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权操作该角色"})
-		return
-	}
+	role = *roleRef
 
 	var perms []models.Permission
 	config.DB.Order("sort asc, id asc").Find(&perms)
@@ -128,14 +126,12 @@ func SetMerchantRolePermissionOverrides(c *gin.Context) {
 	}
 
 	var role models.ServiceRole
-	if err := config.DB.Where("`key` = ?", roleKey).First(&role).Error; err != nil {
+	roleRef, err := config.FindMerchantUsableRole(config.DB, merchantID, roleKey)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "角色不存在"})
 		return
 	}
-	if role.MerchantID != nil && *role.MerchantID != merchantID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权操作该角色"})
-		return
-	}
+	role = *roleRef
 	if !role.AllowPermissionAdjust {
 		c.JSON(http.StatusForbidden, gin.H{"error": "该角色不允许微调权限"})
 		return

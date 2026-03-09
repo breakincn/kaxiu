@@ -220,9 +220,15 @@ func parseMerchantOrStaffJWT(c *gin.Context, token string) bool {
 	if err := config.DB.First(&staffRole, serviceRoleID).Error; err != nil {
 		return false
 	}
+	if !config.IsMerchantUsableRole(&staffRole, merchantID) {
+		return false
+	}
 
 	var tech models.Technician
 	if err := config.DB.Where("id = ? AND merchant_id = ?", staffID, merchantID).First(&tech).Error; err != nil {
+		return false
+	}
+	if tech.ServiceRoleID != staffRole.ID || !tech.IsActive {
 		return false
 	}
 

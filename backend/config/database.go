@@ -5,6 +5,7 @@ import (
 	"kabao/models"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -80,7 +81,9 @@ func InitDB() {
 		// 初始化商户注册邀请码（幂等）
 		initInviteCodes()
 		initServiceRoles()
+		cleanupServiceRoles()
 		initPermissions()
+		initProfessionalBasePermissionConfig()
 		initRolePermissions()
 		initTestData()
 		return
@@ -208,7 +211,9 @@ func InitDB() {
 	// 初始化商户注册邀请码（幂等）
 	initInviteCodes()
 	initServiceRoles()
+	cleanupServiceRoles()
 	initPermissions()
+	initProfessionalBasePermissionConfig()
 	initRolePermissions()
 
 	// 初始化测试数据
@@ -216,6 +221,10 @@ func InitDB() {
 }
 
 func migrateLegacyMerchantProjects() {
+	if !DB.Migrator().HasColumn(&models.Merchant{}, "projects") {
+		return
+	}
+
 	type row struct {
 		ID       uint
 		Projects string
@@ -297,6 +306,120 @@ func initServiceRoles() {
 			continue
 		}
 		DB.Create(&r)
+	}
+}
+
+var merchantRoleKeyWithSuffixPattern = regexp.MustCompile(`^m(\d+)_([a-z]{1,5})_\d+$`)
+
+func cleanupServiceRoles() {
+	normalizeMerchantServiceRoleKeys()
+	purgeLegacyPlatformServiceRoles()
+}
+
+func normalizeMerchantServiceRoleKeys() {
+	var roles []models.ServiceRole
+	DB.Where("merchant_id IS NOT NULL").Order("id asc").Find(&roles)
+	if len(roles) == 0 {
+		return
+	}
+
+	targets := make(map[uint]string, len(roles))
+	used := map[string]uint{}
+	conflicts := map[string][]uint{}
+	for _, role := range roles {
+		if role.MerchantID == nil {
+			continue
+		}
+		prefix := strings.ToLower(strings.TrimSpace(role.AccountPrefix))
+		if prefix == "" {
+			log.Fatalf("商户岗位缺少账号前缀，无法规范化 key，role_id=%d", role.ID)
+		}
+		targetKey := BuildMerchantServiceRoleKey(*role.MerchantID, prefix)
+		if ownerID, ok := used[targetKey]; ok && ownerID != role.ID {
+			conflicts[targetKey] = appendUniqueUint(conflicts[targetKey], ownerID, role.ID)
+			continue
+		}
+		used[targetKey] = role.ID
+		targets[role.ID] = targetKey
+	}
+	if len(conflicts) > 0 {
+		for targetKey, roleIDs := range conflicts {
+			log.Printf("WARN: 商户岗位 key 冲突，已跳过规范化，需人工清理 target_key=%s conflict_role_ids=%v", targetKey, roleIDs)
+		}
+	}
+
+	for _, role := range roles {
+		targetKey, ok := targets[role.ID]
+		if !ok || strings.TrimSpace(role.Key) == targetKey {
+			continue
+		}
+		currentKey := strings.TrimSpace(role.Key)
+		if currentKey == "" || merchantRoleKeyWithSuffixPattern.MatchString(currentKey) || strings.HasPrefix(currentKey, "m") {
+			if err := DB.Model(&models.ServiceRole{}).Where("id = ?", role.ID).Update("key", targetKey).Error; err != nil {
+				log.Fatalf("商户岗位 key 规范化失败，role_id=%d target_key=%s err=%v", role.ID, targetKey, err)
+			}
+		}
+	}
+}
+
+func appendUniqueUint(items []uint, values ...uint) []uint {
+	seen := make(map[uint]struct{}, len(items))
+	for _, item := range items {
+		seen[item] = struct{}{}
+	}
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		items = append(items, value)
+	}
+	return items
+}
+
+func purgeLegacyPlatformServiceRoles() {
+	var roles []models.ServiceRole
+	DB.Where("merchant_id IS NULL AND `key` NOT IN ?", FixedServiceRoleKeys()).Find(&roles)
+	if len(roles) == 0 {
+		return
+	}
+
+	roleIDs := make([]uint, 0, len(roles))
+	for _, role := range roles {
+		roleIDs = append(roleIDs, role.ID)
+	}
+
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		var technicianIDs []uint
+		if err := tx.Model(&models.Technician{}).Where("service_role_id IN ?", roleIDs).Pluck("id", &technicianIDs).Error; err != nil {
+			return err
+		}
+		if len(technicianIDs) > 0 {
+			if err := tx.Where("technician_id IN ?", technicianIDs).Delete(&models.TechnicianAttendance{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("service_role_id IN ?", roleIDs).Delete(&models.Technician{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("service_role_id IN ?", roleIDs).Delete(&models.RolePermission{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("service_role_id IN ?", roleIDs).Delete(&models.MerchantRolePermissionOverride{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("service_role_id IN ?", roleIDs).Delete(&models.MerchantRoleAttendanceConfig{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("service_role_id IN ?", roleIDs).Delete(&models.MerchantRoleStartPendingConfig{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("id IN ?", roleIDs).Delete(&models.ServiceRole{}).Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		log.Fatalf("清理历史平台客服角色失败: %v", err)
 	}
 }
 
@@ -492,6 +615,17 @@ func initPermissions() {
 	}
 }
 
+func initProfessionalBasePermissionConfig() {
+	const configKey = "professional_base_permission_keys"
+	const defaultValue = "merchant.card.finish,merchant.card.sell,merchant.card.verify"
+
+	var sc models.SystemConfig
+	if err := DB.Where("`key` = ?", configKey).First(&sc).Error; err == nil {
+		return
+	}
+	DB.Create(&models.SystemConfig{Key: configKey, Value: defaultValue})
+}
+
 func initRolePermissions() {
 	ensure := func(roleKey string, permKey string) {
 		var role models.ServiceRole
@@ -507,14 +641,6 @@ func initRolePermissions() {
 			return
 		}
 		DB.Create(&models.RolePermission{ServiceRoleID: role.ID, PermissionID: perm.ID, Allowed: true})
-	}
-
-	// 专业客服默认：核销、结单、售卡
-	professionalRoles := []string{"technician", "teacher", "coach", "pet_doctor"}
-	for _, rk := range professionalRoles {
-		ensure(rk, "merchant.card.verify")
-		ensure(rk, "merchant.card.finish")
-		ensure(rk, "merchant.card.sell")
 	}
 
 	// 店长：除收款配置/店铺短链（merchant.direct_sale.manage）与商户地址信息设置（merchant.info.manage）之外，默认全开

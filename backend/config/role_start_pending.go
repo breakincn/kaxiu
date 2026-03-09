@@ -29,20 +29,6 @@ func EffectiveRoleStartPendingTimeoutSeconds(role *models.ServiceRole, override 
 	return DefaultRoleStartPendingTimeoutSeconds
 }
 
-func FindMerchantUsableRole(tx *gorm.DB, merchantID uint, roleKey string) (*models.ServiceRole, error) {
-	if tx == nil || merchantID == 0 {
-		return nil, gorm.ErrRecordNotFound
-	}
-	var role models.ServiceRole
-	if err := tx.Where("`key` = ?", strings.TrimSpace(roleKey)).First(&role).Error; err != nil {
-		return nil, err
-	}
-	if role.MerchantID != nil && *role.MerchantID != merchantID {
-		return nil, gorm.ErrRecordNotFound
-	}
-	return &role, nil
-}
-
 func GetMerchantRoleStartPendingTimeoutSeconds(tx *gorm.DB, merchantID uint, serviceRoleID uint) int {
 	if tx == nil || merchantID == 0 || serviceRoleID == 0 {
 		return DefaultRoleStartPendingTimeoutSeconds

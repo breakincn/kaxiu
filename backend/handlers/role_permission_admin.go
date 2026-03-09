@@ -112,6 +112,10 @@ func AdminGetRolePermissions(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "角色不存在"})
 		return
 	}
+	if !config.IsFixedServiceRoleKey(role.Key) || role.MerchantID != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "平台后台仅可配置固定角色默认权限"})
+		return
+	}
 
 	var perms []models.Permission
 	config.DB.Order("sort asc, id asc").Find(&perms)
@@ -173,6 +177,10 @@ func AdminSetRolePermissions(c *gin.Context) {
 	var role models.ServiceRole
 	if err := config.DB.First(&role, uint(roleID64)).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "角色不存在"})
+		return
+	}
+	if !config.IsFixedServiceRoleKey(role.Key) || role.MerchantID != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "平台后台仅可配置固定角色默认权限"})
 		return
 	}
 

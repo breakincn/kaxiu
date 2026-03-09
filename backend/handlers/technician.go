@@ -455,20 +455,23 @@ func CreateMerchantTechnician(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "角色不存在"})
 		return
 	}
-	// 角色归属校验：
-	// - 运营角色：平台默认（merchant_id IS NULL）或本商户自定义（merchant_id = 当前商户）
-	// - 专业角色：商户自定义（merchant_id = 当前商户）
+	if !role.IsActive {
+		c.JSON(http.StatusForbidden, gin.H{"error": "该岗位已禁用"})
+		return
+	}
 	if strings.TrimSpace(role.RoleType) == "operational" {
-		if role.MerchantID != nil && *role.MerchantID != merchantID {
+		if !(config.IsFixedServiceRoleKey(role.Key) && role.MerchantID == nil) && (role.MerchantID == nil || *role.MerchantID != merchantID) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权使用该角色"})
 			return
 		}
 	} else if strings.TrimSpace(role.RoleType) == "professional" {
-		// 专业角色：允许使用平台创建的角色（merchant_id IS NULL）和商户自定义的角色（merchant_id = 当前商户）
-		if role.MerchantID != nil && *role.MerchantID != merchantID {
+		if role.MerchantID == nil || *role.MerchantID != merchantID {
 			c.JSON(http.StatusForbidden, gin.H{"error": "无权使用该岗位"})
 			return
 		}
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "角色类型无效"})
+		return
 	}
 
 	name := strings.TrimSpace(input.Name)

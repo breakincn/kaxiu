@@ -386,37 +386,19 @@ const saveActiveType = (type) => {
 }
 
 const operationalRoles = computed(() => {
-  const proKeys = new Set((professionalRolesData.value || []).map((r) => String(r?.key || '').trim()).filter(Boolean))
   return (operationalRolesData.value || []).filter((r) => {
     if (!r) return false
     const k = String(r.key || '').trim()
     if (k === 'store_manager' || k === 'front_desk') return true
-    if (proKeys.has(k)) return false
     return String(r.role_type || '').trim() === 'operational'
   })
 })
 
 const professionalRoles = computed(() => {
-  // 兜底去重：同称谓优先商户自定义（merchant_id 非空），剔除平台同名
-  const list = professionalRolesData.value || []
-  const byName = {}
-  for (const r of list) {
-    if (!r) continue
-    const name = String(r.name || '').trim()
-    if (!name) continue
-    const isMerchant = r.merchant_id !== null && r.merchant_id !== undefined
-    const existing = byName[name]
-    if (!existing) {
-      byName[name] = r
-      continue
-    }
-    const existingIsMerchant = existing.merchant_id !== null && existing.merchant_id !== undefined
-    if (!existingIsMerchant && isMerchant) {
-      byName[name] = r
-    }
-  }
-  const out = Object.values(byName)
-  // 保持稳定排序：sort asc, id asc
+  const out = [...(professionalRolesData.value || [])].filter((r) => {
+    if (!r) return false
+    return String(r.role_type || '').trim() === 'professional'
+  })
   out.sort((a, b) => {
     const sa = Number(a?.sort || 0)
     const sb = Number(b?.sort || 0)
@@ -491,15 +473,11 @@ const visibleTechs = computed(() => {
 // 专业客服按岗位分组
 const professionalTechsByRole = computed(() => {
   const list = techs.value || []
-  // 严格过滤：排除运营岗位（店长/前台/role_type=operational）
-  const opKeys = new Set((operationalRolesData.value || []).map((r) => String(r?.key || '').trim()).filter(Boolean))
   const professionalTechs = list.filter((t) => {
     const k = String(t?.service_role?.key || '').trim()
     if (k === 'store_manager' || k === 'front_desk') return false
-    if (opKeys.has(k)) return false
     const rt = String(t?.service_role?.role_type || '').trim()
-    if (rt === 'operational') return false
-    return true
+    return rt === 'professional'
   })
   
   const grouped = {}
@@ -520,12 +498,9 @@ const professionalTechsByRole = computed(() => {
 // 运营客服按岗位分组
 const operationalTechsByRole = computed(() => {
   const list = techs.value || []
-  // 严格过滤：仅运营岗位（店长/前台 或 role_type=operational），排除专业岗位key
-  const proKeys = new Set((professionalRolesData.value || []).map((r) => String(r?.key || '').trim()).filter(Boolean))
   const operationalTechs = list.filter((t) => {
     const k = String(t?.service_role?.key || '').trim()
     if (k === 'store_manager' || k === 'front_desk') return true
-    if (proKeys.has(k)) return false
     const rt = String(t?.service_role?.role_type || '').trim()
     return rt === 'operational'
   })
