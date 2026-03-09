@@ -7,10 +7,6 @@
         </svg>
       </button>
       <span class="font-medium text-gray-800">权限微调</span>
-      <div class="flex-1"></div>
-      <button type="button" class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium disabled:opacity-50" :disabled="saving" @click="save">
-        {{ saving ? '保存中...' : '保存' }}
-      </button>
     </header>
 
     <div class="px-4 py-4">
@@ -47,6 +43,15 @@
       <div class="text-gray-400 text-xs mt-3 px-1">
         默认权限由平台配置；此处仅保存“覆盖值”。
       </div>
+
+      <button
+        type="button"
+        @click="save"
+        :disabled="loading || saving || !isDirty"
+        class="w-full mt-6 py-3 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        {{ saving ? '保存中...' : '保存' }}
+      </button>
     </div>
   </div>
 </template>
@@ -63,6 +68,7 @@ const roleKey = ref(String(route.params.roleKey || ''))
 
 const loading = ref(false)
 const saving = ref(false)
+const initialSnapshot = ref('')
 
 const role = ref(null)
 const items = ref([])
@@ -74,6 +80,15 @@ const verifyFinishItem = computed(() => {
 const visibleItems = computed(() => {
   return items.value.filter((it) => it?.permission?.key !== 'merchant.card.verify_finish')
 })
+
+const buildSnapshot = (list) => JSON.stringify(
+  (list || []).map((it) => ({
+    permission_key: it?.permission?.key || '',
+    allowed: !!it?.override_allowed
+  }))
+)
+
+const isDirty = computed(() => buildSnapshot(items.value) !== initialSnapshot.value)
 
 const goBack = () => {
   router.back()
@@ -90,6 +105,7 @@ const load = async () => {
       default_allowed: !!it.default_allowed,
       override_allowed: typeof it.override_allowed === 'boolean' ? it.override_allowed : it.effective_allowed
     }))
+    initialSnapshot.value = buildSnapshot(items.value)
   } catch (e) {
     alert(e.response?.data?.error || '加载失败')
   } finally {
@@ -106,6 +122,7 @@ const save = async () => {
     }
     await merchantApi.setRolePermissions(roleKey.value, payload)
     alert('保存成功')
+    await load()
   } catch (e) {
     alert(e.response?.data?.error || '保存失败')
   } finally {

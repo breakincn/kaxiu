@@ -7,10 +7,6 @@
         </svg>
       </button>
       <span class="font-medium text-gray-800">参数设置</span>
-      <div class="flex-1"></div>
-      <button type="button" class="px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium disabled:opacity-50" :disabled="saving" @click="save">
-        {{ saving ? '保存中...' : '保存' }}
-      </button>
     </header>
 
     <div class="px-4 py-4">
@@ -35,12 +31,21 @@
           <div class="text-gray-500 text-xs mt-2">默认 300 秒，支持按岗位单独配置。</div>
         </div>
       </div>
+
+      <button
+        type="button"
+        @click="save"
+        :disabled="loading || saving || !isDirty"
+        class="w-full mt-6 py-3 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        {{ saving ? '保存中...' : '保存' }}
+      </button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
 import { replaceTerms } from '../../utils/terms'
@@ -53,9 +58,12 @@ const termMerchant = startTerm ? { start_term: startTerm } : null
 const roleKey = ref(String(route.params.roleKey || ''))
 const loading = ref(false)
 const saving = ref(false)
+const initialSeconds = ref(null)
 const role = ref(route.query.role_name ? { name: String(route.query.role_name) } : null)
 const seconds = ref(300)
 const label = ref(replaceTerms('待起单超时秒数', termMerchant))
+
+const isDirty = computed(() => Number(seconds.value || 0) !== Number(initialSeconds.value || 0))
 
 const goBack = () => {
   router.back()
@@ -68,6 +76,7 @@ const load = async () => {
     const data = res.data?.data || {}
     role.value = data.role || role.value
     seconds.value = Number(data.start_pending_timeout_seconds || 300)
+    initialSeconds.value = Number(data.start_pending_timeout_seconds || 300)
     label.value = String(data.start_pending_timeout_label || replaceTerms('待起单超时秒数', termMerchant))
   } catch (e) {
     alert(e.response?.data?.error || '加载失败')
@@ -87,6 +96,7 @@ const save = async () => {
   try {
     await merchantApi.setRoleStartPendingSetting(roleKey.value, Math.floor(n))
     alert('保存成功')
+    await load()
   } catch (e) {
     alert(e.response?.data?.error || '保存失败')
   } finally {
