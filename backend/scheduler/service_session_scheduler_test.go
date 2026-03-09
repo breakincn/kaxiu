@@ -14,7 +14,7 @@ import (
 
 func setupSchedulerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := "file:scheduler_service_session_test?mode=memory&cache=shared&_loc=auto&_time_format=2006-01-02 15:04:05.999"
+	dsn := "file:scheduler_service_session_test?mode=memory&cache=shared&_loc=auto&parseTime=true"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)

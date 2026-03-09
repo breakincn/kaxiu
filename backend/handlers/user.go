@@ -96,8 +96,11 @@ func BindUserPhone(c *gin.Context) {
 }
 
 func MerchantSearchUsers(c *gin.Context) {
-	if _, ok := c.Get("merchant_id"); !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+	if !requireAnyMerchantPermissionInHandler(c, "merchant.card.issue", "merchant.card.verify") {
 		return
 	}
 
@@ -107,9 +110,27 @@ func MerchantSearchUsers(c *gin.Context) {
 		return
 	}
 
-	var users []models.User
+	type merchantUserResult struct {
+		ID       uint    `json:"id"`
+		Phone    *string `json:"phone"`
+		Nickname string  `json:"nickname"`
+	}
+
+	cardUserSubQuery := config.DB.Model(&models.Card{}).
+		Select("DISTINCT user_id").
+		Where("merchant_id = ?", merchantID)
+
+	appointmentUserSubQuery := config.DB.Model(&models.Appointment{}).
+		Select("DISTINCT user_id").
+		Where("merchant_id = ?", merchantID)
+
+	var users []merchantUserResult
 	config.DB.
+		Model(&models.User{}).
+		Select("users.id, users.phone, users.nickname").
 		Where("phone LIKE ?", "%"+phone+"%").
+		Where("(users.id IN (?) OR users.id IN (?))", cardUserSubQuery, appointmentUserSubQuery).
+		Order("users.id DESC").
 		Limit(20).
 		Find(&users)
 

@@ -12,24 +12,25 @@
     <!-- Tab 切换 -->
     <div class="tabs">
       <div 
+        v-if="canReadTemplates"
         class="tab" 
         :class="{ active: activeTab === 'templates' }"
         @click="activeTab = 'templates'"
       >在售卡片</div>
       <div 
-        v-if="merchant.support_direct_sale"
+        v-if="canDirectSaleManage && merchant.support_direct_sale"
         class="tab" 
         :class="{ active: activeTab === 'payment' }"
         @click="activeTab = 'payment'"
       >收款配置</div>
       <div 
-        v-if="merchant.support_direct_sale"
+        v-if="canDirectSaleManage && merchant.support_direct_sale"
         class="tab" 
         :class="{ active: activeTab === 'qrcode' }"
         @click="activeTab = 'qrcode'"
       >售卡二维码</div>
       <div 
-        v-if="merchant.support_direct_sale"
+        v-if="canDirectSaleManage && merchant.support_direct_sale"
         class="tab" 
         :class="{ active: activeTab === 'orders' }"
         @click="activeTab = 'orders'"
@@ -37,10 +38,10 @@
     </div>
 
     <!-- 在售卡片列表 -->
-    <div v-if="activeTab === 'templates'" class="tab-content">
+    <div v-if="activeTab === 'templates' && canReadTemplates" class="tab-content">
       <div class="section-header">
         <h2>在售卡片模板</h2>
-        <button class="add-btn" @click="showTemplateModal = true">+ 添加</button>
+        <button v-if="canDirectSaleManage" class="add-btn" @click="showTemplateModal = true">+ 添加</button>
       </div>
       
       <div v-if="templates.length === 0" class="empty-state">
@@ -71,8 +72,9 @@
               </div>
             </div>
             <div class="template-actions">
-              <button class="action-btn" @click="editTemplate(tpl)">编辑</button>
+              <button v-if="canDirectSaleManage" class="action-btn" @click="editTemplate(tpl)">编辑</button>
               <button
+                v-if="canDirectSaleManage"
                 class="action-btn"
                 :class="tpl.is_active ? 'danger' : 'success'"
                 @click="toggleTemplateStatus(tpl)"
@@ -309,6 +311,10 @@ const route = useRoute()
 const router = useRouter()
 
 const merchant = ref({ support_direct_sale: false })
+const canDirectSaleManage = computed(() => hasMerchantPermission('merchant.direct_sale.manage'))
+const canReadTemplates = computed(() => {
+  return canDirectSaleManage.value || hasMerchantPermission('merchant.card.sell') || hasMerchantPermission('merchant.card.issue')
+})
 
 const activeTab = ref('templates')
 const loading = ref(false)
@@ -383,7 +389,7 @@ const qrcodeUrl = computed(() => {
 })
 
 onMounted(async () => {
-  if (!hasMerchantPermission('merchant.direct_sale.manage')) {
+  if (!canReadTemplates.value && !canDirectSaleManage.value) {
     alert('无权限')
     goBack()
     return
@@ -401,6 +407,9 @@ onMounted(async () => {
     if (!merchant.value.support_direct_sale && ['payment', 'qrcode', 'orders'].includes(activeTab.value)) {
       activeTab.value = 'templates'
     }
+    if (!canDirectSaleManage.value && activeTab.value !== 'templates') {
+      activeTab.value = 'templates'
+    }
   } catch (e) {
     merchant.value = { support_direct_sale: false }
     if (['payment', 'qrcode', 'orders'].includes(activeTab.value)) {
@@ -411,8 +420,10 @@ onMounted(async () => {
   await loadMerchantProjects()
 
   // 加载所有必要的数据
-  loadTemplates()
-  if (merchant.value.support_direct_sale) {
+  if (canReadTemplates.value) {
+    loadTemplates()
+  }
+  if (canDirectSaleManage.value && merchant.value.support_direct_sale) {
     loadPaymentConfig()
     loadShopSlug()
     loadOrders()

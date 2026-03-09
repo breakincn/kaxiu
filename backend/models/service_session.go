@@ -15,7 +15,7 @@ type ServiceSession struct {
 	TechnicianID                 *uint      `json:"technician_id" gorm:"index;comment:工作人员ID"`
 	LastTechnicianID             *uint      `json:"last_technician_id" gorm:"column:last_technician_id;index;comment:最后一次叫号/分配的工作人员ID（用于过号等待等保留展示）"`
 	StartTimeoutCount            int        `json:"start_timeout_count" gorm:"column:start_timeout_count;default:0"`
-	StartTimeoutLastAt           *time.Time `json:"start_timeout_last_at" gorm:"column:start_timeout_last_at;type:datetime(3)"`
+	StartTimeoutLastAt           *time.Time `json:"start_timeout_last_at" gorm:"column:start_timeout_last_at;type:datetime"`
 	StaffSelectCooldownUntil     *time.Time `json:"staff_select_cooldown_until" gorm:"column:staff_select_cooldown_until;type:datetime(3);comment:选客服无空闲时冷却截止时间"`
 	StaffSelectEnteredAt         *time.Time `json:"staff_select_entered_at" gorm:"column:staff_select_entered_at;type:datetime(3);comment:用户进入选择客服页时间（以拉取可选客服列表为准）"`
 	StartPendingTimeoutSeconds   int        `json:"start_pending_timeout_seconds" gorm:"column:start_pending_timeout_seconds;default:0;comment:待起单超时秒数（0表示使用系统默认）"`

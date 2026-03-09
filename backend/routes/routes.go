@@ -97,15 +97,15 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.POST("/bind-phone", handlers.BindMerchantPhone)
 	auth.PUT("/services", middleware.RequirePermission("merchant.service.manage"), handlers.UpdateCurrentMerchantServices)
 	auth.PUT("/info", middleware.RequirePermission("merchant.info.manage"), handlers.UpdateMerchantInfo)
-	auth.PUT("/technician-alias", handlers.UpdateTechnicianAlias)
+	auth.PUT("/technician-alias", middleware.RequirePermission("merchant.info.manage"), handlers.UpdateTechnicianAlias)
 	auth.PUT("/business-status", middleware.RequirePermission("merchant.business_status.manage"), handlers.ToggleMerchantBusinessStatus)
 	auth.GET("/permissions", handlers.GetMyPermissions)
 	auth.GET("/config", handlers.GetConfig)
 	// 搜索用户
-	auth.GET("/users/search", handlers.MerchantSearchUsers)
+	auth.GET("/users/search", middleware.RequireAnyPermission("merchant.card.issue", "merchant.card.verify"), handlers.MerchantSearchUsers)
 
 	// 商户资源
-	auth.GET("/merchants", handlers.GetMerchants)
+	auth.GET("/merchants", middleware.RequirePermission("merchant.info.manage"), handlers.GetMerchants)
 	auth.GET("/merchants/:id", handlers.GetMerchant)
 	auth.PUT("/merchants/:id", middleware.RequirePermission("merchant.info.manage"), handlers.UpdateMerchant)
 	auth.GET("/merchants/:id/queue", handlers.GetQueueStatus)
@@ -228,7 +228,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.POST("/payment-qrcode/upload", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.UploadPaymentQRCode)
 
 	// 商户端：卡片模板管理
-	auth.GET("/card-templates", middleware.RequirePermission("merchant.card.sell"), handlers.GetCardTemplates)
+	auth.GET("/card-templates", middleware.RequireAnyPermission("merchant.direct_sale.manage", "merchant.card.sell", "merchant.card.issue"), handlers.GetCardTemplates)
 	auth.POST("/card-templates", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.CreateCardTemplate)
 	auth.PUT("/card-templates/:id", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.UpdateCardTemplate)
 	auth.DELETE("/card-templates/:id", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.DeleteCardTemplate)

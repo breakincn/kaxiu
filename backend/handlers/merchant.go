@@ -176,9 +176,20 @@ func MerchantLogin(c *gin.Context) {
 }
 
 func GetMerchants(c *gin.Context) {
-	var merchants []models.Merchant
-	config.DB.Find(&merchants)
-	c.JSON(http.StatusOK, gin.H{"data": merchants})
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+	if !requireMerchantPermissionInHandler(c, "merchant.info.manage") {
+		return
+	}
+
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": []models.Merchant{merchant}})
 }
 
 func GetMerchant(c *gin.Context) {
@@ -844,6 +855,9 @@ func UpdateMerchantInfo(c *gin.Context) {
 func UpdateTechnicianAlias(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
+		return
+	}
+	if !requireMerchantPermissionInHandler(c, "merchant.info.manage") {
 		return
 	}
 

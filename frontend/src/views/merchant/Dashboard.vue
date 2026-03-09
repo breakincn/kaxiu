@@ -1374,7 +1374,7 @@ const prevTopScanBodyStyle = {
 const merchantId = ref(null)
 const merchant = ref({})
 
-const canBusinessStatusUpdate = computed(() => hasMerchantPermission('merchant.business_status.update'))
+const canBusinessStatusUpdate = computed(() => hasMerchantPermission('merchant.business_status.manage'))
 const canDirectSaleManage = computed(() => hasMerchantPermission('merchant.direct_sale.manage'))
 const canCardIssue = computed(() => hasMerchantPermission('merchant.card.issue'))
 const canFinishVerify = computed(() => hasMerchantPermission('merchant.card.finish'))
