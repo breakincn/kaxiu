@@ -14,32 +14,77 @@
         <form @submit.prevent="submit" class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">原密码</label>
-            <input
-              v-model="form.oldPassword"
-              type="password"
-              placeholder="请输入原密码"
-              class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-            />
+            <div class="relative">
+              <input
+                v-model="form.oldPassword"
+                :type="showOldPassword ? 'text' : 'password'"
+                placeholder="请输入原密码"
+                class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+              />
+              <button
+                type="button"
+                class="absolute inset-y-0 right-0 px-4 text-gray-400"
+                @click="showOldPassword = !showOldPassword"
+              >
+                <svg v-if="showOldPassword" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-5 0-9.27-3.11-11-7 1.01-2.27 2.77-4.17 4.96-5.39M9.88 9.88A3 3 0 1014.12 14.12M6.1 6.1L3 3m18 18-3.1-3.1M9.88 9.88 6.1 6.1m8.02 8.02 3.78 3.78M14.12 14.12l-4.24-4.24"/>
+                </svg>
+                <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+              </button>
+            </div>
           </div>
 
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">新密码</label>
-            <input
-              v-model="form.newPassword"
-              type="password"
-              placeholder="请输入新密码"
-              class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-            />
+            <div class="relative">
+              <input
+                v-model="form.newPassword"
+                :type="showNewPassword ? 'text' : 'password'"
+                placeholder="请输入新密码"
+                class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+              />
+              <button
+                type="button"
+                class="absolute inset-y-0 right-0 px-4 text-gray-400"
+                @click="showNewPassword = !showNewPassword"
+              >
+                <svg v-if="showNewPassword" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-5 0-9.27-3.11-11-7 1.01-2.27 2.77-4.17 4.96-5.39M9.88 9.88A3 3 0 1014.12 14.12M6.1 6.1L3 3m18 18-3.1-3.1M9.88 9.88 6.1 6.1m8.02 8.02 3.78 3.78M14.12 14.12l-4.24-4.24"/>
+                </svg>
+                <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+              </button>
+            </div>
           </div>
 
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">再次确认新密码</label>
-            <input
-              v-model="form.confirmPassword"
-              type="password"
-              placeholder="请再次输入新密码"
-              class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-            />
+            <div class="relative">
+              <input
+                v-model="form.confirmPassword"
+                :type="showConfirmPassword ? 'text' : 'password'"
+                placeholder="请再次输入新密码"
+                class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+              />
+              <button
+                type="button"
+                class="absolute inset-y-0 right-0 px-4 text-gray-400"
+                @click="showConfirmPassword = !showConfirmPassword"
+              >
+                <svg v-if="showConfirmPassword" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-5 0-9.27-3.11-11-7 1.01-2.27 2.77-4.17 4.96-5.39M9.88 9.88A3 3 0 1014.12 14.12M6.1 6.1L3 3m18 18-3.1-3.1M9.88 9.88 6.1 6.1m8.02 8.02 3.78 3.78M14.12 14.12l-4.24-4.24"/>
+                </svg>
+                <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+              </button>
+            </div>
           </div>
 
           <button
@@ -63,6 +108,9 @@ import { getMerchantActiveAuth, setTechnicianPasswordNeedReset } from '../../uti
 
 const router = useRouter()
 const saving = ref(false)
+const showOldPassword = ref(false)
+const showNewPassword = ref(false)
+const showConfirmPassword = ref(false)
 const form = ref({
   oldPassword: '',
   newPassword: '',
