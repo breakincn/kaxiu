@@ -24,6 +24,35 @@ const (
 	sessionAbandonTimeout = 60 * time.Minute
 )
 
+func resolveQueueSessionModeForTimeoutWaiting(s *models.ServiceSession, merchant *models.Merchant) string {
+	if s == nil {
+		return ""
+	}
+	if models.IsQueueMode(s.SessionMode) {
+		return s.SessionMode
+	}
+
+	status := strings.TrimSpace(s.Status)
+	switch {
+	case strings.HasPrefix(status, models.SessionModeQueueAutoSingle+"_"):
+		return models.SessionModeQueueAutoSingle
+	case strings.HasPrefix(status, models.SessionModeQueueAutoMulti+"_"):
+		return models.SessionModeQueueAutoMulti
+	case strings.HasPrefix(status, models.SessionModeQueueManualSingle+"_"):
+		return models.SessionModeQueueManualSingle
+	case strings.HasPrefix(status, models.SessionModeQueueManualMulti+"_"):
+		return models.SessionModeQueueManualMulti
+	}
+
+	if merchant != nil && merchant.SupportQueue {
+		mode := models.ResolveSessionMode(merchant)
+		if models.IsQueueMode(mode) {
+			return mode
+		}
+	}
+	return ""
+}
+
 func queueDebugEnabledFor(merchantID uint, sessionID uint, usageID uint) bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv("KABAO_QUEUE_DEBUG")))
 	if v == "" || v == "0" || v == "false" || v == "off" {
@@ -1336,14 +1365,34 @@ func handleTimeoutWaiting(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 		log.Printf("[queue-debug] timeout_waiting merchant loaded: merchant=%d session=%d usage=%d supportQueue=%v queueMode=%s supportMCS=%v\n",
 			merchant.ID, s.ID, s.InitialUsageID, merchant.SupportQueue, merchant.QueueMode, merchant.SupportMultiCustomerService)
 	}
-	if !merchant.SupportQueue {
+	mode := resolveQueueSessionModeForTimeoutWaiting(s, &merchant)
+	if mode == "" {
 		if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
 			log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
-				merchant.ID, s.ID, s.InitialUsageID, "merchant_support_queue_false")
+				merchant.ID, s.ID, s.InitialUsageID, "non_queue_session_mode")
 		}
 		return nil
 	}
+
+	baseAt := s.StartTimeoutLastAt
+	if baseAt == nil {
+		baseAt = s.UpdatedAt
+	}
+	if baseAt == nil {
+		baseAt = s.CreatedAt
+	}
+
+	if mode == models.SessionModeQueueAutoMulti {
+		if baseAt != nil && now.Sub(*baseAt) > 15*time.Minute {
+			return failTimeoutWaitingAndRefund(tx, s, &merchant, now)
+		}
+		return nil
+	}
+
 	if queue.Default == nil {
+		if baseAt != nil && isCrossDay(baseAt, now) {
+			return failTimeoutWaitingAndRefund(tx, s, &merchant, now)
+		}
 		if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
 			log.Printf("[queue-debug] timeout_waiting skip: merchant=%d session=%d usage=%d reason=%s\n",
 				merchant.ID, s.ID, s.InitialUsageID, "queue_default_nil")
@@ -1362,28 +1411,8 @@ func handleTimeoutWaiting(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 		log.Printf("[queue-debug] timeout_waiting check: merchant=%d session=%d usage=%d mode=%s status=%s tickets=%d minNo=%d maxCalledNo=%d getNoOk=%v myNo=%d lastAt=%v now=%v\n",
 			merchant.ID, s.ID, s.InitialUsageID, merchant.QueueMode, s.Status, len(snap.Tickets), minNo, maxCalledNo, ok, myNo, s.StartTimeoutLastAt, now)
 	}
-	if merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
-		baseAt := s.StartTimeoutLastAt
-		if baseAt == nil {
-			baseAt = s.UpdatedAt
-		}
-		if baseAt == nil {
-			baseAt = s.CreatedAt
-		}
-		if baseAt != nil && now.Sub(*baseAt) > 15*time.Minute {
-			return failTimeoutWaitingAndRefund(tx, s, &merchant, now)
-		}
-		return nil
-	}
 	if !ok || myNo <= 0 || minNo <= 0 {
 		if !ok {
-			baseAt := s.StartTimeoutLastAt
-			if baseAt == nil {
-				baseAt = s.UpdatedAt
-			}
-			if baseAt == nil {
-				baseAt = s.CreatedAt
-			}
 			if isCrossDay(baseAt, now) {
 				if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
 					log.Printf("[queue-debug] timeout_waiting get_no_failed cross-day -> timeout_failed: merchant=%d session=%d usage=%d baseAt=%v now=%v\n",
@@ -1408,32 +1437,21 @@ func handleTimeoutWaiting(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 		}
 		return nil
 	}
-	if merchant.QueueMode == "auto" {
+	if mode == models.SessionModeQueueAutoSingle {
 		currentNo := minNo
-		// NormalizeLegacySessionMode 统一处理历史空 session_mode 的回退逻辑。
-		if models.NormalizeLegacySessionMode(s, &merchant) != models.SessionModeQueueAutoSingle {
-			return nil
-		}
 		cnt := s.StartTimeoutCount
 		if models.QsTimeoutWaitingExpired(currentNo, myNo, cnt) {
 			return failTimeoutWaitingAndRefund(tx, s, &merchant, now)
 		}
 		return nil
 	}
-	if merchant.QueueMode == "manual" {
+	if mode == models.SessionModeQueueManualSingle || mode == models.SessionModeQueueManualMulti {
 		currentNo := maxCalledNo
 		if currentNo <= 0 {
 			currentNo = minNo
 		}
 		endNo := myNo + 3
 		exceedNoWindow := currentNo >= endNo+1
-		baseAt := s.StartTimeoutLastAt
-		if baseAt == nil {
-			baseAt = s.UpdatedAt
-		}
-		if baseAt == nil {
-			baseAt = s.CreatedAt
-		}
 		exceedTimeWindow := false
 		if baseAt != nil {
 			exceedTimeWindow = now.Sub(*baseAt) > 15*time.Minute
