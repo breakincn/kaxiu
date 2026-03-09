@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { getMerchantActiveAuth, getTechnicianPasswordNeedReset } from '../utils/auth'
 
 const host = typeof window !== 'undefined' ? window.location.host : ''
 const pathname = typeof window !== 'undefined' ? window.location.pathname : ''
@@ -157,6 +158,11 @@ const merchantRoutes = [
     component: () => import('../views/merchant/BindPhone.vue')
   },
   {
+    path: '/merchant/technician-password',
+    name: 'MerchantTechnicianPassword',
+    component: () => import('../views/merchant/TechnicianPassword.vue')
+  },
+  {
     path: '/merchant/services',
     name: 'MerchantServices',
     component: () => import('../views/merchant/Services.vue')
@@ -282,11 +288,22 @@ router.beforeEach((to) => {
 
   const hasMerchantToken = !!localStorage.getItem('merchantToken')
   const hasTechnicianToken = !!localStorage.getItem('technicianToken')
-  if (hasMerchantToken || hasTechnicianToken) return true
+  if (!(hasMerchantToken || hasTechnicianToken)) {
+    const m = to.path.match(/^\/s\/([^/]+)(?:\/.*)?$/)
+    if (m && m[1] && !to.path.endsWith('/login')) return `/s/${m[1]}/login`
+    return '/login'
+  }
 
-  const m = to.path.match(/^\/s\/([^/]+)(?:\/.*)?$/)
-  if (m && m[1] && !to.path.endsWith('/login')) return `/s/${m[1]}/login`
-  return '/login'
+  const isTechnician = hasTechnicianToken && getMerchantActiveAuth() === 'staff'
+  const allowWhenNeedReset = to.path === '/merchant/technician-password' || to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
+  if (isTechnician && getTechnicianPasswordNeedReset() && !allowWhenNeedReset) {
+    if (typeof window !== 'undefined') {
+      window.alert('请先修改初始密码')
+    }
+    return '/merchant/technician-password'
+  }
+
+  return true
 })
 
 export default router

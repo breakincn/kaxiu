@@ -247,6 +247,10 @@ export const merchantApi = {
   // 技师（客服类型账号）自身
   getCurrentTechnician: () => api.get('/merchant/technician/me'),
   bindTechnicianPhone: (phone, code) => api.post('/merchant/technician/bind-phone', { phone, code }),
+  changeTechnicianPassword: (oldPassword, newPassword) => api.post('/merchant/technician/password/reset', {
+    old_password: oldPassword,
+    new_password: newPassword
+  }),
 
   // 技师账号管理
   getTechnicians: (roleKey) => {

@@ -141,6 +141,22 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
           </svg>
         </button>
+
+        <button
+          v-if="isTechnicianSettings"
+          @click="goToTechnicianPassword"
+          class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2h-1V9a5 5 0 00-10 0v2H6a2 2 0 00-2 2v6a2 2 0 002 2z"/>
+            </svg>
+            <span class="text-gray-800 font-medium">修改密码</span>
+          </div>
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
         
         <button
           @click="handleLogout"
@@ -182,6 +198,7 @@ const canHandCardManage = computed(() => hasMerchantPermission('merchant.service
 const canRoomNumberCardManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_room)
 
 const merchant = ref({})
+const isTechnicianSettings = computed(() => getMerchantActiveAuth() === 'staff')
 
 const fetchMerchant = async () => {
   try {
@@ -198,6 +215,10 @@ const goBack = () => {
 
 const goToBindPhone = () => {
   router.push('/merchant/bind-phone')
+}
+
+const goToTechnicianPassword = () => {
+  router.push('/merchant/technician-password')
 }
 
 const goToServices = () => {

@@ -36,6 +36,18 @@ export const getTechnicianShopSlug = () => {
   return sessionStorage.getItem('technicianShopSlug') || ''
 }
 
+export const getTechnicianPasswordNeedReset = () => {
+  return sessionStorage.getItem('technicianPasswordNeedReset') === '1'
+}
+
+export const setTechnicianPasswordNeedReset = (needReset) => {
+  if (needReset) {
+    sessionStorage.setItem('technicianPasswordNeedReset', '1')
+    return
+  }
+  sessionStorage.removeItem('technicianPasswordNeedReset')
+}
+
 export const setTechnicianShopSlug = (slug) => {
   if (slug) {
     sessionStorage.setItem('technicianShopSlug', String(slug))
@@ -57,6 +69,7 @@ export const clearMerchantAuth = () => {
     sessionStorage.removeItem('technicianName')
     sessionStorage.removeItem('technicianCode')
     sessionStorage.removeItem('technicianAccount')
+    sessionStorage.removeItem('technicianPasswordNeedReset')
     sessionStorage.removeItem('technicianShopSlug')
     sessionStorage.removeItem('merchantActiveAuth')
     return

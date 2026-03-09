@@ -162,7 +162,7 @@ import { onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ensureMerchantPermissionsLoaded, merchantApi, shopApi, smsApi } from '../../api'
 
-import { setMerchantActiveAuth, setTechnicianShopSlug } from '../../utils/auth'
+import { setMerchantActiveAuth, setTechnicianPasswordNeedReset, setTechnicianShopSlug } from '../../utils/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -269,6 +269,7 @@ const handleLogin = async () => {
       sessionStorage.setItem('technicianName', res.data.technician.name || '')
       sessionStorage.setItem('technicianCode', res.data.technician.code || '')
       sessionStorage.setItem('technicianAccount', res.data.technician.account || '')
+      setTechnicianPasswordNeedReset(!!res.data.technician.password_need_reset)
       const roleName = res.data.technician.service_role?.name || '技师'
       sessionStorage.setItem('technicianRoleName', roleName)
       console.log('技师登录 - 角色信息:', res.data.technician.service_role)
@@ -291,6 +292,7 @@ const handleLogin = async () => {
       sessionStorage.removeItem('technicianCode')
       sessionStorage.removeItem('technicianAccount')
       sessionStorage.removeItem('technicianRoleName')
+      setTechnicianPasswordNeedReset(false)
     }
 
     await ensureMerchantPermissionsLoaded()
