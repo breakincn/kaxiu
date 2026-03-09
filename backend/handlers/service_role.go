@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"kabao/config"
 	"kabao/models"
 	"net/http"
@@ -9,6 +10,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+func duplicateRolePrefixError(prefix, roleName string) string {
+	return fmt.Sprintf("%q前缀已被岗位%q使用", prefix, roleName)
+}
 
 func GetPlatformServiceRoles(c *gin.Context) {
 	var list []models.ServiceRole
@@ -82,7 +87,7 @@ func CreateMerchantProfessionalRole(c *gin.Context) {
 
 	var existing models.ServiceRole
 	if err := config.DB.Where("merchant_id = ? AND account_prefix = ?", merchantID, prefix).First(&existing).Error; err == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该前缀已存在"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": duplicateRolePrefixError(prefix, existing.Name)})
 		return
 	}
 
@@ -211,7 +216,7 @@ func CreateMerchantOperationalRole(c *gin.Context) {
 
 	var existing models.ServiceRole
 	if err := config.DB.Where("merchant_id = ? AND account_prefix = ?", merchantID, prefix).First(&existing).Error; err == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该前缀已存在"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": duplicateRolePrefixError(prefix, existing.Name)})
 		return
 	}
 

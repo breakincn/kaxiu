@@ -210,6 +210,48 @@ func TestGetMerchantProfessionalRolesExcludesPlatformRoles(t *testing.T) {
 	}
 }
 
+func TestCreateMerchantProfessionalRoleReturnsRoleNameInDuplicatePrefixError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupServiceRoleReductionTestDB(t)
+
+	m := models.Merchant{Name: "m", Phone: "18800001211", Password: "pwd"}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	mid := m.ID
+	mustCreateServiceRole(t, config.DB, models.ServiceRole{
+		MerchantID:     &mid,
+		Key:            "m1_zj",
+		Name:           "助教",
+		AccountPrefix:  "zj",
+		RoleType:       "professional",
+		IsActive:       true,
+	})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/merchant/professional-roles", bytes.NewBufferString(`{"name":"讲师","account_prefix":"zj"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("auth_type", "merchant")
+	c.Set("merchant_id", m.ID)
+
+	CreateMerchantProfessionalRole(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if resp.Error != `"zj"前缀已被岗位"助教"使用` {
+		t.Fatalf("unexpected error body=%s", rec.Body.String())
+	}
+}
+
 func TestCreateMerchantTechnicianRejectsPlatformProfessionalRole(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB
