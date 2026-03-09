@@ -295,11 +295,8 @@ router.beforeEach((to) => {
   }
 
   const isTechnician = hasTechnicianToken && getMerchantActiveAuth() === 'staff'
-  const allowWhenNeedReset = to.path === '/merchant/technician-password' || to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
+  const allowWhenNeedReset = to.path === '/merchant/technician-password' || to.path === '/merchant/settings' || to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
   if (isTechnician && getTechnicianPasswordNeedReset() && !allowWhenNeedReset) {
-    if (typeof window !== 'undefined') {
-      window.alert('请先修改初始密码')
-    }
     return '/merchant/technician-password'
   }
 

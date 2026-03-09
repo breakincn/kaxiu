@@ -303,6 +303,12 @@ const handleLogin = async () => {
     console.log('technicianToken:', localStorage.getItem('technicianToken'))
     console.log('technicianMerchantId:', localStorage.getItem('technicianMerchantId'))
     
+    if (res.data.technician?.password_need_reset) {
+      alert('请先修改初始密码')
+      await router.replace('/merchant/technician-password')
+      return
+    }
+
     console.log('即将执行 router.push("/merchant")')
     router.push('/merchant').then(() => {
       console.log('router.push 成功')
