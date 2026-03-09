@@ -363,29 +363,21 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		u := &(*usages)[i]
 		u.CanRevoke = false
 		u.RevokeDeadlineAt = nil
-		if u.UsedAt == nil {
-			continue
+		dl := revokeDeadlineAt(u.UsedAt)
+		if dl != nil {
+			u.RevokeDeadlineAt = dl
 		}
-		if u.Merchant.SupportCustomerServiceMode == false {
-			continue
+		if s, ok := byUsageID[u.ID]; ok {
+			sessionForRevoke := models.ServiceSession{
+				Status:            s.Status,
+				RoomID:            s.RoomID,
+				TechnicianID:      s.TechnicianID,
+				StartTimeoutCount: s.StartTimeoutCount,
+				StartConfirmedAt:  resolveSessionStartConfirmedAt(s.Status, s.StartConfirmedAt, s.StartedAt),
+				StartedAt:         s.StartedAt,
+			}
+			u.CanRevoke = canRevokeUsageWithSession(u, &sessionForRevoke, now)
 		}
-		if u.Status != "in_progress" {
-			continue
-		}
-		// 起单成功/结单成功不可撤销
-		if u.ServiceSessionStartConfirmedAt != nil {
-			continue
-		}
-		dl := u.UsedAt.Add(12 * time.Hour)
-		u.RevokeDeadlineAt = &dl
-		if !now.Before(dl) {
-			continue
-		}
-		// 仅当起单超时累计达到2次，才允许撤销
-		if u.StartTimeoutCount < 2 {
-			continue
-		}
-		u.CanRevoke = true
 	}
 }
 

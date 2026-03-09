@@ -288,7 +288,7 @@
                 {{ getUsageStatusText(usage) }}
               </div>
               <button
-                v-if="isUsageStartTimeout(usage) && usage?.can_revoke"
+                v-if="usage?.can_revoke"
                 class="mt-1 px-2 py-1 text-xs border border-red-400 text-red-500 rounded disabled:opacity-50"
                 :disabled="revokeLoading"
                 @click.stop="doRevokeUsage(usage)"

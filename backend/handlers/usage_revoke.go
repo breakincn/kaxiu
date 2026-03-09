@@ -43,8 +43,8 @@ func UserRevokeUsage(c *gin.Context) {
 		if !u.Merchant.SupportCustomerServiceMode {
 			return apiErr{status: http.StatusBadRequest, msg: "该商户无需撤销"}
 		}
-		dl := u.UsedAt.Add(12 * time.Hour)
-		if !now.Before(dl) {
+		dl := revokeDeadlineAt(u.UsedAt)
+		if dl == nil || !now.Before(*dl) {
 			return apiErr{status: http.StatusBadRequest, msg: "已超过可撤销时间"}
 		}
 
@@ -68,16 +68,11 @@ func UserRevokeUsage(c *gin.Context) {
 			return err
 		}
 
-		// 起单成功/结单成功不可撤销
-		if s.StartConfirmedAt != nil || s.StartedAt != nil {
-			return apiErr{status: http.StatusBadRequest, msg: "已起单，不可撤销"}
-		}
-		revokeBase := models.NormalizeSessionStatus(s.Status)
-		if revokeBase == "serving" || revokeBase == "auto_finishing" || revokeBase == "finished" {
-			return apiErr{status: http.StatusBadRequest, msg: "服务已开始/已完成，不可撤销"}
-		}
 		if s.StartTimeoutCount < 2 {
 			return apiErr{status: http.StatusBadRequest, msg: "上钟超时未达到2次，不可撤销"}
+		}
+		if !isServiceSessionInRevokeablePhase(&u.Merchant, &s) {
+			return apiErr{status: http.StatusBadRequest, msg: "当前阶段不可撤销"}
 		}
 
 		// 返还次数
