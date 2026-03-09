@@ -521,14 +521,15 @@ func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now t
 	activeSessionStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 
 	type candLite struct {
-		ID           uint `gorm:"column:id"`
-		TechnicianID uint `gorm:"column:technician_id"`
+		ID            uint `gorm:"column:id"`
+		TechnicianID  uint `gorm:"column:technician_id"`
+		ServiceRoleID uint `gorm:"column:service_role_id"`
 	}
 
 	var cand candLite
 	err := tx.
 		Model(&models.TechnicianAttendance{}).
-		Select("technician_attendances.id, technician_attendances.technician_id").
+		Select("technician_attendances.id, technician_attendances.technician_id, t.service_role_id").
 		Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
 		Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
 		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", s.MerchantID, start).
@@ -560,10 +561,7 @@ func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now t
 		return false, err
 	}
 
-	var merchant models.Merchant
-	if err := tx.Select("id", "queue_waiting_start_seconds").First(&merchant, s.MerchantID).Error; err != nil {
-		return false, err
-	}
+	timeoutSeconds := config.GetMerchantRoleStartPendingTimeoutSeconds(tx, s.MerchantID, cand.ServiceRoleID)
 
 	updates := map[string]interface{}{
 		"technician_id":                 cand.TechnicianID,
@@ -571,7 +569,7 @@ func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now t
 		"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 		"staff_select_cooldown_until":   nil,
 		"staff_select_entered_at":       nil,
-		"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(&merchant),
+		"start_pending_timeout_seconds": timeoutSeconds,
 	}
 	if err := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND technician_id IS NULL AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).

@@ -152,26 +152,37 @@ func SetMerchantRolePermissionOverrides(c *gin.Context) {
 		return
 	}
 
-	for _, it := range input.Items {
-		key := strings.TrimSpace(it.PermissionKey)
-		if key == "" {
-			continue
-		}
-		var perm models.Permission
-		if err := config.DB.Where("`key` = ?", key).First(&perm).Error; err != nil {
-			continue
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		for _, it := range input.Items {
+			key := strings.TrimSpace(it.PermissionKey)
+			if key == "" {
+				continue
+			}
+			var perm models.Permission
+			if err := tx.Where("`key` = ?", key).First(&perm).Error; err != nil {
+				continue
+			}
+
+			var existing models.MerchantRolePermissionOverride
+			err := tx.Where("merchant_id = ? AND service_role_id = ? AND permission_id = ?", merchantID, role.ID, perm.ID).First(&existing).Error
+			if err == nil {
+				if err := tx.Model(&models.MerchantRolePermissionOverride{}).Where("id = ?", existing.ID).Updates(map[string]interface{}{"allowed": it.Allowed}).Error; err != nil {
+					return err
+				}
+				continue
+			}
+			if err != gorm.ErrRecordNotFound {
+				return err
+			}
+			if err := tx.Create(&models.MerchantRolePermissionOverride{MerchantID: merchantID, ServiceRoleID: role.ID, PermissionID: perm.ID, Allowed: it.Allowed}).Error; err != nil {
+				return err
+			}
 		}
 
-		var existing models.MerchantRolePermissionOverride
-		err := config.DB.Where("merchant_id = ? AND service_role_id = ? AND permission_id = ?", merchantID, role.ID, perm.ID).First(&existing).Error
-		if err == nil {
-			config.DB.Model(&models.MerchantRolePermissionOverride{}).Where("id = ?", existing.ID).Updates(map[string]interface{}{"allowed": it.Allowed})
-			continue
-		}
-		if err != gorm.ErrRecordNotFound {
-			continue
-		}
-		config.DB.Create(&models.MerchantRolePermissionOverride{MerchantID: merchantID, ServiceRoleID: role.ID, PermissionID: perm.ID, Allowed: it.Allowed})
+		return nil
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})

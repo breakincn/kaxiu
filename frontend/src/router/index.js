@@ -237,6 +237,11 @@ const merchantRoutes = [
     component: () => import('../views/merchant/RolePermissionAdjust.vue')
   },
   {
+    path: '/merchant/role-start-pending-settings/:roleKey',
+    name: 'MerchantRoleStartPendingAdjust',
+    component: () => import('../views/merchant/RoleStartPendingAdjust.vue')
+  },
+  {
     path: '/platform-admin/login',
     name: 'PlatformAdminLogin',
     component: () => import('../views/platformAdmin/Login.vue')

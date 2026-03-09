@@ -823,13 +823,14 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		if activeServingCnt > 0 {
 			return apiErr{status: http.StatusBadRequest, msg: "该工作人员当前正在服务中，请先完成当前服务再分配"}
 		}
+		timeoutSeconds := config.GetMerchantTechnicianStartPendingTimeoutSeconds(tx, merchantID, input.TechnicianID)
 		updates := map[string]interface{}{
 			"technician_id":                 input.TechnicianID,
 			"last_technician_id":            input.TechnicianID,
 			"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 			"staff_select_entered_at":       nil,
 			"staff_select_cooldown_until":   nil,
-			"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(&m),
+			"start_pending_timeout_seconds": timeoutSeconds,
 		}
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err

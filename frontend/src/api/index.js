@@ -269,6 +269,8 @@ export const merchantApi = {
   // 角色权限微调
   getRolePermissions: (roleKey) => api.get(`/merchant/role-permissions/${roleKey}`),
   setRolePermissions: (roleKey, data) => api.post(`/merchant/role-permissions/${roleKey}`, data),
+  getRoleStartPendingSetting: (roleKey) => api.get(`/merchant/role-start-pending-settings/${encodeURIComponent(roleKey)}`),
+  setRoleStartPendingSetting: (roleKey, seconds) => api.put(`/merchant/role-start-pending-settings/${encodeURIComponent(roleKey)}`, { start_pending_timeout_seconds: seconds }),
 
   // 岗位签到配置（按岗位独立控制是否需要签到）
   getRoleAttendanceConfigs: () => api.get('/merchant/role-attendance-configs'),

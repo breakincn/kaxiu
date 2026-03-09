@@ -112,9 +112,13 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `role_type` varchar(20) NOT NULL DEFAULT '' COMMENT '角色类型：operational/professional'")
 	// service_roles: 是否需要签到（按岗位配置）
 	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `require_attendance` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否需要签到（0-不需要，1-需要）'")
+	// service_roles: 岗位默认待起单超时秒数
+	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `start_pending_timeout_seconds` int NOT NULL DEFAULT 300 COMMENT '岗位默认待起单超时秒数'")
 
 	// merchant_role_attendance_configs: 商户维度覆盖岗位签到配置
 	DB.Exec("CREATE TABLE IF NOT EXISTS `merchant_role_attendance_configs` (\n  `id` int unsigned NOT NULL AUTO_INCREMENT,\n  `merchant_id` int unsigned NOT NULL,\n  `service_role_id` int unsigned NOT NULL,\n  `require_attendance` tinyint(1) NOT NULL DEFAULT 1,\n  `created_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),\n  `updated_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uidx_m_role_att` (`merchant_id`,`service_role_id`),\n  KEY `idx_m_role_att_merchant` (`merchant_id`),\n  KEY `idx_m_role_att_role` (`service_role_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商户岗位签到配置（覆盖service_roles.require_attendance）'")
+	// merchant_role_start_pending_configs: 商户维度覆盖岗位待起单超时秒数
+	DB.Exec("CREATE TABLE IF NOT EXISTS `merchant_role_start_pending_configs` (\n  `id` int unsigned NOT NULL AUTO_INCREMENT,\n  `merchant_id` int unsigned NOT NULL,\n  `service_role_id` int unsigned NOT NULL,\n  `start_pending_timeout_seconds` int NOT NULL DEFAULT 300,\n  `created_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),\n  `updated_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uidx_m_role_start_pending` (`merchant_id`,`service_role_id`),\n  KEY `idx_m_role_start_pending_merchant` (`merchant_id`),\n  KEY `idx_m_role_start_pending_role` (`service_role_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商户岗位待起单超时配置（覆盖service_roles.start_pending_timeout_seconds）'")
 
 	// 添加表注释
 	DB.Exec("ALTER TABLE `users` COMMENT = '用户表'")

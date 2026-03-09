@@ -506,12 +506,14 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			return err
 		}
 
+		timeoutSeconds := config.GetMerchantTechnicianStartPendingTimeoutSeconds(tx, s.MerchantID, input.TechnicianID)
+
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
 			"technician_id":                 input.TechnicianID,
 			"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 			"staff_select_entered_at":       nil,
 			"staff_select_cooldown_until":   nil,
-			"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(&merchant),
+			"start_pending_timeout_seconds": timeoutSeconds,
 		}).Error; err != nil {
 			return err
 		}

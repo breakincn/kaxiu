@@ -173,6 +173,9 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	// 岗位签到配置（按岗位独立控制是否需要签到）
 	auth.GET("/role-attendance-configs", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantRoleAttendanceConfigs)
 	auth.PUT("/role-attendance-configs/:roleKey", middleware.RequirePermission("merchant.cs.manage"), handlers.SetMerchantRoleAttendanceConfig)
+	// 岗位参数设置：待起单超时秒数
+	auth.GET("/role-start-pending-settings/:roleKey", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantRoleStartPendingSetting)
+	auth.PUT("/role-start-pending-settings/:roleKey", middleware.RequirePermission("merchant.cs.manage"), handlers.SetMerchantRoleStartPendingSetting)
 
 	// 房间管理
 	auth.GET("/rooms", middleware.RequireAnyPermission("merchant.room.view", "merchant.service.manage"), handlers.ListRooms)

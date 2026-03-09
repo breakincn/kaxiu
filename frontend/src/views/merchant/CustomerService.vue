@@ -113,6 +113,14 @@
                       >
                         权限微调
                       </button>
+                      <button
+                        v-if="group.role"
+                        type="button"
+                        class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
+                        @click="openStartPendingAdjust(group.role.key)"
+                      >
+                        参数设置
+                      </button>
                     </div>
                   </div>
 
@@ -193,6 +201,14 @@
                         @click="openPermissionAdjustProfessional(group.role.key)"
                       >
                         权限微调
+                      </button>
+                      <button
+                        v-if="group.role"
+                        type="button"
+                        class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
+                        @click="openStartPendingAdjust(group.role.key)"
+                      >
+                        参数设置
                       </button>
                     </div>
                   </div>
@@ -564,6 +580,18 @@ const openPermissionAdjustOperationalByKey = (roleKey) => {
 const openPermissionAdjustProfessional = (roleKey) => {
   if (!roleKey) return
   router.push(`/merchant/role-permissions/${roleKey}`)
+}
+
+const openStartPendingAdjust = (roleKey) => {
+  if (!roleKey) return
+  const role = allRoles.value.find((r) => r?.key === roleKey)
+  router.push({
+    path: `/merchant/role-start-pending-settings/${roleKey}`,
+    query: {
+      ...(role?.name ? { role_name: role.name } : {}),
+      ...(merchant.value?.start_term ? { start_term: merchant.value.start_term } : {})
+    }
+  })
 }
 
 const load = async () => {
