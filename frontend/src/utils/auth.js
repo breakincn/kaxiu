@@ -1,3 +1,7 @@
+import { ref } from 'vue'
+
+const merchantPermissionVersion = ref(0)
+
 export const getMerchantActiveAuth = () => {
   const v = sessionStorage.getItem('merchantActiveAuth')
   return v === 'staff' ? 'staff' : 'merchant'
@@ -80,11 +84,13 @@ export const setMerchantPermissionKeys = (keys) => {
   const arr = Array.isArray(keys) ? keys : []
   sessionStorage.setItem(getMerchantPermissionKeysStorageKey(), JSON.stringify(arr))
   sessionStorage.removeItem('merchantPermissionKeys')
+  merchantPermissionVersion.value++
 }
 
 export const clearMerchantPermissionKeys = () => {
   sessionStorage.removeItem(getMerchantPermissionKeysStorageKey())
   sessionStorage.removeItem('merchantPermissionKeys')
+  merchantPermissionVersion.value++
 }
 
 export const getTechnicianId = () => {
@@ -99,6 +105,7 @@ export const isTechnicianAuth = () => {
 }
 
 export const hasMerchantPermission = (key) => {
+  void merchantPermissionVersion.value
   const k = String(key || '').trim()
   if (!k) return false
   const keys = getMerchantPermissionKeys()

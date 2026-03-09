@@ -1731,9 +1731,24 @@ const getDefaultTab = () => {
     return 'cards'
   } else if (showTableTab.value) {
     return 'table'
+  } else if (showServiceTab.value) {
+    return 'service'
   } else {
     return 'queue'
   }
+}
+
+const getFirstVisibleTab = () => {
+  if (showAppointmentTab.value) return 'appointment'
+  if (showQueueTab.value) return 'queue'
+  if (showVerifyTab.value) return 'verify'
+  if (showStartTab.value) return 'start'
+  if (showFinishTab.value) return 'finish'
+  if (showNoticeTab.value) return 'notice'
+  if (showCardsTab.value) return 'cards'
+  if (showTableTab.value) return 'table'
+  if (showServiceTab.value) return 'service'
+  return 'queue'
 }
 
 const showSellView = ref(false)
@@ -3983,87 +3998,19 @@ onMounted(async () => {
       }
     }
   } else {
-    // 如果指定了tab但没有权限，则切换到默认tab
-    if (currentTab.value === 'queue' && !showQueueTab.value) {
-      if (showVerifyTab.value) {
-        selectTab('verify')
-      } else if (showFinishTab.value) {
-        selectTab('finish')
-      } else if (showNoticeTab.value) {
-        selectTab('notice')
-      } else {
-        selectTab(showCardsTab.value ? 'cards' : 'queue')
-      }
-    } else if (currentTab.value === 'verify' && !showVerifyTab.value) {
-      if (showQueueTab.value) {
-        selectTab('queue')
-      } else if (showStartTab.value) {
-        selectTab('start')
-      } else if (showFinishTab.value) {
-        selectTab('finish')
-      } else if (showNoticeTab.value) {
-        selectTab('notice')
-      } else {
-        selectTab(showCardsTab.value ? 'cards' : 'queue')
-      }
-    } else if (currentTab.value === 'start' && !showStartTab.value) {
-      if (showQueueTab.value) {
-        selectTab('queue')
-      } else if (showVerifyTab.value) {
-        selectTab('verify')
-      } else if (showFinishTab.value) {
-        selectTab('finish')
-      } else if (showNoticeTab.value) {
-        selectTab('notice')
-      } else {
-        selectTab(showCardsTab.value ? 'cards' : 'queue')
-      }
-    } else if (currentTab.value === 'finish' && !showFinishTab.value) {
-      if (showQueueTab.value) {
-        selectTab('queue')
-      } else if (showVerifyTab.value) {
-        selectTab('verify')
-      } else if (showNoticeTab.value) {
-        selectTab('notice')
-      } else {
-        selectTab(showCardsTab.value ? 'cards' : 'queue')
-      }
-    } else if (currentTab.value === 'notice' && !showNoticeTab.value) {
-      if (showQueueTab.value) {
-        selectTab('queue')
-      } else if (showVerifyTab.value) {
-        selectTab('verify')
-      } else if (showFinishTab.value) {
-        selectTab('finish')
-      } else {
-        selectTab(showCardsTab.value ? 'cards' : (showTableTab.value ? 'table' : 'queue'))
-      }
-    } else if (currentTab.value === 'cards' && !showCardsTab.value) {
-      if (showQueueTab.value) {
-        selectTab('queue')
-      } else if (showVerifyTab.value) {
-        selectTab('verify')
-      } else if (showFinishTab.value) {
-        selectTab('finish')
-      } else if (showNoticeTab.value) {
-        selectTab('notice')
-      } else {
-        selectTab(showTableTab.value ? 'table' : 'queue')
-      }
-    } else if (currentTab.value === 'table' && !showTableTab.value) {
-      if (showQueueTab.value) {
-        selectTab('queue')
-      } else if (showVerifyTab.value) {
-        selectTab('verify')
-      } else if (showFinishTab.value) {
-        selectTab('finish')
-      } else if (showNoticeTab.value) {
-        selectTab('notice')
-      } else if (showCardsTab.value) {
-        selectTab('cards')
-      } else {
-        selectTab('queue')
-      }
+    const tabVisibleMap = {
+      queue: showQueueTab.value,
+      verify: showVerifyTab.value,
+      appointment: showAppointmentTab.value,
+      start: showStartTab.value,
+      finish: showFinishTab.value,
+      notice: showNoticeTab.value,
+      cards: showCardsTab.value,
+      table: showTableTab.value,
+      service: showServiceTab.value
+    }
+    if (!tabVisibleMap[currentTab.value]) {
+      selectTab(getFirstVisibleTab())
     }
   }
 
