@@ -82,6 +82,14 @@ func TestCreateMerchantTechnicianStoresOriginalPasswordAndListFlag(t *testing.T)
 	if createResp.Data.ID == 0 || strings.TrimSpace(createResp.Data.DefaultPassword) == "" {
 		t.Fatalf("unexpected create response: %s", rec.Body.String())
 	}
+	if len(createResp.Data.DefaultPassword) != 8 {
+		t.Fatalf("want 8-digit default password, got %q", createResp.Data.DefaultPassword)
+	}
+	for _, ch := range createResp.Data.DefaultPassword {
+		if ch < '0' || ch > '9' {
+			t.Fatalf("want numeric-only default password, got %q", createResp.Data.DefaultPassword)
+		}
+	}
 
 	var tech models.Technician
 	if err := config.DB.First(&tech, createResp.Data.ID).Error; err != nil {

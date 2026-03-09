@@ -302,7 +302,7 @@
           </div>
 
           <div v-if="!isEdit" class="text-gray-500 text-sm mb-5">
-            系统将自动生成账号和默认密码，创建后可查看并复制原始密码
+            系统将自动生成账号和 8 位纯数字默认密码，创建后可查看并复制原始密码
           </div>
 
           <div v-if="isEdit" class="mb-5">
@@ -697,6 +697,7 @@ const closeAdd = () => {
   showAdd.value = false
   isEdit.value = false
   form.value = { id: 0, name: '', window_no: '' }
+  closeResetPasswordModal()
 }
 
 const openPasswordModal = ({ title, name, password }) => {
@@ -713,10 +714,18 @@ const closePasswordModal = () => {
   passwordModalPassword.value = ''
 }
 
+const closeAllModals = () => {
+  closePasswordModal()
+  closeResetPasswordModal()
+  closeAdd()
+  closeAddRole()
+}
+
 const copyPassword = async () => {
   if (!passwordModalPassword.value) return
   try {
     await navigator.clipboard.writeText(passwordModalPassword.value)
+    closeAllModals()
     alert('已复制')
   } catch (e) {
     alert('复制失败')

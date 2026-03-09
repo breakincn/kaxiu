@@ -766,10 +766,8 @@ func GetTechniciansByMerchantID(c *gin.Context) {
 }
 
 func generateTemporaryPassword(length int) (string, error) {
-	if length < 10 {
-		length = 10
-	}
-	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+	length = 8
+	const alphabet = "0123456789"
 	buf := make([]byte, length)
 	for i := 0; i < length; i++ {
 		var b [1]byte
