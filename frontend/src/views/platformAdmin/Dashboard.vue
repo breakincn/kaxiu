@@ -11,9 +11,9 @@
     <div class="px-4 py-4 space-y-4">
       <div class="bg-white rounded-xl shadow-sm p-4">
         <div class="flex items-center justify-between">
-          <div class="text-gray-800 font-medium">固定角色（ServiceRole）</div>
+          <div class="text-gray-800 font-medium">运营角色（ServiceRole）</div>
           <button type="button" class="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-medium" @click="openProfessionalBasePerms">
-            配置专业客服基础默认权限
+            配置基础权限
           </button>
         </div>
         <div class="mt-2 text-sm text-gray-500">平台后台仅保留固定角色默认权限配置，不再新增、编辑或删除客服角色。</div>
