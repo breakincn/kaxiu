@@ -213,25 +213,27 @@
     <div class="px-4 mt-6">
       <button
         @click="saveInfo"
-        :disabled="saving"
+        :disabled="loading || saving || !isDirty"
         class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {{ saving ? '保存中...' : '保存设置' }}
+        {{ saving ? '保存中...' : '保存' }}
       </button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
 
 import { getMerchantId } from '../../utils/auth'
 
 const router = useRouter()
+const loading = ref(true)
 const saving = ref(false)
 const useAllDay = ref(false)
+const initialSnapshot = ref('')
 
 const form = ref({
   morning_start: '',
@@ -249,6 +251,26 @@ const form = ref({
   start_term: '',
   finish_term: ''
 })
+
+const buildSnapshot = () => JSON.stringify({
+  useAllDay: !!useAllDay.value,
+  morning_start: form.value.morning_start || '',
+  morning_end: form.value.morning_end || '',
+  afternoon_start: form.value.afternoon_start || '',
+  afternoon_end: form.value.afternoon_end || '',
+  evening_start: form.value.evening_start || '',
+  evening_end: form.value.evening_end || '',
+  all_day_start: form.value.all_day_start || '',
+  all_day_end: form.value.all_day_end || '',
+  province: form.value.province || '',
+  city: form.value.city || '',
+  district: form.value.district || '',
+  address: form.value.address || '',
+  start_term: form.value.start_term || '',
+  finish_term: form.value.finish_term || ''
+})
+
+const isDirty = computed(() => buildSnapshot() !== initialSnapshot.value)
 
 const goBack = () => {
   router.back()
@@ -271,6 +293,7 @@ const handleAllDayToggle = () => {
 }
 
 const fetchMerchantInfo = async () => {
+  loading.value = true
   try {
     const merchantId = getMerchantId()
     if (!merchantId) {
@@ -280,6 +303,23 @@ const fetchMerchantInfo = async () => {
 
     const res = await merchantApi.getMerchant(merchantId)
     const data = res.data.data
+
+    form.value = {
+      morning_start: '',
+      morning_end: '',
+      afternoon_start: '',
+      afternoon_end: '',
+      evening_start: '',
+      evening_end: '',
+      all_day_start: '',
+      all_day_end: '',
+      province: data.province || '',
+      city: data.city || '',
+      district: data.district || '',
+      address: data.address || '',
+      start_term: data.start_term || '',
+      finish_term: data.finish_term || ''
+    }
 
     // 判断是全天营业还是分时段
     if (data.all_day_start || data.all_day_end) {
@@ -295,15 +335,11 @@ const fetchMerchantInfo = async () => {
       form.value.evening_start = data.evening_start || ''
       form.value.evening_end = data.evening_end || ''
     }
-
-    form.value.province = data.province || ''
-    form.value.city = data.city || ''
-    form.value.district = data.district || ''
-    form.value.address = data.address || ''
-    form.value.start_term = data.start_term || ''
-    form.value.finish_term = data.finish_term || ''
+    initialSnapshot.value = buildSnapshot()
   } catch (err) {
     console.error('获取商户信息失败:', err)
+  } finally {
+    loading.value = false
   }
 }
 
@@ -314,7 +350,7 @@ const saveInfo = async () => {
   try {
     await merchantApi.updateMerchantInfo(form.value)
     alert('保存成功')
-    router.back()
+    await fetchMerchantInfo()
   } catch (err) {
     alert(err.response?.data?.error || '保存失败')
   } finally {

@@ -63,8 +63,8 @@
 
         <button
           @click="save"
-          :disabled="saving"
-          class="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+          :disabled="loading || saving || !isDirty"
+          class="w-full py-3 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {{ saving ? '保存中...' : '保存' }}
         </button>
@@ -74,7 +74,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
 
@@ -82,12 +82,21 @@ const router = useRouter()
 
 const loading = ref(true)
 const saving = ref(false)
+const initialSnapshot = ref('')
 
 const form = ref({
   room_number_card_prefix: '',
   room_number_card_start_no: 1,
   room_number_card_end_no: 50
 })
+
+const normalizeForm = (value) => JSON.stringify({
+  room_number_card_prefix: String(value.room_number_card_prefix || ''),
+  room_number_card_start_no: Number(value.room_number_card_start_no || 0),
+  room_number_card_end_no: Number(value.room_number_card_end_no || 0)
+})
+
+const isDirty = computed(() => normalizeForm(form.value) !== initialSnapshot.value)
 
 const goBack = () => {
   if (window.history.length > 1) {
@@ -112,6 +121,7 @@ const load = async () => {
       room_number_card_start_no: m.room_number_card_start_no || 1,
       room_number_card_end_no: m.room_number_card_end_no || 50
     }
+    initialSnapshot.value = normalizeForm(form.value)
   } catch (e) {
     console.error('加载房间号牌设置失败', e)
     alert(e.response?.data?.error || '加载失败')

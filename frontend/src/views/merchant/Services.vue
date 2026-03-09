@@ -63,8 +63,8 @@
 
         <button
           @click="save"
-          :disabled="saving"
-          class="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+          :disabled="loading || saving || !isDirty"
+          class="w-full py-3 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {{ saving ? '保存中...' : '保存' }}
         </button>
@@ -74,7 +74,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
 import { replaceTerms } from '../../utils/terms'
@@ -83,6 +83,7 @@ const router = useRouter()
 
 const loading = ref(true)
 const saving = ref(false)
+const initialSnapshot = ref('')
 
 const merchantBizTime = ref({
   all_day_start: '',
@@ -116,6 +117,20 @@ const form = ref({
   support_order_complete: false,
   support_hand_card: false
 })
+
+const normalizeForm = (value) => JSON.stringify({
+  support_appointment: !!value.support_appointment,
+  support_queue: !!value.support_queue,
+  support_room: !!value.support_room,
+  support_direct_sale: !!value.support_direct_sale,
+  support_customer_service: !!value.support_customer_service,
+  support_customer_service_mode: !!value.support_customer_service_mode,
+  support_project: !!value.support_project,
+  support_order_complete: !!value.support_order_complete,
+  support_hand_card: !!value.support_hand_card
+})
+
+const isDirty = computed(() => normalizeForm(form.value) !== initialSnapshot.value)
 
 const goBack = () => {
   if (window.history.length > 1) {
@@ -158,6 +173,7 @@ const load = async () => {
       support_order_complete: !!m.support_order_complete,
       support_hand_card: !!m.support_hand_card
     }
+    initialSnapshot.value = normalizeForm(form.value)
   } catch (e) {
     console.error('加载商户服务配置失败', e)
     alert(e.response?.data?.error || '加载失败')

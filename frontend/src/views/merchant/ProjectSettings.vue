@@ -66,8 +66,8 @@
 
         <button
           @click="save"
-          :disabled="saving"
-          class="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+          :disabled="loading || saving || !isDirty"
+          class="w-full py-3 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {{ saving ? '保存中...' : '保存' }}
         </button>
@@ -77,7 +77,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantProjectApi } from '../../api'
 
@@ -85,6 +85,7 @@ const router = useRouter()
 
 const loading = ref(true)
 const saving = ref(false)
+const initialSnapshot = ref('')
 
 const removedProjectIds = ref([])
 
@@ -94,6 +95,19 @@ const form = ref({
     { id: null, name: 'B 项目(课型)', duration: 60 }
   ]
 })
+
+const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
+  projects: (projects || []).map((project) => ({
+    id: project.id ?? null,
+    name: String(project.name || '').trim(),
+    duration: Number(project.duration || 0)
+  })),
+  removedProjectIds: [...removedIds].sort((a, b) => Number(a) - Number(b))
+})
+
+const isDirty = computed(() => (
+  normalizeProjectsState(form.value.projects, removedProjectIds.value) !== initialSnapshot.value
+))
 
 const goBack = () => {
   if (window.history.length > 1) {
@@ -126,6 +140,7 @@ const load = async () => {
           { id: null, name: 'B 项目(课型)', duration: 60 }
         ]
     }
+    initialSnapshot.value = normalizeProjectsState(form.value.projects, removedProjectIds.value)
   } catch (e) {
     console.error('加载项目设置失败', e)
     alert(e.response?.data?.error || '加载失败')
