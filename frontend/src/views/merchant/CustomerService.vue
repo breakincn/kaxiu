@@ -320,6 +320,7 @@
               type="text"
               placeholder="如：助教"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+              @input="onRoleNameInput"
             />
           </div>
 
@@ -330,6 +331,7 @@
               type="text"
               placeholder="如：zj"
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+              @input="onRolePrefixInput"
             />
             <div class="text-gray-500 text-sm mt-2">最多5个英文字母，如：zj / js</div>
           </div>
@@ -533,6 +535,7 @@ const roleForm = ref({
   name: '',
   account_prefix: ''
 })
+const rolePrefixAutoMode = ref(true)
 
 const roleModalTitle = computed(() => {
   return activeType.value === 'operational' ? '添加运营岗位' : '添加专业岗位'
@@ -606,11 +609,13 @@ const openCreateOperationalByKey = (roleKey) => {
 
 const openCreateProfessionalRole = () => {
   roleForm.value = { name: '', account_prefix: '' }
+  rolePrefixAutoMode.value = true
   showAddRole.value = true
 }
 
 const openCreateOperationalRole = () => {
   roleForm.value = { name: '', account_prefix: '' }
+  rolePrefixAutoMode.value = true
   showAddRole.value = true
 }
 
@@ -781,6 +786,80 @@ const onToggleRoleAttendance = async (roleKey, checked) => {
 const closeAddRole = () => {
   showAddRole.value = false
   roleForm.value = { name: '', account_prefix: '' }
+  rolePrefixAutoMode.value = true
+}
+
+const zhInitialBoundaries = [
+  { start: '阿', initial: 'a' },
+  { start: '芭', initial: 'b' },
+  { start: '擦', initial: 'c' },
+  { start: '搭', initial: 'd' },
+  { start: '蛾', initial: 'e' },
+  { start: '发', initial: 'f' },
+  { start: '噶', initial: 'g' },
+  { start: '哈', initial: 'h' },
+  { start: '击', initial: 'j' },
+  { start: '喀', initial: 'k' },
+  { start: '垃', initial: 'l' },
+  { start: '妈', initial: 'm' },
+  { start: '拿', initial: 'n' },
+  { start: '哦', initial: 'o' },
+  { start: '啪', initial: 'p' },
+  { start: '期', initial: 'q' },
+  { start: '然', initial: 'r' },
+  { start: '撒', initial: 's' },
+  { start: '塌', initial: 't' },
+  { start: '挖', initial: 'w' },
+  { start: '昔', initial: 'x' },
+  { start: '压', initial: 'y' },
+  { start: '匝', initial: 'z' }
+]
+
+const getChineseInitial = (char) => {
+  if (!char || !/[\u4e00-\u9fff]/.test(char)) return ''
+  for (let i = zhInitialBoundaries.length - 1; i >= 0; i -= 1) {
+    const item = zhInitialBoundaries[i]
+    if (char.localeCompare(item.start, 'zh-CN') >= 0) {
+      return item.initial
+    }
+  }
+  return ''
+}
+
+const generateRolePrefix = (name) => {
+  const text = String(name || '').trim()
+  if (!text) return ''
+
+  const parts = text.match(/[A-Za-z]+|[\u4e00-\u9fff]/g) || []
+  const initials = []
+
+  parts.forEach((part) => {
+    if (initials.length >= 5) return
+    if (/^[A-Za-z]+$/.test(part)) {
+      initials.push(part[0].toLowerCase())
+      return
+    }
+    const initial = getChineseInitial(part)
+    if (initial) initials.push(initial)
+  })
+
+  return initials.join('').slice(0, 5)
+}
+
+const onRoleNameInput = () => {
+  if (!rolePrefixAutoMode.value) return
+  roleForm.value.account_prefix = generateRolePrefix(roleForm.value.name)
+}
+
+const onRolePrefixInput = () => {
+  const current = String(roleForm.value.account_prefix || '').trim().toLowerCase()
+  roleForm.value.account_prefix = current
+  if (!current) {
+    rolePrefixAutoMode.value = true
+    roleForm.value.account_prefix = generateRolePrefix(roleForm.value.name)
+    return
+  }
+  rolePrefixAutoMode.value = current === generateRolePrefix(roleForm.value.name)
 }
 
 const submitRole = async () => {
