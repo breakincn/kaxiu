@@ -637,6 +637,8 @@ const getUsageStatusText = (usage) => {
 
     // 自动叫号单窗口：过号插队窗口期
     if (sessStatus === 'timeout_waiting') {
+      const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
+      if (deadlineMs > 0 && now >= deadlineMs) return '已过期'
       return '超时过号等待'
     }
 
@@ -754,9 +756,15 @@ const getUsageStatusClass = (usage) => {
     const sessStatus = normalizeSessionStatus(usage?.service_session_status)
     const precheckedAt = usage?.service_session_start_confirmed_at
     const now = nowTick.value
+    const { isQueueSession } = getQueueSessionMeta(usage, card.value?.merchant)
     if (sessStatus === 'finished') return 'text-gray-600'
     // 服务中：绿色
     if (sessStatus === 'serving') return 'text-green-500'
+    if (isQueueSession && sessStatus === 'timeout_waiting') {
+      const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
+      if (deadlineMs > 0 && now >= deadlineMs) return 'text-red-500'
+      return 'text-blue-500'
+    }
     if (supportCSMode && supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
     if (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') return 'text-orange-500'
     // 会话已取消但 usage 仍在进行中：视为上钟超时
@@ -1055,6 +1063,16 @@ const getUsageStartTimeoutAutoAssignDeadlineAtMs = (usage) => {
   return enteredAtMs + 5 * 60 * 1000
 }
 
+const getUsageTimeoutWaitingDeadlineAtMs = (usage) => {
+  const merchantSeconds = Number(card.value?.merchant?.queue_timeout_waiting_seconds || 0)
+  const timeoutSeconds = merchantSeconds > 0 ? merchantSeconds : 15 * 60
+  const baseRaw = usage?.service_session_updated_at || usage?.updated_at || usage?.used_at
+  if (!baseRaw) return 0
+  const baseMs = new Date(baseRaw).getTime()
+  if (!Number.isFinite(baseMs) || baseMs <= 0) return 0
+  return baseMs + timeoutSeconds * 1000
+}
+
 const getUsageAutoFinishingDeadlineAtMs = (usage) => {
   const raw = usage?.service_session_finished_at
   if (!raw) return 0
@@ -1265,6 +1283,13 @@ const getUsageCountdownRefreshMilestones = (usage) => {
     }
   }
 
+  if (isQueueSession && sessStatus === 'timeout_waiting') {
+    const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
+    if (deadlineMs > 0) {
+      milestones.push({ key: `usage:${usageId}:queue_timeout_waiting_deadline`, deadlineMs, kind: 'queue_timeout_waiting', usageId })
+    }
+  }
+
   if (sessStatus === 'serving') {
     const deadlineMs = getUsageServiceFinishAtMs(usage)
     if (deadlineMs > 0) {
@@ -1312,6 +1337,9 @@ const usageStillMatchesMilestoneKind = (usage, kind) => {
   }
   if (kind === 'cs_delay_pending') {
     return !isQueueSession && supportCS && sessStatus === 'delay_pending' && getUsageSessionScheduledStartAtMs(usage) > 0
+  }
+  if (kind === 'queue_timeout_waiting') {
+    return isQueueSession && sessStatus === 'timeout_waiting' && getUsageTimeoutWaitingDeadlineAtMs(usage) > 0
   }
   if (kind === 'service_finish') {
     return sessStatus === 'serving'
@@ -1530,6 +1558,18 @@ const getUsageStatusCountdownText = (usage) => {
     }
   }
 
+  if (isQueueSession && sessStatus === 'timeout_waiting') {
+    const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
+    const diff = deadlineMs - now
+    if (deadlineMs > 0 && diff > 0) {
+      const totalSeconds = Math.floor(diff / 1000)
+      const minutes = Math.floor(totalSeconds / 60)
+      const seconds = totalSeconds % 60
+      return `${minutes}分${seconds}秒后过期`
+    }
+    return ''
+  }
+
   // 待自动下钟/结单倒计时
   if (sessStatus === 'auto_finishing' && usage?.service_session_finished_at) {
     const finishAt = new Date(usage.service_session_finished_at).getTime()
@@ -1574,6 +1614,12 @@ const getUsageStatusCountdownClass = (usage) => {
   // 待起单倒计时（红色）
   if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
     return 'text-red-500'
+  }
+
+  if (isQueueSession && sessStatus === 'timeout_waiting') {
+    const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
+    if (deadlineMs > 0 && nowTick.value >= deadlineMs) return 'text-red-500'
+    return 'text-blue-500'
   }
 
   // 待自动下钟/结单倒计时（蓝色）
