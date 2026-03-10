@@ -16,18 +16,29 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func technicianServiceStatusText(status string) string {
+func technicianStatusConflictText(status string) string {
+	switch strings.TrimSpace(status) {
+	case "busy":
+		return "在服务中"
+	case "paused":
+		return "在暂停服务中"
+	case "rest":
+		return "已下班"
+	case "idle":
+		return "当前空闲"
+	default:
+		return "状态异常"
+	}
+}
+
+func shouldBlockCustomerServiceStartByAttendance(status string, hasOtherServingSession bool) bool {
 	switch strings.TrimSpace(status) {
 	case "idle":
-		return "空闲"
+		return false
 	case "busy":
-		return "服务中"
-	case "paused":
-		return "暂停服务"
-	case "rest":
-		return "下班"
+		return hasOtherServingSession
 	default:
-		return "未知状态"
+		return true
 	}
 }
 
@@ -66,7 +77,7 @@ func lockTechnicianAttendanceForQueueScan(tx *gorm.DB, merchantID uint, technici
 		if att.Status == "paused" {
 			return nil, apiErr{status: http.StatusBadRequest, msg: "你目前在暂停服务中，请更新服务状态为空闲才可继续上号"}
 		}
-		return nil, apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新上号", technicianServiceStatusText(att.Status))}
+		return nil, apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前%s，待服务完成后才可重新上号", technicianStatusConflictText(att.Status))}
 	}
 	if err := ensureNoOtherActiveServingSessionForTechnician(tx, merchantID, technicianID, sessionID); err != nil {
 		return nil, err
@@ -243,7 +254,13 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			}
 			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("未上班签到，扫码%s失败", startTerm)}
 		}
-		if att.Status != "idle" {
+		hasOtherServingSession := false
+		if att.Status == "busy" {
+			if err := ensureNoOtherActiveServingSessionForTechnician(tx, merchantID, *s.TechnicianID, s.ID); err != nil {
+				hasOtherServingSession = true
+			}
+		}
+		if shouldBlockCustomerServiceStartByAttendance(att.Status, hasOtherServingSession) {
 			if att.Status == "paused" {
 				startTerm := "起单"
 				if merchant.StartTerm != "" {
@@ -255,7 +272,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			if merchant.StartTerm != "" {
 				startTerm = merchant.StartTerm
 			}
-			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在%s中，待服务完成后才可重新%s", technicianServiceStatusText(att.Status), startTerm)}
+			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前%s，待服务完成后才可重新%s", technicianStatusConflictText(att.Status), startTerm)}
 		}
 
 		if baseStatus == "finished" || baseStatus == "canceled" {
@@ -273,18 +290,20 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		}
 
 		// 起单成功后占用技师：仅允许 idle -> busy，避免并发重复起单
-		res := tx.Model(&models.TechnicianAttendance{}).
-			Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, *s.TechnicianID, "idle").
-			Updates(map[string]interface{}{"status": "busy"})
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			startTerm := "起单"
-			if merchant.StartTerm != "" {
-				startTerm = merchant.StartTerm
+		if att.Status == "idle" {
+			res := tx.Model(&models.TechnicianAttendance{}).
+				Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, *s.TechnicianID, "idle").
+				Updates(map[string]interface{}{"status": "busy"})
+			if res.Error != nil {
+				return res.Error
 			}
-			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在服务中，待服务完成后才可重新%s", startTerm)}
+			if res.RowsAffected == 0 {
+				startTerm := "起单"
+				if merchant.StartTerm != "" {
+					startTerm = merchant.StartTerm
+				}
+				return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在服务中，待服务完成后才可重新%s", startTerm)}
+			}
 		}
 
 		if err := tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error; err != nil {
