@@ -621,6 +621,24 @@ const getQueueSessionMeta = (usage, merchant) => {
   }
 }
 
+const getQueueSessionModeKey = (usage, merchant) => {
+  const raw = String(usage?.service_session_status || '').trim()
+  if (raw.startsWith('qs_')) return 'qs'
+  if (raw.startsWith('qm_')) return 'qm'
+  if (raw.startsWith('qms_')) return 'qms'
+  if (raw.startsWith('qmm_')) return 'qmm'
+
+  if (merchant?.support_queue) {
+    if (merchant?.queue_mode === 'auto') {
+      return merchant?.support_multi_customer_service ? 'qm' : 'qs'
+    }
+    if (merchant?.queue_mode === 'manual') {
+      return merchant?.support_multi_customer_service ? 'qmm' : 'qms'
+    }
+  }
+  return ''
+}
+
 const getUsageStatusText = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s === 'in_progress') {
@@ -637,8 +655,7 @@ const getUsageStatusText = (usage) => {
 
     // 自动叫号单窗口：过号插队窗口期
     if (sessStatus === 'timeout_waiting') {
-      const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
-      if (deadlineMs > 0 && now >= deadlineMs) return '已过期'
+      if (isTimeDrivenTimeoutWaitingExpired(usage, now)) return '已过期'
       return '超时过号等待'
     }
 
@@ -761,8 +778,7 @@ const getUsageStatusClass = (usage) => {
     // 服务中：绿色
     if (sessStatus === 'serving') return 'text-green-500'
     if (isQueueSession && sessStatus === 'timeout_waiting') {
-      const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
-      if (deadlineMs > 0 && now >= deadlineMs) return 'text-red-500'
+      if (isTimeDrivenTimeoutWaitingExpired(usage, now)) return 'text-red-500'
       return 'text-blue-500'
     }
     if (supportCSMode && supportRoom && sessStatus === 'room_selecting') return 'text-orange-500'
@@ -1073,6 +1089,13 @@ const getUsageTimeoutWaitingDeadlineAtMs = (usage) => {
   return baseMs + timeoutSeconds * 1000
 }
 
+const isTimeDrivenTimeoutWaitingExpired = (usage, nowMs = nowTick.value) => {
+  const mode = getQueueSessionModeKey(usage, card.value?.merchant)
+  if (mode !== 'qm') return false
+  const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
+  return deadlineMs > 0 && nowMs >= deadlineMs
+}
+
 const getUsageAutoFinishingDeadlineAtMs = (usage) => {
   const raw = usage?.service_session_finished_at
   if (!raw) return 0
@@ -1284,9 +1307,12 @@ const getUsageCountdownRefreshMilestones = (usage) => {
   }
 
   if (isQueueSession && sessStatus === 'timeout_waiting') {
-    const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
-    if (deadlineMs > 0) {
-      milestones.push({ key: `usage:${usageId}:queue_timeout_waiting_deadline`, deadlineMs, kind: 'queue_timeout_waiting', usageId })
+    const mode = getQueueSessionModeKey(usage, merchant)
+    if (mode === 'qm' || mode === 'qms' || mode === 'qmm') {
+      const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
+      if (deadlineMs > 0) {
+        milestones.push({ key: `usage:${usageId}:queue_timeout_waiting_deadline`, deadlineMs, kind: 'queue_timeout_waiting', usageId })
+      }
     }
   }
 
@@ -1559,13 +1585,29 @@ const getUsageStatusCountdownText = (usage) => {
   }
 
   if (isQueueSession && sessStatus === 'timeout_waiting') {
-    const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
-    const diff = deadlineMs - now
-    if (deadlineMs > 0 && diff > 0) {
-      const totalSeconds = Math.floor(diff / 1000)
-      const minutes = Math.floor(totalSeconds / 60)
-      const seconds = totalSeconds % 60
-      return `${minutes}分${seconds}秒后过期`
+    const mode = getQueueSessionModeKey(usage, merchant)
+    if (mode === 'qm') {
+      const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
+      const diff = deadlineMs - now
+      if (deadlineMs > 0 && diff > 0) {
+        const totalSeconds = Math.floor(diff / 1000)
+        const minutes = Math.floor(totalSeconds / 60)
+        const seconds = totalSeconds % 60
+        return `${minutes}分${seconds}秒后过期`
+      }
+      return ''
+    }
+    if (mode === 'qs') return '过3号失效'
+    if (mode === 'qms' || mode === 'qmm') {
+      const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
+      const diff = deadlineMs - now
+      if (deadlineMs > 0 && diff > 0) {
+        const totalSeconds = Math.floor(diff / 1000)
+        const minutes = Math.floor(totalSeconds / 60)
+        const seconds = totalSeconds % 60
+        return `超3号且${minutes}分${seconds}秒`
+      }
+      return '待超3号失效'
     }
     return ''
   }
@@ -1617,8 +1659,7 @@ const getUsageStatusCountdownClass = (usage) => {
   }
 
   if (isQueueSession && sessStatus === 'timeout_waiting') {
-    const deadlineMs = getUsageTimeoutWaitingDeadlineAtMs(usage)
-    if (deadlineMs > 0 && nowTick.value >= deadlineMs) return 'text-red-500'
+    if (isTimeDrivenTimeoutWaitingExpired(usage, nowTick.value)) return 'text-red-500'
     return 'text-blue-500'
   }
 
