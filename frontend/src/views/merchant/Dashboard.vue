@@ -134,7 +134,7 @@
         class="bg-white rounded-xl p-4 text-left border border-gray-100"
         @click="selectTab('appointment')"
       >
-        <div class="text-gray-600 text-sm mb-1">待处理预约</div>
+        <div class="text-gray-600 text-sm mb-1">待确认预约</div>
         <div class="text-3xl font-bold" :class="pendingAppointments > 0 ? 'text-orange-500' : 'text-gray-400'">{{ pendingAppointments }}</div>
         <div class="text-gray-500 text-sm">人</div>
       </button>
@@ -3464,7 +3464,7 @@ const getStatusText = (appt) => {
 
   const texts = {
     pending: '待确认',
-    confirmed: '排队中',
+    confirmed: '已确认',
     finished: '已完成',
     canceled: '已取消'
   }
