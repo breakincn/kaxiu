@@ -162,6 +162,8 @@ type Usage struct {
 	StaffSelectEnteredAt                       *time.Time  `json:"staff_select_entered_at" gorm:"-"`
 	ServiceRoom                                *Room       `json:"service_room" gorm:"-"`
 	ServiceTechnician                          *Technician `json:"service_technician" gorm:"-"`
+	ServiceTechnicianAvailable                 bool        `json:"service_technician_available" gorm:"-"`
+	ServiceTechnicianUnavailableReason         string      `json:"service_technician_unavailable_reason" gorm:"-"`
 	StartTimeoutCount                          int         `json:"start_timeout_count" gorm:"-"`
 	RevokeDeadlineAt                           *time.Time  `json:"revoke_deadline_at" gorm:"-"`
 	CanRevoke                                  bool        `json:"can_revoke" gorm:"-"`

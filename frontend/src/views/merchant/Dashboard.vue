@@ -496,6 +496,12 @@
               <div v-if="merchant?.support_hand_card" class="text-gray-500 text-sm mt-1">手牌：{{ usage.hand_card_no || '-' }} (<span v-if="!usage.hand_card_no && !isUsageHandCardReturned(usage)" class="text-red-500">未分配</span><span v-else-if="isUsageHandCardReturned(usage)">{{ getHandCardStatusText(usage) }}</span><span v-else-if="normalizeSessionStatus(usage.service_session_status) === 'serving'">{{ getHandCardStatusText(usage) }}</span><span v-else class="text-red-500">未归还</span>)</div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
+              <div v-if="usage.service_technician?.name" class="text-gray-500 text-sm mt-1">
+                当前{{ replaceTerms('客服', merchant) }}：{{ usage.service_technician.name }}
+              </div>
+              <div v-if="shouldShowUsagePendingReassign(usage)" class="text-amber-600 text-sm mt-1">
+                {{ usage.service_technician_unavailable_reason || ('当前' + replaceTerms('客服', merchant) + '不可服务') }}
+              </div>
               <div v-if="getUsageServiceRemainingSeconds(usage) !== null" class="text-gray-500 text-sm mt-1">
                 服务剩余：{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}
               </div>
@@ -511,6 +517,14 @@
               <div v-if="getVerifyOperatorInfo(usage).includes(' / ')" class="text-gray-500 text-xs mt-1">
                 {{ getVerifyOperatorInfo(usage).split(' / ')[1] }}
               </div>
+              <button
+                v-if="shouldShowUsagePendingReassign(usage)"
+                @click="reassignUsagePendingItem(usage)"
+                :disabled="isUsagePendingReassigning(usage)"
+                class="mt-2 px-3 py-2 bg-orange-500 text-white rounded-lg text-xs font-medium disabled:opacity-60"
+              >
+                {{ isUsagePendingReassigning(usage) ? '重分配中...' : '重新分配' }}
+              </button>
             </div>
           </div>
         </div>
@@ -1463,6 +1477,24 @@ const shouldShowQueuePendingReassign = (it) => {
   return st === 'start_pending' && !it.start_confirmed_at && !!String(it.technician_unavailable_reason || '').trim()
 }
 
+const getUsagePendingReassignPayload = (usage) => {
+  if (!usage) return null
+  return {
+    session_id: usage.service_session_id,
+    session_status: usage.service_session_status,
+    start_confirmed_at: usage.service_session_start_confirmed_at,
+    technician_unavailable_reason: usage.service_technician_unavailable_reason
+  }
+}
+
+const shouldShowUsagePendingReassign = (usage) => {
+  return shouldShowQueuePendingReassign(getUsagePendingReassignPayload(usage))
+}
+
+const isUsagePendingReassigning = (usage) => {
+  return isQueuePendingReassigning(getUsagePendingReassignPayload(usage))
+}
+
 const isQueuePendingReassigning = (it) => {
   const sid = Number(it?.session_id || 0)
   if (!sid) return false
@@ -1489,6 +1521,7 @@ const reassignQueuePendingItem = async (it, reason = '当前客服不可服务�
     alert(toName ? `已重新分配给 ${toName}` : '已重新分配')
     await fetchQueuePendingList(true)
     await fetchQueueCallInfo()
+    await fetchTodayUsages()
     return true
   } catch (e) {
     alert(e.response?.data?.error || '重新分配失败')
@@ -1496,6 +1529,13 @@ const reassignQueuePendingItem = async (it, reason = '当前客服不可服务�
   } finally {
     setQueuePendingReassigning(sessionId, false)
   }
+}
+
+const reassignUsagePendingItem = async (usage) => {
+  return reassignQueuePendingItem(
+    getUsagePendingReassignPayload(usage),
+    '当前客服不可服务，商户首页核销记录发起重新分配'
+  )
 }
 
 const getQueueServingItemPhaseText = (it) => {

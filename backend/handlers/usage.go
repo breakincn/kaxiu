@@ -381,6 +381,44 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 			u.CanRevoke = canRevokeUsageWithSession(u, &sessionForRevoke, now)
 		}
 	}
+
+	techIDsForAvailability := make([]uint, 0, len(*usages))
+	for i := range *usages {
+		u := &(*usages)[i]
+		u.ServiceTechnicianAvailable = true
+		u.ServiceTechnicianUnavailableReason = ""
+		if models.NormalizeSessionStatus(u.ServiceSessionStatus) != "start_pending" {
+			continue
+		}
+		if u.ServiceSessionStartConfirmedAt != nil {
+			continue
+		}
+		if u.ServiceTechnician == nil || u.ServiceTechnician.ID == 0 {
+			continue
+		}
+		techIDsForAvailability = append(techIDsForAvailability, u.ServiceTechnician.ID)
+	}
+
+	if len(techIDsForAvailability) == 0 {
+		return
+	}
+
+	techMeta := listQueuePendingTechMeta((*usages)[0].MerchantID, techIDsForAvailability)
+	for i := range *usages {
+		u := &(*usages)[i]
+		if models.NormalizeSessionStatus(u.ServiceSessionStatus) != "start_pending" || u.ServiceSessionStartConfirmedAt != nil || u.ServiceTechnician == nil || u.ServiceTechnician.ID == 0 {
+			continue
+		}
+		meta, ok := techMeta[u.ServiceTechnician.ID]
+		if !ok {
+			u.ServiceTechnicianAvailable = false
+			u.ServiceTechnicianUnavailableReason = "当前客服不可服务"
+			continue
+		}
+		reason := resolveQueuePendingTechUnavailableReason(meta)
+		u.ServiceTechnicianAvailable = reason == ""
+		u.ServiceTechnicianUnavailableReason = reason
+	}
 }
 
 // autoFixUsages 对超过12小时的使用记录自动置为完成并清空技师ID
