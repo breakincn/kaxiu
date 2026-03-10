@@ -651,7 +651,7 @@ const getUsageStatusText = (usage) => {
         if (isMultiQueueSession && !usage?.service_technician) return '待叫号'
         return '待扫码上号'
       }
-      return replaceTerms('待起单', card.value?.merchant)
+      return '待服务开始'
     }
     
     // 优先按会话状态本身展示（不要依赖当前商户开关；历史会话在关闭客服后仍需正确展示）
@@ -912,6 +912,13 @@ const getUsageSessionUpdatedAtMs = (usage) => {
 
 const getUsageSessionStartConfirmedAtMs = (usage) => {
   const v = usage?.service_session_start_confirmed_at
+  if (!v) return 0
+  const ms = new Date(v).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
+const getUsageSessionScheduledStartAtMs = (usage) => {
+  const v = usage?.service_session_scheduled_start_at
   if (!v) return 0
   const ms = new Date(v).getTime()
   return Number.isFinite(ms) ? ms : 0
@@ -1251,6 +1258,13 @@ const getUsageCountdownRefreshMilestones = (usage) => {
     }
   }
 
+  if (!isQueueSession && supportCS && sessStatus === 'delay_pending') {
+    const deadlineMs = getUsageSessionScheduledStartAtMs(usage)
+    if (deadlineMs > 0) {
+      milestones.push({ key: `usage:${usageId}:cs_delay_pending_deadline`, deadlineMs, kind: 'cs_delay_pending', usageId })
+    }
+  }
+
   if (sessStatus === 'serving') {
     const deadlineMs = getUsageServiceFinishAtMs(usage)
     if (deadlineMs > 0) {
@@ -1295,6 +1309,9 @@ const usageStillMatchesMilestoneKind = (usage, kind) => {
   }
   if (kind === 'start_timeout_auto_assign') {
     return supportCS && isUsageStartTimeout(usage) && getUsageStartTimeoutAutoAssignDeadlineAtMs(usage) > 0
+  }
+  if (kind === 'cs_delay_pending') {
+    return !isQueueSession && supportCS && sessStatus === 'delay_pending' && getUsageSessionScheduledStartAtMs(usage) > 0
   }
   if (kind === 'service_finish') {
     return sessStatus === 'serving'
