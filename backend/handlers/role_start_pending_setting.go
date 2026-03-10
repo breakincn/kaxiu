@@ -79,6 +79,12 @@ func SetMerchantRoleStartPendingSetting(c *gin.Context) {
 		return
 	}
 
+	var merchant models.Merchant
+	if err := config.DB.Select("id", "start_term").First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取失败"})
+		return
+	}
+
 	var input struct {
 		StartPendingTimeoutSeconds *int `json:"start_pending_timeout_seconds" binding:"required"`
 	}
@@ -87,7 +93,7 @@ func SetMerchantRoleStartPendingSetting(c *gin.Context) {
 		return
 	}
 	if *input.StartPendingTimeoutSeconds < 1 || *input.StartPendingTimeoutSeconds > 3600 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "待起单超时秒数范围应为 1-3600 秒"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": config.RoleStartPendingLabelForMerchant(&merchant) + "范围应为 1-3600 秒"})
 		return
 	}
 

@@ -61,7 +61,7 @@
 <script setup>
 import { computed } from 'vue'
 import { formatDateTime } from '../utils/dateFormat'
-import { replaceTerms } from '../utils/terms'
+import { getAutoFinishLabel, getPendingStartLabel } from '../utils/terms'
 import { normalizeSessionStatus } from '../utils/sessionStatus'
 
 const props = defineProps({
@@ -129,12 +129,12 @@ const getStatusText = (status) => {
     room_selecting: '选房中',
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
-    start_pending: '待起单',
-    delay_pending: '待上号',
+    start_pending: getPendingStartLabel(props.session?.merchant),
+    delay_pending: getPendingStartLabel(props.session?.merchant),
     timeout_waiting: '过号等待',
     timeout_failed: '已过期',
     serving: '服务中',
-    auto_finishing: '待结单',
+    auto_finishing: getAutoFinishLabel(props.session?.merchant),
     finished: '已完成',
     canceled: '已取消'
   }

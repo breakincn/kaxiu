@@ -159,10 +159,10 @@
                     <option value="room_selecting">选房中</option>
                     <option value="room_locked">房间已锁定</option>
                     <option value="staff_selecting">选人中</option>
-                    <option value="start_pending">{{ replaceTerms('待起单') }}</option>
+                    <option value="start_pending">{{ getPendingStartLabel(merchant, { queueMode: isQueueModeMerchant(merchant) }) }}</option>
                     <option value="delay_pending">延迟中</option>
                     <option value="serving">进行中</option>
-                    <option value="auto_finishing">{{ replaceTerms('待自动结单') }}</option>
+                    <option value="auto_finishing">{{ getAutoFinishLabel(merchant) }}</option>
                     <option value="finished">已完成</option>
                     <option value="canceled">已取消</option>
                   </select>
@@ -245,7 +245,14 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi, serviceSessionApi } from '../../api'
-import { replaceTerms } from '../../utils/terms'
+import {
+  getAutoFinishLabel,
+  getPendingStartLabel,
+  getServicePendingFinishLabel,
+  getServicePendingStartLabel,
+  isQueueModeMerchant,
+  replaceTerms
+} from '../../utils/terms'
 import { getMerchantId, isTechnicianAuth, getTechnicianId } from '../../utils/auth'
 import { normalizeSessionStatus } from '../../utils/sessionStatus'
 import ServiceSessionItem from '../../components/ServiceSessionItem.vue'
@@ -450,18 +457,12 @@ const sessionStatusText = (st) => {
   if (s === 'room_selecting') return '选房中'
   if (s === 'room_locked') return '房间已锁定'
   if (s === 'staff_selecting') return '选人中'
-  if (s === 'start_pending') {
-    const isAnyQueueMode = !merchant.value?.support_customer_service_mode && merchant.value?.support_queue && (merchant.value?.queue_mode === 'auto' || merchant.value?.queue_mode === 'manual')
-    if (isAnyQueueMode) {
-      return '待上号'
-    }
-    return replaceTerms('待起单', merchant.value)
-  }
-  if (s === 'delay_pending') return '待上号'
+  if (s === 'start_pending') return getPendingStartLabel(merchant.value, { queueMode: isQueueModeMerchant(merchant.value) })
+  if (s === 'delay_pending') return getPendingStartLabel(merchant.value, { queueMode: isQueueModeMerchant(merchant.value) })
   if (s === 'timeout_waiting') return '过号等待'
   if (s === 'timeout_failed') return '过号失败'
   if (s === 'serving') return '服务中'
-  if (s === 'auto_finishing') return replaceTerms('待自动结单', merchant.value)
+  if (s === 'auto_finishing') return getAutoFinishLabel(merchant.value)
   if (s === 'finished') return '已完成'
   if (s === 'canceled') return '已取消'
   return s || '-'
@@ -476,14 +477,10 @@ const badgeText = (it) => {
     const sst = normalizeSessionStatus(sess.status)
     const startConfirmedAt = sess.start_confirmed_at
     if (sst === 'start_pending' && !startConfirmedAt) {
-      const isAnyQueueMode = !merchant.value?.support_customer_service_mode && merchant.value?.support_queue && (merchant.value?.queue_mode === 'auto' || merchant.value?.queue_mode === 'manual')
-      if (isAnyQueueMode) {
-        return replaceTerms('服务 待上号', merchant.value)
-      }
-      return replaceTerms('服务 待起单', merchant.value)
+      return getServicePendingStartLabel(merchant.value, { queueMode: isQueueModeMerchant(merchant.value) })
     }
-    if (sst === 'auto_finishing') return replaceTerms('待自动下钟', merchant.value)
-    return replaceTerms('服务 待结单', merchant.value)
+    if (sst === 'auto_finishing') return getAutoFinishLabel(merchant.value)
+    return getServicePendingFinishLabel(merchant.value)
   }
 
   // 签到状态：仅保留空闲/暂停
@@ -513,9 +510,10 @@ const badgeClass = (it) => {
   const txt = badgeText(it)
   if (txt === '未签到') return 'bg-gray-100 text-gray-500'
   if (txt === '空闲') return 'bg-green-50 text-green-600'
-  if (txt === replaceTerms('服务 待起单', merchant.value)) return 'bg-red-50 text-red-600'
-  if (txt === replaceTerms('待自动下钟', merchant.value)) return 'bg-red-50 text-red-600'
-  if (txt === replaceTerms('服务 待结单', merchant.value)) return 'bg-orange-50 text-orange-600'
+  if (txt === getServicePendingStartLabel(merchant.value)) return 'bg-red-50 text-red-600'
+  if (txt === getServicePendingStartLabel(merchant.value, { queueMode: true })) return 'bg-red-50 text-red-600'
+  if (txt === getAutoFinishLabel(merchant.value)) return 'bg-red-50 text-red-600'
+  if (txt === getServicePendingFinishLabel(merchant.value)) return 'bg-orange-50 text-orange-600'
   if (txt === '暂停') return 'bg-blue-50 text-blue-600'
   return 'bg-blue-50 text-blue-600'
 }

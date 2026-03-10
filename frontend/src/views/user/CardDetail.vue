@@ -494,7 +494,14 @@ import { cardApi, usageApi, noticeApi, appointmentApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
 
-import { replaceTerms } from '../../utils/terms'
+import {
+  getAutoFinishLabel,
+  getPendingFinishLabel,
+  getPendingStartLabel,
+  getStartCountdownLabel,
+  getStartTimeoutLabel,
+  replaceTerms
+} from '../../utils/terms'
 import { normalizeSessionStatus } from '../../utils/sessionStatus'
 
 const router = useRouter()
@@ -639,6 +646,13 @@ const getQueueSessionModeKey = (usage, merchant) => {
   return ''
 }
 
+const getCardStartPendingLabel = () => getPendingStartLabel(card.value?.merchant)
+const getCardPendingFinishLabel = () => getPendingFinishLabel(card.value?.merchant)
+const getCardAutoFinishLabel = () => getAutoFinishLabel(card.value?.merchant)
+const getCardStartTimeoutLabel = () => getStartTimeoutLabel(card.value?.merchant)
+const getCardStartTimeoutPrompt = () => `${getStartTimeoutLabel(card.value?.merchant, '客服').replace(' 重新选择客服', '')}，请重新选择客服`
+const getCardStartTimeoutLongPressPrompt = () => `${getStartTimeoutLabel(card.value?.merchant, '客服').replace(' 重新选择客服', '')}，请长按该记录重新选择客服`
+
 const getUsageStatusText = (usage) => {
   const s = String(usage?.status || '').trim()
   if (s === 'in_progress') {
@@ -688,10 +702,10 @@ const getUsageStatusText = (usage) => {
       if (isQueueSession) {
         return '待上号'
       }
-      return replaceTerms('待起单', card.value?.merchant)
+      return getCardStartPendingLabel()
     }
     if (sessStatus === 'serving') return replaceTerms('服务中', card.value?.merchant)
-    if (sessStatus === 'auto_finishing') return replaceTerms('待自动结单', card.value?.merchant)
+    if (sessStatus === 'auto_finishing') return getCardAutoFinishLabel()
     if (supportCSMode && supportRoom && sessStatus === 'room_selecting') return '待选房间'
     if (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') {
       if (isQueueSession) {
@@ -704,7 +718,7 @@ const getUsageStatusText = (usage) => {
         if (merchant?.support_queue && (merchant?.queue_mode === 'auto' || merchant?.queue_mode === 'manual')) {
           return '待叫号'
         }
-        return replaceTerms('待起单', card.value?.merchant)
+        return getCardStartPendingLabel()
       }
       return '待选客服'
     }
@@ -717,9 +731,9 @@ const getUsageStatusText = (usage) => {
         }
         // 已经选定/自动分配了客服：应回到待起单
         if (usage?.service_technician) {
-          return replaceTerms('待起单', card.value?.merchant)
+          return getCardStartPendingLabel()
         }
-        return '上钟超时 重新选择客服'
+        return getCardStartTimeoutLabel()
       }
 
       return '已失效'
@@ -729,29 +743,29 @@ const getUsageStatusText = (usage) => {
     if (supportCSMode2) {
       const cnt = Number(usage?.start_timeout_count || 0)
       if (cnt > 0 && sessStatus === 'staff_selecting' && !usage?.service_technician) {
-        return '上钟超时 重新选择客服'
+        return getCardStartTimeoutLabel()
       }
     }
     if (supportCSMode2 && sessStatus === 'staff_selecting') {
       // 已经选定/自动分配了客服：应回到待起单
-      if (usage?.service_technician) return replaceTerms('待起单', card.value?.merchant)
+      if (usage?.service_technician) return getCardStartPendingLabel()
       return '待选客服'
     }
     if (supportCSMode2 && sessStatus === 'start_pending' && !precheckedAt) {
       const dl = getPrecheckDeadlineAtMs(usage)
-      if (dl && now < dl) return replaceTerms('待起单', card.value?.merchant)
-      if (dl && now >= dl) return '上钟超时 重新选择客服'
+      if (dl && now < dl) return getCardStartPendingLabel()
+      if (dl && now >= dl) return getCardStartTimeoutLabel()
     }
     // 未上钟成功（未确认起单）时，永远不要进入"待下钟/待结单"兗底
     if (supportCSMode2 && !precheckedAt) {
       // start_pending 且已超时：应立刻显示"上钟超时 重新选择客服"（无需刷新页面）
       if (sessStatus === 'start_pending') {
         const dl = getPrecheckDeadlineAtMs(usage)
-        if (dl && now >= dl) return '上钟超时 重新选择客服'
+        if (dl && now >= dl) return getCardStartTimeoutLabel()
       }
-      return replaceTerms('待起单', card.value?.merchant)
+      return getCardStartPendingLabel()
     }
-    return replaceTerms('待结单', card.value?.merchant)
+    return getCardPendingFinishLabel()
   }
   if (s === 'success') return '完成'
   if (s === 'failed') {
@@ -1500,7 +1514,7 @@ const getUsageStatusCountdownText = (usage) => {
     const minutes = Math.floor(totalSeconds / 60)
     const seconds = totalSeconds % 60
     const pad2 = (n) => String(n).padStart(2, '0')
-    return `待上号倒计时 ${minutes}:${pad2(seconds)}`
+    return `${getStartCountdownLabel(card.value?.merchant, { queueMode: true })} ${minutes}:${pad2(seconds)}`
   }
 
   // 待选房间倒计时（90秒）
@@ -1577,7 +1591,7 @@ const getUsageStatusCountdownText = (usage) => {
         const minutes = Math.floor(totalSeconds / 60)
         const seconds = totalSeconds % 60
         const pad2 = (n) => String(n).padStart(2, '0')
-        return `待上钟倒计时 ${minutes}:${pad2(seconds)}`
+        return `${getStartCountdownLabel(card.value?.merchant)} ${minutes}:${pad2(seconds)}`
       }
       // 超时后不显示倒计时
       return ''
@@ -1819,7 +1833,7 @@ const trySwitchUsageQrToFinish = async () => {
   if (supportCS && sessStatus === 'canceled' && !precheckedAt && !latest?.service_technician) {
     stopUsageQrPoll()
     closeUsageQrModal()
-    alert('上钟超时，请重新选择客服')
+    alert(getCardStartTimeoutPrompt())
     return
   }
   if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
@@ -1827,7 +1841,7 @@ const trySwitchUsageQrToFinish = async () => {
     if (dl && Date.now() >= dl) {
       stopUsageQrPoll()
       closeUsageQrModal()
-      alert('上钟超时，请重新选择客服')
+      alert(getCardStartTimeoutPrompt())
       return
     }
     return
@@ -1891,7 +1905,7 @@ const openUsageQrModal = async (usage) => {
 
     // 会话已取消但 usage 仍在进行中：起单二维码失效（不自动跳转，改为长按记录进入重新选客服）
   if (supportCS && sessID && sessStatus === 'canceled' && !precheckedAt && !usage?.service_technician) {
-    alert('上钟超时，请长按该记录重新选择客服')
+    alert(getCardStartTimeoutLongPressPrompt())
     return
   }
 
@@ -1899,7 +1913,7 @@ const openUsageQrModal = async (usage) => {
   if (supportCS && sessID && sessStatus === 'start_pending' && !precheckedAt) {
     const dl = getPrecheckDeadlineAtMs(usage)
     if (dl && Date.now() >= dl) {
-      alert('上钟超时，请长按该记录重新选择客服')
+      alert(getCardStartTimeoutLongPressPrompt())
       return
     }
   }

@@ -940,7 +940,7 @@
                     <option value="not_checked_in" disabled>未签到</option>
                     <option value="idle">空闲</option>
                     <option value="paused" :disabled="!canManualUpdateStatus">暂停</option>
-                    <option value="service_pending_presettlement" disabled>待上号</option>
+                    <option value="service_pending_presettlement" disabled>{{ getMerchantPendingStartLabel({ queueMode: true }) }}</option>
                     <option value="service_pending_settlement" disabled>上号</option>
                   </template>
                   <!-- 非叫号模式保持原有选项 -->
@@ -948,8 +948,8 @@
                     <option value="not_checked_in" disabled>未签到</option>
                     <option value="idle">空闲</option>
                     <option value="paused" :disabled="!canManualUpdateStatus">暂停</option>
-                    <option value="service_pending_presettlement" disabled>{{ replaceTerms('服务 待起单', merchant) }}</option>
-                    <option value="service_pending_settlement" disabled>{{ replaceTerms('服务 待结单', merchant) }}</option>
+                    <option value="service_pending_presettlement" disabled>{{ getMerchantServicePendingStartLabel() }}</option>
+                    <option value="service_pending_settlement" disabled>{{ getMerchantServicePendingFinishLabel() }}</option>
                   </template>
                 </select>
 
@@ -1014,7 +1014,7 @@
                 :disabled="continueCallLoading || queueStatusUpdating || continueCallBlockedSeconds > 0"
                 class="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 disabled:opacity-50"
               >
-                {{ continueCallLoading ? '处理中...' : (continueCallBlockedSeconds > 0 ? `等待上号(${continueCallBlockedSeconds}s)` : '继续叫号') }}
+                {{ continueCallLoading ? '处理中...' : (continueCallBlockedSeconds > 0 ? `等待${getMerchantPendingStartLabel({ queueMode: true }).replace('待', '')}(${continueCallBlockedSeconds}s)` : '继续叫号') }}
               </button>
             </template>
           </div>
@@ -1041,7 +1041,7 @@
                   v-if="getQueueWaitingItemStartPendingRemainingSeconds(it) !== null"
                   :class="['text-sm mt-1 font-medium', getQueueWaitingItemStartPendingRemainingClass(it)]"
                 >
-                  待上号倒计时：{{ formatRemainingSeconds(getQueueWaitingItemStartPendingRemainingSeconds(it)) }}
+                  {{ getStartCountdownLabel(merchant, { queueMode: true }) }}：{{ formatRemainingSeconds(getQueueWaitingItemStartPendingRemainingSeconds(it)) }}
                 </div>
               </div>
               <div class="ml-3 flex flex-col items-end gap-2">
@@ -1129,7 +1129,7 @@
                 v-if="getQueueCallSessionStartPendingRemainingSeconds() !== null"
                 :class="['text-sm mt-1 font-medium', getQueueCallSessionStartPendingRemainingClass()]"
               >
-                待上号倒计时：{{ formatRemainingSeconds(getQueueCallSessionStartPendingRemainingSeconds()) }}
+                {{ getStartCountdownLabel(merchant, { queueMode: true }) }}：{{ formatRemainingSeconds(getQueueCallSessionStartPendingRemainingSeconds()) }}
               </div>
               <div v-if="queueCallInfo?.tracking_id" class="text-gray-700 text-sm mt-1 font-mono">
                 单号: {{ formatSessionNo(queueCallInfo.tracking_id) }}
@@ -1332,7 +1332,15 @@ import { ref, onMounted, onUnmounted, onActivated, watch, nextTick, computed } f
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { ensureMerchantPermissionsLoaded, merchantApi, appointmentApi, shopApi, attendanceApi, serviceSessionApi, usageApi, noticeApi, cardApi, queueApi } from '../../api'
 import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission, getMerchantActiveAuth, getMerchantId, getTechnicianShopSlug } from '../../utils/auth'
-import { replaceTerms } from '../../utils/terms'
+import {
+  getAutoFinishLabel,
+  getPendingStartLabel,
+  getServicePendingFinishLabel,
+  getServicePendingStartLabel,
+  getStartCountdownLabel,
+  isQueueModeMerchant,
+  replaceTerms
+} from '../../utils/terms'
 import { normalizeSessionStatus } from '../../utils/sessionStatus'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import Table from './Table.vue'
@@ -1350,6 +1358,11 @@ const prevTopScanBodyStyle = {
 }
 const merchantId = ref(null)
 const merchant = ref({})
+
+const getMerchantPendingStartLabel = (options = {}) => getPendingStartLabel(merchant.value, options)
+const getMerchantAutoFinishLabel = () => getAutoFinishLabel(merchant.value)
+const getMerchantServicePendingStartLabel = (options = {}) => getServicePendingStartLabel(merchant.value, options)
+const getMerchantServicePendingFinishLabel = () => getServicePendingFinishLabel(merchant.value)
 
 const canBusinessStatusUpdate = computed(() => hasMerchantPermission('merchant.business_status.manage'))
 const canDirectSaleManage = computed(() => hasMerchantPermission('merchant.direct_sale.manage'))
@@ -1464,7 +1477,7 @@ const queuePendingSignature = (list) => {
 const getQueueWaitingItemPhaseText = (it) => {
   if (!it) return '-'
   const st = normalizeSessionStatus(it.session_status)
-  if (st === 'start_pending' && !it.start_confirmed_at) return '待上号'
+  if (st === 'start_pending' && !it.start_confirmed_at) return getMerchantPendingStartLabel({ queueMode: true })
   if (st === 'staff_selecting') return '待分配'
   if (st === 'timeout_waiting') return '超时过号等待'
   return st || '-'
@@ -1541,9 +1554,9 @@ const reassignUsagePendingItem = async (usage) => {
 const getQueueServingItemPhaseText = (it) => {
   if (!it) return '-'
   const st = normalizeSessionStatus(it.session_status)
-  if (st === 'delay_pending') return '待上号'
+  if (st === 'delay_pending') return getMerchantPendingStartLabel({ queueMode: true })
   if (st === 'serving') return '服务中'
-  if (st === 'auto_finishing') return replaceTerms('待自动结单', merchant.value)
+  if (st === 'auto_finishing') return getMerchantAutoFinishLabel()
   return st || '-'
 }
 
@@ -2203,7 +2216,7 @@ const doContinueCall = async (forceFinish = false) => {
       const nextUsageId = Number(data?.next_usage_id || 0)
       if (nextUsageId > 0) {
         if (Number(data?.skipped_session_id || 0) > 0) {
-          alert('已跳过待上号，并已触发下一号')
+          alert(`已跳过${getMerchantPendingStartLabel({ queueMode: true })}，并已触发下一号`)
         } else {
           alert('已完成当前服务，并已触发下一号')
         }
@@ -2277,7 +2290,7 @@ const roomManageSession = computed(() => {
 const roomManagePhaseText = computed(() => {
   const s = roomManageSession.value
   if (!s) return ''
-  if (normalizeSessionStatus(s.status) === 'start_pending' && !s.start_confirmed_at) return '待上钟'
+  if (normalizeSessionStatus(s.status) === 'start_pending' && !s.start_confirmed_at) return getMerchantPendingStartLabel()
   return '服务中'
 })
 
@@ -2285,7 +2298,7 @@ const queueCallPhaseText = computed(() => {
   const info = queueCallInfo.value
   const s = info?.session
   if (!s) return ''
-  if (normalizeSessionStatus(s.status) === 'start_pending' && !s.start_confirmed_at) return '待上号'
+  if (normalizeSessionStatus(s.status) === 'start_pending' && !s.start_confirmed_at) return getMerchantPendingStartLabel({ queueMode: true })
   return '服务中'
 })
 
@@ -2400,9 +2413,9 @@ const technicianCurrentStatusText = computed(() => {
     if (st === 'not_checked_in') return '未签到'
     if (st === 'idle') return '空闲'
     if (st === 'paused') return '暂停'
-    if (st === 'service_pending_presettlement') return '待上号'
-    if (st === 'service_pending_settlement') return '上号'
-    if (st === 'busy') return '上号'
+    if (st === 'service_pending_presettlement') return getMerchantPendingStartLabel({ queueMode: true })
+    if (st === 'service_pending_settlement') return getMerchantPendingStartLabel({ queueMode: true }).replace('待', '')
+    if (st === 'busy') return getMerchantPendingStartLabel({ queueMode: true }).replace('待', '')
     if (st === 'rest') return '未签到 休息中'
   }
   // 非叫号模式保持原有显示
@@ -2411,8 +2424,8 @@ const technicianCurrentStatusText = computed(() => {
   if (st === 'paused') return '暂停'
   if (st === 'busy') return '忙碌'
   if (st === 'rest') return '未签到 休息中'
-  if (st === 'service_pending_presettlement') return replaceTerms('服务 待起单', merchant.value)
-  if (st === 'service_pending_settlement') return replaceTerms('服务 待结单', merchant.value)
+  if (st === 'service_pending_presettlement') return getMerchantServicePendingStartLabel()
+  if (st === 'service_pending_settlement') return getMerchantServicePendingFinishLabel()
   return st || '-'
 })
 
@@ -2857,26 +2870,18 @@ const getUsageServiceStatusText = (usage) => {
     if (s === 'room_locked') return '房间已锁定'
     if (s === 'staff_selecting') return replaceTerms('待选客服', merchant.value)
     if (s === 'start_pending') {
-      const isAnyQueueMode = !merchant.value?.support_customer_service_mode && merchant.value?.support_queue && (merchant.value?.queue_mode === 'auto' || merchant.value?.queue_mode === 'manual')
-      if (isAnyQueueMode) {
-        return '待上号'
-      }
-      return replaceTerms('待起单', merchant.value)
+      return getMerchantPendingStartLabel({ queueMode: isQueueModeMerchant(merchant.value) })
     }
-    if (s === 'delay_pending') return replaceTerms('待起单', merchant.value)
+    if (s === 'delay_pending') return getMerchantPendingStartLabel({ queueMode: isQueueModeMerchant(merchant.value) })
     if (s === 'serving') return replaceTerms('服务中', merchant.value)
-    if (s === 'auto_finishing') return replaceTerms('待自动结单', merchant.value)
+    if (s === 'auto_finishing') return getMerchantAutoFinishLabel()
     if (s === 'created') return '已创建'
     if (s === 'canceled') return '已取消'
   }
 
   // 待起单
   if (normalizeSessionStatus(usage.service_session_status) === 'start_pending') {
-    const isAnyQueueMode = !merchant.value?.support_customer_service_mode && merchant.value?.support_queue && (merchant.value?.queue_mode === 'auto' || merchant.value?.queue_mode === 'manual')
-    if (isAnyQueueMode) {
-      return '待上号'
-    }
-    return replaceTerms('待起单', merchant.value)
+    return getMerchantPendingStartLabel({ queueMode: isQueueModeMerchant(merchant.value) })
   }
 
   // 结单超时（超过12小时仍未结单）
@@ -4138,7 +4143,7 @@ const maybeReassignPendingBeforeLeave = async (actionText) => {
   if (!merchant.value?.support_queue || !merchant.value?.support_multi_customer_service) return true
   const sess = pendingStartSession.value
   if (!sess || !sess.id) return true
-  const confirmed = confirm(`你当前还有1个待上号用户，是否在${actionText}前先尝试转交给其他空闲客服？`)
+  const confirmed = confirm(`你当前还有1个${getMerchantPendingStartLabel({ queueMode: true })}用户，是否在${actionText}前先尝试转交给其他空闲客服？`)
   if (!confirmed) return true
   const ok = await reassignQueuePendingItem({ session_id: sess.id }, `专业客服在${actionText}前发起自助转交`)
   if (!ok) return false
@@ -4245,12 +4250,12 @@ const getSessionStatusText = (status) => {
     room_selecting: '选房中',
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
-    start_pending: replaceTerms('待起单', merchant.value),
-    delay_pending: '待上号',
+    start_pending: getMerchantPendingStartLabel(),
+    delay_pending: getMerchantPendingStartLabel({ queueMode: true }),
     timeout_waiting: '过号等待',
     timeout_failed: '过号失败',
     serving: '进行中',
-    auto_finishing: replaceTerms('待自动结单', merchant.value),
+    auto_finishing: getMerchantAutoFinishLabel(),
     finished: '已完成',
     canceled: '已取消'
   }

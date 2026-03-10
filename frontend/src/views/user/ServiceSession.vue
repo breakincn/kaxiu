@@ -106,7 +106,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { replaceTerms } from '../../utils/terms'
+import { getAutoFinishLabel, getPendingStartLabel } from '../../utils/terms'
 import { normalizeSessionStatus } from '../../utils/sessionStatus'
 import { userServiceSessionApi } from '../../api/index'
 
@@ -192,10 +192,10 @@ const statusText = (s) => {
     room_selecting: '选房中',
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
-    start_pending: replaceTerms('待起单'),
+    start_pending: getPendingStartLabel(session.value?.merchant),
     delay_pending: '延迟中',
     serving: '进行中',
-    auto_finishing: replaceTerms('待自动结单'),
+    auto_finishing: getAutoFinishLabel(session.value?.merchant),
     finished: '已完成'
   }
   return statusMap[st] || st || '-'

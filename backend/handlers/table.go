@@ -286,6 +286,16 @@ func TableStaff(c *gin.Context) {
 		}
 	}
 
+	var merchant models.Merchant
+	if err := config.DB.Select("id", "start_term").First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取商户信息失败"})
+		return
+	}
+	startTerm := "起单"
+	if merchant.StartTerm != "" {
+		startTerm = merchant.StartTerm
+	}
+
 	type staffItem struct {
 		Technician          models.Technician            `json:"technician"`
 		Attendance          *models.TechnicianAttendance `json:"attendance"`
@@ -365,10 +375,10 @@ func TableStaff(c *gin.Context) {
 				it.StartRemainSeconds = startRemain
 
 				if now.Before(startDeadline) {
-					it.PhaseText = "待起单"
+					it.PhaseText = "待" + startTerm
 					it.PhaseClass = "start_pending"
 				} else {
-					it.PhaseText = "上钟超时 重新选择客服"
+					it.PhaseText = startTerm + "超时 重新选择客服"
 					it.PhaseClass = "start_timeout"
 				}
 			}
