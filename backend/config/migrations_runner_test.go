@@ -32,6 +32,13 @@ func TestRunMigrationsIsIdempotent(t *testing.T) {
 				"CREATE TABLE IF NOT EXISTS merchant_role_start_pending_configs (id integer primary key, merchant_id integer not null, service_role_id integer not null, start_pending_timeout_seconds integer not null default 300)",
 			},
 		},
+		{
+			Version: "2026031002",
+			Name:    "add_merchant_queue_timeout_waiting_seconds",
+			Statements: []string{
+				"ALTER TABLE merchants ADD COLUMN queue_timeout_waiting_seconds INT NOT NULL DEFAULT 900",
+			},
+		},
 	}
 	defer func() { defaultMigrations = oldMigrations }()
 

@@ -36,6 +36,7 @@ type Merchant struct {
 	QueueMode                   string     `json:"queue_mode" gorm:"size:20;default:'auto';comment:叫号模式（auto-自动叫号，manual-人工叫号）"`
 	QueueWindowTerm             string     `json:"queue_window_term" gorm:"size:20;default:'窗口';comment:叫号窗口自定义名词（默认：窗口，可自定义如：台号、工位等）"`
 	QueueWaitingStartSeconds    int        `json:"queue_waiting_start_seconds" gorm:"default:180;comment:等待上号时间（秒）"`
+	QueueTimeoutWaitingSeconds  int        `json:"queue_timeout_waiting_seconds" gorm:"default:900;comment:超时过号等待时间（秒）"`
 	QueuePaused                 bool       `json:"queue_paused" gorm:"default:false;comment:叫号是否全局暂停（0-正常，1-暂停）"`
 	QueueEndedAt                *time.Time `json:"queue_ended_at" gorm:"type:datetime(3);comment:结束叫号时间（用于打烊后自动收尾）"`
 	SupportDirectSale           bool       `json:"support_direct_sale" gorm:"default:false;comment:是否支持直购售卡（0-不支持，1-支持）"`

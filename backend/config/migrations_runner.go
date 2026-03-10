@@ -51,6 +51,13 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchant_projects ADD COLUMN start_delay_seconds INT NOT NULL DEFAULT 60 COMMENT '服务开始延迟时间（秒）'",
 		},
 	},
+	{
+		Version: "2026031002",
+		Name:    "add_merchant_queue_timeout_waiting_seconds",
+		Statements: []string{
+			"ALTER TABLE merchants ADD COLUMN queue_timeout_waiting_seconds INT NOT NULL DEFAULT 900 COMMENT '超时过号等待时间（秒）'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

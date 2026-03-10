@@ -177,6 +177,8 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `support_multi_customer_service` BOOLEAN DEFAULT FALSE COMMENT '是否开启多个客服（多窗口叫号）'")
 	// merchants: 等待上号时间（秒）
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `queue_waiting_start_seconds` INT NOT NULL DEFAULT 180 COMMENT '等待上号时间（秒）'")
+	// merchants: 超时过号等待时间（秒）
+	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `queue_timeout_waiting_seconds` INT NOT NULL DEFAULT 900 COMMENT '超时过号等待时间（秒）'")
 	// merchants: 核销起单延迟秒数（未开启客服但开启结单时使用）
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `start_delay_seconds` int NOT NULL DEFAULT 60 COMMENT '核销起单延迟秒数（未开启客服但开启结单时使用）'")
 	// merchant_projects: 项目级服务开始延迟时间（秒）

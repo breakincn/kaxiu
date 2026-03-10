@@ -12,3 +12,14 @@ func MerchantQueueWaitingStartSeconds(merchant *models.Merchant) int {
 	}
 	return defaultSeconds
 }
+
+func MerchantQueueTimeoutWaitingSeconds(merchant *models.Merchant) int {
+	defaultSeconds := 15 * 60
+	if merchant == nil {
+		return defaultSeconds
+	}
+	if merchant.QueueTimeoutWaitingSeconds > 0 {
+		return merchant.QueueTimeoutWaitingSeconds
+	}
+	return defaultSeconds
+}

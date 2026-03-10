@@ -114,6 +114,21 @@
               </div>
               <div class="text-gray-500 text-xs mt-2">叫号后进入待上号状态的倒计时时间，默认 180 秒</div>
             </div>
+
+            <div v-if="form.support_multi_customer_service" class="mt-4 pt-4 border-t border-gray-100">
+              <div class="text-gray-700 text-sm font-medium mb-2">超时过号等待时间</div>
+              <div class="relative">
+                <input
+                  v-model.number="form.queue_timeout_waiting_minutes"
+                  type="number"
+                  min="1"
+                  max="1440"
+                  class="w-full px-4 py-3 pr-14 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
+              </div>
+              <div class="text-gray-500 text-xs mt-2">用户超时过号后，保留等待重新上号的时长，默认 15 分钟</div>
+            </div>
           </div>
         </div>
 
@@ -147,6 +162,7 @@ const form = ref({
   queue_mode: 'auto',
   queue_window_term: '窗口',
   queue_waiting_start_seconds: 180,
+  queue_timeout_waiting_minutes: 15,
   support_multi_customer_service: false
 })
 
@@ -175,6 +191,7 @@ const load = async () => {
       queue_mode: m.queue_mode || 'auto',
       queue_window_term: m.queue_window_term || '窗口',
       queue_waiting_start_seconds: m.queue_waiting_start_seconds || 180,
+      queue_timeout_waiting_minutes: Math.max(1, Math.floor(Number(m.queue_timeout_waiting_seconds || 900) / 60)),
       support_multi_customer_service: !!m.support_multi_customer_service
     }
 
@@ -213,6 +230,11 @@ const save = async () => {
     return
   }
 
+  if (!form.value.queue_timeout_waiting_minutes || form.value.queue_timeout_waiting_minutes < 1) {
+    alert('超时过号等待时间必须大于0分钟')
+    return
+  }
+
   saving.value = true
   try {
     await merchantApi.updateCurrentMerchantServices({
@@ -221,6 +243,7 @@ const save = async () => {
       queue_mode: form.value.queue_mode,
       queue_window_term: form.value.queue_window_term,
       queue_waiting_start_seconds: form.value.queue_waiting_start_seconds,
+      queue_timeout_waiting_seconds: Number(form.value.queue_timeout_waiting_minutes) * 60,
       support_multi_customer_service: !!form.value.support_multi_customer_service
     })
     alert('保存成功')

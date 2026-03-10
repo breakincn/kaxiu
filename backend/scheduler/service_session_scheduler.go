@@ -1380,8 +1380,11 @@ func handleTimeoutWaiting(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 		baseAt = s.CreatedAt
 	}
 
+	timeoutWaitingSeconds := config.MerchantQueueTimeoutWaitingSeconds(&merchant)
+	timeoutWaitingDuration := time.Duration(timeoutWaitingSeconds) * time.Second
+
 	if mode == models.SessionModeQueueAutoMulti {
-		if baseAt != nil && now.Sub(*baseAt) > 15*time.Minute {
+		if baseAt != nil && now.Sub(*baseAt) > timeoutWaitingDuration {
 			return failTimeoutWaitingAndRefund(tx, s, &merchant, now)
 		}
 		return nil
@@ -1452,7 +1455,7 @@ func handleTimeoutWaiting(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 		exceedNoWindow := currentNo >= endNo+1
 		exceedTimeWindow := false
 		if baseAt != nil {
-			exceedTimeWindow = now.Sub(*baseAt) > 15*time.Minute
+			exceedTimeWindow = now.Sub(*baseAt) > timeoutWaitingDuration
 		}
 		if queueDebugEnabledFor(merchant.ID, s.ID, s.InitialUsageID) {
 			log.Printf("[queue-debug] timeout_waiting manual: merchant=%d session=%d usage=%d myNo=%d currentNo=%d endNo=%d exceedNo=%v exceedTime=%v baseAt=%v\n",
