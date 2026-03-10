@@ -344,9 +344,11 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		}
 	}
 
-	// 叫号模式切换保护：当存在进行中的会话时，不允许切换 queue_mode / support_multi_customer_service，
-	// 也不允许直接关闭 support_queue 或切到 support_customer_service_mode。
-	// 说明：scheduler 会按商户最新配置推进旧会话，切换可能导致进行中会话被跳号、漏清队列或跨模式推进。
+	// 叫号模式切换保护：当存在未完成的服务会话时，不允许切换 queue_mode /
+	// support_multi_customer_service，也不允许直接关闭 support_queue 或切到
+	// support_customer_service_mode。
+	// 说明：已核销但仍处于待选房/待选客服/过号等待等状态的会话，当前不会被安全迁移到新的
+	// 运行模式；放行切换会导致旧会话被新配置以错误语义继续推进。
 	{
 		targetSupportQueue := merchant.SupportQueue
 		if input.SupportQueue != nil {
@@ -373,7 +375,16 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 			(queueSupportChanged && (merchant.SupportQueue || targetSupportQueue)) ||
 			(customerServiceModeChanged && (merchant.SupportQueue || targetSupportQueue))
 		if affectsQueueRuntime {
-			activeStatuses := []string{"staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"}
+			activeStatuses := []string{
+				"room_selecting",
+				"room_locked",
+				"staff_selecting",
+				"start_pending",
+				"delay_pending",
+				"timeout_waiting",
+				"serving",
+				"auto_finishing",
+			}
 			var cnt int64
 			if err := config.DB.Model(&models.ServiceSession{}).
 				Where("merchant_id = ? AND status IN ?", merchantID, models.ExpandStatusesWithKnownPrefixes(activeStatuses)).
