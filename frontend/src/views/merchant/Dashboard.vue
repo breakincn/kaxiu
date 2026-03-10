@@ -1408,8 +1408,11 @@ const queueTimeoutWaitingList = ref([])
 const queueTimeoutWaitingLoading = ref(false)
 
 const queueCallInfo = ref(null)
+const serviceTabRefreshing = ref(false)
+const serviceTabRefreshQueued = ref(false)
 
 let queuePendingFirstLoaded = false
+let serviceTabBoundaryState = new Map()
 
 const queuePendingSignature = (list) => {
   if (!Array.isArray(list) || list.length === 0) return ''
@@ -1807,6 +1810,7 @@ const notices = ref([])
 const currentTime = ref(Date.now())
 let countdownTimer = null
 let serviceSessionTimer = null
+let lastServiceTabRefreshAt = 0
 
 const verifyCodeInput = ref('')
 const verifying = ref(false)
@@ -2217,8 +2221,7 @@ const roomManageProjectName = computed(() => {
   return formatProjectNameWithDuration(s.project)
 })
 
-const getRoomManageSessionRemainingSeconds = () => {
-  const sess = roomManageSession.value
+const getSessionRemainingSeconds = (sess) => {
   if (!sess) return null
   const s = normalizeSessionStatus(sess.status)
   if (s !== 'serving' && s !== 'auto_finishing') return null
@@ -2240,6 +2243,10 @@ const getRoomManageSessionRemainingSeconds = () => {
   const remain = Math.floor((finishAt - currentTime.value) / 1000)
   if (!Number.isFinite(remain)) return null
   return Math.max(0, remain)
+}
+
+const getRoomManageSessionRemainingSeconds = () => {
+  return getSessionRemainingSeconds(roomManageSession.value)
 }
 
 // 格式化项目名称（加上时长）
@@ -2709,28 +2716,7 @@ const getUsageServiceRemainingSeconds = (usage) => {
 }
 
 const getQueueCallSessionRemainingSeconds = () => {
-  const sess = queueCallInfo.value?.session
-  if (!sess) return null
-  const s = normalizeSessionStatus(sess.status)
-  if (s !== 'serving' && s !== 'auto_finishing') return null
-
-  let finishAt = 0
-  const finishAtRaw = sess.scheduled_finish_at
-  if (finishAtRaw) {
-    finishAt = new Date(finishAtRaw).getTime()
-  }
-  if (!finishAt || Number.isNaN(finishAt)) {
-    const startedAtRaw = sess.started_at
-    const durationMinutes = Number(sess.duration_minutes || 0)
-    if (!startedAtRaw || !Number.isFinite(durationMinutes) || durationMinutes <= 0) return null
-    const startedAt = new Date(startedAtRaw).getTime()
-    if (!startedAt || Number.isNaN(startedAt)) return null
-    finishAt = startedAt + durationMinutes * 60 * 1000
-  }
-
-  const remain = Math.floor((finishAt - currentTime.value) / 1000)
-  if (!Number.isFinite(remain)) return null
-  return Math.max(0, remain)
+  return getSessionRemainingSeconds(queueCallInfo.value?.session)
 }
 
 const formatRemainingSeconds = (seconds) => {
@@ -3748,10 +3734,17 @@ const stopCountdownTimer = () => {
   }
 }
 
+watch(currentTime, () => {
+  syncServiceTabRefreshOnCountdownBoundary()
+})
+
 watch(currentTab, (tab) => {
   if (tab !== 'cards' && scanUserCodeActive.value) {
     scanUserCodeActive.value = false
     routeUserCode.value = ''
+  }
+  if (tab !== 'service' && tab !== 'start') {
+    stopServiceSessionTimer()
   }
   // 倒计时：appointment/verify/start/service 需要每秒刷新 currentTime
   if (tab === 'appointment' || tab === 'verify' || tab === 'start' || tab === 'service') {
@@ -3761,10 +3754,12 @@ watch(currentTab, (tab) => {
   }
 
   if (tab === 'appointment') {
+    clearServiceTabBoundaryState()
     fetchAppointments()
     return
   }
   if (tab === 'verify') {
+    clearServiceTabBoundaryState()
     // 重置为默认状态
     showVerifyInput.value = false
     verifyCodeInput.value = ''
@@ -3773,17 +3768,20 @@ watch(currentTab, (tab) => {
     return
   }
   if (tab === 'start') {
+    clearServiceTabBoundaryState()
     // 上钟Tab显示今日上钟记录
     fetchTodayStartUsages()
     startServiceSessionTimer()
     return
   }
   if (tab === 'finish') {
+    clearServiceTabBoundaryState()
     // 结单Tab显示今日结单记录
     fetchTodayFinishedUsages()
     return
   }
   if (tab === 'cards') {
+    clearServiceTabBoundaryState()
     // 重置显示模式为自动，让computed决定显示什么
     displayMode.value = 'auto'
     // 如果默认显示售卡模板，则加载售卡模板数据
@@ -3795,28 +3793,24 @@ watch(currentTab, (tab) => {
     return
   }
   if (tab === 'notice') {
+    clearServiceTabBoundaryState()
     fetchNotices()
     return
   }
   if (tab === 'service') {
-    fetchCurrentTechnicianMe()
-    fetchServiceSessions()
-    fetchQueuePendingList(false)
-    fetchQueueTimeoutWaitingList(false)
-    fetchQueueCallInfo()
-    fetchTodayUsages()
+    clearServiceTabBoundaryState()
+    refreshServiceTabPartialData({ silent: false, force: true })
     startServiceSessionTimer()
     return
   }
+  clearServiceTabBoundaryState()
 })
 
 const startServiceSessionTimer = () => {
   stopServiceSessionTimer()
   serviceSessionTimer = setInterval(() => {
     if (currentTab.value === 'service') {
-      fetchQueuePendingList(true)
-      fetchQueueTimeoutWaitingList(true)
-      fetchQueueCallInfo()
+      refreshServiceTabPartialData({ silent: true })
       return
     }
     if (currentTab.value === 'start') {
@@ -4021,8 +4015,7 @@ onMounted(async () => {
   } else if (currentTab.value === 'notice') {
     fetchNotices()
   } else if (currentTab.value === 'service') {
-    fetchServiceSessions()
-    fetchTodayUsages()
+    refreshServiceTabPartialData({ silent: false, force: true })
     startCountdownTimer()
     startServiceSessionTimer()
   }
@@ -4185,6 +4178,106 @@ const fetchCurrentAttendanceStatus = async () => {
   }
 }
 
+const clearServiceTabBoundaryState = () => {
+  serviceTabBoundaryState = new Map()
+}
+
+const collectServiceTabCountdowns = () => {
+  const items = []
+  const pushItem = (key, seconds) => {
+    if (!key || seconds === null || seconds === undefined) return
+    const remain = Number(seconds)
+    if (!Number.isFinite(remain)) return
+    items.push({ key, remain })
+  }
+
+  for (const session of serviceSessions.value || []) {
+    const sessionId = Number(session?.id || 0)
+    if (!sessionId) continue
+    pushItem(`session:start_pending:${sessionId}`, getStartPendingRemainingSeconds(session))
+    pushItem(`session:serving:${sessionId}`, getSessionRemainingSeconds(session))
+  }
+
+  for (const item of queuePendingList.value || []) {
+    const usageId = Number(item?.usage_id || 0)
+    const sessionId = Number(item?.session_id || 0)
+    const baseId = sessionId || usageId
+    if (!baseId) continue
+    pushItem(`queue_pending:start_pending:${baseId}`, getQueueWaitingItemStartPendingRemainingSeconds(item))
+    pushItem(`queue_pending:serving:${baseId}`, getQueueServingItemRemainingSeconds(item))
+  }
+
+  const queueSession = queueCallInfo.value?.session
+  if (queueSession) {
+    const sessionId = Number(queueSession?.id || queueSession?.session_id || queueCallInfo.value?.tracking_id || 0)
+    if (sessionId) {
+      pushItem(`queue_call:start_pending:${sessionId}`, getQueueCallSessionStartPendingRemainingSeconds())
+      pushItem(`queue_call:serving:${sessionId}`, getQueueCallSessionRemainingSeconds())
+    }
+  }
+
+  return items
+}
+
+const refreshServiceTabPartialData = async ({ silent = true, force = false } = {}) => {
+  if (currentTab.value !== 'service') return
+
+  const now = Date.now()
+  if (!force && serviceTabRefreshing.value) {
+    serviceTabRefreshQueued.value = true
+    return
+  }
+  if (!force && now - lastServiceTabRefreshAt < 1200) {
+    return
+  }
+
+  serviceTabRefreshing.value = true
+  lastServiceTabRefreshAt = now
+  try {
+    await Promise.allSettled([
+      fetchCurrentTechnicianMe(),
+      fetchCurrentAttendanceStatus(),
+      fetchQueueCallingStatus(),
+      fetchServiceSessions(),
+      fetchQueuePendingList(silent),
+      fetchQueueTimeoutWaitingList(silent),
+      fetchQueueCallInfo(),
+      fetchTodayUsages(),
+      fetchQueueStatus()
+    ])
+  } finally {
+    serviceTabRefreshing.value = false
+    if (serviceTabRefreshQueued.value) {
+      serviceTabRefreshQueued.value = false
+      refreshServiceTabPartialData({ silent: true, force: true })
+    }
+  }
+}
+
+const syncServiceTabRefreshOnCountdownBoundary = () => {
+  if (currentTab.value !== 'service') {
+    clearServiceTabBoundaryState()
+    return
+  }
+
+  const nextState = new Map()
+  let shouldRefresh = false
+  for (const item of collectServiceTabCountdowns()) {
+    const remain = Math.max(0, Math.floor(Number(item.remain || 0)))
+    nextState.set(item.key, remain)
+    const prevRemain = serviceTabBoundaryState.get(item.key)
+    if (prevRemain === undefined) continue
+    if (prevRemain > 0 && remain <= 0) {
+      shouldRefresh = true
+    }
+  }
+  serviceTabBoundaryState = nextState
+
+  if (shouldRefresh) {
+    refreshServiceTabPartialData({ silent: true, force: true })
+  }
+}
+
 onBeforeRouteLeave(() => {
   scanUserCodeActive.value = false
   routeUserCode.value = ''
@@ -4194,6 +4287,8 @@ onUnmounted(() => {
   stopCountdownTimer()
   stopServiceSessionTimer()
   stopContinueCallBlockedTimer()
+  clearServiceTabBoundaryState()
+  serviceTabRefreshQueued.value = false
   scanUserCodeActive.value = false
   routeUserCode.value = ''
   if (errorTimer) {
@@ -4213,6 +4308,10 @@ onActivated(() => {
     fetchTodayStartUsages()
   } else if (currentTab.value === 'finish') {
     fetchTodayFinishedUsages()
+  } else if (currentTab.value === 'service') {
+    refreshServiceTabPartialData({ silent: false, force: true })
+    startCountdownTimer()
+    startServiceSessionTimer()
   }
 })
 
