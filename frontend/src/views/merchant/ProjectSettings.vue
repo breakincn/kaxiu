@@ -53,6 +53,18 @@
                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
+
+              <div>
+                <div class="text-sm font-medium text-gray-700 mb-2">服务开始延迟时间（秒）</div>
+                <input
+                  v-model.number="project.start_delay_seconds"
+                  type="number"
+                  min="0"
+                  max="3600"
+                  placeholder="如 60"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
             </div>
             
             <button
@@ -91,8 +103,8 @@ const removedProjectIds = ref([])
 
 const form = ref({
   projects: [
-    { id: null, name: 'A 项目(课型)', duration: 45 },
-    { id: null, name: 'B 项目(课型)', duration: 60 }
+    { id: null, name: 'A 项目(课型)', duration: 45, start_delay_seconds: 60 },
+    { id: null, name: 'B 项目(课型)', duration: 60, start_delay_seconds: 60 }
   ]
 })
 
@@ -100,7 +112,8 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
   projects: (projects || []).map((project) => ({
     id: project.id ?? null,
     name: String(project.name || '').trim(),
-    duration: Number(project.duration || 0)
+    duration: Number(project.duration || 0),
+    start_delay_seconds: Number(project.start_delay_seconds ?? 60)
   })),
   removedProjectIds: [...removedIds].sort((a, b) => Number(a) - Number(b))
 })
@@ -133,11 +146,12 @@ const load = async () => {
         ? list.map(p => ({
           id: p.id,
           name: p.name,
-          duration: p.duration
+          duration: p.duration,
+          start_delay_seconds: Number(p.start_delay_seconds ?? 60)
         }))
         : [
-          { id: null, name: 'A 项目(课型)', duration: 45 },
-          { id: null, name: 'B 项目(课型)', duration: 60 }
+          { id: null, name: 'A 项目(课型)', duration: 45, start_delay_seconds: 60 },
+          { id: null, name: 'B 项目(课型)', duration: 60, start_delay_seconds: 60 }
         ]
     }
     initialSnapshot.value = normalizeProjectsState(form.value.projects, removedProjectIds.value)
@@ -150,7 +164,7 @@ const load = async () => {
 }
 
 const addProject = () => {
-  form.value.projects.push({ id: null, name: '', duration: 30 })
+  form.value.projects.push({ id: null, name: '', duration: 30, start_delay_seconds: 60 })
 }
 
 const removeProject = (index) => {
@@ -175,6 +189,11 @@ const save = async () => {
       alert(`项目 ${i + 1} 的服务时长必须大于等于1`)
       return
     }
+    const delaySeconds = Number(project.start_delay_seconds ?? 60)
+    if (!Number.isFinite(delaySeconds) || delaySeconds < 0 || delaySeconds > 3600) {
+      alert(`项目 ${i + 1} 的服务开始延迟时间必须在 0-3600 秒之间`)
+      return
+    }
   }
 
   saving.value = true
@@ -192,7 +211,8 @@ const save = async () => {
     for (const p of form.value.projects) {
       const payload = {
         name: (p.name || '').trim(),
-        duration: Number(p.duration || 0)
+        duration: Number(p.duration || 0),
+        start_delay_seconds: Number(p.start_delay_seconds ?? 60)
       }
       if (p.id) {
         await merchantProjectApi.update(p.id, payload)

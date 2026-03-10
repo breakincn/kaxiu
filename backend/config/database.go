@@ -179,6 +179,8 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `queue_waiting_start_seconds` INT NOT NULL DEFAULT 180 COMMENT '等待上号时间（秒）'")
 	// merchants: 核销起单延迟秒数（未开启客服但开启结单时使用）
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `start_delay_seconds` int NOT NULL DEFAULT 60 COMMENT '核销起单延迟秒数（未开启客服但开启结单时使用）'")
+	// merchant_projects: 项目级服务开始延迟时间（秒）
+	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `start_delay_seconds` int NOT NULL DEFAULT 60 COMMENT '服务开始延迟时间（秒）'")
 
 	// cards: 锁卡状态（手牌未归还等）
 	DB.Exec("ALTER TABLE `cards` ADD COLUMN `locked` BOOLEAN NOT NULL DEFAULT FALSE COMMENT '卡片是否锁定（手牌未归还等）'")

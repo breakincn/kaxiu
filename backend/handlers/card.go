@@ -920,18 +920,7 @@ func VerifyCard(c *gin.Context) {
 		// 未开启客服模式 + 开启结单 或 叫号模式：创建会话
 		if (!merchant.SupportCustomerServiceMode && effectiveSupportOrderComplete) || isQueueMode {
 			// 读取项目真实时长，避免硬编码
-			var project models.MerchantProject
-			durationMinutes := 15 // 默认兜底
-			if verifyCode.ProjectID != nil {
-				if err := config.DB.Where("id = ? AND merchant_id = ?", verifyCode.ProjectID, merchantID).First(&project).Error; err == nil && project.Duration > 0 {
-					durationMinutes = project.Duration
-				}
-			}
-
-			delaySeconds := merchant.StartDelaySeconds
-			if delaySeconds <= 0 {
-				delaySeconds = 60
-			}
+			durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchantID, verifyCode.ProjectID, 15, merchant.StartDelaySeconds)
 			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 
 			status := "delay_pending"
@@ -1028,11 +1017,7 @@ func VerifyCard(c *gin.Context) {
 		}
 
 		// 读取项目真实时长，避免硬编码 50 分钟
-		var project models.MerchantProject
-		durationMinutes := 50 // 默认值兜底
-		if err := config.DB.Where("id = ? AND merchant_id = ?", verifyCode.ProjectID, merchantID).First(&project).Error; err == nil && project.Duration > 0 {
-			durationMinutes = project.Duration
-		}
+		durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchantID, verifyCode.ProjectID, 50, 60)
 
 		session := models.ServiceSession{
 			MerchantID:             merchantID,
@@ -1044,7 +1029,7 @@ func VerifyCard(c *gin.Context) {
 			SessionMode:            sessionMode,
 			Status:                 status,
 			RoomSelectDeadlineAt:   roomSelectDeadlineAt,
-			StartDelaySeconds:      60,
+			StartDelaySeconds:      delaySeconds,
 			DurationMinutes:        durationMinutes,
 			AutoFinishDelaySeconds: 60,
 			AutoIdleAfterSeconds:   180,
@@ -1390,18 +1375,7 @@ func ScanVerifyCard(c *gin.Context) {
 
 			// 未开启客服模式 + 开启结单 或 叫号模式：创建会话
 			if (!merchant.SupportCustomerServiceMode && effectiveSupportOrderComplete) || isQueueMode {
-				var project models.MerchantProject
-				durationMinutes := 15 // 默认兜底
-				if verifyCode.ProjectID != nil {
-					if err := config.DB.Where("id = ? AND merchant_id = ?", verifyCode.ProjectID, merchantID).First(&project).Error; err == nil && project.Duration > 0 {
-						durationMinutes = project.Duration
-					}
-				}
-
-				delaySeconds := merchant.StartDelaySeconds
-				if delaySeconds <= 0 {
-					delaySeconds = 60
-				}
+				durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchantID, verifyCode.ProjectID, 15, merchant.StartDelaySeconds)
 				startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 
 				status := "delay_pending"
@@ -1491,11 +1465,7 @@ func ScanVerifyCard(c *gin.Context) {
 			}
 
 			// 读取项目真实时长，避免硬编码 50 分钟
-			var project models.MerchantProject
-			durationMinutes := 50 // 默认值兜底
-			if err := config.DB.Where("id = ? AND merchant_id = ?", verifyCode.ProjectID, merchantID).First(&project).Error; err == nil && project.Duration > 0 {
-				durationMinutes = project.Duration
-			}
+			durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchantID, verifyCode.ProjectID, 50, 60)
 
 			session := models.ServiceSession{
 				MerchantID:             merchantID,
@@ -1507,7 +1477,7 @@ func ScanVerifyCard(c *gin.Context) {
 				SessionMode:            sessionMode,
 				Status:                 status,
 				RoomSelectDeadlineAt:   roomSelectDeadlineAt,
-				StartDelaySeconds:      60,
+				StartDelaySeconds:      delaySeconds,
 				DurationMinutes:        durationMinutes,
 				AutoFinishDelaySeconds: 60,
 				AutoIdleAfterSeconds:   180,

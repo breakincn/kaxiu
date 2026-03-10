@@ -29,12 +29,13 @@ func CreateMerchantProject(c *gin.Context) {
 	}
 
 	var input struct {
-		Name        string  `json:"name" binding:"required"`
-		Duration    int     `json:"duration" binding:"required,min=1"`
-		Price       float64 `json:"price"`
-		Description string  `json:"description"`
-		IsActive    *bool   `json:"is_active"`
-		SortOrder   *int    `json:"sort_order"`
+		Name              string  `json:"name" binding:"required"`
+		Duration          int     `json:"duration" binding:"required,min=1"`
+		StartDelaySeconds *int    `json:"start_delay_seconds"`
+		Price             float64 `json:"price"`
+		Description       string  `json:"description"`
+		IsActive          *bool   `json:"is_active"`
+		SortOrder         *int    `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -54,6 +55,14 @@ func CreateMerchantProject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "项目价格不能为负数"})
 		return
 	}
+	startDelaySeconds := 60
+	if input.StartDelaySeconds != nil {
+		if *input.StartDelaySeconds < 0 || *input.StartDelaySeconds > 3600 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "服务开始延迟时间范围应为 0-3600 秒"})
+			return
+		}
+		startDelaySeconds = *input.StartDelaySeconds
+	}
 
 	isActive := true
 	if input.IsActive != nil {
@@ -65,13 +74,14 @@ func CreateMerchantProject(c *gin.Context) {
 	}
 
 	p := models.MerchantProject{
-		MerchantID:  merchantID,
-		Name:        name,
-		Duration:    input.Duration,
-		Price:       input.Price,
-		Description: strings.TrimSpace(input.Description),
-		IsActive:    isActive,
-		SortOrder:   sortOrder,
+		MerchantID:        merchantID,
+		Name:              name,
+		Duration:          input.Duration,
+		StartDelaySeconds: startDelaySeconds,
+		Price:             input.Price,
+		Description:       strings.TrimSpace(input.Description),
+		IsActive:          isActive,
+		SortOrder:         sortOrder,
 	}
 	if err := config.DB.Create(&p).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
@@ -98,12 +108,13 @@ func UpdateMerchantProject(c *gin.Context) {
 	}
 
 	var input struct {
-		Name        *string  `json:"name"`
-		Duration    *int     `json:"duration"`
-		Price       *float64 `json:"price"`
-		Description *string  `json:"description"`
-		IsActive    *bool    `json:"is_active"`
-		SortOrder   *int     `json:"sort_order"`
+		Name              *string  `json:"name"`
+		Duration          *int     `json:"duration"`
+		StartDelaySeconds *int     `json:"start_delay_seconds"`
+		Price             *float64 `json:"price"`
+		Description       *string  `json:"description"`
+		IsActive          *bool    `json:"is_active"`
+		SortOrder         *int     `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -125,6 +136,13 @@ func UpdateMerchantProject(c *gin.Context) {
 			return
 		}
 		updates["duration"] = *input.Duration
+	}
+	if input.StartDelaySeconds != nil {
+		if *input.StartDelaySeconds < 0 || *input.StartDelaySeconds > 3600 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "服务开始延迟时间范围应为 0-3600 秒"})
+			return
+		}
+		updates["start_delay_seconds"] = *input.StartDelaySeconds
 	}
 	if input.Price != nil {
 		if *input.Price < 0 {

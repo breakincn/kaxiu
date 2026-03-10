@@ -253,18 +253,7 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 	}
 
 	if (!merchant.SupportCustomerServiceMode && effectiveSupportOrderComplete) || isQueueMode {
-		durationMinutes := 15
-		if verifyCode.ProjectID != nil {
-			var project models.MerchantProject
-			if err := tx.Where("id = ? AND merchant_id = ?", verifyCode.ProjectID, merchant.ID).First(&project).Error; err == nil && project.Duration > 0 {
-				durationMinutes = project.Duration
-			}
-		}
-
-		delaySeconds := merchant.StartDelaySeconds
-		if delaySeconds <= 0 {
-			delaySeconds = 60
-		}
+		durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchant.ID, verifyCode.ProjectID, 15, merchant.StartDelaySeconds)
 		startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 
 		status := "delay_pending"
@@ -346,13 +335,7 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 		status = models.WithCSPrefix(status)
 	}
 
-	durationMinutes := 50
-	if verifyCode.ProjectID != nil {
-		var project models.MerchantProject
-		if err := tx.Where("id = ? AND merchant_id = ?", verifyCode.ProjectID, merchant.ID).First(&project).Error; err == nil && project.Duration > 0 {
-			durationMinutes = project.Duration
-		}
-	}
+	durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchant.ID, verifyCode.ProjectID, 50, 60)
 
 	session := models.ServiceSession{
 		MerchantID:             merchant.ID,
@@ -364,7 +347,7 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 		SessionMode:            sessionMode,
 		Status:                 status,
 		RoomSelectDeadlineAt:   roomSelectDeadlineAt,
-		StartDelaySeconds:      60,
+		StartDelaySeconds:      delaySeconds,
 		DurationMinutes:        durationMinutes,
 		AutoFinishDelaySeconds: 60,
 		AutoIdleAfterSeconds:   180,

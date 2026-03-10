@@ -44,6 +44,13 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE technicians ADD COLUMN original_password varchar(100) NOT NULL DEFAULT '' COMMENT '最近一次系统生成或重置的原始密码（改密后清空）'",
 		},
 	},
+	{
+		Version: "2026031001",
+		Name:    "add_project_start_delay_seconds",
+		Statements: []string{
+			"ALTER TABLE merchant_projects ADD COLUMN start_delay_seconds INT NOT NULL DEFAULT 60 COMMENT '服务开始延迟时间（秒）'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {
