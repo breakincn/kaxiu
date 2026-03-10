@@ -1019,6 +1019,10 @@
                 </div>
                 <div class="text-gray-600 text-sm mt-1 font-mono">单号: {{ formatSessionNo(it.usage_id) }}</div>
                 <div v-if="it.project_name" class="text-gray-600 text-sm mt-1">项目: {{ it.project_name }}</div>
+                <div v-if="it.technician_name" class="text-gray-600 text-sm mt-1">当前客服: {{ it.technician_name }}</div>
+                <div v-if="it.technician_unavailable_reason" class="text-red-500 text-sm mt-1 font-medium">
+                  {{ it.technician_unavailable_reason }}
+                </div>
                 <div
                   v-if="getQueueWaitingItemStartPendingRemainingSeconds(it) !== null"
                   :class="['text-sm mt-1 font-medium', getQueueWaitingItemStartPendingRemainingClass(it)]"
@@ -1026,7 +1030,17 @@
                   待上号倒计时：{{ formatRemainingSeconds(getQueueWaitingItemStartPendingRemainingSeconds(it)) }}
                 </div>
               </div>
-              <div class="text-gray-500 text-sm ml-3 whitespace-nowrap">{{ getQueueWaitingItemPhaseText(it) }}</div>
+              <div class="ml-3 flex flex-col items-end gap-2">
+                <div class="text-gray-500 text-sm whitespace-nowrap">{{ getQueueWaitingItemPhaseText(it) }}</div>
+                <button
+                  v-if="shouldShowQueuePendingReassign(it)"
+                  @click="reassignQueuePendingItem(it)"
+                  :disabled="isQueuePendingReassigning(it)"
+                  class="px-3 py-1.5 bg-orange-500 text-white rounded-lg text-xs font-medium hover:bg-orange-600 disabled:opacity-50"
+                >
+                  {{ isQueuePendingReassigning(it) ? '重分配中...' : '重新分配' }}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1403,6 +1417,7 @@ const selectTab = (tab) => {
 
 const queuePendingList = ref([])
 const queuePendingLoading = ref(false)
+const queuePendingReassigningMap = ref({})
 
 const queueTimeoutWaitingList = ref([])
 const queueTimeoutWaitingLoading = ref(false)
@@ -1426,7 +1441,8 @@ const queuePendingSignature = (list) => {
       const scheduled = it?.scheduled_finish_at ? String(it.scheduled_finish_at) : ''
       const duration = Number(it?.duration_minutes || 0)
       const tech = it?.technician_id != null ? String(it.technician_id) : ''
-      return `${usageId}:${queueNo}:${st}:${sc}:${started}:${scheduled}:${duration}:${tech}`
+      const techReason = String(it?.technician_unavailable_reason || '')
+      return `${usageId}:${queueNo}:${st}:${sc}:${started}:${scheduled}:${duration}:${tech}:${techReason}`
     })
     .join('|')
 }
@@ -1438,6 +1454,48 @@ const getQueueWaitingItemPhaseText = (it) => {
   if (st === 'staff_selecting') return '待分配'
   if (st === 'timeout_waiting') return '超时过号等待'
   return st || '-'
+}
+
+const shouldShowQueuePendingReassign = (it) => {
+  if (!canQueueCalling.value) return false
+  if (!it || !it.session_id) return false
+  const st = normalizeSessionStatus(it.session_status)
+  return st === 'start_pending' && !it.start_confirmed_at && !!String(it.technician_unavailable_reason || '').trim()
+}
+
+const isQueuePendingReassigning = (it) => {
+  const sid = Number(it?.session_id || 0)
+  if (!sid) return false
+  return !!queuePendingReassigningMap.value[sid]
+}
+
+const setQueuePendingReassigning = (sessionId, value) => {
+  const sid = Number(sessionId || 0)
+  if (!sid) return
+  queuePendingReassigningMap.value = {
+    ...queuePendingReassigningMap.value,
+    [sid]: !!value
+  }
+}
+
+const reassignQueuePendingItem = async (it, reason = '当前客服不可服务，运营发起重新分配') => {
+  const sessionId = Number(it?.session_id || 0)
+  if (!sessionId || isQueuePendingReassigning(it)) return false
+  setQueuePendingReassigning(sessionId, true)
+  try {
+    const res = await queueApi.reassignCurrentPending(sessionId, reason)
+    const data = res.data?.data || {}
+    const toName = String(data.to_technician_name || '').trim()
+    alert(toName ? `已重新分配给 ${toName}` : '已重新分配')
+    await fetchQueuePendingList(true)
+    await fetchQueueCallInfo()
+    return true
+  } catch (e) {
+    alert(e.response?.data?.error || '重新分配失败')
+    return false
+  } finally {
+    setQueuePendingReassigning(sessionId, false)
+  }
 }
 
 const getQueueServingItemPhaseText = (it) => {
@@ -1568,6 +1626,9 @@ const patchQueuePendingList = (nextList) => {
       existed.scheduled_finish_at = raw.scheduled_finish_at
       existed.duration_minutes = raw.duration_minutes
       existed.technician_id = raw.technician_id
+      existed.technician_name = raw.technician_name
+      existed.technician_available = raw.technician_available
+      existed.technician_unavailable_reason = raw.technician_unavailable_reason
       existed.project_name = raw.project_name
       existed.user_nickname = raw.user_nickname
       existed.updated_at = raw.updated_at
@@ -2451,6 +2512,8 @@ const startTechnicianQueue = async () => {
 
 const pauseTechnicianQueue = async () => {
   if (queueStatusUpdating.value) return
+  const canContinue = await maybeReassignPendingBeforeLeave('暂停叫号')
+  if (!canContinue) return
   queueStatusUpdating.value = true
   try {
     // 专业客服点击"暂停叫号"是暂停自己的叫号服务
@@ -4030,6 +4093,19 @@ const copyText = async (text) => {
   }
 }
 
+const maybeReassignPendingBeforeLeave = async (actionText) => {
+  if (!isTechnicianAuth()) return true
+  if (!merchant.value?.support_queue || !merchant.value?.support_multi_customer_service) return true
+  const sess = pendingStartSession.value
+  if (!sess || !sess.id) return true
+  const confirmed = confirm(`你当前还有1个待上号用户，是否在${actionText}前先尝试转交给其他空闲客服？`)
+  if (!confirmed) return true
+  const ok = await reassignQueuePendingItem({ session_id: sess.id }, `专业客服在${actionText}前发起自助转交`)
+  if (!ok) return false
+  await fetchServiceSessions()
+  return true
+}
+
 const doCheckIn = async () => {
   if (!isTechnicianAuth()) return
   attendanceLoading.value = true
@@ -4052,6 +4128,8 @@ const doCheckOut = async () => {
   // 添加确认弹窗
   const confirmed = confirm('确认要下班签到吗？')
   if (!confirmed) return
+  const canContinue = await maybeReassignPendingBeforeLeave('下班')
+  if (!canContinue) return
   
   attendanceLoading.value = true
   try {

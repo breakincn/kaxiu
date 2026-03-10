@@ -32,6 +32,9 @@ type queuePendingItem struct {
 	ScheduledFinishAt            *time.Time `json:"scheduled_finish_at"`
 	DurationMinutes              int        `json:"duration_minutes"`
 	TechnicianID                 *uint      `json:"technician_id"`
+	TechnicianName               string     `json:"technician_name"`
+	TechnicianAvailable          bool       `json:"technician_available"`
+	TechnicianUnavailableReason  string     `json:"technician_unavailable_reason"`
 	ProjectName                  string     `json:"project_name"`
 	UserNickname                 string     `json:"user_nickname"`
 	CreatedAt                    *time.Time `json:"created_at"`
@@ -107,6 +110,219 @@ func currentQueueScopedTechnicianID(c *gin.Context) *uint {
 	}
 
 	return &techID
+}
+
+type queuePendingTechMeta struct {
+	Name              string
+	QueuePaused       bool
+	AttendanceStatus  string
+	HasOpenAttendance bool
+}
+
+func resolveQueuePendingTechUnavailableReason(meta queuePendingTechMeta) string {
+	if strings.TrimSpace(meta.Name) == "" && !meta.HasOpenAttendance {
+		return "当前客服不可服务"
+	}
+	if meta.QueuePaused {
+		return "当前客服已暂停叫号"
+	}
+	switch strings.TrimSpace(meta.AttendanceStatus) {
+	case "":
+		if !meta.HasOpenAttendance {
+			return "当前客服已下班"
+		}
+	case "paused":
+		return "当前客服已暂停服务"
+	case "rest":
+		return "当前客服已下班"
+	}
+	if !meta.HasOpenAttendance {
+		return "当前客服已下班"
+	}
+	return ""
+}
+
+func listQueuePendingTechMeta(merchantID uint, techIDs []uint) map[uint]queuePendingTechMeta {
+	out := make(map[uint]queuePendingTechMeta, len(techIDs))
+	if merchantID == 0 || len(techIDs) == 0 {
+		return out
+	}
+
+	uniqIDs := make([]uint, 0, len(techIDs))
+	seen := make(map[uint]struct{}, len(techIDs))
+	for _, id := range techIDs {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniqIDs = append(uniqIDs, id)
+	}
+	if len(uniqIDs) == 0 {
+		return out
+	}
+
+	var techs []models.Technician
+	_ = config.DB.
+		Select("id", "name", "queue_paused").
+		Where("merchant_id = ? AND id IN ?", merchantID, uniqIDs).
+		Find(&techs).Error
+	for _, tech := range techs {
+		out[tech.ID] = queuePendingTechMeta{
+			Name:        strings.TrimSpace(tech.Name),
+			QueuePaused: tech.QueuePaused,
+		}
+	}
+
+	start := time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), 0, 0, 0, 0, time.Now().Location())
+	type attendanceLite struct {
+		TechnicianID uint   `gorm:"column:technician_id"`
+		Status       string `gorm:"column:status"`
+	}
+	var atts []attendanceLite
+	_ = config.DB.
+		Table("technician_attendances").
+		Select("technician_id, status").
+		Where("merchant_id = ? AND technician_id IN ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, uniqIDs, start).
+		Order("id desc").
+		Find(&atts).Error
+
+	attSeen := make(map[uint]struct{}, len(atts))
+	for _, att := range atts {
+		if att.TechnicianID == 0 {
+			continue
+		}
+		if _, ok := attSeen[att.TechnicianID]; ok {
+			continue
+		}
+		attSeen[att.TechnicianID] = struct{}{}
+		meta := out[att.TechnicianID]
+		meta.AttendanceStatus = strings.TrimSpace(att.Status)
+		meta.HasOpenAttendance = true
+		out[att.TechnicianID] = meta
+	}
+
+	return out
+}
+
+func currentStaffRoleType(c *gin.Context) string {
+	roleAny, ok := c.Get("service_role")
+	if !ok {
+		return ""
+	}
+	switch v := roleAny.(type) {
+	case models.ServiceRole:
+		return strings.TrimSpace(v.RoleType)
+	case *models.ServiceRole:
+		if v != nil {
+			return strings.TrimSpace(v.RoleType)
+		}
+	}
+	return ""
+}
+
+func selectQueueReassignTarget(tx *gorm.DB, merchant *models.Merchant, excludeTechID uint, now time.Time) (*models.Technician, *models.TechnicianAttendance, error) {
+	if tx == nil || merchant == nil || merchant.ID == 0 {
+		return nil, nil, nil
+	}
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	type idleTechRow struct {
+		ID   uint   `gorm:"column:id"`
+		Name string `gorm:"column:name"`
+	}
+	var candidates []idleTechRow
+	if err := tx.
+		Table("technician_attendances ta").
+		Select("t.id, t.name").
+		Joins("JOIN technicians t ON t.id = ta.technician_id").
+		Where("ta.merchant_id = ? AND ta.checked_in_at >= ? AND ta.checked_out_at IS NULL AND ta.status = ?", merchant.ID, start, "idle").
+		Where("t.merchant_id = ? AND t.is_active = ? AND t.queue_paused = ?", merchant.ID, true, false).
+		Where("t.id <> ?", excludeTechID).
+		Order("ta.updated_at asc, ta.id asc").
+		Find(&candidates).Error; err != nil {
+		return nil, nil, err
+	}
+
+	activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})
+	for _, cand := range candidates {
+		if cand.ID == 0 {
+			continue
+		}
+
+		var cnt int64
+		if err := tx.Model(&models.ServiceSession{}).
+			Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchant.ID, cand.ID, activeStatuses).
+			Count(&cnt).Error; err != nil {
+			return nil, nil, err
+		}
+		if cnt > 0 {
+			continue
+		}
+
+		var att models.TechnicianAttendance
+		attRes := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchant.ID, cand.ID, start).
+			Order("id desc").
+			Limit(1).
+			Find(&att)
+		if attRes.Error != nil || attRes.RowsAffected == 0 {
+			continue
+		}
+		if strings.TrimSpace(att.Status) != "idle" {
+			continue
+		}
+
+		var tech models.Technician
+		if err := tx.Where("id = ? AND merchant_id = ?", cand.ID, merchant.ID).First(&tech).Error; err != nil {
+			return nil, nil, err
+		}
+		if tech.QueuePaused || !tech.IsActive {
+			continue
+		}
+		return &tech, &att, nil
+	}
+
+	return nil, nil, nil
+}
+
+func releaseTechnicianAfterPendingReassign(tx *gorm.DB, merchantID uint, techID uint, now time.Time) error {
+	if tx == nil || merchantID == 0 || techID == 0 {
+		return nil
+	}
+
+	var tech models.Technician
+	if err := tx.Where("id = ? AND merchant_id = ?", techID, merchantID).First(&tech).Error; err != nil {
+		return err
+	}
+
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	var att models.TechnicianAttendance
+	res := tx.
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, techID, start).
+		Order("id desc").
+		Limit(1).
+		Find(&att)
+	if res.Error != nil || res.RowsAffected == 0 {
+		return res.Error
+	}
+	if strings.TrimSpace(att.Status) != "busy" {
+		return nil
+	}
+
+	updates := map[string]interface{}{
+		"next_status": nil,
+	}
+	if tech.QueuePaused || (att.NextStatus != nil && strings.TrimSpace(*att.NextStatus) == "paused") {
+		updates["status"] = "paused"
+	} else {
+		updates["status"] = "idle"
+	}
+	return tx.Model(&models.TechnicianAttendance{}).Where("id = ?", att.ID).Updates(updates).Error
 }
 
 func isMerchantInBusinessHours(m *models.Merchant, now time.Time) bool {
@@ -639,6 +855,7 @@ func GetQueuePendingList(c *gin.Context) {
 		return
 	}
 	byUsageIDSession := make(map[uint]sessLite, len(sessions))
+	techIDs := make([]uint, 0, len(sessions))
 	for _, s := range sessions {
 		if s.InitialUsageID == 0 {
 			continue
@@ -649,7 +866,11 @@ func GetQueuePendingList(c *gin.Context) {
 			}
 		}
 		byUsageIDSession[s.InitialUsageID] = s
+		if s.TechnicianID != nil && *s.TechnicianID > 0 {
+			techIDs = append(techIDs, *s.TechnicianID)
+		}
 	}
+	techMeta := listQueuePendingTechMeta(merchantID, techIDs)
 
 	out := make([]queuePendingItem, 0, len(tickets))
 	for _, t := range tickets {
@@ -671,6 +892,15 @@ func GetQueuePendingList(c *gin.Context) {
 			CreatedAt:                  s.CreatedAt,
 			UpdatedAt:                  s.UpdatedAt,
 		}
+		technicianName := ""
+		technicianAvailable := true
+		technicianUnavailableReason := ""
+		if s.TechnicianID != nil && *s.TechnicianID > 0 {
+			meta := techMeta[*s.TechnicianID]
+			technicianName = meta.Name
+			technicianUnavailableReason = resolveQueuePendingTechUnavailableReason(meta)
+			technicianAvailable = technicianUnavailableReason == ""
+		}
 		out = append(out, queuePendingItem{
 			UsageID:                      t.ID,
 			QueueNo:                      t.No,
@@ -684,6 +914,9 @@ func GetQueuePendingList(c *gin.Context) {
 			ScheduledFinishAt:            s.ScheduledFinishAt,
 			DurationMinutes:              s.DurationMinutes,
 			TechnicianID:                 s.TechnicianID,
+			TechnicianName:               technicianName,
+			TechnicianAvailable:          technicianAvailable,
+			TechnicianUnavailableReason:  technicianUnavailableReason,
 			ProjectName:                  s.ProjectName,
 			UserNickname:                 s.UserNickname,
 			CreatedAt:                    s.CreatedAt,
@@ -1782,5 +2015,146 @@ func TriggerAutoAssign(c *gin.Context) {
 			"triggered": true,
 			"message":   "已尝试为所有空闲技师分配下一号",
 		},
+	})
+}
+
+// ReassignCurrentPendingSession 自动重分配当前待上号单到其他空闲客服
+// POST /queue/sessions/:id/reassign-current-pending
+func ReassignCurrentPendingSession(c *gin.Context) {
+	merchantIDAny, ok := c.Get("merchant_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	merchantID, ok := merchantIDAny.(uint)
+	if !ok || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+
+	sessionIDStr := strings.TrimSpace(c.Param("id"))
+	sessionID64, err := strconv.ParseUint(sessionIDStr, 10, 32)
+	if err != nil || sessionID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的会话ID"})
+		return
+	}
+	sessionID := uint(sessionID64)
+
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+	requesterTechID := uint(0)
+	if authType == "staff" {
+		techIDAny, _ := c.Get("technician_id")
+		requesterTechID, _ = techIDAny.(uint)
+	}
+	roleType := currentStaffRoleType(c)
+
+	now := time.Now()
+	var result gin.H
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		var merchant models.Merchant
+		if err := tx.First(&merchant, merchantID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
+			}
+			return err
+		}
+		if !merchant.SupportQueue || !merchant.SupportMultiCustomerService {
+			return apiErr{status: http.StatusBadRequest, msg: "当前模式不支持重分配待上号单"}
+		}
+
+		var session models.ServiceSession
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND merchant_id = ?", sessionID, merchantID).
+			First(&session).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apiErr{status: http.StatusNotFound, msg: "待上号单不存在"}
+			}
+			return err
+		}
+		if err := models.ValidateSessionModeForEntry(&session, &merchant); err != nil {
+			return apiErr{status: http.StatusBadRequest, msg: err.Error()}
+		}
+		if models.NormalizeSessionStatus(session.Status) != "start_pending" || session.StartConfirmedAt != nil {
+			return apiErr{status: http.StatusBadRequest, msg: "当前仅支持重分配待上号单"}
+		}
+		if session.TechnicianID == nil || *session.TechnicianID == 0 {
+			return apiErr{status: http.StatusBadRequest, msg: "当前待上号单尚未分配客服"}
+		}
+		oldTechID := *session.TechnicianID
+
+		if authType == "staff" {
+			if requesterTechID == 0 {
+				return apiErr{status: http.StatusForbidden, msg: "仅工作人员可操作"}
+			}
+			if strings.TrimSpace(roleType) != "operational" && oldTechID != requesterTechID {
+				return apiErr{status: http.StatusForbidden, msg: "仅可转交自己当前待上号单"}
+			}
+		}
+
+		targetTech, targetAtt, err := selectQueueReassignTarget(tx, &merchant, oldTechID, now)
+		if err != nil {
+			return err
+		}
+		if targetTech == nil || targetAtt == nil {
+			return apiErr{status: http.StatusBadRequest, msg: "当前没有可接手的空闲客服"}
+		}
+
+		timeoutSeconds := config.MerchantQueueWaitingStartSeconds(&merchant)
+		updates := map[string]interface{}{
+			"technician_id":                 targetTech.ID,
+			"last_technician_id":            oldTechID,
+			"start_pending_timeout_seconds": timeoutSeconds,
+			"updated_at":                    now,
+		}
+		if err := tx.Model(&models.ServiceSession{}).
+			Where("id = ? AND merchant_id = ? AND status IN ? AND start_confirmed_at IS NULL", session.ID, merchantID, models.ExpandStatusWithKnownPrefixes("start_pending")).
+			Updates(updates).Error; err != nil {
+			return err
+		}
+
+		if err := releaseTechnicianAfterPendingReassign(tx, merchantID, oldTechID, now); err != nil {
+			return err
+		}
+		if err := tx.Model(&models.TechnicianAttendance{}).
+			Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", targetAtt.ID, merchantID, targetTech.ID, "idle").
+			Updates(map[string]interface{}{"status": "busy"}).Error; err != nil {
+			return err
+		}
+
+		var oldTech models.Technician
+		_ = tx.Select("id", "name").Where("id = ? AND merchant_id = ?", oldTechID, merchantID).First(&oldTech).Error
+		result = gin.H{
+			"session_id":           session.ID,
+			"from_technician_id":   oldTechID,
+			"from_technician_name": strings.TrimSpace(oldTech.Name),
+			"to_technician_id":     targetTech.ID,
+			"to_technician_name":   strings.TrimSpace(targetTech.Name),
+			"reason":               strings.TrimSpace(input.Reason),
+			"reassigned_at":        now.Format("2006-01-02 15:04:05"),
+		}
+		return nil
+	})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "已完成待上号单重分配",
+		"data":    result,
 	})
 }

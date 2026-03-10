@@ -379,6 +379,8 @@ export const queueApi = {
   continueCallForce: () => api.post('/merchant/queue/continue-call-force'),
   // 扫码结单时触发下一个叫号
   finishCallNext: () => api.post('/merchant/queue/finish-call-next'),
+  // 当前待上号单自动重分配到其他空闲客服
+  reassignCurrentPending: (sessionId, reason) => api.post(`/merchant/queue/sessions/${sessionId}/reassign-current-pending`, { reason }),
   // 技师自己的叫号状态
   getTechnicianQueuePaused: () => api.get('/merchant/technician/queue-paused'),
   updateTechnicianQueuePaused: (queuePaused) => api.put('/merchant/technician/queue-paused', { queue_paused: queuePaused })
