@@ -295,7 +295,7 @@ const chooseRoom = async (roomId) => {
     }
 
     // 若当前已不在选房状态，直接刷新页面按最新状态展示（避免 400）
-    if (session.value?.status !== 'room_selecting') {
+    if (normalizeSessionStatus(session.value?.status) !== 'room_selecting') {
       const msg = '当前状态不可选房'
       errorText.value = msg
       alert(msg)
