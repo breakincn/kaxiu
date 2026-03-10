@@ -84,6 +84,7 @@ const router = useRouter()
 const loading = ref(true)
 const saving = ref(false)
 const initialSnapshot = ref('')
+const lastSavedForm = ref(null)
 
 const merchantBizTime = ref({
   all_day_start: '',
@@ -130,6 +131,30 @@ const normalizeForm = (value) => JSON.stringify({
   support_hand_card: !!value.support_hand_card
 })
 
+const createFormState = (value = {}) => ({
+  support_appointment: !!value.support_appointment,
+  support_queue: !!value.support_queue,
+  support_room: !!value.support_room,
+  support_direct_sale: !!value.support_direct_sale,
+  support_customer_service: !!value.support_customer_service,
+  support_customer_service_mode: !!value.support_customer_service_mode,
+  support_project: !!value.support_project,
+  support_order_complete: !!value.support_order_complete,
+  support_hand_card: !!value.support_hand_card
+})
+
+const restoreLastSavedForm = () => {
+  if (!lastSavedForm.value) return
+  form.value = createFormState(lastSavedForm.value)
+}
+
+const isRuntimeSwitchBlockedError = (message) =>
+  typeof message === 'string' &&
+  (
+    message.includes('当前有进行中的叫号服务') ||
+    message.includes('请等待本轮服务全部完成后再切换')
+  )
+
 const isDirty = computed(() => normalizeForm(form.value) !== initialSnapshot.value)
 
 const goBack = () => {
@@ -162,17 +187,8 @@ const load = async () => {
       evening_end: m.evening_end || ''
     }
 
-    form.value = {
-      support_appointment: !!m.support_appointment,
-      support_queue: !!m.support_queue,
-      support_room: !!m.support_room,
-      support_direct_sale: !!m.support_direct_sale,
-      support_customer_service: !!m.support_customer_service,
-      support_customer_service_mode: !!m.support_customer_service_mode,
-      support_project: !!m.support_project,
-      support_order_complete: !!m.support_order_complete,
-      support_hand_card: !!m.support_hand_card
-    }
+    form.value = createFormState(m)
+    lastSavedForm.value = createFormState(m)
     initialSnapshot.value = normalizeForm(form.value)
   } catch (e) {
     console.error('加载商户服务配置失败', e)
@@ -235,7 +251,11 @@ const save = async () => {
     alert('保存成功')
     await load()
   } catch (e) {
-    alert(e.response?.data?.error || '保存失败')
+    const errorMessage = e.response?.data?.error || '保存失败'
+    if (isRuntimeSwitchBlockedError(errorMessage)) {
+      restoreLastSavedForm()
+    }
+    alert(errorMessage)
   } finally {
     saving.value = false
   }
