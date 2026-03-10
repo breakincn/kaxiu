@@ -550,6 +550,12 @@
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ formatProjectNameWithDuration(usage.project) }}</div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
+              <div
+                v-if="getUsageServiceRemainingSeconds(usage) !== null"
+                :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getUsageServiceRemainingSeconds(usage))]"
+              >
+                服务剩余：{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}
+              </div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             </div>
             <div class="text-right">
@@ -1119,6 +1125,12 @@
               <div v-if="roomManageSession" class="text-gray-700 text-sm mt-1">
                 项目: {{ roomManageProjectName }}
               </div>
+              <div
+                v-if="getRoomManageSessionRemainingSeconds() !== null"
+                :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getRoomManageSessionRemainingSeconds())]"
+              >
+                服务剩余：{{ formatRemainingSeconds(getRoomManageSessionRemainingSeconds()) }}
+              </div>
             </template>
           </div>
 
@@ -1474,9 +1486,7 @@ const getQueueServingItemRemainingSeconds = (it) => {
 
 const getQueueServingItemRemainingClass = (it) => {
   const remain = getQueueServingItemRemainingSeconds(it)
-  if (remain === null) return 'text-blue-600'
-  if (remain <= 60) return 'text-red-500'
-  return 'text-blue-600'
+  return getRemainingSecondsClass(remain)
 }
 
 const getStartPendingRemainingSeconds = (sessionLike) => {
@@ -2207,6 +2217,31 @@ const roomManageProjectName = computed(() => {
   return formatProjectNameWithDuration(s.project)
 })
 
+const getRoomManageSessionRemainingSeconds = () => {
+  const sess = roomManageSession.value
+  if (!sess) return null
+  const s = normalizeSessionStatus(sess.status)
+  if (s !== 'serving' && s !== 'auto_finishing') return null
+
+  let finishAt = 0
+  const finishAtRaw = sess.scheduled_finish_at
+  if (finishAtRaw) {
+    finishAt = new Date(finishAtRaw).getTime()
+  }
+  if (!finishAt || Number.isNaN(finishAt)) {
+    const startedAtRaw = sess.started_at
+    const durationMinutes = Number(sess.duration_minutes || 0)
+    if (!startedAtRaw || !Number.isFinite(durationMinutes) || durationMinutes <= 0) return null
+    const startedAt = new Date(startedAtRaw).getTime()
+    if (!startedAt || Number.isNaN(startedAt)) return null
+    finishAt = startedAt + durationMinutes * 60 * 1000
+  }
+
+  const remain = Math.floor((finishAt - currentTime.value) / 1000)
+  if (!Number.isFinite(remain)) return null
+  return Math.max(0, remain)
+}
+
 // 格式化项目名称（加上时长）
 const formatProjectNameWithDuration = (project) => {
   if (!project || !project.name) return '-'
@@ -2708,6 +2743,13 @@ const formatRemainingSeconds = (seconds) => {
   if (hours > 0) return `${hours}小时${minutes}分${secs}秒`
   if (minutes > 0) return `${minutes}分${secs}秒`
   return `${secs}秒`
+}
+
+const getRemainingSecondsClass = (seconds) => {
+  const remain = Number(seconds)
+  if (!Number.isFinite(remain)) return 'text-blue-600'
+  if (remain <= 60) return 'text-red-500'
+  return 'text-blue-600'
 }
 
 const getUsageServiceStatusText = (usage) => {
@@ -3711,8 +3753,8 @@ watch(currentTab, (tab) => {
     scanUserCodeActive.value = false
     routeUserCode.value = ''
   }
-  // 倒计时：appointment/verify/service 需要每秒刷新 currentTime
-  if (tab === 'appointment' || tab === 'verify' || tab === 'service') {
+  // 倒计时：appointment/verify/start/service 需要每秒刷新 currentTime
+  if (tab === 'appointment' || tab === 'verify' || tab === 'start' || tab === 'service') {
     startCountdownTimer()
   } else {
     stopCountdownTimer()
@@ -3733,6 +3775,7 @@ watch(currentTab, (tab) => {
   if (tab === 'start') {
     // 上钟Tab显示今日上钟记录
     fetchTodayStartUsages()
+    startServiceSessionTimer()
     return
   }
   if (tab === 'finish') {
@@ -3770,10 +3813,15 @@ watch(currentTab, (tab) => {
 const startServiceSessionTimer = () => {
   stopServiceSessionTimer()
   serviceSessionTimer = setInterval(() => {
-    if (currentTab.value !== 'service') return
-    fetchQueuePendingList(true)
-    fetchQueueTimeoutWaitingList(true)
-    fetchQueueCallInfo()
+    if (currentTab.value === 'service') {
+      fetchQueuePendingList(true)
+      fetchQueueTimeoutWaitingList(true)
+      fetchQueueCallInfo()
+      return
+    }
+    if (currentTab.value === 'start') {
+      fetchTodayStartUsages()
+    }
   }, 3000)
 }
 
