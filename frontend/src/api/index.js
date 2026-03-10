@@ -409,7 +409,8 @@ export const appointmentApi = {
   createAppointment: (data) => api.post('/user/appointments', data),
   confirmAppointment: (id) => api.put(`/merchant/appointments/${id}/confirm`),
   finishAppointment: (id) => api.put(`/merchant/appointments/${id}/finish`),
-  cancelAppointment: (id) => api.put(`/user/appointments/${id}/cancel`)
+  cancelAppointment: (id) => api.put(`/user/appointments/${id}/cancel`),
+  cancelMerchantAppointment: (id) => api.put(`/merchant/appointments/${id}/cancel`)
 }
 
 export const merchantProjectApi = {

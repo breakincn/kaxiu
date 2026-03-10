@@ -1417,7 +1417,9 @@ const showStartTab = computed(() => {
 
 const showAppointmentTab = computed(() => {
   // 技师端：展示“预约”一级标签页（仅用于被指定客服确认预约）
-  return isTechnicianAuth() && !!merchant.value?.support_appointment
+  return isTechnicianAuth() &&
+    !!merchant.value?.support_appointment &&
+    (canAppointmentView.value || canAppointmentManage.value)
 })
 
 const showFinishTab = computed(() => {
@@ -3270,7 +3272,7 @@ const cancelAppointment = async (id) => {
   }
   
   try {
-    await appointmentApi.cancelAppointment(id)
+    await appointmentApi.cancelMerchantAppointment(id)
     fetchAppointments()
     fetchQueueStatus()
     alert('预约已取消')

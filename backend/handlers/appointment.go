@@ -123,8 +123,97 @@ func autoCancelAppointmentIfOverdue(appointment *models.Appointment, now time.Ti
 	return true, nil
 }
 
+func getMerchantAppointmentPermissionState(c *gin.Context) (canView bool, canManage bool, err error) {
+	canView, err = hasMerchantPermissionInHandler(c, "merchant.appointment.view")
+	if err != nil {
+		return false, false, err
+	}
+	canManage, err = hasMerchantPermissionInHandler(c, "merchant.appointment.manage")
+	if err != nil {
+		return false, false, err
+	}
+	return canView, canManage, nil
+}
+
+func getCurrentTechnicianID(c *gin.Context) uint {
+	technicianIDAny, ok := c.Get("technician_id")
+	if !ok {
+		return 0
+	}
+	technicianID, ok := technicianIDAny.(uint)
+	if !ok {
+		return 0
+	}
+	return technicianID
+}
+
+func requireMerchantAppointmentAccess(c *gin.Context) (canManage bool, technicianID uint, ok bool) {
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+	if authType != "merchant" && authType != "staff" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return false, 0, false
+	}
+
+	canView, canManage, err := getMerchantAppointmentPermissionState(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "权限校验失败"})
+		return false, 0, false
+	}
+	if !canView && !canManage {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无预约权限"})
+		return false, 0, false
+	}
+
+	if authType == "staff" {
+		technicianID = getCurrentTechnicianID(c)
+		if technicianID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+			return false, 0, false
+		}
+	}
+
+	return canManage, technicianID, true
+}
+
+func checkMerchantAppointmentOwnership(c *gin.Context, appointment models.Appointment) (canManage bool, technicianID uint, ok bool) {
+	merchantIDAny, exists := c.Get("merchant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return false, 0, false
+	}
+	merchantID, okCast := merchantIDAny.(uint)
+	if !okCast || merchantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return false, 0, false
+	}
+	if appointment.MerchantID != merchantID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权限：不属于您的商户"})
+		return false, 0, false
+	}
+
+	canManage, technicianID, ok = requireMerchantAppointmentAccess(c)
+	if !ok {
+		return false, 0, false
+	}
+
+	if technicianID > 0 && !canManage {
+		if appointment.TechnicianID == nil || *appointment.TechnicianID != technicianID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权限：只能操作分配给自己的预约"})
+			return false, 0, false
+		}
+	}
+
+	return canManage, technicianID, true
+}
+
 func GetMerchantAppointments(c *gin.Context) {
 	merchantID, ok := ensureMerchantScope(c, "id")
+	if !ok {
+		return
+	}
+
+	canManage, technicianID, ok := requireMerchantAppointmentAccess(c)
 	if !ok {
 		return
 	}
@@ -137,42 +226,8 @@ func GetMerchantAppointments(c *gin.Context) {
 		query = query.Where("status = ?", status)
 	}
 
-	// 如果是技师登录，且只有预约权限（没有管理预约权限），则只显示预约自己的预约
-	authType, _ := c.Get("auth_type")
-	if authType == "staff" {
-		technicianIDAny, ok := c.Get("technician_id")
-		if ok {
-			if technicianID, ok := technicianIDAny.(uint); ok && technicianID > 0 {
-				// 检查是否有管理预约权限
-				hasManagePermission := false
-				if serviceRoleIDAny, ok := c.Get("service_role_id"); ok {
-					if serviceRoleID, ok := serviceRoleIDAny.(uint); ok {
-						// 查找管理预约权限
-						var managePerm models.Permission
-						if err := config.DB.Where("`key` = ?", "merchant.appointment.manage").First(&managePerm).Error; err == nil {
-							// 检查商户级别的权限覆盖
-							var override models.MerchantRolePermissionOverride
-							err := config.DB.Where("merchant_id = ? AND service_role_id = ? AND permission_id = ?", merchantID, serviceRoleID, managePerm.ID).First(&override).Error
-							if err == nil {
-								hasManagePermission = override.Allowed
-							} else {
-								// 检查全局角色权限
-								var rolePerm models.RolePermission
-								err = config.DB.Where("service_role_id = ? AND permission_id = ? AND allowed = ?", serviceRoleID, managePerm.ID, true).First(&rolePerm).Error
-								if err == nil {
-									hasManagePermission = true
-								}
-							}
-						}
-					}
-				}
-
-				// 如果没有管理预约权限，则只显示预约自己的预约
-				if !hasManagePermission {
-					query = query.Where("technician_id = ?", technicianID)
-				}
-			}
-		}
+	if technicianID > 0 && !canManage {
+		query = query.Where("technician_id = ?", technicianID)
 	}
 
 	query.Order("appointment_time ASC").Find(&appointments)
@@ -448,58 +503,8 @@ func ConfirmAppointment(c *gin.Context) {
 		return
 	}
 
-	// 权限检查
-	technicianIDAny, ok := c.Get("technician_id")
-	if ok {
-		// 技师登录：只能确认分配给自己的预约
-		if technicianID, ok := technicianIDAny.(uint); ok && technicianID > 0 {
-			if appointment.TechnicianID == nil || *appointment.TechnicianID != technicianID {
-				c.JSON(http.StatusForbidden, gin.H{"error": "无权限：只能确认分配给自己的预约"})
-				return
-			}
-		}
-	} else {
-		// 商户登录：需要管理权限
-		merchantIDAny, ok := c.Get("merchant_id")
-		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-			return
-		}
-		merchantID, ok := merchantIDAny.(uint)
-		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-			return
-		}
-
-		// 检查预约是否属于当前商户
-		if appointment.MerchantID != merchantID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "无权限：不属于您的商户"})
-			return
-		}
-
-		// 检查管理权限
-		if serviceRoleIDAny, ok := c.Get("service_role_id"); ok {
-			if serviceRoleID, ok := serviceRoleIDAny.(uint); ok {
-				var managePerm models.Permission
-				if err := config.DB.Where("`key` = ?", "merchant.appointment.manage").First(&managePerm).Error; err == nil {
-					var override models.MerchantRolePermissionOverride
-					err := config.DB.Where("merchant_id = ? AND service_role_id = ? AND permission_id = ?", merchantID, serviceRoleID, managePerm.ID).First(&override).Error
-					if err == nil {
-						if !override.Allowed {
-							c.JSON(http.StatusForbidden, gin.H{"error": "无权限：需要预约管理权限"})
-							return
-						}
-					} else {
-						var rolePerm models.RolePermission
-						err = config.DB.Where("service_role_id = ? AND permission_id = ? AND allowed = ?", serviceRoleID, managePerm.ID, true).First(&rolePerm).Error
-						if err != nil {
-							c.JSON(http.StatusForbidden, gin.H{"error": "无权限：需要预约管理权限"})
-							return
-						}
-					}
-				}
-			}
-		}
+	if _, _, ok := checkMerchantAppointmentOwnership(c, appointment); !ok {
+		return
 	}
 
 	if autoCanceled, autoCancelErr := autoCancelAppointmentIfOverdue(&appointment, time.Now()); autoCancelErr != nil {
@@ -598,18 +603,13 @@ func CancelAppointment(c *gin.Context) {
 		return
 	}
 
-	// 权限检查
-	technicianIDAny, ok := c.Get("technician_id")
-	if ok {
-		// 技师登录：只能取消分配给自己的预约
-		if technicianID, ok := technicianIDAny.(uint); ok && technicianID > 0 {
-			if appointment.TechnicianID == nil || *appointment.TechnicianID != technicianID {
-				c.JSON(http.StatusForbidden, gin.H{"error": "无权限：只能取消分配给自己的预约"})
-				return
-			}
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+	if authType == "merchant" || authType == "staff" {
+		if _, _, ok := checkMerchantAppointmentOwnership(c, appointment); !ok {
+			return
 		}
 	} else {
-		// 用户登录：只能取消自己的预约
 		userIDAny, ok := c.Get("user_id")
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
