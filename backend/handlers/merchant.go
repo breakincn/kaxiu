@@ -393,7 +393,7 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 				return
 			}
 			if cnt > 0 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "当前有进行中的叫号服务，请等待本轮服务全部完成后再切换"})
+				c.JSON(http.StatusBadRequest, gin.H{"error": "当前有未完成服务会话，请等待本轮服务全部完成后再切换"})
 				return
 			}
 		}

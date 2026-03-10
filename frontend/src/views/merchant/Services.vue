@@ -151,6 +151,7 @@ const restoreLastSavedForm = () => {
 const isRuntimeSwitchBlockedError = (message) =>
   typeof message === 'string' &&
   (
+    message.includes('当前有未完成服务会话') ||
     message.includes('当前有进行中的叫号服务') ||
     message.includes('请等待本轮服务全部完成后再切换')
   )
