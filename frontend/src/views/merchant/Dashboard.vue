@@ -1154,10 +1154,16 @@
                 项目: {{ roomManageProjectName }}
               </div>
               <div
-                v-if="getRoomManageSessionRemainingSeconds() !== null"
-                :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getRoomManageSessionRemainingSeconds())]"
+                v-if="getRoomManageStartPendingCountdownSeconds() !== null"
+                :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getRoomManageStartPendingCountdownSeconds())]"
               >
-                服务剩余：{{ formatRemainingSeconds(getRoomManageSessionRemainingSeconds()) }}
+                {{ getStartCountdownLabel(merchant) }}：{{ formatStartCountdownSeconds(getRoomManageStartPendingCountdownSeconds()) }}
+              </div>
+              <div
+                v-if="getRoomManageServiceCountdownSeconds() !== null"
+                :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getRoomManageServiceCountdownSeconds())]"
+              >
+                服务倒计时：{{ formatServiceCountdownSeconds(getRoomManageServiceCountdownSeconds()) }}
               </div>
             </template>
           </div>
@@ -2363,6 +2369,18 @@ const getRoomManageSessionRemainingSeconds = () => {
   return getSessionRemainingSeconds(roomManageSession.value)
 }
 
+const getRoomManageStartPendingCountdownSeconds = () => {
+  return getStartPendingRemainingSeconds(roomManageSession.value)
+}
+
+const getRoomManageServiceCountdownSeconds = () => {
+  const sess = roomManageSession.value
+  if (!sess) return null
+  const status = normalizeSessionStatus(sess.status)
+  if (status !== 'serving' && status !== 'auto_finishing') return null
+  return getRoomManageSessionRemainingSeconds()
+}
+
 // 格式化项目名称（加上时长）
 const formatProjectNameWithDuration = (project) => {
   if (!project || !project.name) return '-'
@@ -2845,6 +2863,27 @@ const formatRemainingSeconds = (seconds) => {
   if (hours > 0) return `${hours}小时${minutes}分${secs}秒`
   if (minutes > 0) return `${minutes}分${secs}秒`
   return `${secs}秒`
+}
+
+const formatServiceCountdownSeconds = (seconds) => {
+  const n = Number(seconds)
+  if (!Number.isFinite(n) || n < 0) return ''
+  const totalSeconds = Math.floor(n)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const secs = totalSeconds % 60
+  const pad2 = (value) => String(value).padStart(2, '0')
+  if (hours > 0) return `${hours}小时${pad2(minutes)}分${pad2(secs)}秒`
+  return `${minutes}分${pad2(secs)}秒`
+}
+
+const formatStartCountdownSeconds = (seconds) => {
+  const n = Number(seconds)
+  if (!Number.isFinite(n) || n < 0) return ''
+  const totalSeconds = Math.floor(n)
+  const minutes = Math.floor(totalSeconds / 60)
+  const secs = totalSeconds % 60
+  return `${minutes}:${String(secs).padStart(2, '0')}`
 }
 
 const getRemainingSecondsClass = (seconds) => {
