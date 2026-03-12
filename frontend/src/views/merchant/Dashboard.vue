@@ -1462,6 +1462,7 @@ const serviceTabRefreshQueued = ref(false)
 
 let queuePendingFirstLoaded = false
 let serviceTabBoundaryState = new Map()
+let startTabBoundaryState = new Map()
 
 const queuePendingSignature = (list) => {
   if (!Array.isArray(list) || list.length === 0) return ''
@@ -3986,6 +3987,7 @@ const stopCountdownTimer = () => {
 
 watch(currentTime, () => {
   syncServiceTabRefreshOnCountdownBoundary()
+  syncStartTabRefreshOnCountdownBoundary()
 })
 
 watch(currentTab, (tab) => {
@@ -3993,7 +3995,7 @@ watch(currentTab, (tab) => {
     scanUserCodeActive.value = false
     routeUserCode.value = ''
   }
-  if (tab !== 'service' && tab !== 'start') {
+  if (tab !== 'service') {
     stopServiceSessionTimer()
   }
   // 倒计时：appointment/verify/start/service 需要每秒刷新 currentTime
@@ -4004,12 +4006,12 @@ watch(currentTab, (tab) => {
   }
 
   if (tab === 'appointment') {
-    clearServiceTabBoundaryState()
+    clearCountdownBoundaryState()
     fetchAppointments()
     return
   }
   if (tab === 'verify') {
-    clearServiceTabBoundaryState()
+    clearCountdownBoundaryState()
     // 重置为默认状态
     showVerifyInput.value = false
     verifyCodeInput.value = ''
@@ -4018,20 +4020,19 @@ watch(currentTab, (tab) => {
     return
   }
   if (tab === 'start') {
-    clearServiceTabBoundaryState()
+    clearCountdownBoundaryState()
     // 上钟Tab显示今日上钟记录
     fetchTodayStartUsages()
-    startServiceSessionTimer()
     return
   }
   if (tab === 'finish') {
-    clearServiceTabBoundaryState()
+    clearCountdownBoundaryState()
     // 结单Tab显示今日结单记录
     fetchTodayFinishedUsages()
     return
   }
   if (tab === 'cards') {
-    clearServiceTabBoundaryState()
+    clearCountdownBoundaryState()
     // 重置显示模式为自动，让computed决定显示什么
     displayMode.value = 'auto'
     // 如果默认显示售卡模板，则加载售卡模板数据
@@ -4043,17 +4044,17 @@ watch(currentTab, (tab) => {
     return
   }
   if (tab === 'notice') {
-    clearServiceTabBoundaryState()
+    clearCountdownBoundaryState()
     fetchNotices()
     return
   }
   if (tab === 'service') {
-    clearServiceTabBoundaryState()
+    clearCountdownBoundaryState()
     refreshServiceTabPartialData({ silent: false, force: true })
     startServiceSessionTimer()
     return
   }
-  clearServiceTabBoundaryState()
+  clearCountdownBoundaryState()
 })
 
 const startServiceSessionTimer = () => {
@@ -4061,10 +4062,6 @@ const startServiceSessionTimer = () => {
   serviceSessionTimer = setInterval(() => {
     if (currentTab.value === 'service') {
       refreshServiceTabPartialData({ silent: true })
-      return
-    }
-    if (currentTab.value === 'start') {
-      fetchTodayStartUsages()
     }
   }, 3000)
 }
@@ -4251,6 +4248,7 @@ onMounted(async () => {
     startCountdownTimer()
   } else if (currentTab.value === 'start') {
     fetchTodayStartUsages()
+    startCountdownTimer()
   } else if (currentTab.value === 'finish') {
     fetchTodayFinishedUsages()
   } else if (currentTab.value === 'cards') {
@@ -4410,6 +4408,15 @@ const clearServiceTabBoundaryState = () => {
   serviceTabBoundaryState = new Map()
 }
 
+const clearStartTabBoundaryState = () => {
+  startTabBoundaryState = new Map()
+}
+
+const clearCountdownBoundaryState = () => {
+  clearServiceTabBoundaryState()
+  clearStartTabBoundaryState()
+}
+
 const collectServiceTabCountdowns = () => {
   const items = []
   const pushItem = (key, seconds) => {
@@ -4444,6 +4451,20 @@ const collectServiceTabCountdowns = () => {
     }
   }
 
+  return items
+}
+
+const collectStartTabCountdowns = () => {
+  const items = []
+  for (const usage of todayStartUsages.value || []) {
+    const usageId = Number(usage?.id || 0)
+    if (!usageId) continue
+    const remain = getUsageServiceRemainingSeconds(usage)
+    if (remain === null || remain === undefined) continue
+    const normalizedRemain = Number(remain)
+    if (!Number.isFinite(normalizedRemain)) continue
+    items.push({ key: `start_usage:serving:${usageId}`, remain: normalizedRemain })
+  }
   return items
 }
 
@@ -4506,6 +4527,30 @@ const syncServiceTabRefreshOnCountdownBoundary = () => {
   }
 }
 
+const syncStartTabRefreshOnCountdownBoundary = () => {
+  if (currentTab.value !== 'start') {
+    clearStartTabBoundaryState()
+    return
+  }
+
+  const nextState = new Map()
+  let shouldRefresh = false
+  for (const item of collectStartTabCountdowns()) {
+    const remain = Math.max(0, Math.floor(Number(item.remain || 0)))
+    nextState.set(item.key, remain)
+    const prevRemain = startTabBoundaryState.get(item.key)
+    if (prevRemain === undefined) continue
+    if (prevRemain > 0 && remain <= 0) {
+      shouldRefresh = true
+    }
+  }
+  startTabBoundaryState = nextState
+
+  if (shouldRefresh) {
+    fetchTodayStartUsages()
+  }
+}
+
 onBeforeRouteLeave(() => {
   scanUserCodeActive.value = false
   routeUserCode.value = ''
@@ -4515,7 +4560,7 @@ onUnmounted(() => {
   stopCountdownTimer()
   stopServiceSessionTimer()
   stopContinueCallBlockedTimer()
-  clearServiceTabBoundaryState()
+  clearCountdownBoundaryState()
   serviceTabRefreshQueued.value = false
   scanUserCodeActive.value = false
   routeUserCode.value = ''
@@ -4534,6 +4579,7 @@ onActivated(() => {
     fetchTodayUsages()
   } else if (currentTab.value === 'start') {
     fetchTodayStartUsages()
+    startCountdownTimer()
   } else if (currentTab.value === 'finish') {
     fetchTodayFinishedUsages()
   } else if (currentTab.value === 'service') {
