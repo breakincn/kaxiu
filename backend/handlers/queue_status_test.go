@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +29,9 @@ func setupHandlerTestDB(t *testing.T) *gorm.DB {
 		&models.Merchant{},
 		&models.User{},
 		&models.MerchantProject{},
+		&models.ServiceRole{},
 		&models.Technician{},
+		&models.TechnicianAttendance{},
 		&models.Usage{},
 		&models.ServiceSession{},
 	); err != nil {
@@ -399,6 +402,326 @@ func TestGetQueueTimeoutWaitingListStaffOnlySeesOwnSessions(t *testing.T) {
 	}
 	if body.Data[0].UsageID != usage1.ID {
 		t.Fatalf("want only usage %d, got %+v", usage1.ID, body.Data)
+	}
+}
+
+func TestReassignCurrentPendingSessionSupportsCustomerServiceMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	config.DB = setupHandlerTestDB(t)
+	now := time.Now()
+
+	m := models.Merchant{
+		Name:                       "m-cs-reassign",
+		Phone:                      "18800000006",
+		Password:                   "pwd",
+		SupportCustomerServiceMode: true,
+	}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	oldTech := models.Technician{MerchantID: m.ID, ServiceRoleID: 1, Name: "客服A", Code: "1001", Account: "js1001", Password: "pwd", IsActive: true}
+	newTech := models.Technician{MerchantID: m.ID, ServiceRoleID: 1, Name: "客服B", Code: "1002", Account: "js1002", Password: "pwd", IsActive: true}
+	if err := config.DB.Create(&oldTech).Error; err != nil {
+		t.Fatalf("create old tech failed: %v", err)
+	}
+	if err := config.DB.Create(&newTech).Error; err != nil {
+		t.Fatalf("create new tech failed: %v", err)
+	}
+
+	oldAtt := models.TechnicianAttendance{MerchantID: m.ID, TechnicianID: oldTech.ID, CheckedInAt: &now, Status: "busy"}
+	newAtt := models.TechnicianAttendance{MerchantID: m.ID, TechnicianID: newTech.ID, CheckedInAt: &now, Status: "idle"}
+	if err := config.DB.Create(&oldAtt).Error; err != nil {
+		t.Fatalf("create old attendance failed: %v", err)
+	}
+	if err := config.DB.Create(&newAtt).Error; err != nil {
+		t.Fatalf("create new attendance failed: %v", err)
+	}
+
+	usage := models.Usage{MerchantID: m.ID, Status: "in_progress"}
+	if err := config.DB.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	session := models.ServiceSession{
+		MerchantID:     m.ID,
+		InitialUsageID: usage.ID,
+		SessionMode:    models.SessionModeCustomerService,
+		TechnicianID:   &oldTech.ID,
+		Status:         "cs_start_pending",
+		CreatedAt:      &now,
+		UpdatedAt:      &now,
+	}
+	if err := config.DB.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set("merchant_id", m.ID)
+	c.Set("auth_type", "staff")
+	c.Set("technician_id", oldTech.ID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(session.ID), 10)}}
+	c.Request = httptest.NewRequest(http.MethodPost, "/queue/sessions/"+strconv.FormatUint(uint64(session.ID), 10)+"/reassign-current-pending", strings.NewReader(`{"reason":"下班前转交"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	ReassignCurrentPendingSession(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var gotSession models.ServiceSession
+	if err := config.DB.First(&gotSession, session.ID).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if gotSession.TechnicianID == nil || *gotSession.TechnicianID != newTech.ID {
+		t.Fatalf("want session reassigned to %d, got %+v", newTech.ID, gotSession.TechnicianID)
+	}
+	if gotSession.LastTechnicianID == nil || *gotSession.LastTechnicianID != oldTech.ID {
+		t.Fatalf("want last technician %d, got %+v", oldTech.ID, gotSession.LastTechnicianID)
+	}
+
+	var gotOldAtt struct {
+		Status string `gorm:"column:status"`
+	}
+	if err := config.DB.Model(&models.TechnicianAttendance{}).Select("status").First(&gotOldAtt, oldAtt.ID).Error; err != nil {
+		t.Fatalf("reload old attendance failed: %v", err)
+	}
+	if gotOldAtt.Status != "idle" {
+		t.Fatalf("want old attendance idle, got %s", gotOldAtt.Status)
+	}
+
+	var gotNewAtt struct {
+		Status string `gorm:"column:status"`
+	}
+	if err := config.DB.Model(&models.TechnicianAttendance{}).Select("status").First(&gotNewAtt, newAtt.ID).Error; err != nil {
+		t.Fatalf("reload new attendance failed: %v", err)
+	}
+	if gotNewAtt.Status != "busy" {
+		t.Fatalf("want new attendance busy, got %s", gotNewAtt.Status)
+	}
+}
+
+func TestReassignCurrentPendingSessionCustomerServiceRejectsNoTarget(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	config.DB = setupHandlerTestDB(t)
+	now := time.Now()
+
+	m := models.Merchant{
+		Name:                       "m-cs-no-target",
+		Phone:                      "18800000007",
+		Password:                   "pwd",
+		SupportCustomerServiceMode: true,
+	}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	tech := models.Technician{MerchantID: m.ID, ServiceRoleID: 1, Name: "客服A", Code: "1101", Account: "js1101", Password: "pwd", IsActive: true}
+	if err := config.DB.Create(&tech).Error; err != nil {
+		t.Fatalf("create tech failed: %v", err)
+	}
+
+	att := models.TechnicianAttendance{MerchantID: m.ID, TechnicianID: tech.ID, CheckedInAt: &now, Status: "busy"}
+	if err := config.DB.Create(&att).Error; err != nil {
+		t.Fatalf("create attendance failed: %v", err)
+	}
+
+	usage := models.Usage{MerchantID: m.ID, Status: "in_progress"}
+	if err := config.DB.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	session := models.ServiceSession{
+		MerchantID:     m.ID,
+		InitialUsageID: usage.ID,
+		SessionMode:    models.SessionModeCustomerService,
+		TechnicianID:   &tech.ID,
+		Status:         "cs_start_pending",
+		CreatedAt:      &now,
+		UpdatedAt:      &now,
+	}
+	if err := config.DB.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set("merchant_id", m.ID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(session.ID), 10)}}
+	c.Request = httptest.NewRequest(http.MethodPost, "/queue/sessions/"+strconv.FormatUint(uint64(session.ID), 10)+"/reassign-current-pending", strings.NewReader(`{"reason":"下班前转交"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	ReassignCurrentPendingSession(c)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "当前没有可接手的空闲客服") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+
+	var gotSession models.ServiceSession
+	if err := config.DB.First(&gotSession, session.ID).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if gotSession.TechnicianID == nil || *gotSession.TechnicianID != tech.ID {
+		t.Fatalf("want session still on %d, got %+v", tech.ID, gotSession.TechnicianID)
+	}
+}
+
+func TestReassignCurrentPendingSessionCustomerServiceStaffOnlyOwnSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	config.DB = setupHandlerTestDB(t)
+	now := time.Now()
+
+	m := models.Merchant{
+		Name:                       "m-cs-auth",
+		Phone:                      "18800000008",
+		Password:                   "pwd",
+		SupportCustomerServiceMode: true,
+	}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	ownerTech := models.Technician{MerchantID: m.ID, ServiceRoleID: 1, Name: "客服A", Code: "1201", Account: "js1201", Password: "pwd", IsActive: true}
+	otherTech := models.Technician{MerchantID: m.ID, ServiceRoleID: 1, Name: "客服B", Code: "1202", Account: "js1202", Password: "pwd", IsActive: true}
+	targetTech := models.Technician{MerchantID: m.ID, ServiceRoleID: 1, Name: "客服C", Code: "1203", Account: "js1203", Password: "pwd", IsActive: true}
+	if err := config.DB.Create(&ownerTech).Error; err != nil {
+		t.Fatalf("create owner tech failed: %v", err)
+	}
+	if err := config.DB.Create(&otherTech).Error; err != nil {
+		t.Fatalf("create other tech failed: %v", err)
+	}
+	if err := config.DB.Create(&targetTech).Error; err != nil {
+		t.Fatalf("create target tech failed: %v", err)
+	}
+
+	if err := config.DB.Create(&models.TechnicianAttendance{MerchantID: m.ID, TechnicianID: otherTech.ID, CheckedInAt: &now, Status: "busy"}).Error; err != nil {
+		t.Fatalf("create other attendance failed: %v", err)
+	}
+	if err := config.DB.Create(&models.TechnicianAttendance{MerchantID: m.ID, TechnicianID: targetTech.ID, CheckedInAt: &now, Status: "idle"}).Error; err != nil {
+		t.Fatalf("create target attendance failed: %v", err)
+	}
+
+	usage := models.Usage{MerchantID: m.ID, Status: "in_progress"}
+	if err := config.DB.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	session := models.ServiceSession{
+		MerchantID:     m.ID,
+		InitialUsageID: usage.ID,
+		SessionMode:    models.SessionModeCustomerService,
+		TechnicianID:   &otherTech.ID,
+		Status:         "cs_start_pending",
+		CreatedAt:      &now,
+		UpdatedAt:      &now,
+	}
+	if err := config.DB.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set("merchant_id", m.ID)
+	c.Set("auth_type", "staff")
+	c.Set("technician_id", ownerTech.ID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(session.ID), 10)}}
+	c.Request = httptest.NewRequest(http.MethodPost, "/queue/sessions/"+strconv.FormatUint(uint64(session.ID), 10)+"/reassign-current-pending", strings.NewReader(`{"reason":"越权测试"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	ReassignCurrentPendingSession(c)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("want status 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "仅可转交自己当前待上号单") {
+		t.Fatalf("unexpected body: %s", rec.Body.String())
+	}
+}
+
+func TestReassignCurrentPendingSessionCustomerServiceOperationalCanReassignAny(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	config.DB = setupHandlerTestDB(t)
+	now := time.Now()
+
+	m := models.Merchant{
+		Name:                       "m-cs-operational",
+		Phone:                      "18800000009",
+		Password:                   "pwd",
+		SupportCustomerServiceMode: true,
+	}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	ownerTech := models.Technician{MerchantID: m.ID, ServiceRoleID: 1, Name: "客服A", Code: "1301", Account: "js1301", Password: "pwd", IsActive: true}
+	operTech := models.Technician{MerchantID: m.ID, ServiceRoleID: 1, Name: "运营", Code: "1302", Account: "js1302", Password: "pwd", IsActive: true}
+	targetTech := models.Technician{MerchantID: m.ID, ServiceRoleID: 1, Name: "客服B", Code: "1303", Account: "js1303", Password: "pwd", IsActive: true}
+	if err := config.DB.Create(&ownerTech).Error; err != nil {
+		t.Fatalf("create owner tech failed: %v", err)
+	}
+	if err := config.DB.Create(&operTech).Error; err != nil {
+		t.Fatalf("create operational tech failed: %v", err)
+	}
+	if err := config.DB.Create(&targetTech).Error; err != nil {
+		t.Fatalf("create target tech failed: %v", err)
+	}
+
+	if err := config.DB.Create(&models.TechnicianAttendance{MerchantID: m.ID, TechnicianID: ownerTech.ID, CheckedInAt: &now, Status: "busy"}).Error; err != nil {
+		t.Fatalf("create owner attendance failed: %v", err)
+	}
+	if err := config.DB.Create(&models.TechnicianAttendance{MerchantID: m.ID, TechnicianID: targetTech.ID, CheckedInAt: &now, Status: "idle"}).Error; err != nil {
+		t.Fatalf("create target attendance failed: %v", err)
+	}
+
+	usage := models.Usage{MerchantID: m.ID, Status: "in_progress"}
+	if err := config.DB.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	session := models.ServiceSession{
+		MerchantID:     m.ID,
+		InitialUsageID: usage.ID,
+		SessionMode:    models.SessionModeCustomerService,
+		TechnicianID:   &ownerTech.ID,
+		Status:         "cs_start_pending",
+		CreatedAt:      &now,
+		UpdatedAt:      &now,
+	}
+	if err := config.DB.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set("merchant_id", m.ID)
+	c.Set("auth_type", "staff")
+	c.Set("technician_id", operTech.ID)
+	c.Set("service_role", models.ServiceRole{RoleType: "operational"})
+	c.Params = gin.Params{{Key: "id", Value: strconv.FormatUint(uint64(session.ID), 10)}}
+	c.Request = httptest.NewRequest(http.MethodPost, "/queue/sessions/"+strconv.FormatUint(uint64(session.ID), 10)+"/reassign-current-pending", strings.NewReader(`{"reason":"运营转交"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	ReassignCurrentPendingSession(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want status 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

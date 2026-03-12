@@ -223,6 +223,16 @@ func currentStaffRoleType(c *gin.Context) string {
 	return ""
 }
 
+func supportsCurrentPendingReassign(merchant *models.Merchant) bool {
+	if merchant == nil {
+		return false
+	}
+	if merchant.SupportCustomerServiceMode {
+		return true
+	}
+	return merchant.SupportQueue && merchant.SupportMultiCustomerService
+}
+
 func selectQueueReassignTarget(tx *gorm.DB, merchant *models.Merchant, excludeTechID uint, now time.Time) (*models.Technician, *models.TechnicianAttendance, error) {
 	if tx == nil || merchant == nil || merchant.ID == 0 {
 		return nil, nil, nil
@@ -262,8 +272,15 @@ func selectQueueReassignTarget(tx *gorm.DB, merchant *models.Merchant, excludeTe
 			continue
 		}
 
-		var att models.TechnicianAttendance
+		var att struct {
+			ID           uint    `gorm:"column:id"`
+			TechnicianID uint    `gorm:"column:technician_id"`
+			Status       string  `gorm:"column:status"`
+			NextStatus   *string `gorm:"column:next_status"`
+		}
 		attRes := tx.
+			Model(&models.TechnicianAttendance{}).
+			Select("id", "technician_id", "status", "next_status").
 			Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchant.ID, cand.ID, start).
 			Order("id desc").
@@ -283,7 +300,12 @@ func selectQueueReassignTarget(tx *gorm.DB, merchant *models.Merchant, excludeTe
 		if tech.QueuePaused || !tech.IsActive {
 			continue
 		}
-		return &tech, &att, nil
+		return &tech, &models.TechnicianAttendance{
+			ID:           att.ID,
+			TechnicianID: att.TechnicianID,
+			Status:       att.Status,
+			NextStatus:   att.NextStatus,
+		}, nil
 	}
 
 	return nil, nil, nil
@@ -300,8 +322,14 @@ func releaseTechnicianAfterPendingReassign(tx *gorm.DB, merchantID uint, techID 
 	}
 
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	var att models.TechnicianAttendance
+	var att struct {
+		ID         uint    `gorm:"column:id"`
+		Status     string  `gorm:"column:status"`
+		NextStatus *string `gorm:"column:next_status"`
+	}
 	res := tx.
+		Model(&models.TechnicianAttendance{}).
+		Select("id", "status", "next_status").
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, techID, start).
 		Order("id desc").
@@ -2067,7 +2095,7 @@ func ReassignCurrentPendingSession(c *gin.Context) {
 			}
 			return err
 		}
-		if !merchant.SupportQueue || !merchant.SupportMultiCustomerService {
+		if !supportsCurrentPendingReassign(&merchant) {
 			return apiErr{status: http.StatusBadRequest, msg: "当前模式不支持重分配待上号单"}
 		}
 

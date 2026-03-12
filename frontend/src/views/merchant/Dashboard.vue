@@ -1369,6 +1369,13 @@ const getMerchantPendingStartLabel = (options = {}) => getPendingStartLabel(merc
 const getMerchantAutoFinishLabel = () => getAutoFinishLabel(merchant.value)
 const getMerchantServicePendingStartLabel = (options = {}) => getServicePendingStartLabel(merchant.value, options)
 const getMerchantServicePendingFinishLabel = () => getServicePendingFinishLabel(merchant.value)
+const supportsPendingStartReassignBeforeLeave = () => {
+  if (merchant.value?.support_customer_service_mode) return true
+  return !!merchant.value?.support_queue && !!merchant.value?.support_multi_customer_service
+}
+const getPendingStartLeavePromptLabel = () => {
+  return getMerchantServicePendingStartLabel({ queueMode: isQueueModeMerchant(merchant.value) })
+}
 
 const canBusinessStatusUpdate = computed(() => hasMerchantPermission('merchant.business_status.manage'))
 const canDirectSaleManage = computed(() => hasMerchantPermission('merchant.direct_sale.manage'))
@@ -1538,9 +1545,12 @@ const reassignQueuePendingItem = async (it, reason = '当前客服不可服务�
     const data = res.data?.data || {}
     const toName = String(data.to_technician_name || '').trim()
     alert(toName ? `已重新分配给 ${toName}` : '已重新分配')
-    await fetchQueuePendingList(true)
-    await fetchQueueCallInfo()
-    await fetchTodayUsages()
+    await fetchServiceSessions()
+    if (merchant.value?.support_queue) {
+      await fetchQueuePendingList(true)
+      await fetchQueueCallInfo()
+      await fetchTodayUsages()
+    }
     return true
   } catch (e) {
     alert(e.response?.data?.error || '重新分配失败')
@@ -4179,14 +4189,13 @@ const copyText = async (text) => {
 
 const maybeReassignPendingBeforeLeave = async (actionText) => {
   if (!isTechnicianAuth()) return true
-  if (!merchant.value?.support_queue || !merchant.value?.support_multi_customer_service) return true
+  if (!supportsPendingStartReassignBeforeLeave()) return true
   const sess = pendingStartSession.value
   if (!sess || !sess.id) return true
-  const confirmed = confirm(`你当前还有1个${getMerchantPendingStartLabel({ queueMode: true })}用户，是否在${actionText}前先尝试转交给其他空闲客服？`)
+  const confirmed = confirm(`你当前还有1个${getPendingStartLeavePromptLabel()}用户，是否在${actionText}前先尝试转交给其他空闲客服？`)
   if (!confirmed) return true
   const ok = await reassignQueuePendingItem({ session_id: sess.id }, `专业客服在${actionText}前发起自助转交`)
   if (!ok) return false
-  await fetchServiceSessions()
   return true
 }
 
@@ -4232,6 +4241,11 @@ const doCheckOut = async () => {
 
 const updateAttendanceStatus = async () => {
   if (!isTechnicianAuth()) return
+  const targetStatus = String(attendanceStatus.value || '')
+  if (targetStatus === 'paused' && String(serverAttendanceStatus.value || '') !== 'paused') {
+    const canContinue = await maybeReassignPendingBeforeLeave('暂停服务')
+    if (!canContinue) return
+  }
   attendanceUpdating.value = true
   try {
     await attendanceApi.updateStatus({ status: attendanceStatus.value })
