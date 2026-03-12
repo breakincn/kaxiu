@@ -58,6 +58,15 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchants ADD COLUMN queue_timeout_waiting_seconds INT NOT NULL DEFAULT 900 COMMENT '超时过号等待时间（秒）'",
 		},
 	},
+	{
+		Version: "2026031201",
+		Name:    "add_service_session_source_fields",
+		Statements: []string{
+			"ALTER TABLE service_sessions ADD COLUMN source_type varchar(20) NOT NULL DEFAULT 'walk_in' COMMENT '会话来源（walk_in/appointment）'",
+			"ALTER TABLE service_sessions ADD COLUMN source_id bigint unsigned NULL DEFAULT NULL COMMENT '来源业务ID（如appointment_id）'",
+			"ALTER TABLE service_sessions ADD INDEX idx_service_sessions_source_id (source_id)",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

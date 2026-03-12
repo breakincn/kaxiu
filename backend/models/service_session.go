@@ -11,6 +11,8 @@ type ServiceSession struct {
 	InitialUsageID               uint       `json:"initial_usage_id" gorm:"index;comment:首次核销usage_id"`
 	VerifyCode                   string     `json:"verify_code" gorm:"size:50;index;default:'';comment:首次核销码"`
 	SessionMode                  string     `json:"session_mode" gorm:"column:session_mode;size:20;default:'';comment:会话模式"`
+	SourceType                   string     `json:"source_type" gorm:"column:source_type;size:20;default:'walk_in';comment:会话来源（walk_in/appointment）"`
+	SourceID                     *uint      `json:"source_id" gorm:"column:source_id;index;comment:来源业务ID（如appointment_id）"`
 	RoomID                       *uint      `json:"room_id" gorm:"index;comment:房间ID"`
 	TechnicianID                 *uint      `json:"technician_id" gorm:"index;comment:工作人员ID"`
 	LastTechnicianID             *uint      `json:"last_technician_id" gorm:"column:last_technician_id;index;comment:最后一次叫号/分配的工作人员ID（用于过号等待等保留展示）"`

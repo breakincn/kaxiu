@@ -6,10 +6,7 @@ import (
 	"kabao/config"
 	"kabao/middleware"
 	"kabao/models"
-	"kabao/queue"
-	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -102,18 +99,11 @@ func parsePreparedVerifyToken(raw string) (*preparedVerifyClaims, error) {
 
 func loadVerifyPrepareContext(tx *gorm.DB, merchantID uint, code string, now time.Time) (models.Merchant, models.VerifyCode, models.Card, *models.MerchantProject, error) {
 	var merchant models.Merchant
-	if err := tx.First(&merchant, merchantID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return merchant, models.VerifyCode{}, models.Card{}, nil, apiErr{status: http.StatusNotFound, msg: "商户不存在"}
-		}
+	if err := loadVerifyMerchant(tx, merchantID, &merchant); err != nil {
 		return merchant, models.VerifyCode{}, models.Card{}, nil, err
 	}
-
 	var verifyCode models.VerifyCode
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", code).First(&verifyCode).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return merchant, verifyCode, models.Card{}, nil, apiErr{status: http.StatusNotFound, msg: "核销码不存在"}
-		}
+	if err := loadVerifyCodeForUpdate(tx, code, &verifyCode); err != nil {
 		return merchant, verifyCode, models.Card{}, nil, err
 	}
 	if verifyCode.Used {
@@ -124,30 +114,8 @@ func loadVerifyPrepareContext(tx *gorm.DB, merchantID uint, code string, now tim
 	}
 
 	var card models.Card
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&card, verifyCode.CardID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return merchant, verifyCode, card, nil, apiErr{status: http.StatusNotFound, msg: "卡片不存在"}
-		}
+	if err := loadVerifyCardContext(tx, merchant, verifyCode, now, &card); err != nil {
 		return merchant, verifyCode, card, nil, err
-	}
-	if card.MerchantID != merchantID {
-		return merchant, verifyCode, card, nil, apiErr{status: http.StatusForbidden, msg: "无权核销此卡"}
-	}
-	if err := verifyHandCardUnreturnedAgeGuard(tx, merchantID, merchant.SupportHandCard, now); err != nil {
-		return merchant, verifyCode, card, nil, err
-	}
-	if card.Locked {
-		msg := "卡片已锁定"
-		if strings.TrimSpace(card.LockedReason) != "" {
-			msg = card.LockedReason
-		}
-		return merchant, verifyCode, card, nil, apiErr{status: http.StatusBadRequest, msg: msg}
-	}
-	if card.EndDate != nil && now.After(*card.EndDate) {
-		return merchant, verifyCode, card, nil, apiErr{status: http.StatusBadRequest, msg: "卡片已过期"}
-	}
-	if card.RemainTimes <= 0 {
-		return merchant, verifyCode, card, nil, apiErr{status: http.StatusBadRequest, msg: "剩余次数不足"}
 	}
 
 	var project *models.MerchantProject
@@ -161,6 +129,55 @@ func loadVerifyPrepareContext(tx *gorm.DB, merchantID uint, code string, now tim
 	return merchant, verifyCode, card, project, nil
 }
 
+func loadVerifyMerchant(tx *gorm.DB, merchantID uint, merchant *models.Merchant) error {
+	if err := tx.First(merchant, merchantID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
+		}
+		return err
+	}
+	return nil
+}
+
+func loadVerifyCodeForUpdate(tx *gorm.DB, code string, verifyCode *models.VerifyCode) error {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", code).First(verifyCode).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apiErr{status: http.StatusNotFound, msg: "核销码不存在"}
+		}
+		return err
+	}
+	return nil
+}
+
+func loadVerifyCardContext(tx *gorm.DB, merchant models.Merchant, verifyCode models.VerifyCode, now time.Time, card *models.Card) error {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(card, verifyCode.CardID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apiErr{status: http.StatusNotFound, msg: "卡片不存在"}
+		}
+		return err
+	}
+	if card.MerchantID != merchant.ID {
+		return apiErr{status: http.StatusForbidden, msg: "无权核销此卡"}
+	}
+	if err := verifyHandCardUnreturnedAgeGuard(tx, merchant.ID, merchant.SupportHandCard, now); err != nil {
+		return err
+	}
+	if card.Locked {
+		msg := "卡片已锁定"
+		if strings.TrimSpace(card.LockedReason) != "" {
+			msg = card.LockedReason
+		}
+		return apiErr{status: http.StatusBadRequest, msg: msg}
+	}
+	if card.EndDate != nil && now.After(*card.EndDate) {
+		return apiErr{status: http.StatusBadRequest, msg: "卡片已过期"}
+	}
+	if card.RemainTimes <= 0 {
+		return apiErr{status: http.StatusBadRequest, msg: "剩余次数不足"}
+	}
+	return nil
+}
+
 func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, verifyCode models.VerifyCode, card models.Card, handCardNo string) (verifyCommitResult, error) {
 	result := verifyCommitResult{
 		Merchant: merchant,
@@ -170,7 +187,6 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 	now := time.Now()
 	authType, _ := currentVerifyActor(c)
 	effectiveSupportOrderComplete := merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete
-	effectiveSupportRoom := merchant.SupportCustomerServiceMode && merchant.SupportRoom
 	isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
 	usageStatus := "success"
 	autoFinish := false
@@ -252,60 +268,6 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 		return result, nil
 	}
 
-	if (!merchant.SupportCustomerServiceMode && effectiveSupportOrderComplete) || isQueueMode {
-		durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchant.ID, verifyCode.ProjectID, 15, merchant.StartDelaySeconds)
-		startAt := now.Add(time.Duration(delaySeconds) * time.Second)
-
-		status := "delay_pending"
-		var roomSelectDeadlineAt *time.Time
-		var startConfirmedAt *time.Time
-		var scheduledStartAt *time.Time
-		if isQueueMode {
-			status = "staff_selecting"
-			result.NextStep = ""
-		} else if effectiveSupportRoom {
-			status = "room_selecting"
-			dl := now.Add(90 * time.Second)
-			roomSelectDeadlineAt = &dl
-			result.NextStep = "room_select"
-		} else {
-			startConfirmedAt = &now
-			scheduledStartAt = &startAt
-			result.NextStep = ""
-		}
-
-		sessionMode := models.ResolveSessionMode(&merchant)
-		if isQueueMode {
-			status = models.WithModePrefix(sessionMode, status)
-		} else if merchant.SupportCustomerServiceMode {
-			status = models.WithCSPrefix(status)
-		}
-
-		session := models.ServiceSession{
-			MerchantID:             merchant.ID,
-			UserID:                 card.UserID,
-			CardID:                 card.ID,
-			ProjectID:              verifyCode.ProjectID,
-			InitialUsageID:         usage.ID,
-			VerifyCode:             verifyCode.Code,
-			SessionMode:            sessionMode,
-			Status:                 status,
-			RoomSelectDeadlineAt:   roomSelectDeadlineAt,
-			StartConfirmedAt:       startConfirmedAt,
-			StartDelaySeconds:      delaySeconds,
-			ScheduledStartAt:       scheduledStartAt,
-			DurationMinutes:        durationMinutes,
-			AutoFinishDelaySeconds: 300,
-			AutoIdleAfterSeconds:   180,
-		}
-		if err := tx.Create(&session).Error; err != nil {
-			return result, err
-		}
-		result.SessionID = session.ID
-		result.ShouldEnqueueOnsite = isQueueMode
-		return result, nil
-	}
-
 	if autoFinish {
 		finishedAt := now
 		if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
@@ -317,88 +279,14 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 		return result, nil
 	}
 
-	status := "staff_selecting"
-	var roomSelectDeadlineAt *time.Time
-	if effectiveSupportRoom {
-		status = "room_selecting"
-		dl := now.Add(90 * time.Second)
-		roomSelectDeadlineAt = &dl
-		result.NextStep = "room_select"
-	} else {
-		result.NextStep = "staff_select"
-	}
-
-	sessionMode := models.ResolveSessionMode(&merchant)
-	if isQueueMode {
-		status = models.WithModePrefix(sessionMode, status)
-	} else if merchant.SupportCustomerServiceMode {
-		status = models.WithCSPrefix(status)
-	}
-
-	durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchant.ID, verifyCode.ProjectID, 50, 60)
-
-	session := models.ServiceSession{
-		MerchantID:             merchant.ID,
-		UserID:                 card.UserID,
-		CardID:                 card.ID,
-		ProjectID:              verifyCode.ProjectID,
-		InitialUsageID:         usage.ID,
-		VerifyCode:             verifyCode.Code,
-		SessionMode:            sessionMode,
-		Status:                 status,
-		RoomSelectDeadlineAt:   roomSelectDeadlineAt,
-		StartDelaySeconds:      delaySeconds,
-		DurationMinutes:        durationMinutes,
-		AutoFinishDelaySeconds: 60,
-		AutoIdleAfterSeconds:   180,
-	}
-	if err := tx.Create(&session).Error; err != nil {
+	session, nextStep, shouldEnqueueOnsite, err := createServiceSessionForUsage(tx, merchant, card, verifyCode, usage, now)
+	if err != nil {
 		return result, err
 	}
 	result.SessionID = session.ID
-	result.ShouldEnqueueOnsite = true
+	result.NextStep = nextStep
+	result.ShouldEnqueueOnsite = shouldEnqueueOnsite
 	return result, nil
-}
-
-func enqueueVerifyUsageIfNeeded(merchant models.Merchant, card models.Card, usageID uint, shouldEnqueueOnsite bool) {
-	if !merchant.SupportQueue || !shouldEnqueueOnsite || usageID == 0 {
-		return
-	}
-
-	now := time.Now()
-	isAppointment := false
-	var appt models.Appointment
-	if err := config.DB.
-		Where("card_id = ? AND merchant_id = ? AND status = 'confirmed' AND appointment_time IS NOT NULL", card.ID, merchant.ID).
-		Order("appointment_time asc").
-		First(&appt).Error; err == nil && appt.AppointmentTime != nil {
-		at := *appt.AppointmentTime
-		if at.Format("2006-01-02") == now.Format("2006-01-02") {
-			diff := now.Sub(at)
-			if diff < 0 {
-				diff = -diff
-			}
-			if diff <= 30*time.Minute {
-				isAppointment = true
-			}
-		}
-	}
-	if isAppointment {
-		return
-	}
-
-	date := now.Format("2006-01-02")
-	autoCallFirst := false
-	if merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
-		autoCallFirst = true
-	}
-	tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, autoCallFirst, now)
-	if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
-		log.Printf("[queue-debug] verify enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchant.ID, date, usageID, created, tk.No, tk.CalledAt)
-	}
-	if merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
-		tryAutoCallNextForIdleTechnicians(config.DB, merchant.ID, now)
-	}
 }
 
 func PrepareVerify(c *gin.Context) {

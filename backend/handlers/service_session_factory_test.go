@@ -1,0 +1,101 @@
+package handlers
+
+import (
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"kabao/config"
+	"kabao/models"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+)
+
+func setupServiceSessionFactoryTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file:handlers_service_session_factory_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Card{}, &models.VerifyCode{}, &models.Usage{}, &models.ServiceSession{}, &models.Appointment{}); err != nil {
+		t.Fatalf("migrate failed: %v", err)
+	}
+	return db
+}
+
+func TestPerformVerifyCommitCreatesAppointmentSourceSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupServiceSessionFactoryTestDB(t)
+
+	now := time.Now()
+	merchant := models.Merchant{
+		Name:         "m",
+		Phone:        "18800000001",
+		Password:     "pwd",
+		SupportQueue: true,
+		QueueMode:    "auto",
+	}
+	if err := config.DB.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	card := models.Card{
+		UserID:         7,
+		MerchantID:     merchant.ID,
+		CardNo:         "00001",
+		CardType:       "times",
+		TotalTimes:     10,
+		RemainTimes:    10,
+		RechargeAt:     &now,
+		LastUsedAt:     &now,
+		RechargeAmount: 0,
+	}
+	if err := config.DB.Create(&card).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+	verifyCode := models.VerifyCode{
+		CardID:   card.ID,
+		Code:     "VERIFY-APPOINTMENT",
+		ExpireAt: now.Add(10 * time.Minute).Unix(),
+	}
+	if err := config.DB.Create(&verifyCode).Error; err != nil {
+		t.Fatalf("create verify code failed: %v", err)
+	}
+	apptTime := now.Add(-5 * time.Minute)
+	appointment := models.Appointment{
+		CardID:          card.ID,
+		MerchantID:      merchant.ID,
+		UserID:          card.UserID,
+		AppointmentTime: &apptTime,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appointment).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("auth_type", "merchant")
+
+	result := verifyCommitResult{}
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		result, err = performVerifyCommit(tx, ctx, merchant, verifyCode, card, "")
+		return err
+	}); err != nil {
+		t.Fatalf("performVerifyCommit failed: %v", err)
+	}
+
+	var session models.ServiceSession
+	if err := config.DB.First(&session, result.SessionID).Error; err != nil {
+		t.Fatalf("load service session failed: %v", err)
+	}
+	if session.SourceType != serviceSessionSourceAppointment {
+		t.Fatalf("want source_type=%s, got %s", serviceSessionSourceAppointment, session.SourceType)
+	}
+	if session.SourceID == nil || *session.SourceID != appointment.ID {
+		t.Fatalf("want source_id=%d, got %+v", appointment.ID, session.SourceID)
+	}
+}

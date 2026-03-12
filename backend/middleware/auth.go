@@ -3,14 +3,18 @@ package middleware
 import (
 	"kabao/config"
 	"kabao/models"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+var legacyUserTokenHitCount atomic.Uint64
 
 // AuthMiddleware 验证用户/商户/员工登录状态
 func AuthMiddleware() gin.HandlerFunc {
@@ -124,6 +128,9 @@ func parseLegacyUserToken(c *gin.Context, token string) bool {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
 		return false
 	}
+	hitCount := legacyUserTokenHitCount.Add(1)
+	c.Header("X-Auth-Legacy-Token", "deprecated")
+	log.Printf("WARN: legacy user token accepted: user_id=%d path=%s ua=%q hit_count=%d", userID, c.Request.URL.Path, c.Request.UserAgent(), hitCount)
 	c.Set("auth_type", "user")
 	c.Set("user_id", uint(userID))
 	c.Set("user", user)

@@ -9,10 +9,7 @@ import (
 	"kabao/config"
 	"kabao/middleware"
 	"kabao/models"
-	"kabao/queue"
-	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -20,7 +17,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type apiErr struct {
@@ -742,10 +738,6 @@ func VerifyCard(c *gin.Context) {
 		return
 	}
 
-	// 获取账号类型（用于核销即结单判断）
-	authTypeAny, _ := c.Get("auth_type")
-	authType, _ := authTypeAny.(string)
-
 	var input struct {
 		Code string `json:"code" binding:"required"`
 	}
@@ -769,279 +761,15 @@ func VerifyCard(c *gin.Context) {
 		return
 	}
 
-	var verifyCode models.VerifyCode
-	var card models.Card
-	var merchant models.Merchant
-	var usedAt time.Time
-	var remainTimes int
-	var sessionID uint
-	var nextStep string
-	var usageID uint
-	var shouldEnqueueOnsite bool
-	usageStatus := "success"
-	autoFinish := false
-
+	var result verifyCommitResult
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
-
-		if err := tx.First(&merchant, merchantID).Error; err != nil {
-			return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
-		}
-		// 叫号模式（自动或手动）：独立于“结单/房间”配置。
-		// 只要开启叫号且未开启客服模式，就允许进入叫号排队流程。
-		isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
-		effectiveSupportOrderComplete := merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete
-		effectiveSupportRoom := merchant.SupportCustomerServiceMode && merchant.SupportRoom
-		if merchant.SupportCustomerServiceMode {
-			usageStatus = "in_progress"
-			// 仅 staff 账号可使用“核销即结单”开关（商户老板号默认不走该开关）
-			if authType == "staff" {
-				okVF, err := middleware.HasPermission(c, "merchant.card.verify_finish")
-				if err != nil {
-					return err
-				}
-				if okVF {
-					autoFinish = true
-					usageStatus = "success"
-				}
-			}
-		} else if isQueueMode {
-			// 叫号模式：核销后进入排队（需要服务会话），usage 进入 in_progress
-			usageStatus = "in_progress"
-		} else if effectiveSupportOrderComplete {
-			// 未开启客服但开启结单：核销即起单（进入服务流程）
-			usageStatus = "in_progress"
-		}
-
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", input.Code).First(&verifyCode).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return apiErr{status: http.StatusNotFound, msg: "核销码不存在"}
-			}
+		merchant, verifyCode, card, _, err := loadVerifyPrepareContext(tx, merchantID, input.Code, now)
+		if err != nil {
 			return err
 		}
-
-		if verifyCode.Used {
-			return apiErr{status: http.StatusBadRequest, msg: "核销码已使用"}
-		}
-
-		if now.Unix() > verifyCode.ExpireAt {
-			return apiErr{status: http.StatusBadRequest, msg: "核销码已过期"}
-		}
-
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&card, verifyCode.CardID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return apiErr{status: http.StatusNotFound, msg: "卡片不存在"}
-			}
-			return err
-		}
-
-		if card.MerchantID != merchantID {
-			return apiErr{status: http.StatusForbidden, msg: "无权核销此卡"}
-		}
-		if err := verifyHandCardUnreturnedAgeGuard(tx, merchantID, merchant.SupportHandCard, now); err != nil {
-			return err
-		}
-
-		if card.Locked {
-			msg := "卡片已锁定"
-			if strings.TrimSpace(card.LockedReason) != "" {
-				msg = card.LockedReason
-			}
-			return apiErr{status: http.StatusBadRequest, msg: msg}
-		}
-
-		if card.EndDate != nil && now.After(*card.EndDate) {
-			return apiErr{status: http.StatusBadRequest, msg: "卡片已过期"}
-		}
-		if card.RemainTimes <= 0 {
-			return apiErr{status: http.StatusBadRequest, msg: "剩余次数不足"}
-		}
-
-		res := tx.Model(&models.VerifyCode{}).
-			Where("id = ? AND used = ?", verifyCode.ID, false).
-			Updates(map[string]interface{}{"used": true, "used_at": now})
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return apiErr{status: http.StatusBadRequest, msg: "核销码已使用"}
-		}
-
-		usedAt = now
-		res = tx.Model(&models.Card{}).
-			Where("id = ? AND remain_times > 0", card.ID).
-			Updates(map[string]interface{}{
-				"remain_times": gorm.Expr("remain_times - ?", 1),
-				"used_times":   gorm.Expr("used_times + ?", 1),
-				"last_used_at": usedAt,
-			})
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return apiErr{status: http.StatusBadRequest, msg: "剩余次数不足"}
-		}
-
-		if err := tx.First(&card, card.ID).Error; err != nil {
-			return err
-		}
-		remainTimes = card.RemainTimes
-
-		usage := models.Usage{
-			CardID:             card.ID,
-			MerchantID:         card.MerchantID,
-			ProjectID:          verifyCode.ProjectID,
-			UsedTimes:          1,
-			UsedAt:             &usedAt,
-			VerifyCode:         verifyCode.Code,
-			VerifyCodeExpireAt: verifyCode.ExpireAt,
-			Status:             usageStatus,
-		}
-		if err := tx.Create(&usage).Error; err != nil {
-			return err
-		}
-		usageID = usage.ID
-
-		// 非叫号模式下：未开启客服模式 + 未开启结单 => 核销即结单（不创建服务会话）
-		// 叫号模式下不走该分支（否则无法排队叫号）
-		if !isQueueMode && !merchant.SupportCustomerServiceMode && !effectiveSupportOrderComplete {
-			finishedAt := now
-			if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
-				"status":      "success",
-				"finished_at": &finishedAt,
-			}).Error; err != nil {
-				return err
-			}
-			nextStep = ""
-			sessionID = 0
-			return nil
-		}
-
-		// 未开启客服模式 + 开启结单 或 叫号模式：创建会话
-		if (!merchant.SupportCustomerServiceMode && effectiveSupportOrderComplete) || isQueueMode {
-			// 读取项目真实时长，避免硬编码
-			durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchantID, verifyCode.ProjectID, 15, merchant.StartDelaySeconds)
-			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
-
-			status := "delay_pending"
-			var roomSelectDeadlineAt *time.Time
-			var startConfirmedAt *time.Time
-			var scheduledStartAt *time.Time
-			// 叫号模式（自动或手动）：核销后直接进入排队态 staff_selecting
-			if isQueueMode {
-				status = "staff_selecting"
-				startConfirmedAt = nil
-				scheduledStartAt = nil
-				nextStep = ""
-			} else if effectiveSupportRoom {
-				status = "room_selecting"
-				dl := now.Add(90 * time.Second)
-				roomSelectDeadlineAt = &dl
-				nextStep = "room_select"
-			} else {
-				startConfirmedAt = &now
-				scheduledStartAt = &startAt
-				nextStep = ""
-			}
-			sessionMode := models.ResolveSessionMode(&merchant)
-			if isQueueMode {
-				// 叫号模式：写入 qs_/qm_/qms_/qmm_ 前缀状态
-				status = models.WithModePrefix(sessionMode, status)
-			} else if merchant.SupportCustomerServiceMode {
-				// 客服模式：写入 cs_ 前缀状态
-				status = models.WithCSPrefix(status)
-			}
-
-			session := models.ServiceSession{
-				MerchantID:             merchantID,
-				UserID:                 card.UserID,
-				CardID:                 card.ID,
-				ProjectID:              verifyCode.ProjectID,
-				InitialUsageID:         usage.ID,
-				VerifyCode:             verifyCode.Code,
-				SessionMode:            sessionMode,
-				Status:                 status,
-				RoomSelectDeadlineAt:   roomSelectDeadlineAt,
-				StartConfirmedAt:       startConfirmedAt,
-				StartDelaySeconds:      delaySeconds,
-				ScheduledStartAt:       scheduledStartAt,
-				DurationMinutes:        durationMinutes,
-				AutoFinishDelaySeconds: 300,
-				AutoIdleAfterSeconds:   180,
-			}
-			if err := tx.Create(&session).Error; err != nil {
-				return err
-			}
-			sessionID = session.ID
-			// 叫号模式（自动或手动）：需要入现场叫号队列
-			if isQueueMode {
-				shouldEnqueueOnsite = true
-			}
-			return nil
-		}
-
-		if autoFinish {
-			finishedAt := now
-			if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
-				"status":      "success",
-				"finished_at": &finishedAt,
-			}).Error; err != nil {
-				return err
-			}
-			nextStep = ""
-			sessionID = 0
-			return nil
-		}
-
-		// 新流程：创建服务会话（核销->资源锁定->人员选择->预结单->自动结单）
-		status := "staff_selecting"
-		var roomSelectDeadlineAt *time.Time
-		// 叫号自动模式：不需要选房间，直接排队
-		if merchant.SupportQueue && merchant.QueueMode == "auto" {
-			status = "staff_selecting"
-			nextStep = ""
-		} else if effectiveSupportRoom {
-			status = "room_selecting"
-			dl := now.Add(90 * time.Second)
-			roomSelectDeadlineAt = &dl
-			nextStep = "room_select"
-		} else {
-			nextStep = "staff_select"
-		}
-		sessionMode := models.ResolveSessionMode(&merchant)
-		isQueueMode2 := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
-		if isQueueMode2 {
-			status = models.WithModePrefix(sessionMode, status)
-		} else if merchant.SupportCustomerServiceMode {
-			status = models.WithCSPrefix(status)
-		}
-
-		// 读取项目真实时长，避免硬编码 50 分钟
-		durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchantID, verifyCode.ProjectID, 50, 60)
-
-		session := models.ServiceSession{
-			MerchantID:             merchantID,
-			UserID:                 card.UserID,
-			CardID:                 card.ID,
-			ProjectID:              verifyCode.ProjectID,
-			InitialUsageID:         usage.ID,
-			VerifyCode:             verifyCode.Code,
-			SessionMode:            sessionMode,
-			Status:                 status,
-			RoomSelectDeadlineAt:   roomSelectDeadlineAt,
-			StartDelaySeconds:      delaySeconds,
-			DurationMinutes:        durationMinutes,
-			AutoFinishDelaySeconds: 60,
-			AutoIdleAfterSeconds:   180,
-		}
-		if err := tx.Create(&session).Error; err != nil {
-			return err
-		}
-		sessionID = session.ID
-		// 进入服务流程才会参与现场叫号队列
-		shouldEnqueueOnsite = true
-
-		return nil
+		result, err = performVerifyCommit(tx, c, merchant, verifyCode, card, "")
+		return err
 	})
 	if err != nil {
 		var ae apiErr
@@ -1056,58 +784,15 @@ func VerifyCard(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "核销成功",
 		"data": gin.H{
-			"usage_id":     usageID,
-			"card_id":      card.ID,
-			"remain_times": remainTimes,
-			"used_at":      usedAt.Format("2006-01-02 15:04:05"),
-			"session_id":   sessionID,
-			"next_step":    nextStep,
+			"usage_id":     result.UsageID,
+			"card_id":      result.Card.ID,
+			"remain_times": result.RemainTimes,
+			"used_at":      result.UsedAt.Format("2006-01-02 15:04:05"),
+			"session_id":   result.SessionID,
+			"next_step":    result.NextStep,
 		},
 	})
-
-	// 事务提交后再写内存队列：避免 DB 回滚但队列已入队
-	// 仅限现场核销叫号：预约用户走预约队列，不进入现场叫号队列
-	if merchant.SupportQueue && shouldEnqueueOnsite && usageID > 0 {
-		now := time.Now()
-		isAppointment := false
-		var appt models.Appointment
-		// 若该卡在该商户存在“已确认”的预约，且预约时间就在当天（到店核销窗口内），则视为预约用户
-		if err := config.DB.
-			Where("card_id = ? AND merchant_id = ? AND status = 'confirmed' AND appointment_time IS NOT NULL", card.ID, merchant.ID).
-			Order("appointment_time asc").
-			First(&appt).Error; err == nil {
-			if appt.AppointmentTime != nil {
-				at := *appt.AppointmentTime
-				if at.Format("2006-01-02") == now.Format("2006-01-02") {
-					// 兼容前端 5 分钟展示核销码：这里放宽到 30 分钟内都按预约处理，避免误入现场队列
-					diff := now.Sub(at)
-					if diff < 0 {
-						diff = -diff
-					}
-					if diff <= 30*time.Minute {
-						isAppointment = true
-					}
-				}
-			}
-		}
-
-		if !isAppointment {
-			date := now.Format("2006-01-02")
-			autoCallFirst := false
-			// 自动叫号 + 未开启多个客服：只有一个队列，队列空时自动叫到第一个号
-			if merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
-				autoCallFirst = true
-			}
-			tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, autoCallFirst, now)
-			if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
-				log.Printf("[queue-debug] verify enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchant.ID, date, usageID, created, tk.No, tk.CalledAt)
-			}
-			// 多客服叫号：入队后立即触发分配，避免空闲技师存在但无人触发叫号
-			if merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
-				tryAutoCallNextForIdleTechnicians(config.DB, merchant.ID, now)
-			}
-		}
-	}
+	enqueueVerifyUsageIfNeeded(result.Merchant, result.Card, result.UsageID, result.ShouldEnqueueOnsite)
 }
 
 func FinishVerifyCard(c *gin.Context) {
@@ -1229,273 +914,30 @@ func ScanVerifyCard(c *gin.Context) {
 		return
 	}
 
-	var verifyCode models.VerifyCode
-	var card models.Card
-	var merchant models.Merchant
-	var usage models.Usage
-	var usedAt time.Time
-	var finishedAt time.Time
-	var remainTimes int
-	var sessionID uint
-	var nextStep string
-	var usageID uint
-	shouldEnqueueOnsite := false
-	usageStatus := "success"
-	action := "verify"
-	autoFinish := false
-
+	var result verifyCommitResult
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
-		if err := tx.First(&merchant, merchantID).Error; err != nil {
-			return apiErr{status: http.StatusNotFound, msg: "商户不存在"}
-		}
-		effectiveSupportOrderComplete := merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete
-		effectiveSupportRoom := merchant.SupportCustomerServiceMode && merchant.SupportRoom
-		// 叫号模式（自动或手动）：独立于“结单/房间”配置。
-		// 只要开启叫号且未开启客服模式，就允许进入叫号排队流程。
-		isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
-		if merchant.SupportCustomerServiceMode {
-			usageStatus = "in_progress"
-			// 仅 staff 账号可使用“核销即结单”开关（商户老板号默认不走该开关）
-			if authType == "staff" {
-				okVF, err := middleware.HasPermission(c, "merchant.card.verify_finish")
-				if err != nil {
-					return err
-				}
-				if okVF {
-					autoFinish = true
-					usageStatus = "success"
-				}
-			}
-		} else if isQueueMode {
-			// 叫号模式：核销后进入排队（需要服务会话），usage 进入 in_progress
-			usageStatus = "in_progress"
-		} else if effectiveSupportOrderComplete {
-			// 未开启客服但开启结单：核销即起单（进入服务流程）
-			usageStatus = "in_progress"
-		}
-
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("code = ?", code).First(&verifyCode).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return apiErr{status: http.StatusNotFound, msg: "核销码不存在"}
-			}
+		var merchant models.Merchant
+		if err := loadVerifyMerchant(tx, merchantID, &merchant); err != nil {
 			return err
 		}
-
-		// 未核销：按核销逻辑处理（需在核销码有效期内）
-		if !verifyCode.Used {
-			if now.Unix() > verifyCode.ExpireAt {
-				return apiErr{status: http.StatusBadRequest, msg: "核销码已过期"}
-			}
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&card, verifyCode.CardID).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return apiErr{status: http.StatusNotFound, msg: "卡片不存在"}
-				}
-				return err
-			}
-			if card.MerchantID != merchantID {
-				return apiErr{status: http.StatusForbidden, msg: "无权核销此卡"}
-			}
-			if err := verifyHandCardUnreturnedAgeGuard(tx, merchantID, merchant.SupportHandCard, now); err != nil {
-				return err
-			}
-			if card.Locked {
-				msg := "卡片已锁定"
-				if strings.TrimSpace(card.LockedReason) != "" {
-					msg = card.LockedReason
-				}
-				return apiErr{status: http.StatusBadRequest, msg: msg}
-			}
-			if card.EndDate != nil && now.After(*card.EndDate) {
-				return apiErr{status: http.StatusBadRequest, msg: "卡片已过期"}
-			}
-			if card.RemainTimes <= 0 {
-				return apiErr{status: http.StatusBadRequest, msg: "剩余次数不足"}
-			}
-
-			res := tx.Model(&models.VerifyCode{}).
-				Where("id = ? AND used = ?", verifyCode.ID, false).
-				Updates(map[string]interface{}{"used": true, "used_at": now})
-			if res.Error != nil {
-				return res.Error
-			}
-			if res.RowsAffected == 0 {
-				return apiErr{status: http.StatusBadRequest, msg: "核销码已使用"}
-			}
-			usedAt = now
-
-			res = tx.Model(&models.Card{}).
-				Where("id = ? AND remain_times > 0", card.ID).
-				Updates(map[string]interface{}{
-					"remain_times": gorm.Expr("remain_times - ?", 1),
-					"used_times":   gorm.Expr("used_times + ?", 1),
-					"last_used_at": usedAt,
-				})
-			if res.Error != nil {
-				return res.Error
-			}
-			if res.RowsAffected == 0 {
-				return apiErr{status: http.StatusBadRequest, msg: "剩余次数不足"}
-			}
-
-			if err := tx.First(&card, card.ID).Error; err != nil {
-				return err
-			}
-			remainTimes = card.RemainTimes
-
-			usage = models.Usage{
-				CardID:             card.ID,
-				MerchantID:         card.MerchantID,
-				ProjectID:          verifyCode.ProjectID,
-				UsedTimes:          1,
-				UsedAt:             &usedAt,
-				VerifyCode:         verifyCode.Code,
-				VerifyCodeExpireAt: verifyCode.ExpireAt,
-				Status:             usageStatus,
-			}
-			if err := tx.Create(&usage).Error; err != nil {
-				return err
-			}
-			usageID = usage.ID
-
-			// 非叫号模式下：未开启客服模式 + 未开启结单 => 核销即结单（不创建服务会话）
-			// 叫号模式下不走该分支（否则无法排队叫号）
-			if !isQueueMode && !merchant.SupportCustomerServiceMode && !effectiveSupportOrderComplete {
-				finishedAt = now
-				if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
-					"status":      "success",
-					"finished_at": &finishedAt,
-				}).Error; err != nil {
-					return err
-				}
-				nextStep = ""
-				sessionID = 0
-				return nil
-			}
-
-			// 未开启客服模式 + 开启结单 或 叫号模式：创建会话
-			if (!merchant.SupportCustomerServiceMode && effectiveSupportOrderComplete) || isQueueMode {
-				durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchantID, verifyCode.ProjectID, 15, merchant.StartDelaySeconds)
-				startAt := now.Add(time.Duration(delaySeconds) * time.Second)
-
-				status := "delay_pending"
-				var roomSelectDeadlineAt *time.Time
-				var startConfirmedAt *time.Time
-				var scheduledStartAt *time.Time
-				if isQueueMode {
-					// 叫号模式：忽略房间设置，直接进入排队态
-					status = "staff_selecting"
-					startConfirmedAt = nil
-					scheduledStartAt = nil
-					nextStep = ""
-				} else if effectiveSupportRoom {
-					status = "room_selecting"
-					dl := now.Add(90 * time.Second)
-					roomSelectDeadlineAt = &dl
-					nextStep = "room_select"
-				} else {
-					startConfirmedAt = &now
-					scheduledStartAt = &startAt
-					nextStep = ""
-				}
-
-				sessionMode := models.ResolveSessionMode(&merchant)
-				if isQueueMode {
-					status = models.WithModePrefix(sessionMode, status)
-				} else if merchant.SupportCustomerServiceMode {
-					status = models.WithCSPrefix(status)
-				}
-
-				session := models.ServiceSession{
-					MerchantID:             merchantID,
-					UserID:                 card.UserID,
-					CardID:                 card.ID,
-					ProjectID:              verifyCode.ProjectID,
-					InitialUsageID:         usage.ID,
-					VerifyCode:             verifyCode.Code,
-					SessionMode:            sessionMode,
-					Status:                 status,
-					RoomSelectDeadlineAt:   roomSelectDeadlineAt,
-					StartConfirmedAt:       startConfirmedAt,
-					StartDelaySeconds:      delaySeconds,
-					ScheduledStartAt:       scheduledStartAt,
-					DurationMinutes:        durationMinutes,
-					AutoFinishDelaySeconds: 300,
-					AutoIdleAfterSeconds:   180,
-				}
-				if err := tx.Create(&session).Error; err != nil {
-					return err
-				}
-				sessionID = session.ID
-				shouldEnqueueOnsite = true
-				return nil
-			}
-
-			if autoFinish {
-				finishedAt = now
-				action = "verify"
-				if err := tx.Model(&models.Usage{}).Where("id = ?", usage.ID).Updates(map[string]interface{}{
-					"status":      "success",
-					"finished_at": &finishedAt,
-				}).Error; err != nil {
-					return err
-				}
-				nextStep = ""
-				sessionID = 0
-				return nil
-			}
-
-			// 新流程：创建服务会话（核销->资源锁定->人员选择->预结单->自动结单）
-			status := "staff_selecting"
-			var roomSelectDeadlineAt *time.Time
-			if effectiveSupportRoom {
-				status = "room_selecting"
-				dl := now.Add(90 * time.Second)
-				roomSelectDeadlineAt = &dl
-				nextStep = "room_select"
-			} else {
-				nextStep = "staff_select"
-			}
-
-			sessionMode := models.ResolveSessionMode(&merchant)
-			if isQueueMode {
-				status = models.WithModePrefix(sessionMode, status)
-			} else if merchant.SupportCustomerServiceMode {
-				status = models.WithCSPrefix(status)
-			}
-
-			// 读取项目真实时长，避免硬编码 50 分钟
-			durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchantID, verifyCode.ProjectID, 50, 60)
-
-			session := models.ServiceSession{
-				MerchantID:             merchantID,
-				UserID:                 card.UserID,
-				CardID:                 card.ID,
-				ProjectID:              verifyCode.ProjectID,
-				InitialUsageID:         usage.ID,
-				VerifyCode:             verifyCode.Code,
-				SessionMode:            sessionMode,
-				Status:                 status,
-				RoomSelectDeadlineAt:   roomSelectDeadlineAt,
-				StartDelaySeconds:      delaySeconds,
-				DurationMinutes:        durationMinutes,
-				AutoFinishDelaySeconds: 60,
-				AutoIdleAfterSeconds:   180,
-			}
-			if err := tx.Create(&session).Error; err != nil {
-				return err
-			}
-			sessionID = session.ID
-			// 进入服务流程才会参与现场叫号队列
-			shouldEnqueueOnsite = true
-
-			action = "verify"
-			return nil
+		var verifyCode models.VerifyCode
+		if err := loadVerifyCodeForUpdate(tx, code, &verifyCode); err != nil {
+			return err
 		}
-
-		// 已取消手动结单(下钟)能力：扫码仅支持核销/起单，不再支持对已核销记录进行结单。
-		action = "verify"
-		return apiErr{status: http.StatusBadRequest, msg: "已取消手动结单，请等待系统自动结单"}
+		if verifyCode.Used {
+			return apiErr{status: http.StatusBadRequest, msg: "已取消手动结单，请等待系统自动结单"}
+		}
+		if now.Unix() > verifyCode.ExpireAt {
+			return apiErr{status: http.StatusBadRequest, msg: "核销码已过期"}
+		}
+		var card models.Card
+		if err := loadVerifyCardContext(tx, merchant, verifyCode, now, &card); err != nil {
+			return err
+		}
+		var err error
+		result, err = performVerifyCommit(tx, c, merchant, verifyCode, card, "")
+		return err
 	})
 	if err != nil {
 		var ae apiErr
@@ -1507,63 +949,18 @@ func ScanVerifyCard(c *gin.Context) {
 		return
 	}
 
-	resp := gin.H{"action": action}
-	if action == "verify" {
-		resp["card_id"] = card.ID
-		resp["usage_id"] = usageID
-		resp["remain_times"] = remainTimes
-		resp["used_at"] = usedAt.Format("2006-01-02 15:04:05")
-		resp["session_id"] = sessionID
-		resp["next_step"] = nextStep
-		c.JSON(http.StatusOK, gin.H{"message": "核销成功", "data": resp})
-
-		// 事务提交后再写队列：避免 DB 回滚但队列已入队
-		// 仅限现场核销叫号：预约用户走预约队列，不进入现场叫号队列
-		if merchant.SupportQueue && shouldEnqueueOnsite && usageID > 0 {
-			now2 := time.Now()
-			isAppointment := false
-			var appt models.Appointment
-			// 若该卡在该商户存在“已确认”的预约，且预约时间就在当天（到店核销窗口内），则视为预约用户
-			if err := config.DB.
-				Where("card_id = ? AND merchant_id = ? AND status = 'confirmed' AND appointment_time IS NOT NULL", card.ID, merchant.ID).
-				Order("appointment_time asc").
-				First(&appt).Error; err == nil {
-				if appt.AppointmentTime != nil {
-					at := *appt.AppointmentTime
-					if at.Format("2006-01-02") == now2.Format("2006-01-02") {
-						// 兼容前端 5 分钟展示核销码：这里放宽到 30 分钟内都按预约处理，避免误入现场队列
-						diff := now2.Sub(at)
-						if diff < 0 {
-							diff = -diff
-						}
-						if diff <= 30*time.Minute {
-							isAppointment = true
-						}
-					}
-				}
-			}
-
-			if !isAppointment {
-				date := now2.Format("2006-01-02")
-				autoCallFirst := false
-				// 自动叫号 + 未开启多个客服：只有一个队列，队列空时自动叫到第一个号
-				if merchant.QueueMode == "auto" && !merchant.SupportMultiCustomerService {
-					autoCallFirst = true
-				}
-				tk, created := queue.Default.Enqueue(merchant.ID, date, queue.QueueTypeOnsite, usageID, merchant.QueueStartNo, autoCallFirst, now2)
-				if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
-					log.Printf("[queue-debug] scan verify enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchant.ID, date, usageID, created, tk.No, tk.CalledAt)
-				}
-				// 多客服叫号：扫码核销入队后也要立即触发一次自动分配，避免仅依赖 scheduler 兜底。
-				if merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
-					tryAutoCallNextForIdleTechnicians(config.DB, merchant.ID, now2)
-				}
-			}
-		}
-		return
+	resp := gin.H{
+		"action":       result.Action,
+		"card_id":      result.Card.ID,
+		"usage_id":     result.UsageID,
+		"remain_times": result.RemainTimes,
+		"used_at":      result.UsedAt.Format("2006-01-02 15:04:05"),
+		"session_id":   result.SessionID,
+		"next_step":    result.NextStep,
 	}
-
-	c.JSON(http.StatusOK, gin.H{"data": resp})
+	c.JSON(http.StatusOK, gin.H{"message": "核销成功", "data": resp})
+	enqueueVerifyUsageIfNeeded(result.Merchant, result.Card, result.UsageID, result.ShouldEnqueueOnsite)
+	return
 }
 
 func GetTodayVerify(c *gin.Context) {

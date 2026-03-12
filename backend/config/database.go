@@ -162,6 +162,10 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `service_sessions` ADD INDEX `idx_service_sessions_last_technician_id` (`last_technician_id`)")
 	// service_sessions: 会话模式（用于客服/叫号模式隔离）
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `session_mode` varchar(20) NOT NULL DEFAULT '' COMMENT '会话模式'")
+	// service_sessions: 会话来源（到店/预约）
+	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `source_type` varchar(20) NOT NULL DEFAULT 'walk_in' COMMENT '会话来源（walk_in/appointment）'")
+	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `source_id` bigint unsigned NULL DEFAULT NULL COMMENT '来源业务ID（如appointment_id）'")
+	DB.Exec("ALTER TABLE `service_sessions` ADD INDEX `idx_service_sessions_source_id` (`source_id`)")
 
 	// appointments: 关联卡片ID（用于同商户不同卡预约隔离）
 	DB.Exec("ALTER TABLE `appointments` ADD COLUMN `card_id` bigint unsigned NOT NULL DEFAULT 0 COMMENT '卡片ID（外键关联cards表）'")
