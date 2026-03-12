@@ -2515,7 +2515,6 @@ const submitAttendanceStatusChange = async (targetStatus) => {
       }
     }
 
-    alert('状态已更新')
     return true
   } catch (e) {
     resetAttendanceDraftToServer()
