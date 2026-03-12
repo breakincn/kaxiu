@@ -28,10 +28,6 @@ func UserCodeSecret() string {
 	return strings.TrimSpace(os.Getenv("KABAO_USER_CODE_SECRET"))
 }
 
-func AllowLegacyUserToken() bool {
-	return IsTruthyEnv("KABAO_ALLOW_LEGACY_USER_TOKEN")
-}
-
 func SMSDebugEnabled() bool {
 	return IsTruthyEnv("KABAO_SMS_DEBUG")
 }

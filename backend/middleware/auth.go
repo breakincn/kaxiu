@@ -3,18 +3,14 @@ package middleware
 import (
 	"kabao/config"
 	"kabao/models"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
-
-var legacyUserTokenHitCount atomic.Uint64
 
 // AuthMiddleware 验证用户/商户/员工登录状态
 func AuthMiddleware() gin.HandlerFunc {
@@ -29,21 +25,6 @@ func AuthMiddleware() gin.HandlerFunc {
 		if token == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
 			c.Abort()
-			return
-		}
-
-		// 兼容旧版用户 token: user_{userID}_{timestamp}
-		if strings.HasPrefix(token, "user_") {
-			if !config.AllowLegacyUserToken() {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "旧版token已禁用"})
-				c.Abort()
-				return
-			}
-			if !parseLegacyUserToken(c, token) {
-				c.Abort()
-				return
-			}
-			c.Next()
 			return
 		}
 
@@ -110,31 +91,6 @@ func validateTokenExp(claims jwt.MapClaims) bool {
 		return false
 	}
 	return exp > time.Now().Unix()
-}
-
-func parseLegacyUserToken(c *gin.Context, token string) bool {
-	parts := strings.Split(token, "_")
-	if len(parts) < 3 || parts[0] != "user" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
-		return false
-	}
-	userID, err := strconv.ParseUint(parts[1], 10, 32)
-	if err != nil || userID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的token"})
-		return false
-	}
-	var user models.User
-	if err := config.DB.First(&user, uint(userID)).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户不存在"})
-		return false
-	}
-	hitCount := legacyUserTokenHitCount.Add(1)
-	c.Header("X-Auth-Legacy-Token", "deprecated")
-	log.Printf("WARN: legacy user token accepted: user_id=%d path=%s ua=%q hit_count=%d", userID, c.Request.URL.Path, c.Request.UserAgent(), hitCount)
-	c.Set("auth_type", "user")
-	c.Set("user_id", uint(userID))
-	c.Set("user", user)
-	return true
 }
 
 func parseUserJWT(c *gin.Context, token string) bool {
