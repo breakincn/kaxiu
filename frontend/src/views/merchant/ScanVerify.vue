@@ -64,7 +64,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Html5Qrcode } from 'html5-qrcode'
 import { cardApi } from '../../api'
@@ -79,6 +79,17 @@ const route = useRoute()
 const pageTitle = ref('扫码')
 
 const mode = ref('verify')
+
+const routeTermMerchant = computed(() => {
+  const queueMode = String(route.query.queue_mode || '').trim() === '1'
+  return {
+    start_term: String(route.query.start_term || '').trim(),
+    finish_term: String(route.query.finish_term || '').trim(),
+    support_queue: queueMode,
+    queue_mode: queueMode ? 'manual' : '',
+    support_customer_service_mode: false
+  }
+})
 
 const getReturnPath = () => {
   const p = String(route.query.return_path || '').trim()
@@ -229,7 +240,7 @@ const onDecoded = async (decodedText) => {
   // 起单专用模式：仅允许 SS:<session_id>
   if (isStartOnlyMode() && !code.startsWith('SS:')) {
     resultSuccess.value = false
-    resultText.value = replaceTerms('请扫描起单码')
+    resultText.value = replaceTerms('请扫描起单码', routeTermMerchant.value)
     return
   }
 
@@ -283,7 +294,7 @@ const handleCommitSuccess = (data) => {
   resultSuccess.value = true
   if (action === 'start') {
     const sid = data?.session_id
-    resultText.value = replaceTerms(`起单成功！服务单#${sid ?? '-'}，已开始计时。`)
+    resultText.value = replaceTerms(`起单成功！服务单#${sid ?? '-'}，已开始计时。`, routeTermMerchant.value)
   } else {
     const remainTimes = data?.remain_times
     resultText.value = `核销成功！剩余次数: ${remainTimes ?? '-'}`
@@ -304,7 +315,9 @@ const handleCommitSuccess = (data) => {
 
 onMounted(() => {
   mode.value = String(route.query.mode || 'verify')
-  pageTitle.value = isStartOnlyMode() ? replaceTerms('扫码起单') : replaceTerms('扫码核销')
+  pageTitle.value = isStartOnlyMode()
+    ? replaceTerms('扫码起单', routeTermMerchant.value)
+    : replaceTerms('扫码核销', routeTermMerchant.value)
 
   const token = getMerchantToken()
   if (!token) {

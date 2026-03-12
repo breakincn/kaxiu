@@ -38,7 +38,7 @@ export const getStartActionTerm = (merchant, options = {}) => {
 }
 
 export const getFinishActionTerm = (merchant, options = {}) => {
-  if (options.queueMode) return '下号'
+  if (options.queueMode) return '结号'
   return merchant ? getFinishTerm(merchant) : getFinishTermFromStorage()
 }
 
@@ -58,8 +58,13 @@ export const getStartTimeoutLabel = (merchant, target = '客服', options = {}) 
 
 export const replaceTerms = (text, merchant) => {
   const t = String(text || '')
-  const start = merchant ? getStartTerm(merchant) : getStartTermFromStorage()
-  const finish = merchant ? getFinishTerm(merchant) : getFinishTermFromStorage()
+  const queueMode = isQueueModeMerchant(merchant)
+  const start = merchant
+    ? getStartActionTerm(merchant, { queueMode })
+    : getStartTermFromStorage()
+  const finish = merchant
+    ? getFinishActionTerm(merchant, { queueMode })
+    : getFinishTermFromStorage()
   return t
     .replaceAll('起单', start)
     .replaceAll('结单', finish)

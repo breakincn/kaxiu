@@ -2640,11 +2640,27 @@ const getCardTypeLabel = (type) => {
 }
 
 const goScanVerify = () => {
-  router.push({ path: '/merchant/scan-verify', query: { mode: 'verify' } })
+  router.push({
+    path: '/merchant/scan-verify',
+    query: {
+      mode: 'verify',
+      queue_mode: isQueueModeMerchant(merchant.value) ? '1' : '0',
+      start_term: merchant.value?.start_term || '',
+      finish_term: merchant.value?.finish_term || ''
+    }
+  })
 }
 
 const goScanStart = () => {
-  router.push({ path: '/merchant/scan-verify', query: { mode: 'start' } })
+  router.push({
+    path: '/merchant/scan-verify',
+    query: {
+      mode: 'start',
+      queue_mode: isQueueModeMerchant(merchant.value) ? '1' : '0',
+      start_term: merchant.value?.start_term || '',
+      finish_term: merchant.value?.finish_term || ''
+    }
+  })
 }
 
 // 叫号状态管理方法
