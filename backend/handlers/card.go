@@ -806,6 +806,12 @@ func FinishVerifyCard(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
 		return
 	}
+	var merchant models.Merchant
+	if err := config.DB.Select("id", "support_queue", "support_customer_service_mode", "queue_mode", "finish_term").First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取商户信息失败"})
+		return
+	}
+	finishTerm := resolveFinishTerm(&merchant)
 
 	// 获取账号类型
 	authTypeAny, _ := c.Get("auth_type")
@@ -820,7 +826,7 @@ func FinishVerifyCard(c *gin.Context) {
 			return
 		}
 		if !okFinish {
-			c.JSON(http.StatusForbidden, gin.H{"error": "无结单权限"})
+			c.JSON(http.StatusForbidden, gin.H{"error": "无" + finishTerm + "权限"})
 			return
 		}
 	}
@@ -843,8 +849,8 @@ func FinishVerifyCard(c *gin.Context) {
 		return
 	}
 
-	// 已取消手动结单(下钟)能力：仅支持起单后自动结单。
-	c.JSON(http.StatusBadRequest, gin.H{"error": "已取消手动结单，请等待系统自动结单"})
+	// 已取消手动结束能力：仅支持开始服务后自动结束。
+	c.JSON(http.StatusBadRequest, gin.H{"error": "已取消手动" + finishTerm + "，请等待系统自动" + finishTerm})
 }
 
 func ScanVerifyCard(c *gin.Context) {
@@ -892,7 +898,7 @@ func ScanVerifyCard(c *gin.Context) {
 		}
 	}
 
-	// 仅“结单权限”账号（无核销权限）只能扫码起单（SS:<session_id>），禁止扫码核销。
+	// 仅“服务结束权限”账号（无核销权限）只能扫码开始服务（SS:<session_id>），禁止扫码核销。
 	// 说明：路由层允许 RequireAnyPermission(verify, finish)，这里做更细粒度校验。
 	if !strings.HasPrefix(code, "SS:") {
 		// 商户老板号默认拥有全部权限，不做限制
@@ -909,7 +915,7 @@ func ScanVerifyCard(c *gin.Context) {
 		}
 	}
 
-	// B方案：起单二维码（SS:<session_id>）走服务会话起单逻辑
+	// B方案：服务二维码（SS:<session_id>）走服务会话开始逻辑
 	if handled := handleServiceSessionStartScan(c, code); handled {
 		return
 	}
@@ -926,7 +932,7 @@ func ScanVerifyCard(c *gin.Context) {
 			return err
 		}
 		if verifyCode.Used {
-			return apiErr{status: http.StatusBadRequest, msg: "已取消手动结单，请等待系统自动结单"}
+			return apiErr{status: http.StatusBadRequest, msg: "已取消手动" + resolveFinishTerm(&merchant) + "，请等待系统自动" + resolveFinishTerm(&merchant)}
 		}
 		if now.Unix() > verifyCode.ExpireAt {
 			return apiErr{status: http.StatusBadRequest, msg: "核销码已过期"}

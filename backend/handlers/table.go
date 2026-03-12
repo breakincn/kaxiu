@@ -26,7 +26,7 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 		}
 	}
 
-	// 仅处理“待起单”且已超时、还绑着技师的会话
+	// 仅处理“待开始服务”且已超时、还绑着技师的会话
 	var ids []uint
 	if err := config.DB.
 		Model(&models.ServiceSession{}).
@@ -145,11 +145,7 @@ func TableRooms(c *gin.Context) {
 		return
 	}
 
-	// 获取自定义起单术语，默认为"起单"
-	startTerm := "起单"
-	if merchant.StartTerm != "" {
-		startTerm = merchant.StartTerm
-	}
+	startTerm := resolveStartTerm(&merchant)
 
 	out := make([]roomItem, 0, len(rooms))
 	for _, r := range rooms {
@@ -268,7 +264,7 @@ func TableStaff(c *gin.Context) {
 		attByTech[a.TechnicianID] = a
 	}
 
-	// 当前会话（服务中/选房/选人/预结单/延迟等）
+	// 当前会话（服务中/选房/选人/待结束/延迟等）
 	var sessions []models.ServiceSession
 	config.DB.
 		Preload("Room").
@@ -291,10 +287,7 @@ func TableStaff(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取商户信息失败"})
 		return
 	}
-	startTerm := "起单"
-	if merchant.StartTerm != "" {
-		startTerm = merchant.StartTerm
-	}
+	startTerm := resolveStartTerm(&merchant)
 
 	type staffItem struct {
 		Technician          models.Technician            `json:"technician"`

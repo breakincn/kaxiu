@@ -502,7 +502,7 @@ const shouldShowStaffBadge = (it) => {
   const requireAttendance = getRoleRequireAttendance(roleKey)
   if (requireAttendance) return true
   // 不要求签到的岗位：不展示“未签到/空闲/暂停”等签到相关徽标
-  // 但如果有服务会话（例如服务待起单/待结单等），仍然展示服务状态徽标
+  // 但如果有服务会话（例如待开始服务/待结束服务等），仍然展示服务状态徽标
   return !!it?.current_session
 }
 

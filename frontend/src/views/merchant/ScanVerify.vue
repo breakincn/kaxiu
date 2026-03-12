@@ -237,7 +237,7 @@ const onDecoded = async (decodedText) => {
   const code = (decodedText || '').trim()
   if (!code) return
 
-  // 起单专用模式：仅允许 SS:<session_id>
+  // 开始服务专用模式：仅允许 SS:<session_id>
   if (isStartOnlyMode() && !code.startsWith('SS:')) {
     resultSuccess.value = false
     resultText.value = replaceTerms('请扫描起单码', routeTermMerchant.value)

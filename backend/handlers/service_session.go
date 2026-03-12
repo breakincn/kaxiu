@@ -180,25 +180,27 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		// 叫号模式：允许商户或工作人员扫码上号
 		// 支持两种状态：
 		// 1. delay_pending：单队列串行模式，扫码上号
-		// 2. start_pending：多客服模式，工作人员扫码起单后进入 delay_pending，再扫码上号
+		// 2. start_pending：多客服模式，工作人员扫码确认后进入 delay_pending，再扫码上号
 		return handleQueueModeStartScan(c, uint(sid64), merchantID, &merchant)
 	}
 
-	// 客服模式：仅工作人员可起单
+	startTerm := resolveStartTerm(&merchant)
+
+	// 客服模式：仅工作人员可执行开始服务操作
 	authTypeAny, _ := c.Get("auth_type")
 	authType, _ := authTypeAny.(string)
 	if authType != "staff" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可起单"})
+		c.JSON(http.StatusForbidden, gin.H{"error": fmt.Sprintf("仅工作人员可%s", startTerm)})
 		return true
 	}
 	techIDAny, ok := c.Get("technician_id")
 	if !ok {
-		c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可起单"})
+		c.JSON(http.StatusForbidden, gin.H{"error": fmt.Sprintf("仅工作人员可%s", startTerm)})
 		return true
 	}
 	techIDVal, ok := techIDAny.(uint)
 	if !ok || techIDVal == 0 {
-		c.JSON(http.StatusForbidden, gin.H{"error": "仅工作人员可起单"})
+		c.JSON(http.StatusForbidden, gin.H{"error": fmt.Sprintf("仅工作人员可%s", startTerm)})
 		return true
 	}
 	techID := &techIDVal
@@ -236,7 +238,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			return apiErr{status: http.StatusBadRequest, msg: "未选择工作人员"}
 		}
 
-		// 起单前校验：只有当专业客服(技师)为"空闲"才允许起单
+		// 开始服务前校验：只有当专业客服(技师)为"空闲"才允许继续
 		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		var att models.TechnicianAttendance
 		attRes := tx.
@@ -249,10 +251,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			return attRes.Error
 		}
 		if attRes.RowsAffected == 0 {
-			startTerm := "起单"
-			if merchant.StartTerm != "" {
-				startTerm = merchant.StartTerm
-			}
+			startTerm := resolveStartTerm(&merchant)
 			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("未上班签到，扫码%s失败", startTerm)}
 		}
 		hasOtherServingSession := false
@@ -263,21 +262,15 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		}
 		if shouldBlockCustomerServiceStartByAttendance(att.Status, hasOtherServingSession) {
 			if att.Status == "paused" {
-				startTerm := "起单"
-				if merchant.StartTerm != "" {
-					startTerm = merchant.StartTerm
-				}
+				startTerm := resolveStartTerm(&merchant)
 				return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在暂停服务中，请更新服务状态为空闲才可继续%s", startTerm)}
 			}
-			startTerm := "起单"
-			if merchant.StartTerm != "" {
-				startTerm = merchant.StartTerm
-			}
+			startTerm := resolveStartTerm(&merchant)
 			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前%s，待服务完成后才可重新%s", technicianStatusConflictText(att.Status), startTerm)}
 		}
 
 		if baseStatus == "finished" || baseStatus == "canceled" {
-			return apiErr{status: http.StatusBadRequest, msg: "会话状态不可起单"}
+			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("会话状态不可%s", startTerm)}
 		}
 
 		startAt := now.Add(time.Duration(s.StartDelaySeconds) * time.Second)
@@ -290,7 +283,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			return err
 		}
 
-		// 起单成功后占用技师：仅允许 idle -> busy，避免并发重复起单
+		// 开始服务成功后占用技师：仅允许 idle -> busy，避免并发重复提交
 		if att.Status == "idle" {
 			res := tx.Model(&models.TechnicianAttendance{}).
 				Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, *s.TechnicianID, "idle").
@@ -299,10 +292,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 				return res.Error
 			}
 			if res.RowsAffected == 0 {
-				startTerm := "起单"
-				if merchant.StartTerm != "" {
-					startTerm = merchant.StartTerm
-				}
+				startTerm := resolveStartTerm(&merchant)
 				return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("你目前在服务中，待服务完成后才可重新%s", startTerm)}
 			}
 		}
@@ -393,7 +383,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 				}
 			}
 
-			// 记录本次上号/服务人员（用于“今日上钟/起单”展示）
+			// 记录本次上号/服务人员（用于“今日上钟/服务记录”展示）
 			if s.InitialUsageID > 0 {
 				_ = tx.Model(&models.Usage{}).
 					Where("id = ? AND merchant_id = ?", s.InitialUsageID, merchantID).
@@ -505,7 +495,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 
 			// 撤销 MarkDone/Uncall，让该号重新回到队列（手动叫号回补不做单窗口限制）。
 			// 这里不主动 CallNextUncalled，避免将队列 current 推进到其它号码。
-			// 该会话马上会进入 serving，队列推进由后续结单/调度处理。
+			// 该会话马上会进入 serving，队列推进由后续服务结束/调度处理。
 			if s.InitialUsageID > 0 {
 				queue.Default.UnmarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
 				queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
@@ -554,7 +544,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 		if err := promoteQueueSessionToServing(tx, &s, now, []string{"delay_pending", "timeout_waiting"}, false); err != nil {
 			return err
 		}
-		// 记录本次上号/服务人员（用于“今日上钟/起单”展示）
+		// 记录本次上号/服务人员（用于“今日上钟/服务记录”展示）
 		if s.InitialUsageID > 0 {
 			_ = tx.Model(&models.Usage{}).
 				Where("id = ? AND merchant_id = ?", s.InitialUsageID, merchantID).
@@ -584,7 +574,7 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 	// 根据会话状态返回不同的消息
 	message := "上号成功，服务已开始"
 	if models.NormalizeSessionStatus(out.Status) == "delay_pending" {
-		message = "起单成功，请再次扫码上号"
+		message = resolveStartTerm(merchant) + "成功，请再次扫码上号"
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
 		"action":     "start",

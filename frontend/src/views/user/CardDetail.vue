@@ -735,7 +735,7 @@ const getUsageStatusText = (usage) => {
         if (supportRoom && !usage?.service_room && !usage?.service_technician) {
           return '服务超时重新选择房间'
         }
-        // 已经选定/自动分配了客服：应回到待起单
+        // 已经选定/自动分配了客服：应回到待开始服务
         if (usage?.service_technician) {
           return getCardStartPendingLabel()
         }
@@ -744,7 +744,7 @@ const getUsageStatusText = (usage) => {
 
       return '已失效'
     }
-    // 上钟超时统一优先判断（避免兗底到待结单）
+    // 上钟超时统一优先判断（避免兜底到待结束服务）
     const supportCSMode2 = Boolean(card.value?.merchant?.support_customer_service_mode)
     if (supportCSMode2) {
       const cnt = Number(usage?.start_timeout_count || 0)
@@ -753,7 +753,7 @@ const getUsageStatusText = (usage) => {
       }
     }
     if (supportCSMode2 && sessStatus === 'staff_selecting') {
-      // 已经选定/自动分配了客服：应回到待起单
+      // 已经选定/自动分配了客服：应回到待开始服务
       if (usage?.service_technician) return getCardStartPendingLabel()
       return '待选客服'
     }
@@ -762,7 +762,7 @@ const getUsageStatusText = (usage) => {
       if (dl && now < dl) return getCardStartPendingLabel()
       if (dl && now >= dl) return getCardStartTimeoutLabel()
     }
-    // 未上钟成功（未确认起单）时，永远不要进入"待下钟/待结单"兗底
+    // 未上钟成功（未确认开始服务）时，永远不要进入“待结束服务”兜底
     if (supportCSMode2 && !precheckedAt) {
       // start_pending 且已超时：应立刻显示"上钟超时 重新选择客服"（无需刷新页面）
       if (sessStatus === 'start_pending') {
@@ -811,7 +811,7 @@ const getUsageStatusClass = (usage) => {
       }
       return 'text-red-500'
     }
-    // 上钟超时统一优先判断（避免兜底到待结单样式）
+    // 上钟超时统一优先判断（避免兜底到待结束服务样式）
     const supportCSMode3 = Boolean(card.value?.merchant?.support_customer_service_mode)
     if (supportCSMode3) {
       const cnt = Number(usage?.start_timeout_count || 0)
@@ -829,7 +829,7 @@ const getUsageStatusClass = (usage) => {
     if (supportCSMode3 && sessStatus === 'start_pending' && !precheckedAt && getPrecheckDeadlineAtMs(usage) && now >= getPrecheckDeadlineAtMs(usage)) {
       return 'text-red-500'
     }
-    // 未上钟成功（未确认起单）时，永远不要进入"待下钟/待结单"蓝色兜底
+    // 未上钟成功（未确认开始服务）时，永远不要进入待结束服务蓝色兜底
     if (supportCSMode3 && !precheckedAt) {
       return 'text-red-500'
     }
@@ -1137,7 +1137,7 @@ const shouldShowServiceStartTime = (usage) => {
   const precheckedAt = usage?.service_session_start_confirmed_at
   
   // 仅在真正进入服务中(serving)后才显示服务开始时间
-  // 避免在待上钟/待起单(start_pending)阶段显示预估时间
+  // 避免在待上钟/待开始服务(start_pending)阶段显示预估时间
   if (sessStatus !== 'serving' && sessStatus !== 'auto_finishing') return false
   if (!precheckedAt) return false
   
@@ -1149,7 +1149,7 @@ const shouldShowServiceRemainTime = (usage) => {
 
   const sessStatus = normalizeSessionStatus(usage?.service_session_status)
 
-  // 仅在真实服务阶段显示剩余时间，避免“待上钟/待起单”阶段误显示
+  // 仅在真实服务阶段显示剩余时间，避免“待上钟/待开始服务”阶段误显示
   if (sessStatus !== 'serving' && sessStatus !== 'auto_finishing') return false
 
   const finishAtMs = getUsageServiceFinishAtMs(usage)
@@ -1587,7 +1587,7 @@ const getUsageStatusCountdownText = (usage) => {
     return '正在自动分配客服...'
   }
 
-  // 待起单倒计时
+  // 待开始服务倒计时
   if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
     const dl = getPrecheckDeadlineAtMs(usage)
     if (dl) {
@@ -1673,7 +1673,7 @@ const getUsageStatusCountdownClass = (usage) => {
     return 'text-orange-500'
   }
 
-  // 待起单倒计时（红色）
+  // 待开始服务倒计时（红色）
   if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
     return 'text-red-500'
   }
@@ -1747,7 +1747,7 @@ const getQueueCountdownMs = (usage) => {
   const n = Number(usage?.queue_no || 0)
   if (!n) return 0
 
-  // 已进入服务流程（服务中/待自动下钟/待起单/待选房等）则不应再显示“预计叫号”倒计时
+  // 已进入服务流程（服务中/待自动结束/待开始服务/待选房等）则不应再显示“预计叫号”倒计时
   const s = String(usage?.status || '').trim()
   const sessStatus = normalizeSessionStatus(usage?.service_session_status)
   if (s === 'in_progress' || sessStatus) return 0
@@ -1909,13 +1909,13 @@ const openUsageQrModal = async (usage) => {
     return
   }
 
-    // 会话已取消但 usage 仍在进行中：起单二维码失效（不自动跳转，改为长按记录进入重新选客服）
+    // 会话已取消但 usage 仍在进行中：服务二维码失效（不自动跳转，改为长按记录进入重新选客服）
   if (supportCS && sessID && sessStatus === 'canceled' && !precheckedAt && !usage?.service_technician) {
     alert(getCardStartTimeoutLongPressPrompt())
     return
   }
 
-  // 上钟超时后起单二维码失效（不自动跳转，改为长按记录进入重新选客服）
+  // 上钟超时后服务二维码失效（不自动跳转，改为长按记录进入重新选客服）
   if (supportCS && sessID && sessStatus === 'start_pending' && !precheckedAt) {
     const dl = getPrecheckDeadlineAtMs(usage)
     if (dl && Date.now() >= dl) {
@@ -1924,7 +1924,7 @@ const openUsageQrModal = async (usage) => {
     }
   }
 
-  // 仅当当前 usage 匹配 query.session_id 且确实处于待起单时，才显示起单二维码
+  // 仅当当前 usage 匹配 query.session_id 且确实处于待开始服务时，才显示服务二维码
   if (
     supportCS &&
     sessionIdFromQuery.value &&

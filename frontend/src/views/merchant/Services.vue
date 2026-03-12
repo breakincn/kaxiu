@@ -40,7 +40,7 @@
           </div>
 
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div class="text-gray-800 font-medium">{{ replaceTerms('开启结单') }}</div>
+            <div class="text-gray-800 font-medium">{{ replaceTerms('开启结单', merchantTerms) }}</div>
             <input type="checkbox" v-model="form.support_order_complete" :disabled="form.support_queue" />
           </div>
 
@@ -85,6 +85,7 @@ const loading = ref(true)
 const saving = ref(false)
 const initialSnapshot = ref('')
 const lastSavedForm = ref(null)
+const merchantTerms = ref(null)
 
 const merchantBizTime = ref({
   all_day_start: '',
@@ -176,6 +177,7 @@ const load = async () => {
   try {
     const res = await merchantApi.getCurrentMerchant()
     const m = res.data.data || {}
+    merchantTerms.value = m
 
     merchantBizTime.value = {
       all_day_start: m.all_day_start || '',

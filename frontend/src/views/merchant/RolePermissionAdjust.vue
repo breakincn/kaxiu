@@ -32,7 +32,7 @@
                 </label>
                 <label v-if="it.permission.key === 'merchant.card.verify' && verifyFinishItem" class="flex items-center gap-2 text-sm text-gray-700">
                   <input type="checkbox" v-model="verifyFinishItem.override_allowed" />
-                  <span>核销即结单</span>
+                  <span>{{ replaceTerms('核销即结单', merchantTerms) }}</span>
                 </label>
               </div>
             </div>
@@ -60,6 +60,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
+import { replaceTerms } from '../../utils/terms'
 
 const router = useRouter()
 const route = useRoute()
@@ -72,6 +73,7 @@ const initialSnapshot = ref('')
 
 const role = ref(null)
 const items = ref([])
+const merchantTerms = ref(null)
 
 const verifyFinishItem = computed(() => {
   return items.value.find((it) => it?.permission?.key === 'merchant.card.verify_finish') || null
@@ -97,6 +99,8 @@ const goBack = () => {
 const load = async () => {
   loading.value = true
   try {
+    const merchantRes = await merchantApi.getCurrentMerchant()
+    merchantTerms.value = merchantRes.data?.data || null
     const res = await merchantApi.getRolePermissions(roleKey.value)
     role.value = res.data?.data?.role || null
     const raw = res.data?.data?.items || []

@@ -3402,7 +3402,7 @@ const fetchTodayStartUsages = async ({ silent = false } = {}) => {
     })
     patchTodayStartUsages(nextList)
   } catch (err) {
-    console.error('获取起单记录失败:', err)
+    console.error('获取上号记录失败:', err)
     // 失败时保留旧数据，避免“暂无”闪烁
   }
   finally {
@@ -3434,7 +3434,7 @@ const fetchTodayFinishedUsages = async () => {
       )
     )
   } catch (err) {
-    console.error('获取结单记录失败:', err)
+    console.error('获取结号记录失败:', err)
   }
 }
 
@@ -4371,7 +4371,7 @@ const updateAttendanceStatus = async () => {
   await submitAttendanceStatusChange(attendanceStatus.value)
 }
 
-// 设置结单后自动暂停
+// 设置结号后自动暂停
 const setNextStatusPaused = async () => {
   if (!isTechnicianAuth()) return
   setNextPausedLoading.value = true

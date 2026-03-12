@@ -1,29 +1,28 @@
 import { getMerchantActiveAuth } from './auth'
 
+const normalizeTerm = (value, fallback) => {
+  const s = String(value || '').trim()
+  return s || fallback
+}
+
 export const getStartTerm = (merchant) => {
-  const v = merchant?.start_term
-  const s = String(v || '').trim()
-  return s || '起单'
+  return normalizeTerm(merchant?.start_term, '起单')
 }
 
 export const getFinishTerm = (merchant) => {
-  const v = merchant?.finish_term
-  const s = String(v || '').trim()
-  return s || '结单'
+  return normalizeTerm(merchant?.finish_term, '结单')
 }
 
 export const getStartTermFromStorage = () => {
   const active = getMerchantActiveAuth()
   const k = active === 'staff' ? 'technicianStartTerm' : 'merchantStartTerm'
-  const s = String(localStorage.getItem(k) || '').trim()
-  return s || '起单'
+  return normalizeTerm(localStorage.getItem(k), '起单')
 }
 
 export const getFinishTermFromStorage = () => {
   const active = getMerchantActiveAuth()
   const k = active === 'staff' ? 'technicianFinishTerm' : 'merchantFinishTerm'
-  const s = String(localStorage.getItem(k) || '').trim()
-  return s || '结单'
+  return normalizeTerm(localStorage.getItem(k), '结单')
 }
 
 export const isQueueModeMerchant = (merchant) => {
@@ -32,14 +31,17 @@ export const isQueueModeMerchant = (merchant) => {
   return !merchant?.support_customer_service_mode && !!merchant?.support_queue && (queueMode === 'auto' || queueMode === 'manual')
 }
 
+const getStartBaseTerm = (merchant) => (merchant ? getStartTerm(merchant) : getStartTermFromStorage())
+const getFinishBaseTerm = (merchant) => (merchant ? getFinishTerm(merchant) : getFinishTermFromStorage())
+
 export const getStartActionTerm = (merchant, options = {}) => {
-  if (options.queueMode) return '上号'
-  return merchant ? getStartTerm(merchant) : getStartTermFromStorage()
+  if (options.queueMode) return '叫号'
+  return getStartBaseTerm(merchant)
 }
 
 export const getFinishActionTerm = (merchant, options = {}) => {
   if (options.queueMode) return '结号'
-  return merchant ? getFinishTerm(merchant) : getFinishTermFromStorage()
+  return getFinishBaseTerm(merchant)
 }
 
 export const getPendingStartLabel = (merchant, options = {}) => `待${getStartActionTerm(merchant, options)}`
@@ -59,12 +61,8 @@ export const getStartTimeoutLabel = (merchant, target = '客服', options = {}) 
 export const replaceTerms = (text, merchant) => {
   const t = String(text || '')
   const queueMode = isQueueModeMerchant(merchant)
-  const start = merchant
-    ? getStartActionTerm(merchant, { queueMode })
-    : getStartTermFromStorage()
-  const finish = merchant
-    ? getFinishActionTerm(merchant, { queueMode })
-    : getFinishTermFromStorage()
+  const start = queueMode ? '叫号' : getStartBaseTerm(merchant)
+  const finish = queueMode ? '结号' : getFinishBaseTerm(merchant)
   return t
     .replaceAll('起单', start)
     .replaceAll('结单', finish)

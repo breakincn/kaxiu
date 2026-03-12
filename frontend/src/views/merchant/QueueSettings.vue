@@ -56,8 +56,8 @@
               />
               <div>
                 <div class="text-gray-800 font-medium">自动叫号</div>
-                <div class="text-gray-500 text-sm">自动结单后自动触发</div>
-                <div v-if="!supportOrderComplete" class="text-gray-500 text-sm">需先开启结单服务</div>
+                <div class="text-gray-500 text-sm">{{ replaceTerms('自动结单后自动触发', merchantTerms) }}</div>
+                <div v-if="!supportOrderComplete" class="text-gray-500 text-sm">{{ replaceTerms('需先开启结单服务', merchantTerms) }}</div>
               </div>
             </label>
             <label class="flex items-start gap-3">
@@ -69,7 +69,7 @@
               />
               <div>
                 <div class="text-gray-800 font-medium">人工叫号</div>
-                <div class="text-gray-500 text-sm">服务结束后人工手动触发</div>
+                <div class="text-gray-500 text-sm">{{ replaceTerms('服务结束后人工手动触发', merchantTerms) }}</div>
               </div>
             </label>
 
@@ -148,6 +148,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
+import { replaceTerms } from '../../utils/terms'
 
 const router = useRouter()
 
@@ -156,6 +157,7 @@ const saving = ref(false)
 
 const supportOrderComplete = ref(false)
 const persistedQueueMode = ref('auto')
+const merchantTerms = ref(null)
 
 const form = ref({
   queue_prefix: '',
@@ -190,6 +192,7 @@ const load = async () => {
   try {
     const res = await merchantApi.getCurrentMerchant()
     const m = res.data?.data || {}
+    merchantTerms.value = m
     supportOrderComplete.value = !!m.support_order_complete
     persistedQueueMode.value = String(m.queue_mode || 'auto').trim() === 'manual' ? 'manual' : 'auto'
     form.value = {
@@ -228,7 +231,7 @@ const save = async () => {
   }
 
   if (mode === 'auto' && !supportOrderComplete.value) {
-    alert('先开启结单服务，才能开启自动叫号')
+    alert(replaceTerms('先开启结单服务，才能开启自动叫号', merchantTerms.value))
     restoreQueueMode()
     return
   }

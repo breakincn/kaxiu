@@ -426,10 +426,13 @@ func UpdateTechnicianServiceStatus(c *gin.Context) {
 
 		updates := map[string]interface{}{}
 		cur := attendance.Status
+		var merchant models.Merchant
+		_ = tx.Select("id", "support_queue", "support_customer_service_mode", "queue_mode", "finish_term").First(&merchant, merchantID).Error
+		finishTerm := resolveFinishTerm(&merchant)
 		// 4状态逻辑：
 		// - idle: 允许手动切到 paused
 		// - paused: 只允许手动切回 idle
-		// - busy: 仅允许设置 next_status=paused（结单后自动暂停），不能直接改 status
+		// - busy: 仅允许设置 next_status=paused（服务结束后自动暂停），不能直接改 status
 		if cur == "idle" {
 			if input.Status != "paused" {
 				return apiErr{status: http.StatusBadRequest, msg: "空闲状态仅允许切换为暂停"}
@@ -444,7 +447,7 @@ func UpdateTechnicianServiceStatus(c *gin.Context) {
 			updates["next_status"] = nil
 		} else if cur == "busy" {
 			if input.Status != "paused" {
-				return apiErr{status: http.StatusBadRequest, msg: "服务中仅允许设置结单后进入暂停"}
+				return apiErr{status: http.StatusBadRequest, msg: "服务中仅允许设置" + finishTerm + "后进入暂停"}
 			}
 			ns := "paused"
 			updates["next_status"] = &ns

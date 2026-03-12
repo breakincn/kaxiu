@@ -5,7 +5,6 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -70,10 +69,7 @@ func UserRevokeUsage(c *gin.Context) {
 		}
 
 		if s.StartTimeoutCount < 2 {
-			startTerm := "起单"
-			if term := strings.TrimSpace(u.Merchant.StartTerm); term != "" {
-				startTerm = term
-			}
+			startTerm := resolveStartTerm(&u.Merchant)
 			return apiErr{status: http.StatusBadRequest, msg: startTerm + "超时未达到2次，不可撤销"}
 		}
 		if !isServiceSessionInRevokeablePhase(&u.Merchant, &s) {
