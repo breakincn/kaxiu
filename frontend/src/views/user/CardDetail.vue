@@ -456,7 +456,7 @@
               {{ timeSlotError }}
             </div>
             <div v-else-if="timeSlots.length === 0" class="text-center py-8 text-gray-400">
-              明日无可用时间段
+              请先选择预约项目
             </div>
             <div v-else-if="displayedTimeSlots.length === 0" class="text-center py-8 text-gray-400">
               当前所选专业客服无可用时间段
