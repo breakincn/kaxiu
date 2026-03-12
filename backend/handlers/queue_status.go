@@ -6,6 +6,7 @@ import (
 	"kabao/middleware"
 	"kabao/models"
 	"kabao/queue"
+	"kabao/sessionflow"
 	"log"
 	"net/http"
 	"os"
@@ -414,51 +415,10 @@ func finalizeSessionManual(tx *gorm.DB, merchant *models.Merchant, s *models.Ser
 	if tx == nil || merchant == nil || s == nil {
 		return nil
 	}
-	if s.StartConfirmedAt == nil {
-		return nil
-	}
-	updates := map[string]interface{}{
-		"status": models.ApplyStatusPrefix(s.Status, "finished"),
-	}
-	if s.FinishedAt == nil {
-		updates["finished_at"] = now
-	}
-	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
-		Updates(updates).Error; err != nil {
-		return err
-	}
-	if err := tx.First(s, s.ID).Error; err != nil {
-		return err
-	}
-
-	if s.InitialUsageID == 0 {
-		return nil
-	}
-	finishedAt := now
-	if s.FinishedAt != nil {
-		finishedAt = *s.FinishedAt
-	}
-	uUpdates := map[string]interface{}{
-		"status":      "success",
-		"finished_at": finishedAt,
-	}
-	if s.TechnicianID != nil && *s.TechnicianID > 0 {
-		uUpdates["technician_id"] = *s.TechnicianID
-	}
-	if s.RoomID != nil && *s.RoomID > 0 {
-		uUpdates["room_id"] = *s.RoomID
-	}
-	if err := tx.Model(&models.Usage{}).
-		Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
-		Updates(uUpdates).Error; err != nil {
-		return err
-	}
-	if merchant.SupportQueue && queue.Default != nil {
-		date := now.Format("2006-01-02")
-		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
-	}
-	return nil
+	return sessionflow.FinishServiceSession(tx, s, merchant, now, sessionflow.FinishOptions{
+		AllowedBaseStatuses: []string{"serving", "auto_finishing"},
+		MarkQueueDone:       true,
+	})
 }
 
 func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant, technicianID uint, now time.Time) (nextUsageID uint, assigned bool, err error) {

@@ -6,6 +6,7 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"kabao/queue"
+	"kabao/sessionflow"
 	"log"
 	"os"
 	"strconv"
@@ -1600,64 +1601,18 @@ func autoAssignRoom(tx *gorm.DB, s *models.ServiceSession, now time.Time) error 
 }
 
 func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
-	if s.StartConfirmedAt == nil {
-		return nil
-	}
-	updates := map[string]interface{}{
-		"status": models.ApplyStatusPrefix(s.Status, "finished"),
-	}
-	if s.FinishedAt == nil {
-		updates["finished_at"] = now
-	}
-	// 支持从 serving 或 auto_finishing 状态结束会话
-	// 叫号模式下从 serving 直接结束，客服模式下从 auto_finishing 结束
-	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"serving", "auto_finishing"})).
-		Updates(updates).Error; err != nil {
-		return err
-	}
-
-	if s.InitialUsageID == 0 {
-		return nil
-	}
-
-	finishedAt := now
-	if s.FinishedAt != nil {
-		finishedAt = *s.FinishedAt
-	}
-
-	uUpdates := map[string]interface{}{
-		"status":      "success",
-		"finished_at": finishedAt,
-	}
-	if s.TechnicianID != nil && *s.TechnicianID > 0 {
-		uUpdates["technician_id"] = *s.TechnicianID
-	}
-	if s.RoomID != nil && *s.RoomID > 0 {
-		uUpdates["room_id"] = *s.RoomID
-	}
-
-	if err := tx.Model(&models.Usage{}).
-		Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
-		Updates(uUpdates).Error; err != nil {
-		return err
-	}
-
-	// 叫号逻辑：仅现场叫号队列生效；预约队列走预约流程
 	var merchant models.Merchant
 	if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 		return nil
 	}
-
-	if !merchant.SupportQueue {
-		return nil
+	if err := sessionflow.FinishServiceSession(tx, s, &merchant, now, sessionflow.FinishOptions{
+		AllowedBaseStatuses: []string{"serving", "auto_finishing"},
+		MarkQueueDone:       merchant.SupportQueue,
+	}); err != nil {
+		return err
 	}
-
-	date := now.Format("2006-01-02")
-	queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
-
-	// 自动叫号模式：自动触发下一个
-	if merchant.QueueMode == "auto" {
+	if merchant.SupportQueue && merchant.QueueMode == "auto" {
+		date := now.Format("2006-01-02")
 		if shouldAutoCallNextInAutoSingleQueue(&merchant) {
 			queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 		}
