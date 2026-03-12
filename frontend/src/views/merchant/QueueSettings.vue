@@ -155,6 +155,7 @@ const loading = ref(true)
 const saving = ref(false)
 
 const supportOrderComplete = ref(false)
+const persistedQueueMode = ref('auto')
 
 const form = ref({
   queue_prefix: '',
@@ -179,16 +180,22 @@ const goBack = () => {
   router.push('/merchant/settings')
 }
 
+const restoreQueueMode = () => {
+  const mode = String(persistedQueueMode.value || '').trim()
+  form.value.queue_mode = mode === 'manual' ? 'manual' : 'auto'
+}
+
 const load = async () => {
   loading.value = true
   try {
     const res = await merchantApi.getCurrentMerchant()
     const m = res.data?.data || {}
     supportOrderComplete.value = !!m.support_order_complete
+    persistedQueueMode.value = String(m.queue_mode || 'auto').trim() === 'manual' ? 'manual' : 'auto'
     form.value = {
       queue_prefix: m.queue_prefix || '',
       queue_start_no: m.queue_start_no || 1,
-      queue_mode: m.queue_mode || 'auto',
+      queue_mode: persistedQueueMode.value,
       queue_window_term: m.queue_window_term || '窗口',
       queue_waiting_start_seconds: m.queue_waiting_start_seconds || 180,
       queue_timeout_waiting_minutes: Math.max(1, Math.floor(Number(m.queue_timeout_waiting_seconds || 900) / 60)),
@@ -216,12 +223,13 @@ const save = async () => {
   const mode = String(form.value.queue_mode || '').trim()
   if (mode !== 'auto' && mode !== 'manual') {
     alert('叫号方式无效')
+    restoreQueueMode()
     return
   }
 
   if (mode === 'auto' && !supportOrderComplete.value) {
     alert('先开启结单服务，才能开启自动叫号')
-    form.value.queue_mode = 'manual'
+    restoreQueueMode()
     return
   }
 
@@ -249,6 +257,7 @@ const save = async () => {
     alert('保存成功')
     await load()
   } catch (e) {
+    restoreQueueMode()
     alert(e?.response?.data?.error || '保存失败')
   } finally {
     saving.value = false
