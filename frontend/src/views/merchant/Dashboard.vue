@@ -903,14 +903,14 @@
 
         <div v-if="isTechnicianAuth()" class="mt-4 space-y-3">
           <div v-if="isTechnicianNotCheckedIn" class="w-full py-3 bg-gray-100 text-gray-600 rounded-lg text-center">
-            {{ replaceTerms('上班签到后 才可扫码起单', merchant) }}
+            {{ replaceTerms('上班签到后 才可扫码上号', merchant) }}
           </div>
           <button
             v-else
             @click="goScanStart"
             class="w-full py-3 bg-primary text-white rounded-lg font-medium"
           >
-            {{ replaceTerms('扫码起单', merchant) }}
+            {{ replaceTerms('扫码上号', merchant) }}
           </button>
         </div>
       </div>
@@ -1127,7 +1127,7 @@
       </div>
 
       <div class="bg-white rounded-xl p-4 shadow-sm">
-        <h3 class="font-medium text-gray-800 mb-4">{{ replaceTerms('今日起单记录', merchant) }}</h3>
+        <h3 class="font-medium text-gray-800 mb-4">{{ replaceTerms('今日上号记录', merchant) }}</h3>
         <div v-if="startUsagesLoading" class="text-center text-gray-400 py-4">
           加载中...
         </div>
@@ -1155,7 +1155,7 @@
           </div>
         </div>
         <div v-else class="text-center text-gray-400 py-4">
-          {{ replaceTerms('今日暂无起单', merchant) }}
+          {{ replaceTerms('今日暂无上号', merchant) }}
         </div>
       </div>
 
