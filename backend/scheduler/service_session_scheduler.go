@@ -442,14 +442,6 @@ func finishAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, finishedAt t
 }
 
 func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
-	updates := map[string]interface{}{
-		"status":                  models.ApplyStatusPrefix(s.Status, "canceled"),
-		"finished_at":             now,
-		"room_id":                 nil,
-		"room_locked_at":          nil,
-		"room_select_deadline_at": nil,
-	}
-
 	// 释放技师状态
 	if s.TechnicianID != nil && *s.TechnicianID > 0 {
 		if err := tx.Model(&models.TechnicianAttendance{}).
@@ -459,38 +451,19 @@ func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Tim
 		}
 	}
 
-	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_selecting", "room_locked", "staff_selecting"})).
-		Updates(updates).Error; err != nil {
+	var merchant models.Merchant
+	if err := tx.Select("id", "support_queue").First(&merchant, s.MerchantID).Error; err != nil {
 		return err
 	}
-
-	if s.InitialUsageID > 0 {
-		if err := tx.Model(&models.Usage{}).
-			Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
-			Updates(map[string]interface{}{
-				"status":      "failed",
-				"finished_at": now,
-			}).Error; err != nil {
-			return err
-		}
-
-		var usage models.Usage
-		if err := tx.Select("card_id", "used_times").First(&usage, s.InitialUsageID).Error; err == nil {
-			if usage.CardID > 0 && usage.UsedTimes > 0 {
-				if err := tx.Model(&models.Card{}).
-					Where("id = ?", usage.CardID).
-					Updates(map[string]interface{}{
-						"remain_times": gorm.Expr("remain_times + ?", usage.UsedTimes),
-						"used_times":   gorm.Expr("used_times - ?", usage.UsedTimes),
-					}).Error; err != nil {
-					return err
-				}
-			}
-		}
-	}
-
-	return nil
+	return sessionflow.FailServiceSessionAndRefund(tx, s, &merchant, now, sessionflow.FailOptions{
+		AllowedBaseStatuses: []string{"room_selecting", "room_locked", "staff_selecting"},
+		TargetStatus:        "canceled",
+		SessionUpdates: map[string]interface{}{
+			"room_id":                 nil,
+			"room_locked_at":          nil,
+			"room_select_deadline_at": nil,
+		},
+	})
 }
 
 func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) (bool, error) {
@@ -1551,49 +1524,21 @@ func skipCurrentAndCallNext(tx *gorm.DB, s *models.ServiceSession, merchant *mod
 	}
 
 	// 其它叫号模式：保持原逻辑，直接失败并退卡
-	updates := map[string]interface{}{
-		"status":             models.ApplyStatusPrefix(s.Status, "canceled"),
-		"finished_at":        now,
-		"start_confirmed_at": nil,
-		"scheduled_start_at": nil,
-	}
-	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("delay_pending")).
-		Updates(updates).Error; err != nil {
+	if err := sessionflow.FailServiceSessionAndRefund(tx, s, merchant, now, sessionflow.FailOptions{
+		AllowedBaseStatuses: []string{"delay_pending"},
+		TargetStatus:        "canceled",
+		MarkQueueDone:       merchant.SupportQueue,
+		SessionUpdates: map[string]interface{}{
+			"start_confirmed_at": nil,
+			"scheduled_start_at": nil,
+		},
+	}); err != nil {
 		return err
 	}
 
-	// 更新 usage 状态为 failed（超时未上号）
-	if s.InitialUsageID > 0 {
-		if err := tx.Model(&models.Usage{}).
-			Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
-			Updates(map[string]interface{}{
-				"status":      "failed",
-				"finished_at": now,
-			}).Error; err != nil {
-			return err
-		}
-
-		// 还原卡片次数
-		var usage models.Usage
-		if err := tx.Select("card_id", "used_times").First(&usage, s.InitialUsageID).Error; err == nil {
-			if err := tx.Model(&models.Card{}).
-				Where("id = ?", usage.CardID).
-				Updates(map[string]interface{}{
-					"remain_times": gorm.Expr("remain_times + ?", usage.UsedTimes),
-					"used_times":   gorm.Expr("used_times - ?", usage.UsedTimes),
-				}).Error; err != nil {
-				return err
-			}
-		}
-	}
-
-	// 在队列中标记当前号为已完成（跳过）
+	// 自动叫下一个号
 	if merchant.SupportQueue && s.InitialUsageID > 0 {
 		date := now.Format("2006-01-02")
-		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
-
-		// 自动叫下一个号
 		if shouldAutoCallNextInAutoSingleQueue(merchant) {
 			queue.Default.CallNextUncalled(merchant.ID, date, queue.QueueTypeOnsite, now)
 		}

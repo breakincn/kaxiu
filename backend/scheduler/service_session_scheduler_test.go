@@ -307,6 +307,96 @@ func TestAdvanceOne_ManualStaffSelecting_CrossDayCancelAndRefund(t *testing.T) {
 	}
 }
 
+func TestSkipCurrentAndCallNext_NonAutoSingle_UsesSharedFailFlow(t *testing.T) {
+	oldQueue := queue.Default
+	defer func() { queue.Default = oldQueue }()
+
+	db := setupSchedulerTestDB(t)
+	fq := &fakeQueueStore{}
+	queue.Default = fq
+
+	now := time.Now()
+	m := models.Merchant{
+		Name:         "m-skip-shared-fail",
+		Phone:        "18800000131",
+		Password:     "pwd",
+		SupportQueue: true,
+		QueueMode:    "auto",
+	}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	c := models.Card{MerchantID: m.ID, UserID: 1, CardNo: "c-skip", CardType: "t", TotalTimes: 10, RemainTimes: 9, UsedTimes: 1}
+	if err := db.Create(&c).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+
+	u := models.Usage{MerchantID: m.ID, CardID: c.ID, UsedTimes: 1, Status: "in_progress"}
+	if err := db.Create(&u).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	startAt := now.Add(-2 * time.Minute)
+	s := models.ServiceSession{
+		MerchantID:       m.ID,
+		CardID:           c.ID,
+		InitialUsageID:   u.ID,
+		SessionMode:      models.SessionModeQueueManualSingle,
+		Status:           "qms_delay_pending",
+		StartConfirmedAt: &startAt,
+		ScheduledStartAt: &startAt,
+		CreatedAt:        &startAt,
+		UpdatedAt:        &startAt,
+	}
+	if err := db.Create(&s).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return skipCurrentAndCallNext(tx, &s, &m, now)
+	}); err != nil {
+		t.Fatalf("skipCurrentAndCallNext failed: %v", err)
+	}
+
+	var gotS struct {
+		Status           string
+		StartConfirmedAt *time.Time
+		ScheduledStartAt *time.Time
+	}
+	if err := db.Table("service_sessions").Select("status, start_confirmed_at, scheduled_start_at").Where("id = ?", s.ID).Scan(&gotS).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if gotS.Status != "qms_canceled" {
+		t.Fatalf("want session qms_canceled, got %s", gotS.Status)
+	}
+	if gotS.StartConfirmedAt != nil || gotS.ScheduledStartAt != nil {
+		t.Fatalf("want start timing fields cleared")
+	}
+
+	var gotU struct{ Status string }
+	if err := db.Table("usages").Select("status").Where("id = ?", u.ID).Scan(&gotU).Error; err != nil {
+		t.Fatalf("reload usage failed: %v", err)
+	}
+	if gotU.Status != "failed" {
+		t.Fatalf("want usage failed, got %s", gotU.Status)
+	}
+
+	var gotC struct {
+		RemainTimes int
+		UsedTimes   int
+	}
+	if err := db.Table("cards").Select("remain_times, used_times").Where("id = ?", c.ID).Scan(&gotC).Error; err != nil {
+		t.Fatalf("reload card failed: %v", err)
+	}
+	if gotC.RemainTimes != 10 || gotC.UsedTimes != 0 {
+		t.Fatalf("want refunded card remain=10 used=0, got remain=%d used=%d", gotC.RemainTimes, gotC.UsedTimes)
+	}
+	if fq.markDoneCount == 0 {
+		t.Fatalf("want MarkDone called")
+	}
+}
+
 func TestAdvanceOne_TimeoutFailed_DoesIdempotentCleanup(t *testing.T) {
 	oldQueue := queue.Default
 	defer func() { queue.Default = oldQueue }()

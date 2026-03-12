@@ -12,6 +12,7 @@ type FailOptions struct {
 	AllowedBaseStatuses []string
 	TargetStatus        string
 	MarkQueueDone       bool
+	SessionUpdates      map[string]interface{}
 }
 
 func FailServiceSessionAndRefund(tx *gorm.DB, s *models.ServiceSession, merchant *models.Merchant, now time.Time, opts FailOptions) error {
@@ -34,6 +35,9 @@ func FailServiceSessionAndRefund(tx *gorm.DB, s *models.ServiceSession, merchant
 	updates := map[string]interface{}{
 		"status":      models.ApplyStatusPrefix(s.Status, targetStatus),
 		"finished_at": now,
+	}
+	for key, value := range opts.SessionUpdates {
+		updates[key] = value
 	}
 	if err := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes(allowed)).
