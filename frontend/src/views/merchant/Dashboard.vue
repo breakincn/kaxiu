@@ -1713,6 +1713,42 @@ const patchQueuePendingList = (nextList) => {
   }
 }
 
+const patchTodayStartUsages = (nextList) => {
+  const prev = todayStartUsages.value
+  const next = Array.isArray(nextList) ? nextList : []
+  const fetchedAt = Date.now()
+
+  const byIdPrev = new Map()
+  for (const item of prev) {
+    const id = Number(item?.id || 0)
+    if (id > 0) byIdPrev.set(id, item)
+  }
+
+  const ordered = []
+  for (const raw of next) {
+    const id = Number(raw?.id || 0)
+    if (!id) continue
+
+    const existed = byIdPrev.get(id)
+    if (existed) {
+      for (const key of Object.keys(existed)) {
+        if (key.startsWith('_')) continue
+        if (!(key in raw)) {
+          delete existed[key]
+        }
+      }
+      Object.assign(existed, raw)
+      existed._countdown_fetched_at = fetchedAt
+      ordered.push(existed)
+    } else {
+      raw._countdown_fetched_at = fetchedAt
+      ordered.push(raw)
+    }
+  }
+
+  prev.splice(0, prev.length, ...ordered)
+}
+
 let lastQueuePendingSig = ''
 const fetchQueuePendingList = async (silent = false) => {
   if (!showQueueControlInService.value) return
@@ -1930,6 +1966,7 @@ const appointments = ref([])
 const todayUsages = ref([])
 const todayStartUsages = ref([])
 const startUsagesLoading = ref(false)
+let startUsagesRefreshing = false
 const todayFinishedUsages = ref([])
 const notices = ref([])
 const currentTime = ref(Date.now())
@@ -3341,9 +3378,12 @@ const fetchTodayUsages = async () => {
   }
 }
 
-const fetchTodayStartUsages = async () => {
-  if (startUsagesLoading.value) return
-  startUsagesLoading.value = true
+const fetchTodayStartUsages = async ({ silent = false } = {}) => {
+  if (startUsagesRefreshing) return
+  startUsagesRefreshing = true
+  if (!silent) {
+    startUsagesLoading.value = true
+  }
   try {
     const today = new Date().toISOString().split('T')[0]
     const currentTechnicianId = getTechnicianId()
@@ -3358,18 +3398,22 @@ const fetchTodayStartUsages = async () => {
       limit: 50
     })
     // 后端已过滤，但这里仍做一次兜底，确保只显示“当前技师 + 今日 + 有会话”的记录
-    todayStartUsages.value = (res.data.data || []).filter((u) => {
+    const nextList = (res.data.data || []).filter((u) => {
       if (!u || !u.used_at || !u.used_at.startsWith(today)) return false
       const techId = u?.service_technician?.id || u?.technician_id
       if (Number(techId) !== Number(currentTechnicianId)) return false
       return !!u.service_session_status
     })
+    patchTodayStartUsages(nextList)
   } catch (err) {
     console.error('获取起单记录失败:', err)
     // 失败时保留旧数据，避免“暂无”闪烁
   }
   finally {
-    startUsagesLoading.value = false
+    if (!silent) {
+      startUsagesLoading.value = false
+    }
+    startUsagesRefreshing = false
   }
 }
 
@@ -4023,6 +4067,7 @@ watch(currentTab, (tab) => {
     clearCountdownBoundaryState()
     // 上钟Tab显示今日上钟记录
     fetchTodayStartUsages()
+    startServiceSessionTimer()
     return
   }
   if (tab === 'finish') {
@@ -4062,6 +4107,10 @@ const startServiceSessionTimer = () => {
   serviceSessionTimer = setInterval(() => {
     if (currentTab.value === 'service') {
       refreshServiceTabPartialData({ silent: true })
+      return
+    }
+    if (currentTab.value === 'start') {
+      fetchTodayStartUsages({ silent: true })
     }
   }, 3000)
 }
@@ -4249,6 +4298,7 @@ onMounted(async () => {
   } else if (currentTab.value === 'start') {
     fetchTodayStartUsages()
     startCountdownTimer()
+    startServiceSessionTimer()
   } else if (currentTab.value === 'finish') {
     fetchTodayFinishedUsages()
   } else if (currentTab.value === 'cards') {
@@ -4547,7 +4597,7 @@ const syncStartTabRefreshOnCountdownBoundary = () => {
   startTabBoundaryState = nextState
 
   if (shouldRefresh) {
-    fetchTodayStartUsages()
+    fetchTodayStartUsages({ silent: true })
   }
 }
 
@@ -4580,6 +4630,7 @@ onActivated(() => {
   } else if (currentTab.value === 'start') {
     fetchTodayStartUsages()
     startCountdownTimer()
+    startServiceSessionTimer()
   } else if (currentTab.value === 'finish') {
     fetchTodayFinishedUsages()
   } else if (currentTab.value === 'service') {
