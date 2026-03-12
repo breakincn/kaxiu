@@ -6,6 +6,7 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"kabao/queue"
+	"kabao/sessionflow"
 	"net/http"
 	"strconv"
 	"strings"
@@ -469,39 +470,13 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 				}
 
 				if exceedNoWindow && exceedTimeWindow {
-					updates := map[string]interface{}{
-						"status":      models.ApplyStatusPrefix(s.Status, "timeout_failed"),
-						"finished_at": now,
-					}
-					if err := tx.Model(&models.ServiceSession{}).
-						Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("timeout_waiting")).
-						Updates(updates).Error; err != nil {
+					if err := sessionflow.FailServiceSessionAndRefund(tx, &s, merchant, now, sessionflow.FailOptions{
+						AllowedBaseStatuses: []string{"timeout_waiting"},
+						TargetStatus:        "timeout_failed",
+						MarkQueueDone:       true,
+					}); err != nil {
 						return err
 					}
-
-					queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
-
-					if err := tx.Model(&models.Usage{}).
-						Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
-						Updates(map[string]interface{}{
-							"status":      "failed",
-							"finished_at": now,
-						}).Error; err != nil {
-						return err
-					}
-
-					var usage models.Usage
-					if err := tx.First(&usage, s.InitialUsageID).Error; err == nil {
-						if err := tx.Model(&models.Card{}).
-							Where("id = ?", usage.CardID).
-							Updates(map[string]interface{}{
-								"remain_times": gorm.Expr("remain_times + ?", usage.UsedTimes),
-								"used_times":   gorm.Expr("used_times - ?", usage.UsedTimes),
-							}).Error; err != nil {
-							return err
-						}
-					}
-
 					return apiErr{status: http.StatusBadRequest, msg: "过号超时，该号已失效"}
 				}
 			}

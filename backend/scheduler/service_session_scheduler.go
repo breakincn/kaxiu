@@ -378,36 +378,12 @@ func autoFinalizeStaleUsages(db *gorm.DB, now time.Time) error {
 		if u.Merchant.SupportCustomerServiceMode {
 			finishedAt := u.UsedAt.Add(12 * time.Hour)
 			if err := db.Transaction(func(tx *gorm.DB) error {
-				var s struct {
-					ID               uint       `gorm:"column:id"`
-					Status           string     `gorm:"column:status"`
-					TechnicianID     *uint      `gorm:"column:technician_id"`
-					StartConfirmedAt *time.Time `gorm:"column:start_confirmed_at"`
+				handled, err := sessionflow.CompleteUnstartedServiceSession(tx, u.ID, u.MerchantID, finishedAt)
+				if err != nil {
+					return err
 				}
-				err := tx.Table("service_sessions").
-					Select("id,status,technician_id,start_confirmed_at").
-					Where("initial_usage_id = ?", u.ID).
-					Order("id desc").
-					First(&s).Error
-				if err == nil {
-					if s.StartConfirmedAt != nil {
-						return nil
-					}
-					if s.TechnicianID != nil && *s.TechnicianID > 0 {
-						_ = tx.Model(&models.TechnicianAttendance{}).
-							Where("merchant_id = ? AND technician_id = ? AND status = ?", u.MerchantID, *s.TechnicianID, "busy").
-							Updates(map[string]interface{}{"status": "idle"}).Error
-					}
-					_ = tx.Table("service_sessions").
-						Where("id = ? AND status NOT IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"finished", "canceled"})).
-						Updates(map[string]interface{}{
-							"status":                  models.ApplyStatusPrefix(s.Status, "finished"),
-							"finished_at":             finishedAt,
-							"technician_id":           nil,
-							"room_id":                 nil,
-							"room_locked_at":          nil,
-							"room_select_deadline_at": nil,
-						}).Error
+				if handled {
+					return nil
 				}
 				return tx.Model(&models.Usage{}).
 					Where("id = ?", u.ID).
@@ -792,31 +768,9 @@ func failStartPendingAndAssignNext(tx *gorm.DB, s *models.ServiceSession, mercha
 	}
 
 	if s.InitialUsageID > 0 {
-		if err := tx.Model(&models.Usage{}).
-			Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
-			Updates(map[string]interface{}{
-				"status":      "failed",
-				"finished_at": now,
-			}).Error; err != nil {
+		if err := sessionflow.FailUsageAndRefund(tx, s.InitialUsageID, merchant, now, true); err != nil {
 			return err
 		}
-
-		var usage models.Usage
-		if err := tx.Select("card_id", "used_times").First(&usage, s.InitialUsageID).Error; err == nil {
-			if err := tx.Model(&models.Card{}).
-				Where("id = ?", usage.CardID).
-				Updates(map[string]interface{}{
-					"remain_times": gorm.Expr("remain_times + ?", usage.UsedTimes),
-					"used_times":   gorm.Expr("used_times - ?", usage.UsedTimes),
-				}).Error; err != nil {
-				return err
-			}
-		}
-	}
-
-	if merchant.SupportQueue && s.InitialUsageID > 0 && queue.Default != nil {
-		date := now.Format("2006-01-02")
-		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
 	}
 
 	if techID > 0 {
@@ -918,36 +872,8 @@ func handleTimeoutFailed(tx *gorm.DB, s *models.ServiceSession, now time.Time) e
 
 	var merchant models.Merchant
 	if err := tx.Select("id", "support_queue").First(&merchant, s.MerchantID).Error; err == nil {
-		if merchant.SupportQueue && queue.Default != nil {
-			date := now.Format("2006-01-02")
-			queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
-		}
-	}
-
-	var usage models.Usage
-	if err := tx.Select("id", "card_id", "used_times", "status").First(&usage, s.InitialUsageID).Error; err != nil {
-		return nil
-	}
-
-	if usage.Status == "in_progress" {
-		if err := tx.Model(&models.Usage{}).
-			Where("id = ? AND status = ?", usage.ID, "in_progress").
-			Updates(map[string]interface{}{
-				"status":      "failed",
-				"finished_at": finishedAt,
-			}).Error; err != nil {
+		if err := sessionflow.FailUsageAndRefund(tx, s.InitialUsageID, &merchant, finishedAt, merchant.SupportQueue); err != nil {
 			return err
-		}
-
-		if usage.CardID > 0 && usage.UsedTimes > 0 {
-			if err := tx.Model(&models.Card{}).
-				Where("id = ?", usage.CardID).
-				Updates(map[string]interface{}{
-					"remain_times": gorm.Expr("remain_times + ?", usage.UsedTimes),
-					"used_times":   gorm.Expr("used_times - ?", usage.UsedTimes),
-				}).Error; err != nil {
-				return err
-			}
 		}
 	}
 
@@ -1516,49 +1442,11 @@ func backfillServingStartConfirmedAt(db *gorm.DB, now time.Time) error {
 }
 
 func failTimeoutWaitingAndRefund(tx *gorm.DB, s *models.ServiceSession, merchant *models.Merchant, now time.Time) error {
-	if tx == nil || s == nil || merchant == nil {
-		return nil
-	}
-	if s.InitialUsageID == 0 {
-		return nil
-	}
-
-	updates := map[string]interface{}{
-		"status":      models.ApplyStatusPrefix(s.Status, "timeout_failed"),
-		"finished_at": now,
-	}
-	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("timeout_waiting")).
-		Updates(updates).Error; err != nil {
-		return err
-	}
-
-	if queue.Default != nil {
-		date := now.Format("2006-01-02")
-		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
-	}
-
-	if err := tx.Model(&models.Usage{}).
-		Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
-		Updates(map[string]interface{}{
-			"status":      "failed",
-			"finished_at": now,
-		}).Error; err != nil {
-		return err
-	}
-
-	var usage models.Usage
-	if err := tx.Select("card_id", "used_times").First(&usage, s.InitialUsageID).Error; err == nil {
-		if err := tx.Model(&models.Card{}).
-			Where("id = ?", usage.CardID).
-			Updates(map[string]interface{}{
-				"remain_times": gorm.Expr("remain_times + ?", usage.UsedTimes),
-				"used_times":   gorm.Expr("used_times - ?", usage.UsedTimes),
-			}).Error; err != nil {
-			return err
-		}
-	}
-	return nil
+	return sessionflow.FailServiceSessionAndRefund(tx, s, merchant, now, sessionflow.FailOptions{
+		AllowedBaseStatuses: []string{"timeout_waiting"},
+		TargetStatus:        "timeout_failed",
+		MarkQueueDone:       true,
+	})
 }
 
 func autoAssignRoom(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {

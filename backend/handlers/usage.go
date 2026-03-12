@@ -5,6 +5,7 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"kabao/queue"
+	"kabao/sessionflow"
 	"log"
 	"net/http"
 	"os"
@@ -436,58 +437,18 @@ func autoFixUsages(usages *[]models.Usage) {
 
 		// 支持客服流程：仅当始终未起单（start_confirmed_at 为空）时，12小时后自动完成，且不计入客服业绩（technician_id 置空）。
 		if u.Merchant.SupportCustomerServiceMode {
-			var s struct {
-				ID               uint       `gorm:"column:id"`
-				Status           string     `gorm:"column:status"`
-				RoomID           *uint      `gorm:"column:room_id"`
-				TechnicianID     *uint      `gorm:"column:technician_id"`
-				StartConfirmedAt *time.Time `gorm:"column:start_confirmed_at"`
+			finishedAt := u.UsedAt.Add(12 * time.Hour)
+			handled, err := sessionflow.CompleteUnstartedServiceSession(config.DB, u.ID, u.MerchantID, finishedAt)
+			if err != nil {
+				continue
 			}
-			err := config.DB.Table("service_sessions").
-				Select("id,status,room_id,technician_id,start_confirmed_at").
-				Where("initial_usage_id = ?", u.ID).
-				Order("id desc").
-				First(&s).Error
-			if err == nil {
-				if s.StartConfirmedAt != nil {
-					continue
-				}
-				finishedAt := u.UsedAt.Add(12 * time.Hour)
-				// 若会话仍保留技师，释放技师状态（避免 busy 残留）
-				if s.TechnicianID != nil && *s.TechnicianID > 0 {
-					_ = config.DB.Model(&models.TechnicianAttendance{}).
-						Where("merchant_id = ? AND technician_id = ? AND status = ?", u.MerchantID, *s.TechnicianID, "busy").
-						Updates(map[string]interface{}{"status": "idle"}).Error
-				}
-				// 结束会话并释放资源（房间/技师）
-				config.DB.Table("service_sessions").
-					Where("id = ? AND status NOT IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"finished", "canceled"})).
-					Updates(map[string]interface{}{
-						"status":                  models.ApplyStatusPrefix(s.Status, "finished"),
-						"finished_at":             finishedAt,
-						"technician_id":           nil,
-						"room_id":                 nil,
-						"room_locked_at":          nil,
-						"room_select_deadline_at": nil,
-					})
-
+			if !handled {
 				config.DB.Model(u).Updates(map[string]interface{}{
 					"status":        "success",
 					"technician_id": nil,
 					"finished_at":   finishedAt,
 				})
-				u.Status = "success"
-				u.TechnicianID = nil
-				u.FinishedAt = &finishedAt
-				continue
 			}
-			// 未找到会话也视为可自动完成
-			finishedAt := u.UsedAt.Add(12 * time.Hour)
-			config.DB.Model(u).Updates(map[string]interface{}{
-				"status":        "success",
-				"technician_id": nil,
-				"finished_at":   finishedAt,
-			})
 			u.Status = "success"
 			u.TechnicianID = nil
 			u.FinishedAt = &finishedAt
