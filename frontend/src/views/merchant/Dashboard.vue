@@ -935,7 +935,7 @@
                   v-model="statusSelectValue"
                   class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
                   :class="canManualUpdateStatus ? 'w-32' : 'w-44'"
-                  :disabled="!canManualUpdateStatus"
+                  :disabled="!canManualUpdateStatus || attendanceUpdating"
                 >
                   <!-- 叫号模式下的状态选项 -->
                   <template v-if="merchant.support_queue">
@@ -955,15 +955,6 @@
                   </template>
                 </select>
 
-                <button
-                  v-if="canManualUpdateStatus"
-                  :disabled="attendanceUpdating"
-                  @click="updateAttendanceStatus"
-                  class="px-4 py-2 rounded-lg text-sm font-medium"
-                  :class="attendanceUpdating ? 'bg-gray-100 text-gray-400' : 'bg-gray-900 text-white'"
-                >
-                  更新状态
-                </button>
               </template>
             </div>
           </div>
@@ -2047,6 +2038,8 @@ const attendanceLoading = ref(false)
 const attendanceUpdating = ref(false)
 const attendanceStatus = ref('not_checked_in') // 用户在下拉框中选择的状态
 const serverAttendanceStatus = ref('not_checked_in') // 服务器中的真实状态
+const attendanceStatusDirty = ref(false)
+const attendanceStatusConfirming = ref(false)
 const setNextPausedLoading = ref(false)
 
 // 叫号状态管理
@@ -2462,9 +2455,77 @@ const technicianCurrentStatusText = computed(() => {
 const canManualUpdateStatus = computed(() => {
   // 允许在"空闲"时手动更新，也允许在"暂停"时手动更新到任何状态
   const currentStatus = technicianCurrentStatus.value
-  const selectedStatus = attendanceStatus.value
   return currentStatus === 'idle' || currentStatus === 'paused'
 })
+
+const applyAttendanceStatusFromServer = (status) => {
+  const nextStatus = String(status || 'not_checked_in')
+  serverAttendanceStatus.value = nextStatus
+  if (!attendanceStatusDirty.value && !attendanceStatusConfirming.value && !attendanceUpdating.value) {
+    attendanceStatus.value = nextStatus
+  }
+}
+
+const resetAttendanceDraftToServer = () => {
+  attendanceStatusDirty.value = false
+  attendanceStatusConfirming.value = false
+  attendanceStatus.value = String(serverAttendanceStatus.value || 'not_checked_in')
+}
+
+const submitAttendanceStatusChange = async (targetStatus) => {
+  const nextStatus = String(targetStatus || '')
+  if (!nextStatus) return false
+  if (nextStatus === String(serverAttendanceStatus.value || '')) {
+    resetAttendanceDraftToServer()
+    return true
+  }
+  if (nextStatus === 'paused' && String(serverAttendanceStatus.value || '') !== 'paused') {
+    const canContinue = await maybeReassignPendingBeforeLeave('暂停服务')
+    if (!canContinue) {
+      resetAttendanceDraftToServer()
+      return false
+    }
+  }
+
+  attendanceUpdating.value = true
+  attendanceStatusConfirming.value = false
+  try {
+    await attendanceApi.updateStatus({ status: nextStatus })
+    applyAttendanceStatusFromServer(nextStatus)
+    attendanceStatusDirty.value = false
+
+    if (merchant.value?.support_queue) {
+      if (nextStatus === 'paused') {
+        try {
+          await queueApi.updateTechnicianQueuePaused(true)
+          technicianQueuePaused.value = true
+          await fetchQueueCallingStatus()
+        } catch (e) {
+          // ignore
+        }
+      }
+      if (nextStatus === 'idle') {
+        try {
+          await queueApi.updateTechnicianQueuePaused(false)
+          technicianQueuePaused.value = false
+          await fetchQueueCallingStatus()
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+
+    alert('状态已更新')
+    return true
+  } catch (e) {
+    resetAttendanceDraftToServer()
+    alert(e.response?.data?.error || '更新失败')
+    return false
+  } finally {
+    attendanceUpdating.value = false
+    attendanceStatusConfirming.value = false
+  }
+}
 
 const statusSelectValue = computed({
   get() {
@@ -2475,11 +2536,25 @@ const statusSelectValue = computed({
     }
     return String(attendanceStatus.value || '')
   },
-  set(v) {
-    // 仅在可手动更新时，允许选择 paused
+  async set(v) {
     if (!canManualUpdateStatus.value) return
     if (v === 'paused' || v === 'idle') {
-      attendanceStatus.value = v
+      const nextStatus = String(v)
+      if (nextStatus === String(serverAttendanceStatus.value || '')) {
+        resetAttendanceDraftToServer()
+        return
+      }
+      attendanceStatus.value = nextStatus
+      attendanceStatusDirty.value = true
+      attendanceStatusConfirming.value = true
+
+      const label = nextStatus === 'paused' ? '暂停' : '空闲'
+      const confirmed = confirm(`确认要将当前状态更新为“${label}”吗？`)
+      if (!confirmed) {
+        resetAttendanceDraftToServer()
+        return
+      }
+      await submitAttendanceStatusChange(nextStatus)
     }
   }
 })
@@ -2606,8 +2681,8 @@ const pauseTechnicianQueue = async () => {
     if (merchant.value?.support_queue) {
       try {
         await attendanceApi.updateStatus({ status: 'paused' })
-        serverAttendanceStatus.value = 'paused'
-        attendanceStatus.value = 'paused'
+        applyAttendanceStatusFromServer('paused')
+        attendanceStatusDirty.value = false
       } catch (e) {
         // ignore
       }
@@ -2631,8 +2706,8 @@ const resumeTechnicianQueue = async () => {
     if (merchant.value?.support_queue) {
       try {
         await attendanceApi.updateStatus({ status: 'idle' })
-        serverAttendanceStatus.value = 'idle'
-        attendanceStatus.value = 'idle'
+        applyAttendanceStatusFromServer('idle')
+        attendanceStatusDirty.value = false
       } catch (e) {
         // ignore
       }
@@ -4230,8 +4305,9 @@ const doCheckOut = async () => {
   try {
     const res = await attendanceApi.checkOut({})
     // 下班签到成功后，同步服务器状态
-    serverAttendanceStatus.value = 'rest'
-    attendanceStatus.value = 'rest'
+    applyAttendanceStatusFromServer('rest')
+    attendanceStatusDirty.value = false
+    attendanceStatusConfirming.value = false
     const msg = res?.data?.message
     alert(msg || '下班签到成功')
   } catch (e) {
@@ -4243,44 +4319,7 @@ const doCheckOut = async () => {
 
 const updateAttendanceStatus = async () => {
   if (!isTechnicianAuth()) return
-  const targetStatus = String(attendanceStatus.value || '')
-  if (targetStatus === 'paused' && String(serverAttendanceStatus.value || '') !== 'paused') {
-    const canContinue = await maybeReassignPendingBeforeLeave('暂停服务')
-    if (!canContinue) return
-  }
-  attendanceUpdating.value = true
-  try {
-    await attendanceApi.updateStatus({ status: attendanceStatus.value })
-    // 更新成功后，同步服务器状态
-    serverAttendanceStatus.value = attendanceStatus.value
-    // 叫号模式下：状态更新与“暂停/恢复叫号”联动
-    if (merchant.value?.support_queue) {
-      const st = String(attendanceStatus.value || '')
-      if (st === 'paused') {
-        try {
-          await queueApi.updateTechnicianQueuePaused(true)
-          technicianQueuePaused.value = true
-          await fetchQueueCallingStatus()
-        } catch (e) {
-          // ignore
-        }
-      }
-      if (st === 'idle') {
-        try {
-          await queueApi.updateTechnicianQueuePaused(false)
-          technicianQueuePaused.value = false
-          await fetchQueueCallingStatus()
-        } catch (e) {
-          // ignore
-        }
-      }
-    }
-    alert('状态已更新')
-  } catch (e) {
-    alert(e.response?.data?.error || '更新失败')
-  } finally {
-    attendanceUpdating.value = false
-  }
+  await submitAttendanceStatusChange(attendanceStatus.value)
 }
 
 // 设置结单后自动暂停
@@ -4289,9 +4328,8 @@ const setNextStatusPaused = async () => {
   setNextPausedLoading.value = true
   try {
     await attendanceApi.updateStatus({ status: 'paused' })
-    // 更新成功后，同步服务器状态
-    serverAttendanceStatus.value = 'paused'
-    attendanceStatus.value = 'paused'
+    applyAttendanceStatusFromServer('paused')
+    attendanceStatusDirty.value = false
     alert(replaceTerms('已设置：结单后自动暂停', merchant.value))
   } catch (e) {
     alert(e.response?.data?.error || '设置失败')
@@ -4340,18 +4378,14 @@ const fetchCurrentAttendanceStatus = async () => {
     const attendance = res.data?.data
     console.log('fetchCurrentAttendanceStatus: 接口返回', attendance)
     if (attendance && attendance.status) {
-      serverAttendanceStatus.value = attendance.status
-      // 初始化时也设置下拉框的状态为服务器状态
-      attendanceStatus.value = attendance.status
+      applyAttendanceStatusFromServer(attendance.status)
       console.log('从服务器恢复技师状态:', attendance.status)
     } else {
-      serverAttendanceStatus.value = 'not_checked_in'
-      attendanceStatus.value = 'not_checked_in'
+      applyAttendanceStatusFromServer('not_checked_in')
       console.log('接口返回空或无status，置为未签到')
     }
   } catch (e) {
-    serverAttendanceStatus.value = 'not_checked_in'
-    attendanceStatus.value = 'not_checked_in'
+    applyAttendanceStatusFromServer('not_checked_in')
     console.error('获取技师状态失败，置为未签到:', e)
   }
 }
