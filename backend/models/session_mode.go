@@ -44,6 +44,23 @@ func ResolveSessionMode(m *Merchant) string {
 	return SessionModeSimple
 }
 
+func InferSessionModeFromStatus(status string) string {
+	st := strings.TrimSpace(status)
+	switch {
+	case strings.HasPrefix(st, SessionModeCustomerService+"_"):
+		return SessionModeCustomerService
+	case strings.HasPrefix(st, SessionModeQueueAutoSingle+"_"):
+		return SessionModeQueueAutoSingle
+	case strings.HasPrefix(st, SessionModeQueueAutoMulti+"_"):
+		return SessionModeQueueAutoMulti
+	case strings.HasPrefix(st, SessionModeQueueManualSingle+"_"):
+		return SessionModeQueueManualSingle
+	case strings.HasPrefix(st, SessionModeQueueManualMulti+"_"):
+		return SessionModeQueueManualMulti
+	}
+	return ""
+}
+
 func QsTimeoutWindowEndNo(myNo int, timeoutCount int) int {
 	if myNo <= 0 {
 		return 0

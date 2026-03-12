@@ -675,6 +675,9 @@ func runOnce(db *gorm.DB) error {
 	if err := autoFinalizeStaleUsages(db, now); err != nil {
 		log.Printf("auto finalize stale usages error: %v", err)
 	}
+	if err := backfillLegacyServiceSessionModes(db); err != nil {
+		log.Printf("backfill legacy service session modes error: %v", err)
+	}
 	if err := backfillServingStartConfirmedAt(db, now); err != nil {
 		log.Printf("backfill serving start_confirmed_at error: %v", err)
 	}
@@ -682,8 +685,16 @@ func runOnce(db *gorm.DB) error {
 		log.Printf("release finished session technicians error: %v", err)
 	}
 
-	var sessions []models.ServiceSession
+	type schedulerSessionLite struct {
+		ID             uint   `gorm:"column:id"`
+		MerchantID     uint   `gorm:"column:merchant_id"`
+		InitialUsageID uint   `gorm:"column:initial_usage_id"`
+		Status         string `gorm:"column:status"`
+	}
+	var sessions []schedulerSessionLite
 	err := db.
+		Table("service_sessions").
+		Select("id", "merchant_id", "initial_usage_id", "status").
 		Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"room_selecting", "room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing", "timeout_waiting", "timeout_failed"})).
 		Order("id asc").
 		Limit(schedulerBatchLimit).
@@ -714,7 +725,7 @@ func runOnce(db *gorm.DB) error {
 		if queueDebugEnabledFor(s.MerchantID, s.ID, s.InitialUsageID) && strings.Contains(s.Status, "timeout_waiting") {
 			log.Printf("[queue-debug] scheduler advance timeout_waiting: session=%d status=%s usage=%d\n", s.ID, s.Status, s.InitialUsageID)
 		}
-		if err := advanceOne(db, &s, now); err != nil {
+		if err := advanceOne(db, &models.ServiceSession{ID: s.ID}, now); err != nil {
 			log.Printf("advance session %d error: %v", s.ID, err)
 		}
 	}

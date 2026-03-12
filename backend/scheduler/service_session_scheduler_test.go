@@ -618,6 +618,130 @@ func TestRunOnce_FinishedNotStarveActiveSessions(t *testing.T) {
 	}
 }
 
+func TestRunOnce_QueueEndedFinalizesLinkedSessionAndUsage(t *testing.T) {
+	oldDB := config.DB
+	oldQueue := queue.Default
+	defer func() {
+		config.DB = oldDB
+		queue.Default = oldQueue
+	}()
+
+	db := setupSchedulerTestDB(t)
+	config.DB = db
+	fq := &fakeQueueStore{}
+	queue.Default = fq
+
+	now := time.Now()
+	endedAt := now.Add(-16 * time.Minute)
+	m := models.Merchant{
+		Name:         "m-runonce-ended",
+		Phone:        "18800000133",
+		Password:     "pwd",
+		SupportQueue: true,
+		QueueMode:    "manual",
+		QueuePaused:  true,
+		QueueEndedAt: &endedAt,
+	}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	u := models.Usage{MerchantID: m.ID, Status: "in_progress"}
+	if err := db.Create(&u).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	startAt := now.Add(-20 * time.Minute)
+	s := models.ServiceSession{
+		MerchantID:       m.ID,
+		InitialUsageID:   u.ID,
+		Status:           "qms_serving",
+		SessionMode:      models.SessionModeQueueManualSingle,
+		StartConfirmedAt: &startAt,
+		StartedAt:        &startAt,
+		ScheduledFinishAt: &startAt,
+		CreatedAt:        &startAt,
+		UpdatedAt:        &startAt,
+	}
+	if err := db.Create(&s).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	if err := runOnce(db); err != nil {
+		t.Fatalf("runOnce failed: %v", err)
+	}
+
+	var gotU struct{ Status string }
+	if err := db.Table("usages").Select("status").Where("id = ?", u.ID).Scan(&gotU).Error; err != nil {
+		t.Fatalf("reload usage failed: %v", err)
+	}
+	if gotU.Status != "success" {
+		t.Fatalf("want usage success, got %s", gotU.Status)
+	}
+
+	var gotS struct{ Status string }
+	if err := db.Table("service_sessions").Select("status").Where("id = ?", s.ID).Scan(&gotS).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if gotS.Status != "qms_finished" {
+		t.Fatalf("want session qms_finished, got %s", gotS.Status)
+	}
+	if fq.markDoneCount == 0 {
+		t.Fatalf("want MarkDone called")
+	}
+}
+
+func TestRunOnce_BackfillsLegacySessionMode(t *testing.T) {
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	db := setupSchedulerTestDB(t)
+	config.DB = db
+
+	now := time.Now()
+	m := models.Merchant{
+		Name:         "m-legacy-mode",
+		Phone:        "18800000134",
+		Password:     "pwd",
+		SupportQueue: true,
+		QueueMode:    "manual",
+	}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	s := models.ServiceSession{
+		MerchantID: m.ID,
+		Status:     "qms_finished",
+		CreatedAt:  &now,
+		UpdatedAt:  &now,
+	}
+	if err := db.Create(&s).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+	if err := db.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Update("session_mode", "").Error; err != nil {
+		t.Fatalf("clear session_mode failed: %v", err)
+	}
+
+	if err := runOnce(db); err != nil {
+		t.Fatalf("runOnce failed: %v", err)
+	}
+
+	var got struct {
+		SessionMode string
+		Status      string
+	}
+	if err := db.Table("service_sessions").Select("session_mode, status").Where("id = ?", s.ID).Scan(&got).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if got.SessionMode != models.SessionModeQueueManualSingle {
+		t.Fatalf("want session_mode=%s, got %s", models.SessionModeQueueManualSingle, got.SessionMode)
+	}
+	if got.Status != "qms_finished" {
+		t.Fatalf("want status remain qms_finished, got %s", got.Status)
+	}
+}
+
 func TestReleaseFinishedSessionTechnicians_ReleasesBusyAttendance(t *testing.T) {
 	db := setupSchedulerTestDB(t)
 
