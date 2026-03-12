@@ -932,7 +932,8 @@
 
               <template v-else>
                 <select
-                  v-model="statusSelectValue"
+                  :value="statusSelectValue"
+                  @change="handleAttendanceStatusSelectChange"
                   class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
                   :class="canManualUpdateStatus ? 'w-32' : 'w-44'"
                   :disabled="!canManualUpdateStatus || attendanceUpdating"
@@ -2535,28 +2536,44 @@ const statusSelectValue = computed({
     }
     return String(attendanceStatus.value || '')
   },
-  async set(v) {
-    if (!canManualUpdateStatus.value) return
-    if (v === 'paused' || v === 'idle') {
-      const nextStatus = String(v)
-      if (nextStatus === String(serverAttendanceStatus.value || '')) {
-        resetAttendanceDraftToServer()
-        return
-      }
-      attendanceStatus.value = nextStatus
-      attendanceStatusDirty.value = true
-      attendanceStatusConfirming.value = true
-
-      const label = nextStatus === 'paused' ? '暂停' : '空闲'
-      const confirmed = confirm(`确认要将当前状态更新为“${label}”吗？`)
-      if (!confirmed) {
-        resetAttendanceDraftToServer()
-        return
-      }
-      await submitAttendanceStatusChange(nextStatus)
-    }
-  }
 })
+
+const handleAttendanceStatusSelectChange = async (event) => {
+  if (!canManualUpdateStatus.value) return
+  const nextStatus = String(event?.target?.value || '')
+  if (nextStatus !== 'paused' && nextStatus !== 'idle') {
+    if (event?.target) {
+      event.target.value = String(statusSelectValue.value || '')
+    }
+    return
+  }
+  if (nextStatus === String(serverAttendanceStatus.value || '')) {
+    resetAttendanceDraftToServer()
+    if (event?.target) {
+      event.target.value = String(statusSelectValue.value || '')
+    }
+    return
+  }
+
+  attendanceStatusConfirming.value = true
+  const label = nextStatus === 'paused' ? '暂停' : '空闲'
+  const confirmed = confirm(`确认要将当前状态更新为“${label}”吗？`)
+  if (!confirmed) {
+    attendanceStatusConfirming.value = false
+    resetAttendanceDraftToServer()
+    if (event?.target) {
+      event.target.value = String(statusSelectValue.value || '')
+    }
+    return
+  }
+
+  attendanceStatus.value = nextStatus
+  attendanceStatusDirty.value = true
+  if (event?.target) {
+    event.target.value = nextStatus
+  }
+  await submitAttendanceStatusChange(nextStatus)
+}
 
 // 技师视角：我的服务中会话
 const myServingSessions = computed(() => {
