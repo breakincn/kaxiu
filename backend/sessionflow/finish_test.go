@@ -97,3 +97,67 @@ func TestFinishServiceSessionUpdatesUsageAndMarksQueueDone(t *testing.T) {
 		t.Fatalf("want queue MarkDone on usage %d, got %+v", usage.ID, stub.doneIDs)
 	}
 }
+
+func TestFinalizeUsageAndSessionCompletesUnstartedSessionAndMarksQueueDone(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:sessionflow_finish_finalize_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Usage{}, &models.ServiceSession{}); err != nil {
+		t.Fatalf("migrate failed: %v", err)
+	}
+
+	now := time.Now()
+	merchant := models.Merchant{Name: "m2", Phone: "18800000019", Password: "pwd", SupportQueue: true}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	usage := models.Usage{MerchantID: merchant.ID, Status: "in_progress"}
+	if err := db.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+	session := models.ServiceSession{
+		MerchantID:     merchant.ID,
+		InitialUsageID: usage.ID,
+		Status:         "qms_staff_selecting",
+	}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	oldQueue := queue.Default
+	defer func() { queue.Default = oldQueue }()
+	stub := &stubQueueStore{}
+	queue.Default = stub
+
+	handled, err := FinalizeUsageAndSession(db, usage.ID, &merchant, now, FinishOptions{MarkQueueDone: true})
+	if err != nil {
+		t.Fatalf("FinalizeUsageAndSession failed: %v", err)
+	}
+	if !handled {
+		t.Fatalf("want linked session handled")
+	}
+
+	var gotSession struct {
+		Status string `gorm:"column:status"`
+	}
+	if err := db.Model(&models.ServiceSession{}).Select("status").First(&gotSession, session.ID).Error; err != nil {
+		t.Fatalf("load session failed: %v", err)
+	}
+	if gotSession.Status != "qms_finished" {
+		t.Fatalf("want qms_finished session, got %s", gotSession.Status)
+	}
+
+	var gotUsage struct {
+		Status string `gorm:"column:status"`
+	}
+	if err := db.Model(&models.Usage{}).Select("status").First(&gotUsage, usage.ID).Error; err != nil {
+		t.Fatalf("load usage failed: %v", err)
+	}
+	if gotUsage.Status != "success" {
+		t.Fatalf("want success usage, got %s", gotUsage.Status)
+	}
+	if len(stub.doneIDs) != 1 || stub.doneIDs[0] != usage.ID {
+		t.Fatalf("want queue MarkDone on usage %d, got %+v", usage.ID, stub.doneIDs)
+	}
+}

@@ -65,3 +65,63 @@ func FinishServiceSession(tx *gorm.DB, s *models.ServiceSession, merchant *model
 	}
 	return nil
 }
+
+func FinalizeUsageAndSession(tx *gorm.DB, usageID uint, merchant *models.Merchant, finishedAt time.Time, opts FinishOptions) (bool, error) {
+	if tx == nil || usageID == 0 {
+		return false, nil
+	}
+
+	var row struct {
+		ID                  uint   `gorm:"column:id"`
+		MerchantID          uint   `gorm:"column:merchant_id"`
+		InitialUsageID      uint   `gorm:"column:initial_usage_id"`
+		Status              string `gorm:"column:status"`
+		TechnicianID        *uint  `gorm:"column:technician_id"`
+		StartConfirmedAtRaw string `gorm:"column:start_confirmed_at"`
+		FinishedAtRaw       string `gorm:"column:finished_at"`
+	}
+	if err := tx.
+		Table("service_sessions").
+		Select("id", "merchant_id", "initial_usage_id", "status", "technician_id", "start_confirmed_at", "finished_at").
+		Where("initial_usage_id = ?", usageID).
+		Order("id desc").
+		First(&row).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+
+	if row.StartConfirmedAtRaw == "" {
+		handled, err := CompleteUnstartedServiceSession(tx, usageID, row.MerchantID, finishedAt)
+		if err != nil {
+			return true, err
+		}
+		if handled {
+			if opts.MarkQueueDone && merchant != nil && merchant.SupportQueue && queue.Default != nil {
+				date := finishedAt.Format("2006-01-02")
+				queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, usageID, finishedAt)
+			}
+			return true, nil
+		}
+		return false, nil
+	}
+
+	s := models.ServiceSession{
+		ID:             row.ID,
+		MerchantID:     row.MerchantID,
+		InitialUsageID: row.InitialUsageID,
+		Status:         row.Status,
+		TechnicianID:   row.TechnicianID,
+	}
+	s.StartConfirmedAt = &finishedAt
+
+	finishOpts := opts
+	if len(finishOpts.AllowedBaseStatuses) == 0 {
+		finishOpts.AllowedBaseStatuses = []string{"start_pending", "delay_pending", "serving", "auto_finishing"}
+	}
+	if err := FinishServiceSession(tx, &s, merchant, finishedAt, finishOpts); err != nil {
+		return true, err
+	}
+	return true, nil
+}

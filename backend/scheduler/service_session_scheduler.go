@@ -296,7 +296,7 @@ func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
 	deadline := now.Add(-15 * time.Minute)
 	var merchants []models.Merchant
 	if err := db.
-		Select("id").
+		Select("id", "support_queue").
 		Where("support_queue = ? AND queue_mode = ? AND queue_paused = ? AND queue_ended_at IS NOT NULL AND queue_ended_at <= ?", true, "manual", true, deadline).
 		Order("queue_ended_at asc").
 		Limit(50).
@@ -314,40 +314,37 @@ func finalizeUsagesAfterQueueEnded(db *gorm.DB, now time.Time) error {
 
 		_ = db.Transaction(func(tx *gorm.DB) error {
 			// 仅收尾进行中的 usage，避免覆盖 failed/canceled 等终态
-			var ids []uint
+			var usages []models.Usage
 			if err := tx.Model(&models.Usage{}).
+				Select("id", "status").
 				Where("merchant_id = ? AND status = ?", m.ID, "in_progress").
 				Order("id asc").
 				Limit(500).
-				Pluck("id", &ids).Error; err != nil {
+				Find(&usages).Error; err != nil {
 				return nil
 			}
-			if len(ids) == 0 {
+			if len(usages) == 0 {
 				return nil
 			}
-			if err := tx.Model(&models.Usage{}).
-				Where("id IN ? AND merchant_id = ? AND status = ?", ids, m.ID, "in_progress").
-				Updates(map[string]interface{}{
-					"status":      "success",
-					"finished_at": now,
-				}).Error; err != nil {
-				return nil
-			}
-
-			// 同步结束关联 service_sessions（避免会话仍处于进行中）
-			if err := tx.Model(&models.ServiceSession{}).
-				Where("merchant_id = ? AND initial_usage_id IN ? AND status NOT IN ?", m.ID, ids, models.ExpandStatusesWithKnownPrefixes([]string{"finished", "canceled"})).
-				Updates(map[string]interface{}{
-					"status": gorm.Expr("CASE " +
-						"WHEN status LIKE 'cs_%' THEN 'cs_finished' " +
-						"WHEN status LIKE 'qs_%' THEN 'qs_finished' " +
-						"WHEN status LIKE 'qm_%' THEN 'qm_finished' " +
-						"WHEN status LIKE 'qms_%' THEN 'qms_finished' " +
-						"WHEN status LIKE 'qmm_%' THEN 'qmm_finished' " +
-						"ELSE 'finished' END"),
-					"finished_at": now,
-				}).Error; err != nil {
-				return nil
+			for i := range usages {
+				u := usages[i]
+				handled, err := sessionflow.FinalizeUsageAndSession(tx, u.ID, &m, now, sessionflow.FinishOptions{
+					MarkQueueDone: true,
+				})
+				if err != nil {
+					return nil
+				}
+				if handled {
+					continue
+				}
+				if err := tx.Model(&models.Usage{}).
+					Where("id = ? AND merchant_id = ? AND status = ?", u.ID, m.ID, "in_progress").
+					Updates(map[string]interface{}{
+						"status":      "success",
+						"finished_at": now,
+					}).Error; err != nil {
+					return nil
+				}
 			}
 			return nil
 		})
@@ -406,13 +403,24 @@ func autoFinalizeStaleUsages(db *gorm.DB, now time.Time) error {
 			durationMinutes = u.Project.Duration
 		}
 		finishedAt := u.UsedAt.Add(time.Duration(durationMinutes+5) * time.Minute)
-		if err := db.Model(&models.Usage{}).
-			Where("id = ?", u.ID).
-			Updates(map[string]interface{}{
-				"status":        "success",
-				"technician_id": nil,
-				"finished_at":   finishedAt,
-			}).Error; err != nil {
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			handled, err := sessionflow.FinalizeUsageAndSession(tx, u.ID, &u.Merchant, finishedAt, sessionflow.FinishOptions{
+				MarkQueueDone: u.Merchant.SupportQueue,
+			})
+			if err != nil {
+				return err
+			}
+			if handled {
+				return nil
+			}
+			return tx.Model(&models.Usage{}).
+				Where("id = ?", u.ID).
+				Updates(map[string]interface{}{
+					"status":        "success",
+					"technician_id": nil,
+					"finished_at":   finishedAt,
+				}).Error
+		}); err != nil {
 			log.Printf("auto finalize stale usage failed: usage=%d err=%v", u.ID, err)
 		}
 	}

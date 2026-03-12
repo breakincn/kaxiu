@@ -14,7 +14,7 @@ import (
 
 func setupSchedulerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := "file:scheduler_service_session_test?mode=memory&cache=shared&_loc=auto&parseTime=true"
+	dsn := "file:scheduler_service_session_test_" + time.Now().Format("20060102150405_000000000") + "?mode=memory&cache=shared&_loc=auto&parseTime=true"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
@@ -77,6 +77,77 @@ func TestFinalizeUsagesAfterQueueEnded_OnlyInProgressToSuccess(t *testing.T) {
 	}
 	if got3.Status != "canceled" {
 		t.Fatalf("want u3 remain canceled, got %s", got3.Status)
+	}
+}
+
+func TestFinalizeUsagesAfterQueueEnded_FinishesLinkedPrefixedSession(t *testing.T) {
+	oldDB := config.DB
+	oldQueue := queue.Default
+	defer func() {
+		config.DB = oldDB
+		queue.Default = oldQueue
+	}()
+
+	db := setupSchedulerTestDB(t)
+	config.DB = db
+	fq := &fakeQueueStore{}
+	queue.Default = fq
+
+	now := time.Now()
+	endedAt := now.Add(-16 * time.Minute)
+	m := models.Merchant{
+		Name:         "m-ended-linked-session",
+		Phone:        "18800000132",
+		Password:     "pwd",
+		SupportQueue: true,
+		QueueMode:    "manual",
+		QueuePaused:  true,
+		QueueEndedAt: &endedAt,
+	}
+	if err := db.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	u := models.Usage{MerchantID: m.ID, Status: "in_progress"}
+	if err := db.Create(&u).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	startAt := now.Add(-30 * time.Minute)
+	session := models.ServiceSession{
+		MerchantID:       m.ID,
+		InitialUsageID:   u.ID,
+		Status:           "qms_delay_pending",
+		StartConfirmedAt: &startAt,
+		ScheduledStartAt: &startAt,
+		CreatedAt:        &startAt,
+		UpdatedAt:        &startAt,
+	}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	if err := finalizeUsagesAfterQueueEnded(db, now); err != nil {
+		t.Fatalf("finalizeUsagesAfterQueueEnded failed: %v", err)
+	}
+
+	var gotU struct{ Status string }
+	if err := db.Table("usages").Select("status").Where("id = ?", u.ID).Scan(&gotU).Error; err != nil {
+		t.Fatalf("reload usage failed: %v", err)
+	}
+	if gotU.Status != "success" {
+		t.Fatalf("want usage success, got %s", gotU.Status)
+	}
+
+	var gotS struct{ Status string }
+	if err := db.Table("service_sessions").Select("status").Where("id = ?", session.ID).Scan(&gotS).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if gotS.Status != "qms_finished" {
+		t.Fatalf("want session qms_finished, got %s", gotS.Status)
+	}
+	if fq.markDoneCount == 0 {
+		t.Fatalf("want MarkDone called")
 	}
 }
 
