@@ -893,18 +893,20 @@
           </div>
           <div v-if="isTechnicianAuth()" class="flex items-center gap-2">
             <button
+              v-if="isTechnicianNotCheckedIn"
               :disabled="attendanceLoading"
               @click="doCheckIn"
               class="px-4 py-2 rounded-lg text-sm font-medium"
-              :class="attendanceLoading ? 'bg-gray-100 text-gray-400' : (serverAttendanceStatus === 'idle' || serverAttendanceStatus === 'paused' || serverAttendanceStatus === 'busy') ? 'bg-green-500 text-white' : 'bg-primary text-white'"
+              :class="attendanceLoading ? 'bg-gray-100 text-gray-400' : 'bg-green-500 text-white'"
             >
               上班签到
             </button>
             <button
+              v-else
               :disabled="attendanceLoading"
               @click="doCheckOut"
               class="px-4 py-2 rounded-lg text-sm font-medium"
-              :class="attendanceLoading ? 'bg-gray-100 text-gray-400' : (serverAttendanceStatus === 'idle' || serverAttendanceStatus === 'paused' || serverAttendanceStatus === 'busy') ? 'bg-primary text-white' : 'bg-slate-600 text-white'"
+              :class="attendanceLoading ? 'bg-gray-100 text-gray-400' : 'bg-primary text-white'"
             >
               下班签到
             </button>
