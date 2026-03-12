@@ -177,18 +177,6 @@
         预约
       </button>
       <button
-        v-if="showStartTab"
-        @click="selectTab('start')"
-        :class="[
-          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
-          currentTab === 'start'
-            ? 'border-primary text-primary'
-            : 'border-transparent text-gray-500'
-        ]"
-      >
-        {{ replaceTerms('扫码起单', merchant) }}
-      </button>
-      <button
         v-if="showFinishTab"
         @click="selectTab('finish')"
         :class="[
@@ -530,54 +518,6 @@
         </div>
         <div v-else class="text-center text-gray-400 py-4">
           今日暂无核销
-        </div>
-      </div>
-    </div>
-
-    <!-- 扫码起单 -->
-    <div v-if="currentTab === 'start' && showStartTab" class="px-4 py-4">
-      <div class="bg-white rounded-xl p-4 shadow-sm">
-        <!-- 未签到提示 -->
-        <div v-if="isTechnicianNotCheckedIn" class="w-full py-3 bg-gray-100 text-gray-600 rounded-lg text-center">
-          {{ replaceTerms('上班签到后 才可扫码起单', merchant) }}
-        </div>
-        <!-- 扫码起单按钮 -->
-        <button
-          v-else
-          @click="goScanStart"
-          class="w-full py-3 bg-primary text-white rounded-lg font-medium"
-        >
-          {{ replaceTerms('扫码起单', merchant) }}
-        </button>
-      </div>
-
-      <div class="bg-white rounded-xl p-4 shadow-sm mt-4">
-        <h3 class="font-medium text-gray-800 mb-4">{{ replaceTerms('今日起单记录', merchant) }}</h3>
-        <div v-if="startUsagesLoading" class="text-center text-gray-400 py-4">
-          加载中...
-        </div>
-        <div v-else-if="todayStartUsages.length > 0" class="space-y-3">
-          <div v-for="usage in todayStartUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
-            <div class="flex-1">
-              <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
-              <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
-              <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
-              <div class="text-gray-500 text-sm mt-1">项目：{{ formatProjectNameWithDuration(usage.project) }}</div>
-              <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
-              <div
-                v-if="getUsageServiceRemainingSeconds(usage) !== null"
-                :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getUsageServiceRemainingSeconds(usage))]"
-              >
-                服务剩余：{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}
-              </div>
-              <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
-            </div>
-            <div class="text-right">
-              <div class="text-sm">
-                核销次数：<span class="text-gray-700">{{ getUsageCountDisplayText(usage).totalTimes }}</span> / <span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage).usedTimes }}</span> 次
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -960,6 +900,19 @@
             </div>
           </div>
         </div>
+
+        <div v-if="isTechnicianAuth()" class="mt-4 space-y-3">
+          <div v-if="isTechnicianNotCheckedIn" class="w-full py-3 bg-gray-100 text-gray-600 rounded-lg text-center">
+            {{ replaceTerms('上班签到后 才可扫码起单', merchant) }}
+          </div>
+          <button
+            v-else
+            @click="goScanStart"
+            class="w-full py-3 bg-primary text-white rounded-lg font-medium"
+          >
+            {{ replaceTerms('扫码起单', merchant) }}
+          </button>
+        </div>
       </div>
 
       <div v-if="queueBlockedByAttendance" class="w-full py-3 bg-gray-100 text-gray-600 rounded-lg text-center">
@@ -1170,6 +1123,39 @@
           >
             管理房间
           </button>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl p-4 shadow-sm">
+        <h3 class="font-medium text-gray-800 mb-4">{{ replaceTerms('今日起单记录', merchant) }}</h3>
+        <div v-if="startUsagesLoading" class="text-center text-gray-400 py-4">
+          加载中...
+        </div>
+        <div v-else-if="todayStartUsages.length > 0" class="space-y-3">
+          <div v-for="usage in todayStartUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
+            <div class="flex-1">
+              <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
+              <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
+              <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
+              <div class="text-gray-500 text-sm mt-1">项目：{{ formatProjectNameWithDuration(usage.project) }}</div>
+              <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
+              <div
+                v-if="getUsageServiceRemainingSeconds(usage) !== null"
+                :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getUsageServiceRemainingSeconds(usage))]"
+              >
+                服务剩余：{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}
+              </div>
+              <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-sm">
+                核销次数：<span class="text-gray-700">{{ getUsageCountDisplayText(usage).totalTimes }}</span> / <span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage).usedTimes }}</span> 次
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="text-center text-gray-400 py-4">
+          {{ replaceTerms('今日暂无起单', merchant) }}
         </div>
       </div>
 
@@ -1400,8 +1386,7 @@ const showVerifyTab = computed(() => {
 })
 
 const showStartTab = computed(() => {
-  // 仅结单权限（无核销权限）时显示“扫码起单/上钟”tab
-  return !canVerify.value && canFinishVerify.value
+  return false
 })
 
 const showAppointmentTab = computed(() => {
@@ -1817,10 +1802,6 @@ const formatTimeoutWaitingTitle = (it) => {
 }
 
 const getDefaultTab = () => {
-  // 技师（工作人员）仅有"结单权限"（无核销权限）时，默认展示"扫码起单/上钟"tab
-  if (isTechnicianAuth() && !canVerify.value && canFinishVerify.value) {
-    return 'start'
-  }
   if (showAppointmentTab.value) {
     return 'appointment'
   }
@@ -1844,7 +1825,6 @@ const getDefaultTab = () => {
 const getFirstVisibleTab = () => {
   if (showAppointmentTab.value) return 'appointment'
   if (showVerifyTab.value) return 'verify'
-  if (showStartTab.value) return 'start'
   if (showFinishTab.value) return 'finish'
   if (showNoticeTab.value) return 'notice'
   if (showCardsTab.value) return 'cards'
@@ -4051,6 +4031,11 @@ watch(currentTime, () => {
 })
 
 watch(currentTab, (tab) => {
+  const normalizedTab = tab === 'start' ? 'service' : tab
+  if (normalizedTab !== tab) {
+    selectTab(normalizedTab)
+    return
+  }
   if (tab !== 'cards' && scanUserCodeActive.value) {
     scanUserCodeActive.value = false
     routeUserCode.value = ''
@@ -4058,8 +4043,8 @@ watch(currentTab, (tab) => {
   if (tab !== 'service') {
     stopServiceSessionTimer()
   }
-  // 倒计时：appointment/verify/start/service 需要每秒刷新 currentTime
-  if (tab === 'appointment' || tab === 'verify' || tab === 'start' || tab === 'service') {
+  // 倒计时：appointment/verify/service 需要每秒刷新 currentTime
+  if (tab === 'appointment' || tab === 'verify' || tab === 'service') {
     startCountdownTimer()
   } else {
     stopCountdownTimer()
@@ -4077,13 +4062,6 @@ watch(currentTab, (tab) => {
     verifyCodeInput.value = ''
     verifyResult.value = null
     fetchTodayUsages()
-    return
-  }
-  if (tab === 'start') {
-    clearCountdownBoundaryState()
-    // 上钟Tab显示今日上钟记录
-    fetchTodayStartUsages()
-    startServiceSessionTimer()
     return
   }
   if (tab === 'finish') {
@@ -4124,9 +4102,6 @@ const startServiceSessionTimer = () => {
     if (currentTab.value === 'service') {
       refreshServiceTabPartialData({ silent: true })
       return
-    }
-    if (currentTab.value === 'start') {
-      fetchTodayStartUsages({ silent: true })
     }
   }, 3000)
 }
@@ -4175,7 +4150,7 @@ onMounted(async () => {
   try {
     const savedTab = localStorage.getItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY)
     if (savedTab && ['queue', 'verify', 'appointment', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(savedTab)) {
-      const normalizedSavedTab = savedTab === 'queue' ? 'appointment' : savedTab
+      const normalizedSavedTab = savedTab === 'queue' ? 'appointment' : (savedTab === 'start' ? 'service' : savedTab)
       selectTab(normalizedSavedTab)
       console.log('从 localStorage 恢复 tab:', normalizedSavedTab)
     }
@@ -4195,7 +4170,7 @@ onMounted(async () => {
   // 检查查询参数，自动切换到指定Tab（优先级高于 localStorage）
   const tabParam = route.query.tab
   if (tabParam && ['queue', 'verify', 'appointment', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(tabParam)) {
-    selectTab(tabParam === 'queue' ? 'appointment' : tabParam)
+    selectTab(tabParam === 'queue' ? 'appointment' : (tabParam === 'start' ? 'service' : tabParam))
   }
 
   // 检查错误参数，显示错误弹窗
@@ -4243,7 +4218,6 @@ onMounted(async () => {
       const canShowRestoredTab = 
         (restoredTab === 'appointment' && showAppointmentTab.value) ||
         (restoredTab === 'verify' && showVerifyTab.value) ||
-        (restoredTab === 'start' && showStartTab.value) ||
         (restoredTab === 'finish' && showFinishTab.value) ||
         (restoredTab === 'notice' && showNoticeTab.value) ||
         (restoredTab === 'cards' && showCardsTab.value) ||
@@ -4279,7 +4253,6 @@ onMounted(async () => {
       const tabVisibleMap = {
       verify: showVerifyTab.value,
       appointment: showAppointmentTab.value,
-      start: showStartTab.value,
       finish: showFinishTab.value,
       notice: showNoticeTab.value,
       cards: showCardsTab.value,
@@ -4311,10 +4284,6 @@ onMounted(async () => {
   } else if (currentTab.value === 'verify') {
     fetchTodayUsages()
     startCountdownTimer()
-  } else if (currentTab.value === 'start') {
-    fetchTodayStartUsages()
-    startCountdownTimer()
-    startServiceSessionTimer()
   } else if (currentTab.value === 'finish') {
     fetchTodayFinishedUsages()
   } else if (currentTab.value === 'cards') {
@@ -4557,6 +4526,7 @@ const refreshServiceTabPartialData = async ({ silent = true, force = false } = {
       fetchQueuePendingList(silent),
       fetchQueueTimeoutWaitingList(silent),
       fetchQueueCallInfo(),
+      fetchTodayStartUsages({ silent }),
       fetchTodayUsages(),
       fetchQueueStatus()
     ])
@@ -4643,10 +4613,6 @@ onActivated(() => {
   // 根据当前Tab刷新对应数据
   if (currentTab.value === 'verify') {
     fetchTodayUsages()
-  } else if (currentTab.value === 'start') {
-    fetchTodayStartUsages()
-    startCountdownTimer()
-    startServiceSessionTimer()
   } else if (currentTab.value === 'finish') {
     fetchTodayFinishedUsages()
   } else if (currentTab.value === 'service') {
