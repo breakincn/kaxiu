@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"kabao/config"
 	"kabao/models"
@@ -26,6 +27,7 @@ func setupAppointmentPermissionTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&models.Merchant{},
 		&models.User{},
+		&models.MerchantProject{},
 		&models.Permission{},
 		&models.SystemConfig{},
 		&models.ServiceRole{},
@@ -236,5 +238,71 @@ func TestCancelAppointmentWithViewPermissionOnlyAllowsOwnAppointment(t *testing.
 	CancelAppointment(c)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("want 403 for other appointment cancel, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGetAvailableTimeSlotsAllowsUserContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupAppointmentPermissionTestDB(t)
+
+	merchant := models.Merchant{
+		Name:               "m",
+		Phone:              "18800009998",
+		Password:           "pwd",
+		SupportAppointment: true,
+		AllDayStart:        "10:00",
+		AllDayEnd:          "00:00",
+	}
+	if err := config.DB.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	phone := "13900009998"
+	user := models.User{Username: "u2", Phone: &phone, Nickname: "u2"}
+	if err := config.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user failed: %v", err)
+	}
+	project := models.MerchantProject{
+		MerchantID: merchant.ID,
+		Name:       "塑形私教课",
+		Duration:   45,
+		IsActive:   true,
+	}
+	if err := config.DB.Create(&project).Error; err != nil {
+		t.Fatalf("create project failed: %v", err)
+	}
+
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatalf("load location failed: %v", err)
+	}
+	date := time.Now().In(loc).Add(24 * time.Hour).Format("2006-01-02")
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/merchant/merchants/"+strconv.Itoa(int(merchant.ID))+"/available-slots?date="+date+"&project_id="+strconv.Itoa(int(project.ID)), nil)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(merchant.ID))}}
+	c.Set("auth_type", "user")
+	c.Set("user_id", user.ID)
+
+	GetAvailableTimeSlots(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			TimeSlots []struct {
+				Time string `json:"time"`
+			} `json:"time_slots"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal failed: %v body=%s", err, rec.Body.String())
+	}
+	if len(resp.Data.TimeSlots) == 0 {
+		t.Fatalf("want non-empty time slots, got body=%s", rec.Body.String())
 	}
 }

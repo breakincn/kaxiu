@@ -452,8 +452,14 @@
             <div v-if="loadingSlots" class="text-center py-8 text-gray-400">
               加载中...
             </div>
+            <div v-else-if="timeSlotError" class="text-center py-8 text-gray-400">
+              {{ timeSlotError }}
+            </div>
             <div v-else-if="timeSlots.length === 0" class="text-center py-8 text-gray-400">
               明日无可用时间段
+            </div>
+            <div v-else-if="displayedTimeSlots.length === 0" class="text-center py-8 text-gray-400">
+              当前所选专业客服无可用时间段
             </div>
             <div v-else class="grid grid-cols-2 gap-3">
               <button
@@ -2200,6 +2206,7 @@ const showModal = ref(false)
 const selectedDate = ref('')
 const selectedTimeSlot = ref('')
 const timeSlots = ref([])
+const timeSlotError = ref('')
 const loadingSlots = ref(false)
 
 const selectedAppointmentProjectId = ref(null)
@@ -2550,6 +2557,7 @@ const showAppointmentModal = async () => {
   selectedAppointmentProjectId.value = null
   selectedTimeSlot.value = ''
   timeSlots.value = []
+  timeSlotError.value = ''
   availableTechnicians.value = []
 }
 
@@ -2561,12 +2569,14 @@ const closeModal = () => {
   selectedAppointmentProjectId.value = null
   selectedTimeSlot.value = ''
   timeSlots.value = []
+  timeSlotError.value = ''
   availableTechnicians.value = []
 }
 
 const onAppointmentProjectChange = async () => {
   selectedTimeSlot.value = ''
   timeSlots.value = []
+  timeSlotError.value = ''
   if (!selectedAppointmentProjectId.value) return
   await loadTimeSlots(selectedDate.value)
 }
@@ -2590,10 +2600,12 @@ const loadTimeSlots = async (date) => {
   }
   if (!selectedAppointmentProjectId.value) {
     timeSlots.value = []
+    timeSlotError.value = ''
     return
   }
   
   loadingSlots.value = true
+  timeSlotError.value = ''
   try {
     console.log('正在获取时间段，商户ID:', card.value.merchant_id, '日期:', date)
     const res = await appointmentApi.getAvailableTimeSlots(card.value.merchant_id, date, selectedAppointmentProjectId.value)
@@ -2605,7 +2617,10 @@ const loadTimeSlots = async (date) => {
   } catch (err) {
     console.error('获取可用时间段失败:', err)
     console.error('错误详情:', err.response?.data)
-    alert(`获取可用时间段失败: ${err.response?.data?.error || err.message}`)
+    timeSlots.value = []
+    availableTechnicians.value = []
+    timeSlotError.value = `获取可用时间段失败: ${err.response?.data?.error || err.message}`
+    alert(timeSlotError.value)
   } finally {
     loadingSlots.value = false
   }

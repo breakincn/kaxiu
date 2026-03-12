@@ -676,7 +676,14 @@ func GetQueueStatus(c *gin.Context) {
 
 // GetAvailableTimeSlots 获取商户的可用预约时间段
 func GetAvailableTimeSlots(c *gin.Context) {
-	merchantID, ok := ensureMerchantScope(c, "id")
+	authType := c.GetString("auth_type")
+	var merchantID uint
+	var ok bool
+	if authType == "user" {
+		merchantID, ok = merchantIDFromRouteParam(c, "id")
+	} else {
+		merchantID, ok = ensureMerchantScope(c, "id")
+	}
 	if !ok {
 		return
 	}

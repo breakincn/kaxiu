@@ -38,6 +38,20 @@ func ensureMerchantScope(c *gin.Context, param string) (uint, bool) {
 	return merchantID, true
 }
 
+func merchantIDFromRouteParam(c *gin.Context, param string) (uint, bool) {
+	raw := strings.TrimSpace(c.Param(param))
+	if raw == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的商户ID"})
+		return 0, false
+	}
+	routeID64, err := strconv.ParseUint(raw, 10, 32)
+	if err != nil || routeID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的商户ID"})
+		return 0, false
+	}
+	return uint(routeID64), true
+}
+
 func mustUserID(c *gin.Context) (uint, bool) {
 	userIDAny, ok := c.Get("user_id")
 	if !ok {
