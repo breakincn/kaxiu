@@ -499,7 +499,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { cardApi, usageApi, noticeApi, appointmentApi } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
-import { DATA_POLL_INTERVAL_MS } from '../../constants/polling'
+import { FAST_POLL_INTERVAL_MS, DATA_POLL_INTERVAL_MS } from '../../constants/polling'
 
 import {
   getAutoFinishLabel,
@@ -932,7 +932,7 @@ const startVerifyStatusPoll = async () => {
       return
     }
     checkVerifyStatusAndMaybeJump()
-  }, DATA_POLL_INTERVAL_MS)
+  }, FAST_POLL_INTERVAL_MS)
 }
 
 const formatExpireTime = (expireAtUnix) => {
@@ -1946,7 +1946,7 @@ const openUsageQrModal = async (usage) => {
         return
       }
       trySwitchUsageQrToFinish()
-    }, DATA_POLL_INTERVAL_MS)
+    }, FAST_POLL_INTERVAL_MS)
     try {
       usageQrDataUrl.value = await QRCode.toDataURL(`SS:${sessID}`, {
         margin: 1,
@@ -1995,7 +1995,7 @@ const openUsageQrModal = async (usage) => {
         return
       }
       trySwitchUsageQrToFinish()
-    }, DATA_POLL_INTERVAL_MS)
+    }, FAST_POLL_INTERVAL_MS)
     try {
       usageQrDataUrl.value = await QRCode.toDataURL(precheckCode.value, {
         margin: 1,
@@ -2021,7 +2021,7 @@ const openUsageQrModal = async (usage) => {
         return
       }
       trySwitchUsageQrToFinish()
-    }, DATA_POLL_INTERVAL_MS)
+    }, FAST_POLL_INTERVAL_MS)
     try {
       usageQrDataUrl.value = await QRCode.toDataURL(precheckCode.value, {
         margin: 1,
