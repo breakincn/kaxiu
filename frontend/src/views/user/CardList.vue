@@ -242,7 +242,7 @@
     <div v-if="showAppointmentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeAppointmentModal">
       <div class="bg-white rounded-2xl w-11/12 max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
         <div class="bg-primary text-white px-5 py-4 flex items-center justify-between flex-shrink-0">
-          <h3 class="font-medium text-lg">选择预约时间</h3>
+          <h3 class="font-medium text-lg">{{ appointmentModalTitle }}</h3>
           <button @click="closeAppointmentModal" class="text-white">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -252,7 +252,7 @@
 
         <div class="overflow-y-auto flex-1">
           <div class="px-5 pt-4 pb-3 border-b">
-            <div class="text-gray-800 font-medium">{{ appointmentCardTitle }}</div>
+            <div class="text-gray-800 font-medium">{{ appointmentGuideText }}</div>
           </div>
 
           <div class="px-5 py-3 border-b">
@@ -288,7 +288,7 @@
           <div class="px-5 py-4">
             <div v-if="loadingSlots" class="text-center py-8 text-gray-400">加载中...</div>
             <div v-else-if="timeSlotError" class="text-center py-8 text-gray-400">{{ timeSlotError }}</div>
-            <div v-else-if="timeSlots.length === 0" class="text-center py-8 text-gray-400">请先选择预约项目</div>
+            <div v-else-if="!selectedAppointmentProjectId" class="py-2"></div>
             <div v-else-if="displayedTimeSlots.length === 0" class="text-center py-8 text-gray-400">当前所选专业客服无可用时间段</div>
             <div v-else class="grid grid-cols-2 gap-3">
               <button
@@ -431,6 +431,12 @@ const appointmentCardTitle = computed(() => {
   const merchantName = selectedCard.value?.merchant?.name || '商户'
   const cardName = selectedCard.value?.card_type || '卡片'
   return `${merchantName}-${cardName}`
+})
+
+const appointmentModalTitle = computed(() => `预约 ${appointmentCardTitle.value}`)
+
+const appointmentGuideText = computed(() => {
+  return selectedAppointmentProjectId.value ? '请选择预约时间' : '请先选择预约项目'
 })
 
 const displayedTimeSlots = computed(() => {
