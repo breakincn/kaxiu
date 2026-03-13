@@ -1330,7 +1330,7 @@ import {
 } from '../../utils/terms'
 import { normalizeSessionStatus } from '../../utils/sessionStatus'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
-import { DATA_POLL_INTERVAL_MS } from '../../constants/polling'
+import { DATA_POLL_INTERVAL_MS, REFRESH_GUARD_INTERVAL_MS } from '../../constants/polling'
 import Table from './Table.vue'
 import QRCode from 'qrcode'
 
@@ -4517,7 +4517,7 @@ const refreshServiceTabPartialData = async ({ silent = true, force = false } = {
     serviceTabRefreshQueued.value = true
     return
   }
-  if (!force && now - lastServiceTabRefreshAt < 1200) {
+  if (!force && now - lastServiceTabRefreshAt < REFRESH_GUARD_INTERVAL_MS) {
     return
   }
 
