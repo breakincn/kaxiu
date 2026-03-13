@@ -1262,6 +1262,54 @@ const startAutoAssignPollIfNeeded = () => {
   }, 2000)
 }
 
+const shouldLivePollUsages = () => {
+  const merchant = card.value?.merchant
+  const list = usages.value || []
+  if (!merchant || !list.length) return false
+
+  return list.some((usage) => {
+    if (String(usage?.status || '').trim() !== 'in_progress') return false
+
+    const sessStatus = normalizeSessionStatus(usage?.service_session_status)
+    const { isQueueSession } = getQueueSessionMeta(usage, merchant)
+    if (!isQueueSession) return false
+
+    return ['delay_pending', 'start_pending', 'serving', 'auto_finishing', 'timeout_waiting'].includes(sessStatus)
+  })
+}
+
+let usageLivePollTimer = null
+
+const stopUsageLivePoll = () => {
+  if (usageLivePollTimer) {
+    clearInterval(usageLivePollTimer)
+    usageLivePollTimer = null
+  }
+}
+
+const startUsageLivePollIfNeeded = () => {
+  if (!shouldLivePollUsages()) {
+    stopUsageLivePoll()
+    return
+  }
+  if (usageLivePollTimer) return
+
+  usageLivePollTimer = setInterval(() => {
+    if (document.hidden) return
+    if (!shouldLivePollUsages()) {
+      stopUsageLivePoll()
+      return
+    }
+    fetchUsages()
+  }, 2000)
+}
+
+const handleVisibilityRefresh = () => {
+  if (document.hidden) return
+  if (!shouldLivePollUsages()) return
+  fetchUsages()
+}
+
 const usageDeadlineTriggeredKeys = new Set()
 const usageDeadlineRetryState = new Map()
 let usageDeadlineMonitorRunning = false
@@ -2378,6 +2426,7 @@ const fetchUsages = async () => {
       }
 
       startAutoAssignPollIfNeeded()
+      startUsageLivePollIfNeeded()
     } catch (err) {
       console.error('获取使用记录失败:', err)
     } finally {
@@ -2964,6 +3013,7 @@ watch(nowTick, () => {
 onMounted(async () => {
   await fetchCard()
   startNowTickTimer()
+  document.addEventListener('visibilitychange', handleVisibilityRefresh)
   // 如果有预约，启动倒计时
   if (appointment.value) {
     startCountdownTimer()
@@ -2972,9 +3022,11 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopAutoAssignPoll()
+  stopUsageLivePoll()
   stopNowTickTimer()
   stopCountdownTimer()
   stopVerifyStatusPoll()
+  document.removeEventListener('visibilitychange', handleVisibilityRefresh)
   usageDeadlineTriggeredKeys.clear()
   usageDeadlineRetryState.clear()
   if (verifyExpireTimer) {
