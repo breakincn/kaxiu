@@ -88,6 +88,7 @@ import { useRouter } from 'vue-router'
 import { Html5Qrcode } from 'html5-qrcode'
 import { cardApi } from '../../api'
 import PwaInstallGuide from '../../components/PwaInstallGuide.vue'
+import { SCAN_DEDUP_INTERVAL_MS } from '../../constants/polling'
 
 import { getMerchantId, getMerchantToken } from '../../utils/auth'
 
@@ -198,7 +199,7 @@ const start = async () => {
       config,
       async (decodedText) => {
         const now = Date.now()
-        if (now - lastScannedAt < 1200) return
+        if (now - lastScannedAt < SCAN_DEDUP_INTERVAL_MS) return
         lastScannedAt = now
 
         await onDecoded(decodedText)
