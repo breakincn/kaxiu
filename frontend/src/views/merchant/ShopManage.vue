@@ -304,6 +304,7 @@ import { ref, onMounted, computed, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { merchantApi, merchantProjectApi } from '../../api'
 import { shopApi } from '../../api/index.js'
+import { DATA_POLL_INTERVAL_MS } from '../../constants/polling'
 
 import { hasMerchantPermission } from '../../utils/auth'
 
@@ -435,7 +436,7 @@ onMounted(async () => {
 
   ordersPollTimer = setInterval(() => {
     if (merchant.value.support_direct_sale) loadOrders()
-  }, 5000)
+  }, DATA_POLL_INTERVAL_MS)
 })
 
 onBeforeUnmount(() => {

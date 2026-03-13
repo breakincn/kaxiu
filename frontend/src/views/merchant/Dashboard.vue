@@ -1330,6 +1330,7 @@ import {
 } from '../../utils/terms'
 import { normalizeSessionStatus } from '../../utils/sessionStatus'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
+import { DATA_POLL_INTERVAL_MS } from '../../constants/polling'
 import Table from './Table.vue'
 import QRCode from 'qrcode'
 
@@ -4108,7 +4109,7 @@ const startServiceSessionTimer = () => {
       refreshServiceTabPartialData({ silent: true })
       return
     }
-  }, 3000)
+  }, DATA_POLL_INTERVAL_MS)
 }
 
 const stopServiceSessionTimer = () => {

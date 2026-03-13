@@ -224,6 +224,7 @@ import { useRouter } from 'vue-router'
 import { cardApi, noticeApi, shopApi } from '../../api'
 import { formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
+import { DATA_POLL_INTERVAL_MS } from '../../constants/polling'
 
 const router = useRouter()
 const userName = ref('')
@@ -538,7 +539,7 @@ onMounted(() => {
   pollTimer = setInterval(() => {
     fetchCards()
     fetchPendingOrders()
-  }, 8000)
+  }, DATA_POLL_INTERVAL_MS)
 })
 
 onUnmounted(() => {
