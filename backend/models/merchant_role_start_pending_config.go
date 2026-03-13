@@ -16,5 +16,5 @@ func (MerchantRoleStartPendingConfig) TableName() string {
 }
 
 func (MerchantRoleStartPendingConfig) TableComment() string {
-	return "商户岗位待起单超时配置表"
+	return "商户岗位待开始服务超时配置表"
 }

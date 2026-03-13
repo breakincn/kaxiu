@@ -74,7 +74,9 @@ func GetMerchantRoleStartPendingConfig(tx *gorm.DB, merchantID uint, serviceRole
 func RoleStartPendingLabelForMerchant(m *models.Merchant) string {
 	startTerm := "起单"
 	if m != nil {
-		if s := strings.TrimSpace(m.StartTerm); s != "" {
+		if m.SupportQueue && !m.SupportCustomerServiceMode && (m.QueueMode == "auto" || m.QueueMode == "manual") {
+			startTerm = "叫号"
+		} else if s := strings.TrimSpace(m.StartTerm); s != "" {
 			startTerm = s
 		}
 	}

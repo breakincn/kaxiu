@@ -116,13 +116,13 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `role_type` varchar(20) NOT NULL DEFAULT '' COMMENT '角色类型：operational/professional'")
 	// service_roles: 是否需要签到（按岗位配置）
 	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `require_attendance` tinyint(1) NOT NULL DEFAULT 1 COMMENT '是否需要签到（0-不需要，1-需要）'")
-	// service_roles: 岗位默认待起单超时秒数
-	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `start_pending_timeout_seconds` int NOT NULL DEFAULT 300 COMMENT '岗位默认待起单超时秒数'")
+	// service_roles: 岗位默认待开始服务超时秒数
+	DB.Exec("ALTER TABLE `service_roles` ADD COLUMN `start_pending_timeout_seconds` int NOT NULL DEFAULT 300 COMMENT '岗位默认待开始服务超时秒数'")
 
 	// merchant_role_attendance_configs: 商户维度覆盖岗位签到配置
 	DB.Exec("CREATE TABLE IF NOT EXISTS `merchant_role_attendance_configs` (\n  `id` int unsigned NOT NULL AUTO_INCREMENT,\n  `merchant_id` int unsigned NOT NULL,\n  `service_role_id` int unsigned NOT NULL,\n  `require_attendance` tinyint(1) NOT NULL DEFAULT 1,\n  `created_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),\n  `updated_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uidx_m_role_att` (`merchant_id`,`service_role_id`),\n  KEY `idx_m_role_att_merchant` (`merchant_id`),\n  KEY `idx_m_role_att_role` (`service_role_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商户岗位签到配置（覆盖service_roles.require_attendance）'")
-	// merchant_role_start_pending_configs: 商户维度覆盖岗位待起单超时秒数
-	DB.Exec("CREATE TABLE IF NOT EXISTS `merchant_role_start_pending_configs` (\n  `id` int unsigned NOT NULL AUTO_INCREMENT,\n  `merchant_id` int unsigned NOT NULL,\n  `service_role_id` int unsigned NOT NULL,\n  `start_pending_timeout_seconds` int NOT NULL DEFAULT 300,\n  `created_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),\n  `updated_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uidx_m_role_start_pending` (`merchant_id`,`service_role_id`),\n  KEY `idx_m_role_start_pending_merchant` (`merchant_id`),\n  KEY `idx_m_role_start_pending_role` (`service_role_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商户岗位待起单超时配置（覆盖service_roles.start_pending_timeout_seconds）'")
+	// merchant_role_start_pending_configs: 商户维度覆盖岗位待开始服务超时秒数
+	DB.Exec("CREATE TABLE IF NOT EXISTS `merchant_role_start_pending_configs` (\n  `id` int unsigned NOT NULL AUTO_INCREMENT,\n  `merchant_id` int unsigned NOT NULL,\n  `service_role_id` int unsigned NOT NULL,\n  `start_pending_timeout_seconds` int NOT NULL DEFAULT 300,\n  `created_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),\n  `updated_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uidx_m_role_start_pending` (`merchant_id`,`service_role_id`),\n  KEY `idx_m_role_start_pending_merchant` (`merchant_id`),\n  KEY `idx_m_role_start_pending_role` (`service_role_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商户岗位待开始服务超时配置（覆盖service_roles.start_pending_timeout_seconds）'")
 
 	// 添加表注释
 	DB.Exec("ALTER TABLE `users` COMMENT = '用户表'")
@@ -155,8 +155,8 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `staff_select_cooldown_until` datetime(3) NULL COMMENT '选客服无空闲时冷却截止时间'")
 	// service_sessions: 用户进入选择客服页时间（以拉取可选客服列表为准）
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `staff_select_entered_at` datetime(3) NULL COMMENT '用户进入选择客服页时间（以拉取可选客服列表为准）'")
-	// service_sessions: 待起单超时秒数（0表示使用系统默认）
-	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `start_pending_timeout_seconds` int NOT NULL DEFAULT 0 COMMENT '待起单超时秒数（0表示使用系统默认）'")
+	// service_sessions: 待开始服务超时秒数（0表示使用系统默认）
+	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `start_pending_timeout_seconds` int NOT NULL DEFAULT 0 COMMENT '待开始服务超时秒数（0表示使用系统默认）'")
 	// service_sessions: 最后一次叫号/分配的工作人员ID（用于过号等待等保留展示）
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `last_technician_id` bigint unsigned NULL DEFAULT NULL COMMENT '最后一次叫号/分配的工作人员ID（用于过号等待等保留展示）'")
 	DB.Exec("ALTER TABLE `service_sessions` ADD INDEX `idx_service_sessions_last_technician_id` (`last_technician_id`)")
@@ -176,15 +176,15 @@ func InitDB() {
 	DB.Exec("UPDATE appointments a SET a.card_id = (SELECT c.id FROM cards c WHERE c.user_id = a.user_id AND c.merchant_id = a.merchant_id ORDER BY c.id ASC LIMIT 1) WHERE a.card_id = 0")
 
 	// 添加 support_order_complete 字段到 merchants 表
-	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `support_order_complete` BOOLEAN DEFAULT FALSE COMMENT '是否开启结单功能（0-不开启，1-开启）'")
+	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `support_order_complete` BOOLEAN DEFAULT FALSE COMMENT '是否开启服务结束功能（0-不开启，1-开启）'")
 	// merchants: 是否开启多个客服（多窗口叫号）
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `support_multi_customer_service` BOOLEAN DEFAULT FALSE COMMENT '是否开启多个客服（多窗口叫号）'")
 	// merchants: 等待上号时间（秒）
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `queue_waiting_start_seconds` INT NOT NULL DEFAULT 180 COMMENT '等待上号时间（秒）'")
 	// merchants: 超时过号等待时间（秒）
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `queue_timeout_waiting_seconds` INT NOT NULL DEFAULT 900 COMMENT '超时过号等待时间（秒）'")
-	// merchants: 核销起单延迟秒数（未开启客服但开启结单时使用）
-	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `start_delay_seconds` int NOT NULL DEFAULT 60 COMMENT '核销起单延迟秒数（未开启客服但开启结单时使用）'")
+	// merchants: 核销后开始服务延迟秒数（未开启客服但开启服务结束功能时使用）
+	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `start_delay_seconds` int NOT NULL DEFAULT 60 COMMENT '核销后开始服务延迟秒数（未开启客服但开启服务结束功能时使用）'")
 	// merchant_projects: 项目级服务开始延迟时间（秒）
 	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `start_delay_seconds` int NOT NULL DEFAULT 60 COMMENT '服务开始延迟时间（秒）'")
 
@@ -576,8 +576,8 @@ func initPermissions() {
 		// 卡片管理 (40-59)
 		{Key: "merchant.card.issue", Name: "发卡/开卡", Group: "卡片管理", Description: "创建卡片、发卡", Sort: 40},
 		{Key: "merchant.card.verify", Name: "核销", Group: "卡片管理", Description: "核销会员卡", Sort: 41},
-		{Key: "merchant.card.verify_finish", Name: "核销即结单", Group: "卡片管理", Description: "核销后自动结单（不再需要二次扫码结单）", Sort: 42},
-		{Key: "merchant.card.finish", Name: "结单", Group: "卡片管理", Description: "技师扫码结单，将进行中核销置为完成", Sort: 43},
+		{Key: "merchant.card.verify_finish", Name: "核销即结束服务", Group: "卡片管理", Description: "核销后自动结束服务（不再需要二次扫码结束服务）", Sort: 42},
+		{Key: "merchant.card.finish", Name: "结束服务", Group: "卡片管理", Description: "技师扫码结束服务，将进行中核销置为完成", Sort: 43},
 		{Key: "merchant.card.sell", Name: "售卡", Group: "卡片管理", Description: "技师售卡：查询售卡模板、生成售卡二维码", Sort: 44},
 		{Key: "merchant.card.unlock", Name: "解锁卡片", Group: "卡片管理", Description: "解锁被锁定的卡片（手牌未归还等）", Sort: 45},
 

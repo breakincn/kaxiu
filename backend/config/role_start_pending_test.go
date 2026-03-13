@@ -27,3 +27,37 @@ func TestEffectiveRoleStartPendingTimeoutSeconds(t *testing.T) {
 		}
 	})
 }
+
+func TestRoleStartPendingLabelForMerchant(t *testing.T) {
+	t.Run("queue_mode_uses_calling_term", func(t *testing.T) {
+		merchant := &models.Merchant{
+			SupportQueue:               true,
+			SupportCustomerServiceMode: false,
+			QueueMode:                  "auto",
+			StartTerm:                  "上钟",
+		}
+		if got := RoleStartPendingLabelForMerchant(merchant); got != "待叫号超时秒数" {
+			t.Fatalf("expected 待叫号超时秒数, got %s", got)
+		}
+	})
+
+	t.Run("customer_service_mode_uses_custom_term", func(t *testing.T) {
+		merchant := &models.Merchant{
+			SupportQueue:               false,
+			SupportCustomerServiceMode: true,
+			StartTerm:                  "上钟",
+		}
+		if got := RoleStartPendingLabelForMerchant(merchant); got != "待上钟超时秒数" {
+			t.Fatalf("expected 待上钟超时秒数, got %s", got)
+		}
+	})
+
+	t.Run("customer_service_mode_falls_back_to_default", func(t *testing.T) {
+		merchant := &models.Merchant{
+			SupportCustomerServiceMode: true,
+		}
+		if got := RoleStartPendingLabelForMerchant(merchant); got != "待起单超时秒数" {
+			t.Fatalf("expected 待起单超时秒数, got %s", got)
+		}
+	})
+}

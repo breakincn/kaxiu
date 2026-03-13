@@ -1,4 +1,4 @@
--- 重构：预结单 -> 起单（字段与状态命名同步）
+-- 重构：预结单 -> 开始服务（字段与状态命名同步）
 -- 开发阶段可直接执行；存量环境也尽量保持幂等
 
 -- 1) service_sessions: precheck_at -> start_confirmed_at
@@ -13,8 +13,8 @@ SET @sql = (SELECT IF(
          WHERE TABLE_SCHEMA = DATABASE()
            AND TABLE_NAME = 'service_sessions'
            AND COLUMN_NAME = 'precheck_at') > 0,
-        'ALTER TABLE service_sessions CHANGE COLUMN precheck_at start_confirmed_at TIMESTAMP NULL COMMENT "起单确认时间";',
-        'ALTER TABLE service_sessions ADD COLUMN start_confirmed_at TIMESTAMP NULL COMMENT "起单确认时间";'
+        'ALTER TABLE service_sessions CHANGE COLUMN precheck_at start_confirmed_at TIMESTAMP NULL COMMENT "开始服务确认时间";',
+        'ALTER TABLE service_sessions ADD COLUMN start_confirmed_at TIMESTAMP NULL COMMENT "开始服务确认时间";'
     ))
 ));
 PREPARE stmt FROM @sql;
@@ -33,8 +33,8 @@ SET @sql = (SELECT IF(
          WHERE TABLE_SCHEMA = DATABASE()
            AND TABLE_NAME = 'service_sessions'
            AND COLUMN_NAME = 'delay_seconds') > 0,
-        'ALTER TABLE service_sessions CHANGE COLUMN delay_seconds start_delay_seconds INT NOT NULL DEFAULT 60 COMMENT "起单可延迟秒数";',
-        'ALTER TABLE service_sessions ADD COLUMN start_delay_seconds INT NOT NULL DEFAULT 60 COMMENT "起单可延迟秒数";'
+        'ALTER TABLE service_sessions CHANGE COLUMN delay_seconds start_delay_seconds INT NOT NULL DEFAULT 60 COMMENT "开始服务可延迟秒数";',
+        'ALTER TABLE service_sessions ADD COLUMN start_delay_seconds INT NOT NULL DEFAULT 60 COMMENT "开始服务可延迟秒数";'
     ))
 ));
 PREPARE stmt FROM @sql;

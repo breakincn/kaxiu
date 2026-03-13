@@ -43,11 +43,11 @@ type Merchant struct {
 	SupportCustomerService      bool       `json:"support_customer_service" gorm:"default:false;comment:是否开启客服账号设置功能（0-不开启，1-开启）"`
 	SupportCustomerServiceMode  bool       `json:"support_customer_service_mode" gorm:"default:false;comment:是否开启客服选择模式（0-不开启，1-开启，需先开启SupportCustomerService）"`
 	SupportMultiCustomerService bool       `json:"support_multi_customer_service" gorm:"default:false;comment:是否开启多个客服（多窗口叫号）"`
-	SupportOrderComplete        bool       `json:"support_order_complete" gorm:"default:false;comment:是否开启结单功能（0-不开启，1-开启）"`
-	StartDelaySeconds           int        `json:"start_delay_seconds" gorm:"default:60;comment:核销起单延迟秒数（未开启客服但开启结单时使用）"`
+	SupportOrderComplete        bool       `json:"support_order_complete" gorm:"default:false;comment:是否开启服务结束功能（0-不开启，1-开启）"`
+	StartDelaySeconds           int        `json:"start_delay_seconds" gorm:"default:60;comment:核销后开始服务延迟秒数（未开启客服但开启服务结束功能时使用）"`
 	TechnicianAlias             string     `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
-	StartTerm                   string     `json:"start_term" gorm:"size:20;default:'';comment:起单显示名词（可为空）"`
-	FinishTerm                  string     `json:"finish_term" gorm:"size:20;default:'';comment:结单显示名词（可为空）"`
+	StartTerm                   string     `json:"start_term" gorm:"size:20;default:'';comment:开始服务显示名词（可为空）"`
+	FinishTerm                  string     `json:"finish_term" gorm:"size:20;default:'';comment:结束服务显示名词（可为空）"`
 	// 手牌设置
 	HandCardPrefix  string `json:"hand_card_prefix" gorm:"size:20;default:'H';comment:手牌前缀"`
 	HandCardStartNo int    `json:"hand_card_start_no" gorm:"default:1;comment:手牌起始号码"`
@@ -131,10 +131,10 @@ type Usage struct {
 	ProjectID          *uint      `json:"project_id" gorm:"index;comment:项目ID（merchant_projects表主键，可为空）"`
 	UsedTimes          int        `json:"used_times" gorm:"comment:本次核销次数"`
 	UsedAt             *time.Time `json:"used_at" gorm:"type:datetime(3);comment:使用时间"`
-	VerifyCode         string     `json:"verify_code" gorm:"size:50;index;default:'';comment:核销码（用于结单/追溯）"`
+	VerifyCode         string     `json:"verify_code" gorm:"size:50;index;default:'';comment:核销码（用于服务结束/追溯）"`
 	VerifyCodeExpireAt int64      `json:"verify_code_expire_at" gorm:"index;comment:核销码过期时间（Unix时间戳）"`
 	TechnicianID       *uint      `json:"technician_id" gorm:"index;comment:服务人员技师ID（technicians表主键，可为空）"`
-	FinishedAt         *time.Time `json:"finished_at" gorm:"type:datetime(3);comment:服务完成/结单时间"`
+	FinishedAt         *time.Time `json:"finished_at" gorm:"type:datetime(3);comment:服务完成/结束时间"`
 	Status             string     `json:"status" gorm:"size:20;default:success;comment:状态（in_progress-进行中，success-完成，failed-失败）"`
 
 	QueueNo       int        `json:"queue_no" gorm:"-"`
