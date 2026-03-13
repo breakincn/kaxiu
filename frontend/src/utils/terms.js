@@ -58,6 +58,11 @@ export const getStartCountdownLabel = (merchant, options = {}) => `${getPendingS
 
 export const getStartTimeoutLabel = (merchant, target = '客服', options = {}) => `${getStartActionTerm(merchant, options)}超时 重新选择${target}`
 
+export const getScanStartLabel = (merchant) => {
+  if (isQueueModeMerchant(merchant)) return '扫码上号'
+  return `扫码${getStartBaseTerm(merchant)}`
+}
+
 export const replaceTerms = (text, merchant) => {
   const t = String(text || '')
   const queueMode = isQueueModeMerchant(merchant)

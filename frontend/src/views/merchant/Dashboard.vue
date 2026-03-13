@@ -879,7 +879,7 @@
                   :disabled="!canManualUpdateStatus || attendanceUpdating"
                 >
                   <!-- 叫号模式下的状态选项 -->
-                  <template v-if="merchant.support_queue">
+                  <template v-if="isQueueModeView">
                     <option value="not_checked_in" disabled>未签到</option>
                     <option value="idle">空闲</option>
                     <option value="paused" :disabled="!canManualUpdateStatus">暂停</option>
@@ -903,14 +903,14 @@
 
         <div v-if="isTechnicianAuth()" class="mt-4 space-y-3">
           <div v-if="isTechnicianNotCheckedIn" class="w-full py-3 bg-gray-100 text-gray-600 rounded-lg text-center">
-            {{ replaceTerms('上班签到后 才可扫码上号', merchant) }}
+            {{ `上班签到后 才可${getMerchantScanStartLabel()}` }}
           </div>
           <button
             v-else
             @click="goScanStart"
             class="w-full py-3 bg-primary text-white rounded-lg font-medium"
           >
-            {{ replaceTerms('扫码上号', merchant) }}
+            {{ getMerchantScanStartLabel() }}
           </button>
         </div>
       </div>
@@ -1059,10 +1059,10 @@
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-center justify-between">
           <div>
-            <div class="font-medium text-gray-800">{{ (merchant.support_queue && isTechnicianAuth()) ? '叫号信息' : '房间管理' }}</div>
+            <div class="font-medium text-gray-800">{{ (isQueueModeView && isTechnicianAuth()) ? '叫号信息' : '房间管理' }}</div>
 
             <!-- 叫号模式 + 专业客服：显示窗口/台号、叫号、单号、项目 -->
-            <template v-if="merchant.support_queue && isTechnicianAuth() && !queueBlockedByAttendance">
+            <template v-if="isQueueModeView && isTechnicianAuth() && !queueBlockedByAttendance">
               <div v-if="queueCallInfo?.window_no" class="text-gray-700 text-sm mt-1">
                 {{ windowTerm }}: {{ queueCallInfo.window_no }}
               </div>
@@ -1117,7 +1117,7 @@
 
           <!-- 叫号模式 + 专业客服：不展示房间管理按钮 -->
           <button
-            v-if="!(merchant.support_queue && isTechnicianAuth()) && canRoomManage && merchant?.support_room"
+            v-if="!(isQueueModeView && isTechnicianAuth()) && canRoomManage && merchant?.support_room"
             @click="router.push('/merchant/rooms')"
             class="px-4 py-2 bg-slate-600 text-white rounded-lg text-sm font-medium"
           >
@@ -1127,7 +1127,7 @@
       </div>
 
       <div class="bg-white rounded-xl p-4 shadow-sm">
-        <h3 class="font-medium text-gray-800 mb-4">{{ replaceTerms('今日上号记录', merchant) }}</h3>
+        <h3 class="font-medium text-gray-800 mb-4">{{ getMerchantTodayStartRecordLabel() }}</h3>
         <div v-if="startUsagesLoading" class="text-center text-gray-400 py-4">
           加载中...
         </div>
@@ -1155,7 +1155,7 @@
           </div>
         </div>
         <div v-else class="text-center text-gray-400 py-4">
-          {{ replaceTerms('今日暂无上号', merchant) }}
+          {{ getMerchantTodayNoStartRecordLabel() }}
         </div>
       </div>
 
@@ -1321,6 +1321,7 @@ import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission, 
 import {
   getAutoFinishLabel,
   getPendingStartLabel,
+  getScanStartLabel,
   getServicePendingFinishLabel,
   getServicePendingStartLabel,
   getStartCountdownLabel,
@@ -1344,11 +1345,15 @@ const prevTopScanBodyStyle = {
 }
 const merchantId = ref(null)
 const merchant = ref({})
+const isQueueModeView = computed(() => isQueueModeMerchant(merchant.value))
 
 const getMerchantPendingStartLabel = (options = {}) => getPendingStartLabel(merchant.value, options)
 const getMerchantAutoFinishLabel = () => getAutoFinishLabel(merchant.value)
 const getMerchantServicePendingStartLabel = (options = {}) => getServicePendingStartLabel(merchant.value, options)
 const getMerchantServicePendingFinishLabel = () => getServicePendingFinishLabel(merchant.value)
+const getMerchantScanStartLabel = () => getScanStartLabel(merchant.value)
+const getMerchantTodayStartRecordLabel = () => (isQueueModeView.value ? '今日上号记录' : replaceTerms('今日起单记录', merchant.value))
+const getMerchantTodayNoStartRecordLabel = () => (isQueueModeView.value ? '今日暂无上号' : replaceTerms('今日暂无起单', merchant.value))
 const supportsPendingStartReassignBeforeLeave = () => {
   if (merchant.value?.support_customer_service_mode) return true
   return !!merchant.value?.support_queue && !!merchant.value?.support_multi_customer_service
@@ -2451,7 +2456,7 @@ const technicianCurrentStatus = computed(() => {
 const technicianCurrentStatusText = computed(() => {
   const st = technicianCurrentStatus.value
   // 叫号模式下的状态显示
-  if (merchant.value?.support_queue) {
+  if (isQueueModeView.value) {
     if (st === 'not_checked_in') return '未签到'
     if (st === 'idle') return '空闲'
     if (st === 'paused') return '暂停'
