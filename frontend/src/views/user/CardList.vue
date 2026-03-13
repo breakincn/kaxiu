@@ -179,6 +179,29 @@
       </div>
     </div>
 
+    <div v-if="showActionSheet" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeActionSheet">
+      <div class="bg-white rounded-2xl w-11/12 max-w-lg px-5 py-6">
+        <div class="text-center mb-4">
+          <div class="text-gray-800 font-medium">{{ selectedCard?.merchant?.name || '商户' }}</div>
+          <div class="text-gray-500 text-sm mt-1">{{ selectedCard?.card_type || '' }}</div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <button
+            @click="openAppointmentModalFromAction"
+            class="py-3 rounded-xl border-2 border-primary text-primary font-medium"
+          >
+            我要预约
+          </button>
+          <button
+            @click="openCardQrFromAction"
+            class="py-3 rounded-xl bg-primary text-white font-medium"
+          >
+            查看二维码
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="showCardQrModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 select-none" @click.self="closeCardQrModal">
       <div class="bg-white rounded-2xl w-11/12 max-w-lg overflow-hidden">
         <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
@@ -215,13 +238,93 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showAppointmentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeAppointmentModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
+        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between flex-shrink-0">
+          <h3 class="font-medium text-lg">选择预约时间</h3>
+          <button @click="closeAppointmentModal" class="text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="overflow-y-auto flex-1">
+          <div class="px-5 pt-4 pb-3 border-b">
+            <div class="text-gray-800 font-medium">{{ appointmentCardTitle }}</div>
+          </div>
+
+          <div class="px-5 py-3 border-b">
+            <div class="text-sm font-medium text-gray-700 mb-2">选择项目</div>
+            <div v-if="!selectedCard?.projects || selectedCard.projects.length === 0" class="text-gray-400 text-sm">暂无可选项目</div>
+            <div v-else class="space-y-2">
+              <label v-for="p in selectedCard.projects" :key="p.id" class="flex items-center gap-3">
+                <input type="radio" name="appt_project" :value="p.id" v-model="selectedAppointmentProjectId" />
+                <div class="flex-1">
+                  <div class="text-gray-800">{{ p.name }}</div>
+                  <div v-if="p.duration" class="text-gray-400 text-xs">时长 {{ p.duration }} 分钟</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div v-if="availableTechnicians.length > 0" class="px-5 py-3 border-b">
+            <div class="text-sm font-medium text-gray-700 mb-2">选择专业客服</div>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="t in displayedTechnicians"
+                :key="t.id"
+                type="button"
+                @click="toggleTechnician(t.id)"
+                :class="selectedTechnicianId === t.id ? 'bg-primary text-white' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary'"
+                class="py-2 px-3 rounded-lg font-medium transition-all text-sm"
+              >
+                {{ t.name }}
+              </button>
+            </div>
+          </div>
+
+          <div class="px-5 py-4">
+            <div v-if="loadingSlots" class="text-center py-8 text-gray-400">加载中...</div>
+            <div v-else-if="timeSlotError" class="text-center py-8 text-gray-400">{{ timeSlotError }}</div>
+            <div v-else-if="timeSlots.length === 0" class="text-center py-8 text-gray-400">请先选择预约项目</div>
+            <div v-else-if="displayedTimeSlots.length === 0" class="text-center py-8 text-gray-400">当前所选专业客服无可用时间段</div>
+            <div v-else class="grid grid-cols-2 gap-3">
+              <button
+                v-for="slot in displayedTimeSlots"
+                :key="slot.time"
+                @click="selectTimeSlot(slot)"
+                :class="{
+                  'bg-primary text-white': selectedTimeSlot === slot.time,
+                  'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary': selectedTimeSlot !== slot.time
+                }"
+                class="py-3 px-4 rounded-lg font-medium transition-all"
+              >
+                <div>{{ formatSlotTime(slot.time) }}</div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-5 py-4 border-t flex-shrink-0 bg-white">
+          <button
+            @click="confirmAppointment"
+            :disabled="!selectedAppointmentProjectId || !selectedTimeSlot || appointing"
+            class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {{ appointing ? '预约中...' : '确认预约' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, watch, computed, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { cardApi, noticeApi, shopApi } from '../../api'
+import { appointmentApi, cardApi, noticeApi, shopApi } from '../../api'
 import { formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
 import { LOW_PRIORITY_POLL_INTERVAL_MS } from '../../constants/polling'
@@ -234,9 +337,20 @@ const pendingPaidOrders = ref([])
 const userId = ref(null)
 
 const showCardQrModal = ref(false)
+const showActionSheet = ref(false)
+const showAppointmentModal = ref(false)
 const selectedCard = ref(null)
 const cardQrCanvas = ref(null)
 const pressingCardId = ref(null)
+const appointing = ref(false)
+const loadingSlots = ref(false)
+const selectedDate = ref('')
+const selectedAppointmentProjectId = ref(null)
+const selectedTechnicianId = ref(null)
+const selectedTimeSlot = ref('')
+const timeSlots = ref([])
+const timeSlotError = ref('')
+const availableTechnicians = ref([])
 
 const prevBodyStyle = {
   userSelect: '',
@@ -311,6 +425,30 @@ const displayItems = computed(() => {
     items.push({ ...c, _type: 'card', _key: `card-${c.id}` })
   }
   return items
+})
+
+const appointmentCardTitle = computed(() => {
+  const merchantName = selectedCard.value?.merchant?.name || '商户'
+  const cardName = selectedCard.value?.card_type || '卡片'
+  return `${merchantName}-${cardName}`
+})
+
+const displayedTimeSlots = computed(() => {
+  const list = timeSlots.value || []
+  if (selectedTechnicianId.value) {
+    return list.filter(s => Array.isArray(s?.technician_ids) && s.technician_ids.includes(selectedTechnicianId.value))
+  }
+  return list
+})
+
+const displayedTechnicians = computed(() => {
+  const list = availableTechnicians.value || []
+  if (selectedTimeSlot.value && !selectedTechnicianId.value) {
+    const slot = (timeSlots.value || []).find(s => s && s.time === selectedTimeSlot.value)
+    const ids = Array.isArray(slot?.technician_ids) ? slot.technician_ids : []
+    return list.filter(t => ids.includes(t.id))
+  }
+  return list
 })
 
 const fetchCards = async () => {
@@ -395,7 +533,7 @@ const onCardTouchStart = (card) => {
   longPressTimer = setTimeout(async () => {
     suppressClickUntil.value = Date.now() + 900
     triggerHaptic()
-    await openCardQrModal(card)
+    openActionSheet(card)
   }, 820)
 }
 
@@ -453,6 +591,181 @@ const openCardQrModal = async (card) => {
     }
   } catch (e) {
     // ignore
+  }
+}
+
+const openActionSheet = (card) => {
+  selectedCard.value = card
+  showActionSheet.value = true
+}
+
+const closeActionSheet = () => {
+  showActionSheet.value = false
+}
+
+const ensureSelectedCardForAppointment = async () => {
+  const cardId = Number(selectedCard.value?.id || 0)
+  if (!cardId) return false
+
+  try {
+    const res = await cardApi.getCard(cardId)
+    const cardDetail = res.data.data || {}
+    selectedCard.value = {
+      ...selectedCard.value,
+      ...cardDetail,
+      merchant: cardDetail.merchant || selectedCard.value?.merchant || null
+    }
+  } catch (err) {
+    console.error('获取卡片详情失败:', err)
+  }
+
+  if (Array.isArray(selectedCard.value?.projects) && selectedCard.value.projects.length > 0) {
+    return true
+  }
+
+  try {
+    const res = await cardApi.getCardProjects(cardId)
+    const projects = Array.isArray(res.data.data) ? res.data.data : []
+    selectedCard.value = {
+      ...selectedCard.value,
+      projects
+    }
+  } catch (err) {
+    console.error('获取卡片项目失败:', err)
+  }
+
+  return Array.isArray(selectedCard.value?.projects) && selectedCard.value.projects.length > 0
+}
+
+const openCardQrFromAction = async () => {
+  const card = selectedCard.value
+  closeActionSheet()
+  if (!card) return
+  await openCardQrModal(card)
+}
+
+const getTomorrowDate = () => {
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return tomorrow.toISOString().slice(0, 10)
+}
+
+const resetAppointmentState = () => {
+  selectedDate.value = ''
+  selectedAppointmentProjectId.value = null
+  selectedTechnicianId.value = null
+  selectedTimeSlot.value = ''
+  timeSlots.value = []
+  timeSlotError.value = ''
+  availableTechnicians.value = []
+}
+
+const openAppointmentModalFromAction = async () => {
+  closeActionSheet()
+  if (!selectedCard.value?.merchant_id) {
+    alert('卡片信息不完整，暂时无法预约')
+    return
+  }
+
+  resetAppointmentState()
+  await ensureSelectedCardForAppointment()
+  selectedDate.value = getTomorrowDate()
+  showAppointmentModal.value = true
+}
+
+const closeAppointmentModal = () => {
+  showAppointmentModal.value = false
+  resetAppointmentState()
+}
+
+const loadTimeSlots = async (date) => {
+  if (!selectedCard.value?.merchant_id || !selectedAppointmentProjectId.value) return
+  loadingSlots.value = true
+  timeSlotError.value = ''
+  try {
+    const res = await appointmentApi.getAvailableTimeSlots(selectedCard.value.merchant_id, date, selectedAppointmentProjectId.value)
+    timeSlots.value = res.data.data.time_slots || []
+    availableTechnicians.value = res.data.data.technicians || []
+  } catch (err) {
+    timeSlots.value = []
+    availableTechnicians.value = []
+    timeSlotError.value = `获取可用时间段失败: ${err.response?.data?.error || err.message}`
+    alert(timeSlotError.value)
+  } finally {
+    loadingSlots.value = false
+  }
+}
+
+const toggleTechnician = (id) => {
+  const next = Number(id)
+  if (!next) return
+  if (selectedTechnicianId.value === next) {
+    selectedTechnicianId.value = null
+    return
+  }
+  selectedTechnicianId.value = next
+  if (selectedTimeSlot.value) {
+    const slot = (timeSlots.value || []).find(s => s && s.time === selectedTimeSlot.value)
+    const ids = Array.isArray(slot?.technician_ids) ? slot.technician_ids : []
+    if (ids.length > 0 && !ids.includes(next)) {
+      selectedTimeSlot.value = ''
+    }
+  }
+}
+
+const selectTimeSlot = (slot) => {
+  selectedTimeSlot.value = slot.time
+  if (selectedTechnicianId.value) {
+    const ids = Array.isArray(slot?.technician_ids) ? slot.technician_ids : []
+    if (ids.length > 0 && !ids.includes(selectedTechnicianId.value)) {
+      selectedTechnicianId.value = null
+    }
+  }
+}
+
+const formatSlotTime = (timeStr) => {
+  if (!timeStr) return ''
+  const date = new Date(timeStr)
+  const hours = date.getHours().toString().padStart(2, '0')
+  const minutes = date.getMinutes().toString().padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
+const confirmAppointment = async () => {
+  if (!selectedCard.value?.id || !selectedTimeSlot.value || appointing.value) return
+  if (!selectedAppointmentProjectId.value) {
+    alert('请选择项目')
+    return
+  }
+  if ((availableTechnicians.value || []).length > 0 && !selectedTechnicianId.value) {
+    const ok = window.confirm('你未选择客服，系统稍后将自动分配客服')
+    if (!ok) return
+  }
+
+  appointing.value = true
+  try {
+    const userId = localStorage.getItem('userId')
+    if (!userId) {
+      alert('请先登录')
+      router.push('/login')
+      return
+    }
+
+    await appointmentApi.createAppointment({
+      card_id: Number(selectedCard.value.id),
+      merchant_id: selectedCard.value.merchant_id,
+      user_id: parseInt(userId),
+      project_id: Number(selectedAppointmentProjectId.value),
+      technician_id: selectedTechnicianId.value ? Number(selectedTechnicianId.value) : null,
+      appointment_time: selectedTimeSlot.value
+    })
+
+    closeAppointmentModal()
+    alert('预约成功！')
+  } catch (err) {
+    alert(err.response?.data?.error || '预约失败')
+  } finally {
+    appointing.value = false
   }
 }
 
@@ -527,6 +840,14 @@ watch(currentStatus, async () => {
   await fetchPendingOrders()
 })
 
+watch(selectedAppointmentProjectId, async () => {
+  selectedTimeSlot.value = ''
+  timeSlots.value = []
+  timeSlotError.value = ''
+  if (!selectedAppointmentProjectId.value || !selectedDate.value) return
+  await loadTimeSlots(selectedDate.value)
+})
+
 onMounted(() => {
   initUser()
   fetchCards()
@@ -556,6 +877,8 @@ onUnmounted(() => {
     clearTimeout(longPressTimer)
     longPressTimer = null
   }
+
+  closeActionSheet()
 })
 </script>
 
