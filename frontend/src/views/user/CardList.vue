@@ -255,7 +255,7 @@
             <div class="text-gray-800 font-medium">{{ appointmentGuideText }}</div>
           </div>
 
-          <div class="px-5 py-3 border-b">
+          <div class="px-5 py-3">
             <div class="text-sm font-medium text-gray-700 mb-2">选择项目</div>
             <div v-if="!selectedCard?.projects || selectedCard.projects.length === 0" class="text-gray-400 text-sm">暂无可选项目</div>
             <div v-else class="space-y-2">
@@ -285,10 +285,12 @@
             </div>
           </div>
 
-          <div class="px-5 py-4">
+          <div
+            v-if="loadingSlots || timeSlotError || selectedAppointmentProjectId"
+            class="px-5 py-3"
+          >
             <div v-if="loadingSlots" class="text-center py-8 text-gray-400">加载中...</div>
             <div v-else-if="timeSlotError" class="text-center py-8 text-gray-400">{{ timeSlotError }}</div>
-            <div v-else-if="!selectedAppointmentProjectId" class="py-2"></div>
             <div v-else-if="displayedTimeSlots.length === 0" class="text-center py-8 text-gray-400">当前所选专业客服无可用时间段</div>
             <div v-else class="grid grid-cols-2 gap-3">
               <button
@@ -307,7 +309,7 @@
           </div>
         </div>
 
-        <div class="px-5 py-4 border-t flex-shrink-0 bg-white">
+        <div class="px-5 py-3 flex-shrink-0 bg-white">
           <button
             @click="confirmAppointment"
             :disabled="!selectedAppointmentProjectId || !selectedTimeSlot || appointing"
