@@ -63,6 +63,21 @@ export const getScanStartLabel = (merchant) => {
   return `扫码${getStartBaseTerm(merchant)}`
 }
 
+export const getStartQrCodeLabel = (merchant) => {
+  if (isQueueModeMerchant(merchant)) return '扫码上号二维码'
+  return `${getStartBaseTerm(merchant)}二维码`
+}
+
+export const getStartCodePromptLabel = (merchant) => {
+  if (isQueueModeMerchant(merchant)) return '请扫描上号码'
+  return `请扫描${getStartBaseTerm(merchant)}码`
+}
+
+export const getStartSuccessLabel = (merchant, sessionId) => {
+  if (isQueueModeMerchant(merchant)) return `上号成功！服务单#${sessionId ?? '-'}，已开始计时。`
+  return `${getStartBaseTerm(merchant)}成功！服务单#${sessionId ?? '-'}，已开始计时。`
+}
+
 export const replaceTerms = (text, merchant) => {
   const t = String(text || '')
   const queueMode = isQueueModeMerchant(merchant)

@@ -504,6 +504,7 @@ import {
   getAutoFinishLabel,
   getPendingFinishLabel,
   getPendingStartLabel,
+  getStartQrCodeLabel,
   getStartCountdownLabel,
   getStartTimeoutLabel,
   replaceTerms
@@ -582,11 +583,11 @@ const usageQrTitle = computed(() => {
     return '扫码上号二维码'
   }
   
-  return replaceTerms('起单二维码', card.value?.merchant)
+  return getStartQrCodeLabel(card.value?.merchant)
 })
 
 const usageQrAlt = computed(() => {
-  return replaceTerms('起单二维码', card.value?.merchant)
+  return getStartQrCodeLabel(card.value?.merchant)
 })
 
 let usageLongPressTimer = null

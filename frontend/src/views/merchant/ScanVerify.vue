@@ -71,7 +71,7 @@ import { cardApi } from '../../api'
 import PwaInstallGuide from '../../components/PwaInstallGuide.vue'
 
 import { getMerchantToken } from '../../utils/auth'
-import { replaceTerms } from '../../utils/terms'
+import { getScanStartLabel, getStartCodePromptLabel, getStartSuccessLabel, replaceTerms } from '../../utils/terms'
 
 const router = useRouter()
 const route = useRoute()
@@ -240,7 +240,7 @@ const onDecoded = async (decodedText) => {
   // 开始服务专用模式：仅允许 SS:<session_id>
   if (isStartOnlyMode() && !code.startsWith('SS:')) {
     resultSuccess.value = false
-    resultText.value = replaceTerms('请扫描起单码', routeTermMerchant.value)
+    resultText.value = getStartCodePromptLabel(routeTermMerchant.value)
     return
   }
 
@@ -294,7 +294,7 @@ const handleCommitSuccess = (data) => {
   resultSuccess.value = true
   if (action === 'start') {
     const sid = data?.session_id
-    resultText.value = replaceTerms(`起单成功！服务单#${sid ?? '-'}，已开始计时。`, routeTermMerchant.value)
+    resultText.value = getStartSuccessLabel(routeTermMerchant.value, sid)
   } else {
     const remainTimes = data?.remain_times
     resultText.value = `核销成功！剩余次数: ${remainTimes ?? '-'}`
@@ -316,7 +316,7 @@ const handleCommitSuccess = (data) => {
 onMounted(() => {
   mode.value = String(route.query.mode || 'verify')
   pageTitle.value = isStartOnlyMode()
-    ? replaceTerms('扫码起单', routeTermMerchant.value)
+    ? getScanStartLabel(routeTermMerchant.value)
     : replaceTerms('扫码核销', routeTermMerchant.value)
 
   const token = getMerchantToken()
