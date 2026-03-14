@@ -903,7 +903,7 @@
 
         <div v-if="isTechnicianAuth()" class="mt-4 space-y-3">
           <div v-if="isTechnicianNotCheckedIn" class="w-full py-3 bg-gray-100 text-gray-600 rounded-lg text-center">
-            {{ `上班签到后 才可${getMerchantScanStartLabel()}` }}
+            {{ attendanceBlockedHint }}
           </div>
           <button
             v-else
@@ -913,10 +913,6 @@
             {{ getMerchantScanStartLabel() }}
           </button>
         </div>
-      </div>
-
-      <div v-if="queueBlockedByAttendance" class="w-full py-3 bg-gray-100 text-gray-600 rounded-lg text-center">
-        上班签到后 才可进行叫号
       </div>
 
       <!-- 叫号控制（专业客服端） -->
@@ -1923,6 +1919,13 @@ const queueBlockedByAttendance = computed(() => {
   const roleRequiresAttendance = typeof requireAttendance === 'boolean' ? requireAttendance : true
   if (!roleRequiresAttendance) return false
   return isTechnicianNotCheckedIn.value
+})
+
+const attendanceBlockedHint = computed(() => {
+  if (isQueueModeView.value && queueBlockedByAttendance.value) {
+    return '上班签到后 才可进行叫号和扫码上号'
+  }
+  return `上班签到后 才可${getMerchantScanStartLabel()}`
 })
 
 const queueCallQueueNoText = computed(() => {
