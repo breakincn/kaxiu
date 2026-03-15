@@ -313,11 +313,45 @@
 
         <div class="px-5 py-3 flex-shrink-0 bg-white">
           <button
-            @click="confirmAppointment"
+            @click="openAppointmentConfirmModal"
             :disabled="!selectedAppointmentProjectId || !selectedTimeSlot || appointing"
             class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {{ appointing ? '预约中...' : '确认预约' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showAppointmentConfirmModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]" @click.self="closeAppointmentConfirmModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-md overflow-hidden">
+        <div class="px-5 py-4 border-b">
+          <h3 class="text-lg font-medium text-gray-800">确认预约</h3>
+        </div>
+        <div class="px-5 py-4 space-y-3 text-sm text-gray-700">
+          <div>项目：{{ selectedAppointmentProjectName }}</div>
+          <div>客服：{{ selectedTechnicianDisplayName }}</div>
+          <div>时间：{{ selectedAppointmentTimeText }}</div>
+          <div v-if="shouldAutoAssignTechnician" class="text-orange-600">
+            未选择专业客服，提交后系统将自动分配客服。
+          </div>
+        </div>
+        <div class="px-5 py-4 flex gap-3 bg-white">
+          <button
+            type="button"
+            @click="closeAppointmentConfirmModal"
+            :disabled="appointing"
+            class="flex-1 py-3 rounded-lg border border-gray-200 text-gray-700 font-medium disabled:opacity-50"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            @click="confirmAppointment"
+            :disabled="appointing"
+            class="flex-1 py-3 rounded-lg bg-primary text-white font-medium disabled:opacity-50"
+          >
+            {{ appointing ? '预约中...' : '确认' }}
           </button>
         </div>
       </div>
@@ -343,10 +377,12 @@ const userId = ref(null)
 const showCardQrModal = ref(false)
 const showActionSheet = ref(false)
 const showAppointmentModal = ref(false)
+const showAppointmentConfirmModal = ref(false)
 const selectedCard = ref(null)
 const cardQrCanvas = ref(null)
 const pressingCardId = ref(null)
 const appointing = ref(false)
+const preparingAppointmentModal = ref(false)
 const loadingSlots = ref(false)
 const selectedDate = ref('')
 const selectedAppointmentProjectId = ref(null)
@@ -438,6 +474,29 @@ const appointmentCardTitle = computed(() => {
 })
 
 const appointmentModalTitle = computed(() => `预约 ${appointmentCardTitle.value}`)
+
+const selectedAppointmentProject = computed(() => {
+  const list = selectedCard.value?.projects || []
+  return list.find(p => Number(p.id) === Number(selectedAppointmentProjectId.value)) || null
+})
+
+const selectedAppointmentProjectName = computed(() => {
+  return selectedAppointmentProject.value?.name || '-'
+})
+
+const selectedTechnicianDisplayName = computed(() => {
+  if (!availableTechnicians.value.length) return '系统自动分配'
+  const t = (availableTechnicians.value || []).find(item => Number(item.id) === Number(selectedTechnicianId.value))
+  return t?.name || '系统自动分配'
+})
+
+const shouldAutoAssignTechnician = computed(() => {
+  return (availableTechnicians.value || []).length > 0 && !selectedTechnicianId.value
+})
+
+const selectedAppointmentTimeText = computed(() => {
+  return selectedTimeSlot.value ? formatSlotTime(selectedTimeSlot.value) : '-'
+})
 
 const displayedTimeSlots = computed(() => {
   const list = timeSlots.value || []
@@ -664,6 +723,7 @@ const resetAppointmentState = () => {
   timeSlots.value = []
   timeSlotError.value = ''
   availableTechnicians.value = []
+  showAppointmentConfirmModal.value = false
 }
 
 const openAppointmentModalFromAction = async () => {
@@ -674,8 +734,18 @@ const openAppointmentModalFromAction = async () => {
   }
 
   resetAppointmentState()
-  await ensureSelectedCardForAppointment()
   selectedDate.value = getTomorrowDate()
+  await ensureSelectedCardForAppointment()
+  const projects = selectedCard.value?.projects || []
+  if (projects.length > 0) {
+    preparingAppointmentModal.value = true
+    try {
+      selectedAppointmentProjectId.value = Number(projects[0].id)
+      await loadTimeSlots(selectedDate.value)
+    } finally {
+      preparingAppointmentModal.value = false
+    }
+  }
   showAppointmentModal.value = true
 }
 
@@ -692,6 +762,14 @@ const loadTimeSlots = async (date) => {
     const res = await appointmentApi.getAvailableTimeSlots(selectedCard.value.merchant_id, date, selectedAppointmentProjectId.value)
     timeSlots.value = res.data.data.time_slots || []
     availableTechnicians.value = res.data.data.technicians || []
+    if (selectedTimeSlot.value) {
+      const stillExists = timeSlots.value.some(slot => slot?.time === selectedTimeSlot.value)
+      if (!stillExists) selectedTimeSlot.value = ''
+    }
+    if (selectedTechnicianId.value) {
+      const stillExists = availableTechnicians.value.some(item => Number(item.id) === Number(selectedTechnicianId.value))
+      if (!stillExists) selectedTechnicianId.value = null
+    }
   } catch (err) {
     timeSlots.value = []
     availableTechnicians.value = []
@@ -743,10 +821,6 @@ const confirmAppointment = async () => {
     alert('请选择项目')
     return
   }
-  if ((availableTechnicians.value || []).length > 0 && !selectedTechnicianId.value) {
-    const ok = window.confirm('你未选择客服，系统稍后将自动分配客服')
-    if (!ok) return
-  }
 
   appointing.value = true
   try {
@@ -766,13 +840,27 @@ const confirmAppointment = async () => {
       appointment_time: selectedTimeSlot.value
     })
 
+    closeAppointmentConfirmModal()
     closeAppointmentModal()
-    alert('预约成功！')
   } catch (err) {
     alert(err.response?.data?.error || '预约失败')
   } finally {
     appointing.value = false
   }
+}
+
+const openAppointmentConfirmModal = () => {
+  if (!selectedCard.value?.id || !selectedTimeSlot.value || appointing.value) return
+  if (!selectedAppointmentProjectId.value) {
+    alert('请选择项目')
+    return
+  }
+  showAppointmentConfirmModal.value = true
+}
+
+const closeAppointmentConfirmModal = () => {
+  if (appointing.value) return
+  showAppointmentConfirmModal.value = false
 }
 
 const closeCardQrModal = () => {
@@ -847,6 +935,7 @@ watch(currentStatus, async () => {
 })
 
 watch(selectedAppointmentProjectId, async () => {
+  if (preparingAppointmentModal.value) return
   selectedTimeSlot.value = ''
   timeSlots.value = []
   timeSlotError.value = ''
