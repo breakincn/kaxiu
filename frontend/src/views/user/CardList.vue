@@ -193,10 +193,10 @@
             生成核销码
           </button>
           <button
-            @click="openAppointmentModalFromAction"
+            @click="handleAppointmentAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
           >
-            我要预约
+            {{ hasActiveAppointment ? '查看预约' : '我要预约' }}
           </button>
           <button
             @click="openCardQrFromAction"
@@ -455,6 +455,7 @@ const verifyCode = ref('')
 const codeExpireTime = ref('')
 const verifyQrDataUrl = ref('')
 const verifyCodeProject = ref(null)
+const hasActiveAppointment = ref(false)
 const appointing = ref(false)
 const preparingAppointmentModal = ref(false)
 const loadingSlots = ref(false)
@@ -737,11 +738,32 @@ const openCardQrModal = async (card) => {
 
 const openActionSheet = (card) => {
   selectedCard.value = card
+  hasActiveAppointment.value = false
   showActionSheet.value = true
+  fetchCardAppointmentStatus(card?.id)
 }
 
 const closeActionSheet = () => {
   showActionSheet.value = false
+}
+
+const fetchCardAppointmentStatus = async (cardId) => {
+  const id = Number(cardId || 0)
+  if (!id) {
+    hasActiveAppointment.value = false
+    return
+  }
+
+  try {
+    const res = await appointmentApi.getCardAppointment(id)
+    const appointment = res?.data?.data?.appointment
+    hasActiveAppointment.value = Boolean(
+      appointment &&
+      ['pending', 'confirmed'].includes(String(appointment.status || '').trim())
+    )
+  } catch (_) {
+    hasActiveAppointment.value = false
+  }
 }
 
 const closeVerifyProjectModal = () => {
@@ -889,6 +911,19 @@ const openVerifyCodeFlowFromAction = async () => {
   } finally {
     generatingVerifyCode.value = false
   }
+}
+
+const handleAppointmentAction = async () => {
+  const cardId = Number(selectedCard.value?.id || 0)
+  closeActionSheet()
+  if (!cardId) return
+
+  if (hasActiveAppointment.value) {
+    router.push(`/user/cards/${cardId}`)
+    return
+  }
+
+  await openAppointmentModalFromAction()
 }
 
 const confirmVerifyProjectAndGenerate = async () => {
