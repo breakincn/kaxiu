@@ -266,11 +266,11 @@
           </div>
 
           <div
-            v-if="availableTechnicians.length > 0"
+            v-if="availableTechnicians.length > 0 || loadingSlots"
             :class="selectedAppointmentProjectId ? 'px-5 py-4 border-b' : 'px-5 py-4'"
           >
             <div class="text-sm font-medium text-gray-700 mb-2">选择专业客服</div>
-            <div class="flex flex-wrap gap-2">
+            <div v-if="availableTechnicians.length > 0" class="flex flex-wrap gap-2">
               <button
                 v-for="t in displayedTechnicians"
                 :key="t.id"
@@ -282,31 +282,39 @@
                 {{ t.name }}
               </button>
             </div>
+            <div v-else class="h-10"></div>
           </div>
 
           <div
-            v-if="loadingSlots || timeSlotError || selectedAppointmentProjectId"
+            v-if="selectedAppointmentProjectId"
             class="px-5 py-3"
           >
-            <div v-if="selectedAppointmentProjectId && !loadingSlots && !timeSlotError" class="text-sm font-medium text-gray-700 mb-3">
+            <div class="text-sm font-medium text-gray-700 mb-3">
               选择预约时间
             </div>
-            <div v-if="loadingSlots" class="text-center py-8 text-gray-400">加载中...</div>
-            <div v-else-if="timeSlotError" class="text-center py-8 text-gray-400">{{ timeSlotError }}</div>
-            <div v-else-if="displayedTimeSlots.length === 0" class="text-center py-8 text-gray-400">当前所选专业客服无可用时间段</div>
-            <div v-else class="grid grid-cols-2 gap-3">
-              <button
-                v-for="slot in displayedTimeSlots"
-                :key="slot.time"
-                @click="selectTimeSlot(slot)"
-                :class="{
-                  'bg-primary text-white': selectedTimeSlot === slot.time,
-                  'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary': selectedTimeSlot !== slot.time
-                }"
-                class="py-3 px-4 rounded-lg font-medium transition-all"
+            <div class="relative min-h-[220px]">
+              <div v-if="timeSlotError && !loadingSlots" class="text-center py-8 text-gray-400">{{ timeSlotError }}</div>
+              <div v-else-if="displayedTimeSlots.length === 0 && !loadingSlots" class="text-center py-8 text-gray-400">当前所选专业客服无可用时间段</div>
+              <div v-else class="grid grid-cols-2 gap-3" :class="loadingSlots ? 'opacity-60 pointer-events-none' : ''">
+                <button
+                  v-for="slot in displayedTimeSlots"
+                  :key="slot.time"
+                  @click="selectTimeSlot(slot)"
+                  :class="{
+                    'bg-primary text-white': selectedTimeSlot === slot.time,
+                    'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary': selectedTimeSlot !== slot.time
+                  }"
+                  class="py-3 px-4 rounded-lg font-medium transition-all"
+                >
+                  <div>{{ formatSlotTime(slot.time) }}</div>
+                </button>
+              </div>
+              <div
+                v-if="loadingSlots"
+                class="absolute inset-0 flex items-center justify-center bg-white/60 text-gray-400"
               >
-                <div>{{ formatSlotTime(slot.time) }}</div>
-              </button>
+                加载中...
+              </div>
             </div>
           </div>
         </div>
@@ -944,7 +952,6 @@ watch(currentStatus, async () => {
 watch(selectedAppointmentProjectId, async () => {
   if (preparingAppointmentModal.value) return
   selectedTimeSlot.value = ''
-  timeSlots.value = []
   timeSlotError.value = ''
   if (!selectedAppointmentProjectId.value || !selectedDate.value) return
   await loadTimeSlots(selectedDate.value)
