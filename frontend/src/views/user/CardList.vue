@@ -826,6 +826,7 @@ const confirmAppointment = async () => {
   try {
     const userId = localStorage.getItem('userId')
     if (!userId) {
+      closeAllAppointmentModals()
       alert('请先登录')
       router.push('/login')
       return
@@ -843,6 +844,7 @@ const confirmAppointment = async () => {
     closeAppointmentConfirmModal()
     closeAppointmentModal()
   } catch (err) {
+    closeAllAppointmentModals()
     alert(err.response?.data?.error || '预约失败')
   } finally {
     appointing.value = false
@@ -861,6 +863,11 @@ const openAppointmentConfirmModal = () => {
 const closeAppointmentConfirmModal = () => {
   if (appointing.value) return
   showAppointmentConfirmModal.value = false
+}
+
+const closeAllAppointmentModals = () => {
+  showAppointmentConfirmModal.value = false
+  showAppointmentModal.value = false
 }
 
 const closeCardQrModal = () => {
