@@ -185,16 +185,22 @@
           <div class="text-gray-800 font-medium">{{ selectedCard?.merchant?.name || '商户' }}</div>
           <div class="text-gray-500 text-sm mt-1">{{ selectedCard?.card_type || '' }}</div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
+        <div class="space-y-3">
+          <button
+            @click="openVerifyCodeFlowFromAction"
+            class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
+          >
+            生成核销码
+          </button>
           <button
             @click="openAppointmentModalFromAction"
-            class="py-3 rounded-xl border-2 border-primary text-primary font-medium"
+            class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
           >
             我要预约
           </button>
           <button
             @click="openCardQrFromAction"
-            class="py-3 rounded-xl bg-primary text-white font-medium"
+            class="w-full py-3 rounded-xl bg-primary text-white font-medium"
           >
             查看二维码
           </button>
@@ -235,6 +241,58 @@
           <div class="mt-4 text-center text-gray-400 text-xs">
             请向商户出示此二维码用于查询卡片
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showVerifyProjectModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[55]" @click.self="closeVerifyProjectModal">
+      <div class="bg-white rounded-xl w-[90%] max-w-sm overflow-hidden">
+        <div class="px-4 py-3 border-b flex items-center justify-between">
+          <div class="font-medium text-gray-800">请选择项目</div>
+          <button class="text-gray-400" @click="closeVerifyProjectModal">×</button>
+        </div>
+        <div class="p-4 max-h-[60vh] overflow-y-auto">
+          <div v-if="!selectedCard?.projects || selectedCard.projects.length === 0" class="text-center text-gray-400 py-6">暂无可选项目</div>
+          <label v-for="p in selectedCard.projects" :key="p.id" class="flex items-center gap-3 py-2">
+            <input type="radio" name="verify_project" :value="p.id" v-model="selectedVerifyProjectId" />
+            <div class="flex-1">
+              <div class="text-gray-800">{{ p.name }}</div>
+              <div v-if="p.duration" class="text-gray-400 text-xs">时长 {{ p.duration }} 分钟</div>
+            </div>
+          </label>
+        </div>
+        <div class="px-4 py-3 border-t flex gap-3">
+          <button class="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600" @click="closeVerifyProjectModal">取消</button>
+          <button class="flex-1 py-2.5 rounded-lg bg-primary text-white disabled:opacity-50" :disabled="!selectedVerifyProjectId || generatingVerifyCode" @click="confirmVerifyProjectAndGenerate">确认</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showVerifyCodeModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[55]" @click.self="closeVerifyCodeModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-lg overflow-hidden">
+        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
+          <h3 class="font-medium text-lg">到店出示核销码</h3>
+          <button @click="closeVerifyCodeModal" class="text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="px-5 py-5">
+          <div class="text-center">
+            <div class="text-gray-800 font-medium">{{ selectedCard?.merchant?.name || '商户' }}</div>
+            <div class="text-gray-500 text-sm mt-1">{{ selectedCard?.card_type || '' }}</div>
+          </div>
+          <div v-if="verifyQrDataUrl" class="mt-4 flex justify-center">
+            <img :src="verifyQrDataUrl" alt="核销二维码" class="w-56 h-56" />
+          </div>
+          <div v-if="verifyCodeProject" class="text-center text-gray-800 text-sm mt-3 font-medium">
+            {{ verifyCodeProject.name }}
+            <span v-if="verifyCodeProject.duration" class="text-gray-500">（{{ verifyCodeProject.duration }}分钟）</span>
+          </div>
+          <p v-if="codeExpireTime" class="text-center text-gray-400 text-sm mt-2">
+            有效期至 {{ codeExpireTime }}
+          </p>
         </div>
       </div>
     </div>
@@ -384,11 +442,19 @@ const userId = ref(null)
 
 const showCardQrModal = ref(false)
 const showActionSheet = ref(false)
+const showVerifyProjectModal = ref(false)
+const showVerifyCodeModal = ref(false)
 const showAppointmentModal = ref(false)
 const showAppointmentConfirmModal = ref(false)
 const selectedCard = ref(null)
 const cardQrCanvas = ref(null)
 const pressingCardId = ref(null)
+const generatingVerifyCode = ref(false)
+const selectedVerifyProjectId = ref(null)
+const verifyCode = ref('')
+const codeExpireTime = ref('')
+const verifyQrDataUrl = ref('')
+const verifyCodeProject = ref(null)
 const appointing = ref(false)
 const preparingAppointmentModal = ref(false)
 const loadingSlots = ref(false)
@@ -676,6 +742,20 @@ const closeActionSheet = () => {
   showActionSheet.value = false
 }
 
+const closeVerifyProjectModal = () => {
+  if (generatingVerifyCode.value) return
+  showVerifyProjectModal.value = false
+  selectedVerifyProjectId.value = null
+}
+
+const closeVerifyCodeModal = () => {
+  showVerifyCodeModal.value = false
+  verifyCode.value = ''
+  codeExpireTime.value = ''
+  verifyQrDataUrl.value = ''
+  verifyCodeProject.value = null
+}
+
 const ensureSelectedCardForAppointment = async () => {
   const cardId = Number(selectedCard.value?.id || 0)
   if (!cardId) return false
@@ -708,6 +788,63 @@ const ensureSelectedCardForAppointment = async () => {
   }
 
   return Array.isArray(selectedCard.value?.projects) && selectedCard.value.projects.length > 0
+}
+
+const doGenerateVerifyCode = async (projectId) => {
+  const payload = projectId ? { project_id: Number(projectId) } : undefined
+  const res = await cardApi.generateVerifyCode(Number(selectedCard.value.id), payload)
+  verifyCode.value = res.data.data.code
+  const expireAt = new Date(res.data.data.expire_at * 1000)
+  codeExpireTime.value = expireAt.toLocaleTimeString()
+
+  if (projectId) {
+    verifyCodeProject.value = (selectedCard.value?.projects || []).find(p => Number(p.id) === Number(projectId)) || null
+  } else {
+    verifyCodeProject.value = null
+  }
+
+  verifyQrDataUrl.value = await QRCode.toDataURL(verifyCode.value, {
+    margin: 1,
+    scale: 8,
+    errorCorrectionLevel: 'M'
+  })
+}
+
+const openVerifyCodeFlowFromAction = async () => {
+  closeActionSheet()
+  if (!selectedCard.value?.id) return
+  await ensureSelectedCardForAppointment()
+  const projects = selectedCard.value?.projects || []
+  if (projects.length > 1) {
+    selectedVerifyProjectId.value = null
+    showVerifyProjectModal.value = true
+    return
+  }
+
+  generatingVerifyCode.value = true
+  try {
+    const onlyProjectId = projects.length === 1 ? projects[0].id : null
+    await doGenerateVerifyCode(onlyProjectId)
+    showVerifyCodeModal.value = true
+  } catch (err) {
+    alert(err.response?.data?.error || '生成核销码失败')
+  } finally {
+    generatingVerifyCode.value = false
+  }
+}
+
+const confirmVerifyProjectAndGenerate = async () => {
+  if (!selectedVerifyProjectId.value || generatingVerifyCode.value) return
+  generatingVerifyCode.value = true
+  try {
+    await doGenerateVerifyCode(selectedVerifyProjectId.value)
+    showVerifyProjectModal.value = false
+    showVerifyCodeModal.value = true
+  } catch (err) {
+    alert(err.response?.data?.error || '生成核销码失败')
+  } finally {
+    generatingVerifyCode.value = false
+  }
 }
 
 const openCardQrFromAction = async () => {
