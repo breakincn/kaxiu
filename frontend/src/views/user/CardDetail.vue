@@ -83,8 +83,8 @@
       </div>
     </div>
 
-    <!-- 预约排队区域 -->
-    <div v-if="card.merchant?.support_appointment && !card?.locked" class="px-4 mt-4">
+    <!-- 预约状态展示：仅保留查看，不再在详情页提供入口操作 -->
+    <div v-if="card.merchant?.support_appointment && !card?.locked && appointment" class="px-4 mt-4">
       <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center gap-2 mb-3">
           <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -92,8 +92,8 @@
           </svg>
           <span class="font-medium text-gray-800">预约排队</span>
         </div>
-        
-        <div v-if="appointment" class="space-y-3">
+
+        <div class="space-y-3">
           <div class="flex justify-between items-center">
             <div>
               <span class="text-gray-500">我的预约</span>
@@ -133,8 +133,7 @@
             </div>
           </div>
           <p class="text-xs text-gray-400">* 排队进度由商户服务确认后即时更新</p>
-          
-          <!-- 取消预约按钮 -->
+
           <button
             @click="cancelAppointment"
             :disabled="cancelButtonDisabled"
@@ -142,71 +141,6 @@
           >
             {{ cancelButtonText }}
           </button>
-        </div>
-        
-        <div v-else class="text-center">
-          <button
-            @click="showAppointmentModal"
-            :disabled="appointing"
-            class="w-full py-3 border-2 border-primary text-primary font-medium rounded-lg hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            我要预约
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 核销码区域 -->
-    <div v-if="!card?.locked && shouldShowVerifyCode()" class="px-4 mt-4">
-      <div class="bg-white rounded-xl p-4 shadow-sm">
-        <div class="text-center text-gray-600 mb-3">到店出示核销码</div>
-        <button
-          @click="generateCode"
-          :disabled="generating || card.remain_times <= 0"
-          class="w-full py-3 border-2 border-primary text-primary font-medium rounded-lg hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {{ generating ? '生成中...' : (verifyCode ? verifyCode : '生成核销码') }}
-        </button>
-
-			<div v-if="verifyQrDataUrl" class="mt-4 flex justify-center">
-				<img :src="verifyQrDataUrl" alt="核销二维码" class="w-48 h-48" />
-			</div>
-			
-			<!-- 当前核销次数 -->
-			<div v-if="card && verifyQrDataUrl" class="mt-3 text-center text-sm text-gray-700 font-medium">
-				第{{ card.total_times - card.remain_times + 1 }}次核销
-			</div>
-			
-			<div v-if="verifyCodeProject" class="text-center text-gray-800 text-sm mt-3 font-medium">
-				{{ verifyCodeProject.name }}
-				<span v-if="verifyCodeProject.duration" class="text-gray-500">（{{ verifyCodeProject.duration }}分钟）</span>
-			</div>
-        <p v-if="codeExpireTime" class="text-center text-gray-400 text-sm mt-2">
-          有效期至 {{ codeExpireTime }}
-        </p>
-      </div>
-    </div>
-
-    <!-- 选择项目弹窗（多项目时生成核销码前选择） -->
-    <div v-if="showProjectModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="closeProjectModal">
-      <div class="bg-white rounded-xl w-[90%] max-w-sm overflow-hidden">
-        <div class="px-4 py-3 border-b flex items-center justify-between">
-          <div class="font-medium text-gray-800">请选择项目</div>
-          <button class="text-gray-400" @click="closeProjectModal">×</button>
-        </div>
-        <div class="p-4 max-h-[60vh] overflow-y-auto">
-          <div v-if="!card.projects || card.projects.length === 0" class="text-center text-gray-400 py-6">暂无可选项目</div>
-          <label v-for="p in card.projects" :key="p.id" class="flex items-center gap-3 py-2">
-            <input type="radio" name="project" :value="p.id" v-model="selectedProjectId" />
-            <div class="flex-1">
-              <div class="text-gray-800">{{ p.name }}</div>
-              <div v-if="p.duration" class="text-gray-400 text-xs">时长 {{ p.duration }} 分钟</div>
-            </div>
-          </label>
-        </div>
-        <div class="px-4 py-3 border-t flex gap-3">
-          <button class="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600" @click="closeProjectModal">取消</button>
-          <button class="flex-1 py-2.5 rounded-lg bg-primary text-white disabled:opacity-50" :disabled="!selectedProjectId || generating" @click="confirmProjectAndGenerate">确认</button>
         </div>
       </div>
     </div>
