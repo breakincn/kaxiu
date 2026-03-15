@@ -845,14 +845,43 @@ const stopVerifyStatusPoll = () => {
 
 const closeAllOverlayModals = () => {
   showActionSheet.value = false
+  showCardQrModal.value = false
   showVerifyProjectModal.value = false
-  closeVerifyCodeModal()
-  closeAllAppointmentModals()
+  showVerifyCodeModal.value = false
+  showAppointmentConfirmModal.value = false
+  showAppointmentModal.value = false
+  stopVerifyStatusPoll()
+  verifyCode.value = ''
+  codeExpireTime.value = ''
+  verifyQrDataUrl.value = ''
+  verifyCodeProject.value = null
+  selectedVerifyProjectId.value = null
+  selectedAppointmentProjectId.value = null
+  selectedTechnicianId.value = null
+  selectedTimeSlot.value = ''
+  timeSlots.value = []
+  timeSlotError.value = ''
+  availableTechnicians.value = []
+  hasActiveAppointment.value = false
+  pressingCardId.value = null
+  selectedCard.value = null
+  try {
+    document.documentElement.classList.remove('kb-no-select')
+    document.body.classList.remove('kb-no-select')
+    document.body.style.userSelect = prevBodyStyle.userSelect
+    document.body.style.webkitUserSelect = prevBodyStyle.webkitUserSelect
+    document.body.style.webkitTouchCallout = prevBodyStyle.webkitTouchCallout
+  } catch (_) {
+    // ignore
+  }
 }
 
 const waitForOverlayClosePaint = async () => {
   await nextTick()
-  await new Promise(resolve => requestAnimationFrame(() => resolve()))
+  await new Promise(resolve => requestAnimationFrame(() => {
+    requestAnimationFrame(() => resolve())
+  }))
+  await new Promise(resolve => setTimeout(resolve, 80))
 }
 
 const handlePageRestoreCleanup = () => {
