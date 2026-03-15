@@ -12,7 +12,7 @@
 
     <!-- 卡片详情与营业时间 -->
     <div ref="usagesAnchor" class="px-4 mt-4">
-      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+      <div ref="cardSummarySection" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center gap-2 mb-4">
           <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
@@ -2181,6 +2181,7 @@ const onUsageTouchEnd = () => {
 
 const noticeAnchor = ref(null)
 const appointmentAnchor = ref(null)
+const cardSummarySection = ref(null)
 const usagesAnchor = ref(null)
 const shouldShowBottomSpacer = ref(false)
 
@@ -2918,75 +2919,31 @@ const getBottomSpacerHeight = () => {
   return `${minSpacerHeight}px`
 }
 
-const scrollToNotice = async () => {
-  // 等待DOM更新，包括动态占位元素的渲染
-  await nextTick()
-  // 再次等待，确保占位元素高度计算完成
-  await new Promise(resolve => setTimeout(resolve, 100))
-  
-  const el = noticeAnchor.value
-  if (!el) return
-  try {
-    // 获取元素的位置信息
-    const rect = el.getBoundingClientRect()
-    // 计算目标滚动位置：元素顶部 + 当前滚动位置 - 4px偏移
-    const targetScrollTop = rect.top + window.scrollY - 4
-
-    // 平滑滚动到目标位置
-    window.scrollTo({
-      top: targetScrollTop,
-      behavior: 'smooth'
-    })
-  } catch (_) {
-    // 降级方案：使用 scrollIntoView
-    try {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    } catch (_) {
-      // ignore
-    }
-  }
-}
-
-const scrollToUsages = async () => {
-  await nextTick()
-  await new Promise(resolve => setTimeout(resolve, 100))
-
-  const el = usagesAnchor.value
-  if (!el) return
-  try {
-    const rect = el.getBoundingClientRect()
-    const targetScrollTop = rect.top + window.scrollY - 12
-    window.scrollTo({
-      top: targetScrollTop,
-      behavior: 'smooth'
-    })
-  } catch (_) {
-    try {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    } catch (_) {
-      // ignore
-    }
-  }
-}
-
-const scrollToAppointment = async () => {
+const waitForScrollLayout = async () => {
   await nextTick()
   await new Promise(resolve => requestAnimationFrame(() => resolve()))
   await new Promise(resolve => setTimeout(resolve, 100))
+}
 
-  const el = appointmentAnchor.value
+const getStickyHeaderHeight = () => {
+  const header = document.querySelector('header')
+  return header?.getBoundingClientRect().height || 0
+}
+
+const smoothScrollTo = (top) => {
+  window.scrollTo({
+    top: Math.max(0, top),
+    behavior: 'smooth'
+  })
+}
+
+const scrollElementToViewportTop = async (el, offsetPx = 0) => {
+  await waitForScrollLayout()
   if (!el) return
 
   try {
-    const header = document.querySelector('header')
-    const headerHeight = header?.getBoundingClientRect().height || 0
     const rect = el.getBoundingClientRect()
-    const targetScrollTop = Math.max(0, rect.top + window.scrollY - headerHeight)
-
-    window.scrollTo({
-      top: targetScrollTop,
-      behavior: 'smooth'
-    })
+    smoothScrollTo(rect.top + window.scrollY - offsetPx)
   } catch (_) {
     try {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -2994,6 +2951,39 @@ const scrollToAppointment = async () => {
       // ignore
     }
   }
+}
+
+const scrollToAfterElementBottom = async (el, gapPx = 2) => {
+  await waitForScrollLayout()
+  if (!el) return
+
+  try {
+    const rect = el.getBoundingClientRect()
+    const targetScrollTop = rect.bottom + window.scrollY - getStickyHeaderHeight() + gapPx
+    smoothScrollTo(targetScrollTop)
+  } catch (_) {
+    try {
+      el.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    } catch (_) {
+      // ignore
+    }
+  }
+}
+
+const scrollToNotice = async () => {
+  await scrollElementToViewportTop(noticeAnchor.value, 4)
+}
+
+const scrollToUsages = async () => {
+  await scrollElementToViewportTop(usagesAnchor.value, 12)
+}
+
+const scrollToAppointment = async () => {
+  if (cardSummarySection.value) {
+    await scrollToAfterElementBottom(cardSummarySection.value, 2)
+    return
+  }
+  await scrollElementToViewportTop(appointmentAnchor.value, getStickyHeaderHeight())
 }
 
 watch(nowTick, () => {
