@@ -474,7 +474,9 @@ const prevBodyStyle = {
 
 let longPressTimer = null
 let longPressStart = null
+let verifyStatusPollTimer = null
 const suppressClickUntil = ref(0)
+const verifyStatusChecking = ref(false)
 
 const triggerHaptic = () => {
   try {
@@ -754,6 +756,7 @@ const closeVerifyCodeModal = () => {
   codeExpireTime.value = ''
   verifyQrDataUrl.value = ''
   verifyCodeProject.value = null
+  stopVerifyStatusPoll()
 }
 
 const ensureSelectedCardForAppointment = async () => {
@@ -810,6 +813,60 @@ const doGenerateVerifyCode = async (projectId) => {
   })
 }
 
+const stopVerifyStatusPoll = () => {
+  if (verifyStatusPollTimer) {
+    clearInterval(verifyStatusPollTimer)
+    verifyStatusPollTimer = null
+  }
+  verifyStatusChecking.value = false
+}
+
+const closeAllOverlayModals = () => {
+  showActionSheet.value = false
+  showVerifyProjectModal.value = false
+  closeVerifyCodeModal()
+  closeAllAppointmentModals()
+}
+
+const checkVerifyStatusAndMaybeJump = async () => {
+  if (verifyStatusChecking.value) return
+  if (!verifyCode.value) return
+
+  verifyStatusChecking.value = true
+  try {
+    const res = await cardApi.getVerifyCodeStatus(verifyCode.value)
+    const data = res?.data?.data || {}
+    if (!data.used) return
+
+    stopVerifyStatusPoll()
+    const cardId = Number(selectedCard.value?.id || 0)
+    closeAllOverlayModals()
+    if (cardId > 0) {
+      router.push(`/user/cards/${cardId}?scrollToUsages=1`)
+    }
+  } catch (_) {
+    // ignore
+  } finally {
+    verifyStatusChecking.value = false
+  }
+}
+
+const startVerifyStatusPoll = async () => {
+  stopVerifyStatusPoll()
+  if (!verifyCode.value) return
+
+  await checkVerifyStatusAndMaybeJump()
+  if (!verifyCode.value) return
+
+  verifyStatusPollTimer = setInterval(() => {
+    if (!verifyCode.value) {
+      stopVerifyStatusPoll()
+      return
+    }
+    checkVerifyStatusAndMaybeJump()
+  }, 1000)
+}
+
 const openVerifyCodeFlowFromAction = async () => {
   closeActionSheet()
   if (!selectedCard.value?.id) return
@@ -826,6 +883,7 @@ const openVerifyCodeFlowFromAction = async () => {
     const onlyProjectId = projects.length === 1 ? projects[0].id : null
     await doGenerateVerifyCode(onlyProjectId)
     showVerifyCodeModal.value = true
+    await startVerifyStatusPoll()
   } catch (err) {
     alert(err.response?.data?.error || '生成核销码失败')
   } finally {
@@ -840,6 +898,7 @@ const confirmVerifyProjectAndGenerate = async () => {
     await doGenerateVerifyCode(selectedVerifyProjectId.value)
     showVerifyProjectModal.value = false
     showVerifyCodeModal.value = true
+    await startVerifyStatusPoll()
   } catch (err) {
     alert(err.response?.data?.error || '生成核销码失败')
   } finally {
@@ -1124,6 +1183,7 @@ onUnmounted(() => {
     longPressTimer = null
   }
 
+  stopVerifyStatusPoll()
   closeActionSheet()
 })
 </script>

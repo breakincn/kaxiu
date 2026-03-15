@@ -11,7 +11,7 @@
     </header>
 
     <!-- 卡片详情 -->
-    <div class="px-4 mt-4">
+    <div ref="usagesAnchor" class="px-4 mt-4">
       <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center gap-2 mb-4">
           <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2249,6 +2249,7 @@ const onUsageTouchEnd = () => {
 }
 
 const noticeAnchor = ref(null)
+const usagesAnchor = ref(null)
 const shouldShowBottomSpacer = ref(false)
 
 // 预约弹窗相关
@@ -2428,6 +2429,10 @@ const fetchUsages = async () => {
 
       startAutoAssignPollIfNeeded()
       startUsageLivePollIfNeeded()
+
+      if (route.query.scrollToUsages === '1' && usages.value.length > 0) {
+        await scrollToUsages()
+      }
     } catch (err) {
       console.error('获取使用记录失败:', err)
     } finally {
@@ -2999,6 +3004,28 @@ const scrollToNotice = async () => {
     })
   } catch (_) {
     // 降级方案：使用 scrollIntoView
+    try {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } catch (_) {
+      // ignore
+    }
+  }
+}
+
+const scrollToUsages = async () => {
+  await nextTick()
+  await new Promise(resolve => setTimeout(resolve, 100))
+
+  const el = usagesAnchor.value
+  if (!el) return
+  try {
+    const rect = el.getBoundingClientRect()
+    const targetScrollTop = rect.top + window.scrollY - 12
+    window.scrollTo({
+      top: targetScrollTop,
+      behavior: 'smooth'
+    })
+  } catch (_) {
     try {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' })
     } catch (_) {
