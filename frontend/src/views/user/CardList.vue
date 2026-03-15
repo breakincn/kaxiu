@@ -426,7 +426,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, watch, computed, onUnmounted, nextTick, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { appointmentApi, cardApi, noticeApi, shopApi } from '../../api'
 import { formatDate } from '../../utils/dateFormat'
@@ -915,14 +915,15 @@ const openVerifyCodeFlowFromAction = async () => {
 
 const handleAppointmentAction = async () => {
   const cardId = Number(selectedCard.value?.id || 0)
-  closeActionSheet()
   if (!cardId) return
 
   if (hasActiveAppointment.value) {
+    closeAllOverlayModals()
     router.push(`/user/cards/${cardId}`)
     return
   }
 
+  closeActionSheet()
   await openAppointmentModalFromAction()
 }
 
@@ -1201,6 +1202,10 @@ onMounted(() => {
     fetchCards()
     fetchPendingOrders()
   }, LOW_PRIORITY_POLL_INTERVAL_MS)
+})
+
+onActivated(() => {
+  closeAllOverlayModals()
 })
 
 onUnmounted(() => {
