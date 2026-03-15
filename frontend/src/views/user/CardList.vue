@@ -964,7 +964,7 @@ const handleAppointmentAction = async () => {
   if (hasActiveAppointment.value) {
     closeAllOverlayModals()
     await waitForOverlayClosePaint()
-    router.push(`/user/cards/${cardId}`)
+    router.push(`/user/cards/${cardId}?scrollToAppointment=1`)
     return
   }
 

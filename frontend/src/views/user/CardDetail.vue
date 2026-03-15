@@ -82,7 +82,7 @@
 
     <!-- 预约状态展示：仅保留查看，不再在详情页提供入口操作 -->
     <div v-if="card.merchant?.support_appointment && !card?.locked && appointment" class="px-4 mt-4">
-      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+      <div ref="appointmentAnchor" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center gap-2 mb-3">
           <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -2180,6 +2180,7 @@ const onUsageTouchEnd = () => {
 }
 
 const noticeAnchor = ref(null)
+const appointmentAnchor = ref(null)
 const usagesAnchor = ref(null)
 const shouldShowBottomSpacer = ref(false)
 
@@ -2403,6 +2404,9 @@ const fetchAppointment = async () => {
       console.log('预约信息已设置:', appointment.value)
       // 启动倒计时
       startCountdownTimer()
+      if (route.query.scrollToAppointment === '1') {
+        await scrollToAppointment()
+      }
       return
     }
 
@@ -2952,6 +2956,33 @@ const scrollToUsages = async () => {
   try {
     const rect = el.getBoundingClientRect()
     const targetScrollTop = rect.top + window.scrollY - 12
+    window.scrollTo({
+      top: targetScrollTop,
+      behavior: 'smooth'
+    })
+  } catch (_) {
+    try {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } catch (_) {
+      // ignore
+    }
+  }
+}
+
+const scrollToAppointment = async () => {
+  await nextTick()
+  await new Promise(resolve => requestAnimationFrame(() => resolve()))
+  await new Promise(resolve => setTimeout(resolve, 100))
+
+  const el = appointmentAnchor.value
+  if (!el) return
+
+  try {
+    const header = document.querySelector('header')
+    const headerHeight = header?.getBoundingClientRect().height || 0
+    const rect = el.getBoundingClientRect()
+    const targetScrollTop = Math.max(0, rect.top + window.scrollY - headerHeight)
+
     window.scrollTo({
       top: targetScrollTop,
       behavior: 'smooth'
