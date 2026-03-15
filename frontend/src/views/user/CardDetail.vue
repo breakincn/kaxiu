@@ -10,7 +10,7 @@
       <span class="font-medium text-gray-800">{{ card.merchant?.name || '卡片详情' }}</span>
     </header>
 
-    <!-- 卡片详情 -->
+    <!-- 卡片详情与营业时间 -->
     <div ref="usagesAnchor" class="px-4 mt-4">
       <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center gap-2 mb-4">
@@ -64,22 +64,19 @@
           <div class="text-red-600 font-medium">卡片已锁定</div>
           <div class="text-red-500 text-sm mt-1">{{ card.locked_reason || '请联系商户处理' }}</div>
         </div>
-      </div>
-    </div>
 
-    <!-- 营业时间 -->
-    <div v-if="getMerchantBusinessHours()" class="px-4 mt-4">
-      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
-        <div class="flex items-center justify-between mb-3">
-          <div class="flex items-center gap-2">
-            <svg :class="isMerchantOpen() ? 'text-green-500' : 'text-red-500'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
-            <span class="font-medium">营业时间</span>
+        <div v-if="getMerchantBusinessHours()" class="pt-4 mt-4 border-t border-gray-100">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <svg :class="isMerchantOpen() ? 'text-green-500' : 'text-red-500'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <span class="font-medium text-gray-800">营业时间</span>
+            </div>
+            <span v-if="!isMerchantOpen()" class="bg-red-500 text-white text-sm font-medium px-3 py-1 rounded">打烊</span>
           </div>
-          <span v-if="!isMerchantOpen()" class="bg-red-500 text-white text-sm font-medium px-3 py-1 rounded">打烊</span>
+          <div class="text-sm leading-relaxed text-gray-500" v-html="getMerchantBusinessHours()"></div>
         </div>
-        <div class="text-sm leading-relaxed text-gray-500" v-html="getMerchantBusinessHours()"></div>
       </div>
     </div>
 
