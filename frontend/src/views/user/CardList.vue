@@ -251,11 +251,7 @@
         </div>
 
         <div class="overflow-y-auto flex-1">
-          <div class="px-5 pt-4 pb-3 border-b">
-            <div class="text-gray-800 font-medium">{{ appointmentGuideText }}</div>
-          </div>
-
-          <div class="px-5 py-3">
+          <div :class="availableTechnicians.length > 0 || selectedAppointmentProjectId ? 'px-5 py-4 border-b' : 'px-5 py-4'">
             <div class="text-sm font-medium text-gray-700 mb-2">选择项目</div>
             <div v-if="!selectedCard?.projects || selectedCard.projects.length === 0" class="text-gray-400 text-sm">暂无可选项目</div>
             <div v-else class="space-y-2">
@@ -269,7 +265,10 @@
             </div>
           </div>
 
-          <div v-if="availableTechnicians.length > 0" class="px-5 py-3 border-b">
+          <div
+            v-if="availableTechnicians.length > 0"
+            :class="selectedAppointmentProjectId ? 'px-5 py-4 border-b' : 'px-5 py-4'"
+          >
             <div class="text-sm font-medium text-gray-700 mb-2">选择专业客服</div>
             <div class="flex flex-wrap gap-2">
               <button
@@ -289,6 +288,9 @@
             v-if="loadingSlots || timeSlotError || selectedAppointmentProjectId"
             class="px-5 py-3"
           >
+            <div v-if="selectedAppointmentProjectId && !loadingSlots && !timeSlotError" class="text-sm font-medium text-gray-700 mb-3">
+              选择预约时间
+            </div>
             <div v-if="loadingSlots" class="text-center py-8 text-gray-400">加载中...</div>
             <div v-else-if="timeSlotError" class="text-center py-8 text-gray-400">{{ timeSlotError }}</div>
             <div v-else-if="displayedTimeSlots.length === 0" class="text-center py-8 text-gray-400">当前所选专业客服无可用时间段</div>
@@ -436,10 +438,6 @@ const appointmentCardTitle = computed(() => {
 })
 
 const appointmentModalTitle = computed(() => `预约 ${appointmentCardTitle.value}`)
-
-const appointmentGuideText = computed(() => {
-  return selectedAppointmentProjectId.value ? '请选择预约时间' : '请先选择预约项目'
-})
 
 const displayedTimeSlots = computed(() => {
   const list = timeSlots.value || []
