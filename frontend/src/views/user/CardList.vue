@@ -850,6 +850,21 @@ const closeAllOverlayModals = () => {
   closeAllAppointmentModals()
 }
 
+const waitForOverlayClosePaint = async () => {
+  await nextTick()
+  await new Promise(resolve => requestAnimationFrame(() => resolve()))
+}
+
+const handlePageRestoreCleanup = () => {
+  closeAllOverlayModals()
+}
+
+const handleVisibilityCleanup = () => {
+  if (document.visibilityState === 'visible') {
+    closeAllOverlayModals()
+  }
+}
+
 const checkVerifyStatusAndMaybeJump = async () => {
   if (verifyStatusChecking.value) return
   if (!verifyCode.value) return
@@ -919,6 +934,7 @@ const handleAppointmentAction = async () => {
 
   if (hasActiveAppointment.value) {
     closeAllOverlayModals()
+    await waitForOverlayClosePaint()
     router.push(`/user/cards/${cardId}`)
     return
   }
@@ -1193,6 +1209,8 @@ onMounted(() => {
   initUser()
   fetchCards()
   fetchPendingOrders()
+  window.addEventListener('pageshow', handlePageRestoreCleanup)
+  document.addEventListener('visibilitychange', handleVisibilityCleanup)
 
   nowTimer = setInterval(() => {
     nowTick.value = Date.now()
@@ -1223,6 +1241,8 @@ onUnmounted(() => {
     longPressTimer = null
   }
 
+  window.removeEventListener('pageshow', handlePageRestoreCleanup)
+  document.removeEventListener('visibilitychange', handleVisibilityCleanup)
   stopVerifyStatusPoll()
   closeActionSheet()
 })
