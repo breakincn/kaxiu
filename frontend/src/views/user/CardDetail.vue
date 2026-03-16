@@ -144,7 +144,7 @@
 
     <!-- 使用记录 -->
     <div class="px-4 mt-4">
-      <div class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+      <div ref="usageRecordsSection" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center justify-between mb-4">
           <div class="flex items-center gap-2">
             <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2183,6 +2183,7 @@ const noticeAnchor = ref(null)
 const appointmentAnchor = ref(null)
 const cardSummarySection = ref(null)
 const usagesAnchor = ref(null)
+const usageRecordsSection = ref(null)
 const shouldShowBottomSpacer = ref(false)
 
 // 预约弹窗相关
@@ -2975,7 +2976,12 @@ const scrollToNotice = async () => {
 }
 
 const scrollToUsages = async () => {
-  await scrollElementToViewportTop(usagesAnchor.value, 12)
+  const previousSection = appointmentAnchor.value || cardSummarySection.value
+  if (previousSection) {
+    await scrollToAfterElementBottom(previousSection, 2)
+    return
+  }
+  await scrollElementToViewportTop(usageRecordsSection.value || usagesAnchor.value, 12)
 }
 
 const scrollToAppointment = async () => {
