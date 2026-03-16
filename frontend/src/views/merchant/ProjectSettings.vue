@@ -102,10 +102,7 @@ const initialSnapshot = ref('')
 const removedProjectIds = ref([])
 
 const form = ref({
-  projects: [
-    { id: null, name: 'A 项目(课型)', duration: 45, start_delay_seconds: 60 },
-    { id: null, name: 'B 项目(课型)', duration: 60, start_delay_seconds: 60 }
-  ]
+  projects: []
 })
 
 const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
@@ -149,10 +146,7 @@ const load = async () => {
           duration: p.duration,
           start_delay_seconds: Number(p.start_delay_seconds ?? 60)
         }))
-        : [
-          { id: null, name: 'A 项目(课型)', duration: 45, start_delay_seconds: 60 },
-          { id: null, name: 'B 项目(课型)', duration: 60, start_delay_seconds: 60 }
-        ]
+        : []
     }
     initialSnapshot.value = normalizeProjectsState(form.value.projects, removedProjectIds.value)
   } catch (e) {
@@ -164,7 +158,7 @@ const load = async () => {
 }
 
 const addProject = () => {
-  form.value.projects.push({ id: null, name: '', duration: 30, start_delay_seconds: 60 })
+  form.value.projects.push({ id: null, name: '', duration: null, start_delay_seconds: null })
 }
 
 const removeProject = (index) => {
