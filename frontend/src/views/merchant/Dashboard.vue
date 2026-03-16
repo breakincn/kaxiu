@@ -113,7 +113,7 @@
     </div>
 
     <!-- 数据统计卡片 -->
-    <div v-if="visibleStatsCount > 0" class="px-4 pt-2 pb-3 grid gap-3" :class="{
+    <div v-if="visibleStatsCount > 0" class="px-4 pt-0 pb-3 grid gap-3" :class="{
       'grid-cols-1': visibleStatsCount === 1,
       'grid-cols-2': visibleStatsCount === 2,
       'grid-cols-3': visibleStatsCount === 3
