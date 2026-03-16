@@ -119,7 +119,7 @@
               </div>
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-4 pt-3 mt-3 border-t border-gray-200">
+          <div class="grid grid-cols-2 gap-4 pt-3 mt-3 border-t border-gray-100">
             <div>
               <div class="text-gray-400 text-xs">前面排队</div>
               <div class="text-2xl font-bold text-gray-800">{{ queueBefore }}<span class="text-sm font-normal">人</span></div>
