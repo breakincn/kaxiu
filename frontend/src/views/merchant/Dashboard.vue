@@ -113,7 +113,7 @@
     </div>
 
     <!-- 数据统计卡片 -->
-    <div class="px-4 py-4 grid gap-3" :class="{
+    <div v-if="visibleStatsCount > 0" class="px-4 pt-2 pb-3 grid gap-3" :class="{
       'grid-cols-1': visibleStatsCount === 1,
       'grid-cols-2': visibleStatsCount === 2,
       'grid-cols-3': visibleStatsCount === 3
@@ -135,7 +135,7 @@
         @click="selectTab('appointment')"
       >
         <div class="text-gray-600 text-sm mb-1">待确认预约</div>
-        <div class="text-3xl font-bold" :class="pendingAppointments > 0 ? 'text-orange-500' : 'text-gray-400'">{{ pendingAppointments }}</div>
+        <div class="text-3xl font-bold" :class="appointmentSummaryCount > 0 ? 'text-orange-500' : 'text-gray-400'">{{ appointmentSummaryCount }}</div>
         <div class="text-gray-500 text-sm">人</div>
       </button>
       <button
@@ -1378,7 +1378,7 @@ const canTableView = computed(() => hasMerchantPermission('merchant.table.view')
 const visibleStatsCount = computed(() => {
   let count = 0
   if (canDirectSaleManage.value && merchant.value.support_direct_sale) count++
-  if (showAppointmentTab.value) count++
+  if (showAppointmentSummaryCard.value) count++
   if (canVerify.value) count++
   return count
 })
@@ -1402,7 +1402,7 @@ const showAppointmentTab = computed(() => {
 })
 
 const showAppointmentSummaryCard = computed(() => {
-  return showAppointmentTab.value && pendingAppointments.value > 0
+  return showAppointmentTab.value && appointmentSummaryCount.value > 0
 })
 
 const showFinishTab = computed(() => {
@@ -1988,6 +1988,11 @@ const appointmentGroups = computed(() => {
     })
   }
   return groups
+})
+const appointmentSummaryCount = computed(() => {
+  if (!showAppointmentTab.value) return 0
+  if (!isTechnicianAuth()) return Number(pendingAppointments.value || 0)
+  return (appointments.value || []).filter(a => a?.status === 'pending').length
 })
 const todayUsages = ref([])
 const todayStartUsages = ref([])
