@@ -147,18 +147,28 @@
       <div ref="usageRecordsSection" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center justify-between mb-4">
           <div class="flex items-center gap-2">
-            <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-            </svg>
+            <button
+              type="button"
+              class="p-1 -m-1 text-gray-600 rounded hover:bg-gray-50"
+              @click="toggleUsageRecordsCollapsed"
+              :aria-label="usageRecordsCollapsed ? '展开使用记录' : '折叠使用记录'"
+            >
+              <svg v-if="!usageRecordsCollapsed" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6M9 8h6m2 13H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h10M4 17h16"/>
+              </svg>
+            </button>
             <span class="font-medium text-gray-800">使用记录</span>
           </div>
           <span class="text-gray-600 text-sm">
             总数{{ card.total_times }}次/剩余{{ card.remain_times }}次
           </span>
         </div>
-        <div v-if="usages.length > 0" class="space-y-2">
+        <div v-if="!usageRecordsCollapsed && usages.length > 0" class="space-y-2">
           <div
-            v-for="(usage, index) in usages"
+            v-for="(usage, index) in visibleUsages"
             :key="usage.id"
             class="grid grid-cols-[1fr_auto] items-start p-3 bg-white rounded-lg shadow-sm"
             @touchstart="(e) => onUsageTouchStart(e, usage)"
@@ -238,6 +248,20 @@
               <span class="text-gray-400 text-sm">{{ formatDateTime(usage.used_at) }}</span>
             </div>
           </div>
+          <button
+            v-if="hasMoreUsages"
+            type="button"
+            class="flex items-center gap-2 py-3 text-sm text-gray-500"
+            @click="loadMoreUsages"
+          >
+            <span>更多</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+        </div>
+        <div v-else-if="usageRecordsCollapsed" class="text-center text-gray-400 py-4">
+          使用记录已折叠
         </div>
         <div v-else class="text-center text-gray-400 py-4">
           暂无使用记录
@@ -454,6 +478,8 @@ const appointment = ref(null)
 const queueBefore = ref(0)
 const estimatedMinutes = ref(0)
 const countdown = ref(0)
+const usageRecordsCollapsed = ref(false)
+const visibleUsageCount = ref(10)
 let countdownTimer = null
 
 
@@ -2217,6 +2243,14 @@ const displayedTechnicians = computed(() => {
   return list
 })
 
+const visibleUsages = computed(() => {
+  return (usages.value || []).slice(0, visibleUsageCount.value)
+})
+
+const hasMoreUsages = computed(() => {
+  return visibleUsageCount.value < (usages.value?.length || 0)
+})
+
 const getUsageOperatorInfo = (usage) => {
   // 如果已结单，只显示服务人员
   if (usage.status === 'success' && usage.finished_at) {
@@ -2257,6 +2291,14 @@ const getUsageWindowInfo = (usage) => {
 
 const goBack = () => {
   router.push('/user/cards')
+}
+
+const toggleUsageRecordsCollapsed = () => {
+  usageRecordsCollapsed.value = !usageRecordsCollapsed.value
+}
+
+const loadMoreUsages = () => {
+  visibleUsageCount.value = Math.min(visibleUsageCount.value + 10, usages.value.length)
 }
 
 const shouldKeepUsageQrModalOpenForUsage = (usage) => {
@@ -2343,7 +2385,6 @@ const fetchUsages = async () => {
         const diffHours = (now - usedAtMs) / (1000 * 60 * 60)
         return diffHours <= 12
       })
-
       syncSelectedUsageAfterRefresh()
       clearInactiveUsageDeadlineState()
 
