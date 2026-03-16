@@ -376,7 +376,7 @@
           <!-- 项目选择（先选项目，再选时间） -->
           <div class="px-5 py-3 border-b">
             <div class="text-sm font-medium text-gray-700 mb-2">选择项目</div>
-            <div v-if="!card.projects || card.projects.length === 0" class="text-gray-400 text-sm">暂无可选项目</div>
+            <div v-if="!hasAppointmentProjects" class="text-gray-400 text-sm">当前卡片未设置项目，将按默认服务时长预约</div>
             <div v-else class="space-y-2">
               <label v-for="p in card.projects" :key="p.id" class="flex items-center gap-3">
                 <input type="radio" name="appt_project" :value="p.id" v-model="selectedAppointmentProjectId" />
@@ -414,7 +414,7 @@
               {{ timeSlotError }}
             </div>
             <div v-else-if="timeSlots.length === 0" class="text-center py-8 text-gray-400">
-              请先选择预约项目
+              暂无可预约时间段
             </div>
             <div v-else-if="displayedTimeSlots.length === 0" class="text-center py-8 text-gray-400">
               当前所选专业客服无可用时间段
@@ -440,7 +440,7 @@
         <div class="px-5 py-4 border-t flex-shrink-0 bg-white">
           <button
             @click="confirmAppointment"
-            :disabled="!selectedAppointmentProjectId || !selectedTimeSlot || appointing"
+            :disabled="!selectedTimeSlot || appointing"
             class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {{ appointing ? '预约中...' : '确认预约' }}
@@ -2246,6 +2246,10 @@ const displayedTechnicians = computed(() => {
   return list
 })
 
+const hasAppointmentProjects = computed(() => {
+  return Array.isArray(card.value?.projects) && card.value.projects.length > 0
+})
+
 const visibleUsages = computed(() => {
   return (usages.value || []).slice(0, visibleUsageCount.value)
 })
@@ -2600,6 +2604,9 @@ const showAppointmentModal = async () => {
   timeSlots.value = []
   timeSlotError.value = ''
   availableTechnicians.value = []
+  if (!hasAppointmentProjects.value) {
+    await loadTimeSlots(selectedDate.value)
+  }
 }
 
 // 关闭弹窗
@@ -2618,7 +2625,7 @@ const onAppointmentProjectChange = async () => {
   selectedTimeSlot.value = ''
   timeSlots.value = []
   timeSlotError.value = ''
-  if (!selectedAppointmentProjectId.value) return
+  if (!selectedAppointmentProjectId.value && hasAppointmentProjects.value) return
   await loadTimeSlots(selectedDate.value)
 }
 
@@ -2639,17 +2646,11 @@ const loadTimeSlots = async (date) => {
     console.error('商户ID不存在')
     return
   }
-  if (!selectedAppointmentProjectId.value) {
-    timeSlots.value = []
-    timeSlotError.value = ''
-    return
-  }
-  
   loadingSlots.value = true
   timeSlotError.value = ''
   try {
     console.log('正在获取时间段，商户ID:', card.value.merchant_id, '日期:', date)
-    const res = await appointmentApi.getAvailableTimeSlots(card.value.merchant_id, date, selectedAppointmentProjectId.value)
+    const res = await appointmentApi.getAvailableTimeSlots(card.value.merchant_id, date, selectedAppointmentProjectId.value || undefined)
     console.log('获取时间段响应:', res.data)
     timeSlots.value = res.data.data.time_slots || []
 
@@ -2712,11 +2713,6 @@ const formatTime = (timeStr) => {
 const confirmAppointment = async () => {
   if (!selectedTimeSlot.value || appointing.value) return
 
-  if (!selectedAppointmentProjectId.value) {
-    alert('请选择项目')
-    return
-  }
-
   if ((availableTechnicians.value || []).length > 0 && !selectedTechnicianId.value) {
     const ok = window.confirm('你未选择客服，系统稍后将自动分配客服')
     if (!ok) return
@@ -2731,14 +2727,18 @@ const confirmAppointment = async () => {
       return
     }
     
-    await appointmentApi.createAppointment({
+    const payload = {
       card_id: Number(route.params.id),
       merchant_id: card.value.merchant_id,
       user_id: parseInt(userId),
-      project_id: Number(selectedAppointmentProjectId.value),
       technician_id: selectedTechnicianId.value ? Number(selectedTechnicianId.value) : null,
       appointment_time: selectedTimeSlot.value
-    })
+    }
+    if (selectedAppointmentProjectId.value) {
+      payload.project_id = Number(selectedAppointmentProjectId.value)
+    }
+
+    await appointmentApi.createAppointment(payload)
     
     closeModal()
     await fetchAppointment()

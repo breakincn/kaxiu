@@ -407,7 +407,13 @@ export const appointmentApi = {
   getMerchantTechnicians: (merchantId) => api.get(`/merchant/merchants/${merchantId}/technicians`),
   getUserAppointments: (userId) => api.get(`/user/users/${userId}/appointments`),
   getCardAppointment: (cardId) => api.get(`/user/cards/${cardId}/appointment`),
-  getAvailableTimeSlots: (merchantId, date, projectId) => api.get(`/merchant/merchants/${merchantId}/available-slots`, { params: { date, project_id: projectId } }),
+  getAvailableTimeSlots: (merchantId, date, projectId) => {
+    const params = { date }
+    if (projectId) {
+      params.project_id = projectId
+    }
+    return api.get(`/merchant/merchants/${merchantId}/available-slots`, { params })
+  },
   createAppointment: (data) => api.post('/user/appointments', data),
   confirmAppointment: (id) => api.put(`/merchant/appointments/${id}/confirm`),
   finishAppointment: (id) => api.put(`/merchant/appointments/${id}/finish`),

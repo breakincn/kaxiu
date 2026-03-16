@@ -462,11 +462,10 @@ func CreateAppointment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "预约时间不在营业时间范围内"})
 		return
 	}
-	if input.ProjectID == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择项目"})
-		return
+	serviceMinutes := 30
+	if input.ProjectID != nil {
+		serviceMinutes = project.Duration
 	}
-	serviceMinutes := project.Duration
 	serviceEnd := appointmentTime.Add(time.Duration(serviceMinutes) * time.Minute)
 	if !isWithinBusinessIntervals(serviceEnd.Add(-1*time.Second), intervals) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "服务必须在营业时间内完成"})
@@ -731,20 +730,21 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持预约明天"})
 		return
 	}
-	if projectID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择项目"})
-		return
-	}
-	var project models.MerchantProject
-	if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ?", projectID, merchant.ID, true).First(&project).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
-		return
-	}
-	serviceMinutes := project.Duration
-	log.Printf("GetAvailableTimeSlots: project_id=%d duration=%d service_minutes=%d", projectID, project.Duration, serviceMinutes)
-	if serviceMinutes <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "项目时长无效"})
-		return
+	serviceMinutes := 30
+	if projectID > 0 {
+		var project models.MerchantProject
+		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ?", projectID, merchant.ID, true).First(&project).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
+			return
+		}
+		serviceMinutes = project.Duration
+		log.Printf("GetAvailableTimeSlots: project_id=%d duration=%d service_minutes=%d", projectID, project.Duration, serviceMinutes)
+		if serviceMinutes <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "项目时长无效"})
+			return
+		}
+	} else {
+		log.Printf("GetAvailableTimeSlots: project_id=0 use default service_minutes=%d", serviceMinutes)
 	}
 
 	// 懒更新：自动取消该商户已超时(>=35分钟)但未核销的预约，避免继续占用时间段
