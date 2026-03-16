@@ -329,7 +329,7 @@
     </div>
 
     <!-- 动态占位元素：仅在需要滚动到通知区域时显示，确保页面可以滚动到通知区域 -->
-    <div v-if="shouldShowBottomSpacer" :style="{ height: getBottomSpacerHeight() }"></div>
+    <div v-if="bottomSpacerHeight > 0" :style="{ height: `${bottomSpacerHeight}px` }"></div>
 
     <!-- 预约时间选择弹窗 -->
     <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeModal">
@@ -2184,7 +2184,7 @@ const appointmentAnchor = ref(null)
 const cardSummarySection = ref(null)
 const usagesAnchor = ref(null)
 const usageRecordsSection = ref(null)
-const shouldShowBottomSpacer = ref(false)
+const bottomSpacerHeight = ref(0)
 
 // 预约弹窗相关
 const showModal = ref(false)
@@ -2384,7 +2384,6 @@ const fetchNotices = async (merchantId) => {
     
     // 如果需要滚动到通知区域
     if (route.query.scrollToNotice === '1' && notices.value.length > 0) {
-      shouldShowBottomSpacer.value = true
       await scrollToNotice()
     }
   } catch (err) {
@@ -2912,14 +2911,6 @@ const getBusinessStatusColor = () => {
   return isMerchantOpen() ? 'text-green-500' : 'text-red-500'
 }
 
-const getBottomSpacerHeight = () => {
-  // 当有通知时，添加底部占位高度，确保可以滚动到通知区域
-  const windowHeight = window.innerHeight || 800
-  const estimatedContentHeight = 700 // 估算页面内容高度
-  const minSpacerHeight = Math.max(windowHeight - estimatedContentHeight, 300)
-  return `${minSpacerHeight}px`
-}
-
 const waitForScrollLayout = async () => {
   await nextTick()
   await new Promise(resolve => requestAnimationFrame(() => resolve()))
@@ -2938,13 +2929,33 @@ const smoothScrollTo = (top) => {
   })
 }
 
+const getMaxScrollTop = () => {
+  const doc = document.documentElement
+  const body = document.body
+  const scrollHeight = Math.max(
+    doc?.scrollHeight || 0,
+    body?.scrollHeight || 0
+  )
+  const viewportHeight = window.innerHeight || doc?.clientHeight || 0
+  return Math.max(0, scrollHeight - viewportHeight)
+}
+
+const ensureScrollableSpaceFor = async (targetScrollTop, bufferPx = 24) => {
+  const requiredSpacer = Math.max(0, Math.ceil(targetScrollTop - getMaxScrollTop() + bufferPx))
+  if (requiredSpacer <= bottomSpacerHeight.value) return
+  bottomSpacerHeight.value = requiredSpacer
+  await waitForScrollLayout()
+}
+
 const scrollElementToViewportTop = async (el, offsetPx = 0) => {
   await waitForScrollLayout()
   if (!el) return
 
   try {
     const rect = el.getBoundingClientRect()
-    smoothScrollTo(rect.top + window.scrollY - offsetPx)
+    const targetScrollTop = rect.top + window.scrollY - offsetPx
+    await ensureScrollableSpaceFor(targetScrollTop)
+    smoothScrollTo(targetScrollTop)
   } catch (_) {
     try {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -2961,6 +2972,7 @@ const scrollToAfterElementBottom = async (el, gapPx = 2) => {
   try {
     const rect = el.getBoundingClientRect()
     const targetScrollTop = rect.bottom + window.scrollY - getStickyHeaderHeight() + gapPx
+    await ensureScrollableSpaceFor(targetScrollTop)
     smoothScrollTo(targetScrollTop)
   } catch (_) {
     try {
@@ -2972,6 +2984,10 @@ const scrollToAfterElementBottom = async (el, gapPx = 2) => {
 }
 
 const scrollToNotice = async () => {
+  if (usageRecordsSection.value) {
+    await scrollToAfterElementBottom(usageRecordsSection.value, 2)
+    return
+  }
   await scrollElementToViewportTop(noticeAnchor.value, 4)
 }
 
@@ -3019,7 +3035,7 @@ onUnmounted(() => {
     clearTimeout(verifyExpireTimer)
     verifyExpireTimer = null
   }
-  // 重置底部占位状态
-  shouldShowBottomSpacer.value = false
+  // 重置底部占位高度
+  bottomSpacerHeight.value = 0
 })
 </script>

@@ -128,7 +128,9 @@
             <div 
               v-if="item.pinnedNotice" 
               class="pt-2 border-t border-gray-100"
-              @click.stop="goToDetailWithNotice(item.id)"
+              @touchstart.stop
+              @touchend.stop.prevent="goToDetailWithNotice(item.id)"
+              @click.stop.prevent="goToDetailWithNotice(item.id)"
             >
               <div class="flex items-center gap-2 mb-1">
                 <svg class="w-3 h-3 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -654,7 +656,14 @@ const goToDetail = (id) => {
 }
 
 const goToDetailWithNotice = (id) => {
-  router.push(`/user/cards/${id}?scrollToNotice=1`)
+  if (!id) return
+  suppressClickUntil.value = Date.now() + 500
+  router.push({
+    path: `/user/cards/${id}`,
+    query: {
+      scrollToNotice: '1'
+    }
+  })
 }
 
 const onCardClick = (id) => {
