@@ -171,11 +171,12 @@
             总数{{ card.total_times }}次/剩余{{ card.remain_times }}次
           </span>
         </div>
-        <div v-if="!usageRecordsCollapsed && usages.length > 0" class="space-y-2">
+        <div v-if="!usageRecordsCollapsed && usages.length > 0">
           <div
             v-for="(usage, index) in visibleUsages"
             :key="usage.id"
-            class="grid grid-cols-[1fr_auto] items-start p-3 bg-white rounded-lg shadow-sm"
+            class="grid grid-cols-[1fr_auto] items-start px-1 py-3"
+            :class="index > 0 ? 'border-t border-gray-100' : ''"
             @touchstart="(e) => onUsageTouchStart(e, usage)"
             @touchmove="onUsageTouchMove"
             @touchend="onUsageTouchEnd"
