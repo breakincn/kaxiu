@@ -361,7 +361,7 @@
             class="px-5 py-3"
           >
             <div class="text-sm font-medium text-gray-700 mb-3">
-              选择预约时间
+              选择明天预约时间
             </div>
             <div class="relative min-h-[220px]">
               <div v-if="timeSlotError && !loadingSlots" class="text-center py-8 text-gray-400">{{ timeSlotError }}</div>
