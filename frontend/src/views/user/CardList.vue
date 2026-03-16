@@ -91,8 +91,11 @@
                 <h3 class="text-lg font-bold">{{ item.merchant?.name }}</h3>
                 <p class="text-gray-500 text-xs mt-0.5">{{ item.card_type }}</p>
               </div>
-              <div class="bg-gray-100 px-2.5 py-0.5 rounded-full">
-                <span class="text-xs font-medium">NO: {{ item.card_no }}</span>
+              <div class="flex items-center gap-2">
+                <span v-if="item.hasAppointment" class="px-1.5 py-0.5 bg-red-500 text-white text-xs rounded flex-shrink-0">预约</span>
+                <div class="bg-gray-100 px-2.5 py-0.5 rounded-full">
+                  <span class="text-xs font-medium">NO: {{ item.card_no }}</span>
+                </div>
               </div>
             </div>
 
@@ -189,16 +192,24 @@
         </div>
         <div class="space-y-3">
           <button
+            v-if="hasActiveAppointment"
+            @click="handleAppointmentAction"
+            class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
+          >
+            查看预约
+          </button>
+          <button
             @click="openVerifyCodeFlowFromAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
           >
             生成核销码
           </button>
           <button
+            v-if="!hasActiveAppointment"
             @click="handleAppointmentAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
           >
-            {{ hasActiveAppointment ? '查看预约' : '我要预约' }}
+            我要预约
           </button>
           <button
             @click="openCardQrFromAction"
@@ -626,22 +637,36 @@ const fetchCards = async () => {
       cardsData = (cardsData || []).filter(c => !(c && c.locked))
     }
     
-    // 为每个卡片获取对应商户的置顶通知
-    for (const card of cardsData) {
-      if (card.merchant_id) {
+    const enrichedCards = await Promise.all((cardsData || []).map(async (card) => {
+      const enrichedCard = { ...card, pinnedNotice: null, hasAppointment: false }
+
+      if (enrichedCard.merchant_id) {
         try {
-          const noticesRes = await noticeApi.getMerchantNotices(card.merchant_id, 3)
+          const noticesRes = await noticeApi.getMerchantNotices(enrichedCard.merchant_id, 3)
           const notices = noticesRes.data.data || []
-          // 找到置顶通知
-          card.pinnedNotice = notices.find(n => n.is_pinned) || null
+          enrichedCard.pinnedNotice = notices.find(n => n.is_pinned) || null
         } catch (err) {
           console.error('获取通知失败:', err)
-          card.pinnedNotice = null
         }
       }
-    }
-    
-    cards.value = cardsData
+
+      if (currentStatus.value === 'active' && enrichedCard.id) {
+        try {
+          const appointmentRes = await appointmentApi.getCardAppointment(enrichedCard.id)
+          const appointment = appointmentRes?.data?.data?.appointment
+          enrichedCard.hasAppointment = Boolean(
+            appointment &&
+            ['pending', 'confirmed'].includes(String(appointment.status || '').trim())
+          )
+        } catch (_) {
+          enrichedCard.hasAppointment = false
+        }
+      }
+
+      return enrichedCard
+    }))
+
+    cards.value = enrichedCards
   } catch (err) {
     console.error('获取卡片失败:', err)
     if (err.response?.status === 401) {
