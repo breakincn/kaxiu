@@ -129,7 +129,7 @@
         <div class="text-gray-500 text-sm">单</div>
       </button>
       <button
-        v-if="showAppointmentTab"
+        v-if="showAppointmentSummaryCard"
         type="button"
         class="bg-white rounded-xl p-4 text-left border border-gray-100"
         @click="selectTab('appointment')"
@@ -247,8 +247,10 @@
 
     <!-- 预约（技师端） -->
     <div v-if="currentTab === 'appointment' && showAppointmentTab" class="px-4 py-4 space-y-4">
-      <div v-if="appointments.length > 0" class="space-y-4">
-        <div v-for="appt in appointments" :key="appt.id" class="bg-white rounded-xl p-4 shadow-sm">
+      <div v-if="appointmentGroups.length > 0" class="space-y-4">
+        <div v-for="group in appointmentGroups" :key="group.key" class="space-y-4">
+          <div v-if="group.title" class="px-1 text-sm font-medium text-gray-500">{{ group.title }}</div>
+          <div v-for="appt in group.items" :key="appt.id" class="bg-white rounded-xl p-4 shadow-sm">
           <div class="flex justify-between items-start">
             <div>
               <div class="font-medium text-gray-800">{{ appt.user?.nickname || appt.user_id }} <span class="ml-2 text-gray-500 text-sm font-normal">{{ formatAppointmentTechnicianDisplay(appt) }}</span></div>
@@ -269,7 +271,7 @@
 
           <div class="flex gap-2 mt-3">
             <!-- 技师登录才显示操作按钮；商户账号仅展示 -->
-            <template v-if="isTechnicianAuth()">
+            <template v-if="isTechnicianAuth() && canOperateAppointment(appt)">
               <button
                 v-if="appt.status === 'pending' && !isPendingExpired(appt)"
                 @click="confirmAppointment(appt.id)"
@@ -324,6 +326,7 @@
               <!-- 不渲染任何按钮 -->
             </template>
           </div>
+        </div>
         </div>
       </div>
       <div v-else class="text-center py-12 text-gray-400">
@@ -1398,6 +1401,10 @@ const showAppointmentTab = computed(() => {
     (canAppointmentView.value || canAppointmentManage.value)
 })
 
+const showAppointmentSummaryCard = computed(() => {
+  return showAppointmentTab.value && pendingAppointments.value > 0
+})
+
 const showFinishTab = computed(() => {
 	return false
 })
@@ -1952,6 +1959,36 @@ const todayVerifyCount = ref(0)
 const pendingAppointments = ref(0)
 const pendingDirectPurchases = ref(0)
 const appointments = ref([])
+const unassignedAppointments = computed(() => {
+  if (!isTechnicianAuth()) return []
+  return (appointments.value || []).filter(a => !a?.technician_id)
+})
+const assignedAppointments = computed(() => {
+  if (!isTechnicianAuth()) return appointments.value || []
+  const currentTechnicianId = getTechnicianId()
+  if (!currentTechnicianId) return []
+  return (appointments.value || []).filter(a => Number(a?.technician_id) === Number(currentTechnicianId))
+})
+const appointmentGroups = computed(() => {
+  if (!isTechnicianAuth()) {
+    return (appointments.value || []).length > 0
+      ? [{ key: 'all', title: '', items: appointments.value || [] }]
+      : []
+  }
+
+  const groups = []
+  if (unassignedAppointments.value.length > 0) {
+    groups.push({ key: 'unassigned', title: '待分配', items: unassignedAppointments.value })
+  }
+  if (assignedAppointments.value.length > 0) {
+    groups.push({
+      key: 'assigned',
+      title: unassignedAppointments.value.length > 0 ? '我的预约' : '',
+      items: assignedAppointments.value
+    })
+  }
+  return groups
+})
 const todayUsages = ref([])
 const todayStartUsages = ref([])
 const startUsagesLoading = ref(false)
@@ -3357,17 +3394,7 @@ const fetchAppointments = async () => {
   }
   try {
     const res = await appointmentApi.getMerchantAppointments(merchantId.value)
-    let list = (res.data.data || []).filter(a => a.status !== 'finished' && a.status !== 'canceled')
-    
-    // 技师登录时：只显示分配给自己的预约，不受管理权限影响
-    if (isTechnicianAuth()) {
-      const currentTechnicianId = getTechnicianId()
-      if (currentTechnicianId) {
-        list = list.filter(a => a.technician_id === currentTechnicianId)
-      }
-    }
-    
-    appointments.value = list
+    appointments.value = (res.data.data || []).filter(a => a.status !== 'finished' && a.status !== 'canceled')
   } catch (err) {
     console.error('获取预约列表失败:', err)
   }
@@ -3782,6 +3809,10 @@ const getStatusBadgeClass = (appt) => {
 const getStatusText = (appt) => {
   if (!appt) return ''
 
+  if (appt.status === 'pending' && !appt.technician) {
+    return '待分配'
+  }
+
   if (appt.status === 'pending' && isPendingExpired(appt)) {
     return '过期未确认'
   }
@@ -3877,6 +3908,13 @@ const formatAppointmentTechnicianDisplay = (appt) => {
   const right = String(account || '').trim()
   const text = `${left} ${right}`.trim()
   return text || '待分配'
+}
+
+const canOperateAppointment = (appt) => {
+  if (!isTechnicianAuth()) return false
+  const currentTechnicianId = getTechnicianId()
+  if (!currentTechnicianId) return false
+  return Number(appt?.technician_id) === Number(currentTechnicianId)
 }
 
 const getAppointmentProjectName = (appt) => {

@@ -227,7 +227,7 @@ func GetMerchantAppointments(c *gin.Context) {
 	}
 
 	if technicianID > 0 && !canManage {
-		query = query.Where("technician_id = ?", technicianID)
+		query = query.Where("(technician_id = ? OR technician_id IS NULL)", technicianID)
 	}
 
 	query.Order("appointment_time ASC").Find(&appointments)
