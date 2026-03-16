@@ -146,8 +146,8 @@
     <div class="px-4 mt-4">
       <div ref="usageRecordsSection" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div
-          class="flex items-center justify-between mb-4"
-          :class="usageRecordsCollapsed ? 'cursor-pointer' : ''"
+          class="flex items-center justify-between"
+          :class="usageRecordsCollapsed ? 'cursor-pointer mb-0' : 'mb-4'"
           @click="handleUsageHeaderClick"
         >
           <div class="flex items-center gap-2">
@@ -256,7 +256,7 @@
           <button
             v-if="hasMoreUsages"
             type="button"
-            class="flex items-center gap-2 py-3 text-sm text-gray-500"
+            class="w-full flex items-center justify-start gap-2 pt-3 mt-1 border-t border-gray-100 text-sm text-gray-500"
             @click="loadMoreUsages"
           >
             <span>更多</span>
