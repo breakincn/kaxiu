@@ -145,12 +145,16 @@
     <!-- 使用记录 -->
     <div class="px-4 mt-4">
       <div ref="usageRecordsSection" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
-        <div class="flex items-center justify-between mb-4">
+        <div
+          class="flex items-center justify-between mb-4"
+          :class="usageRecordsCollapsed ? 'cursor-pointer' : ''"
+          @click="handleUsageHeaderClick"
+        >
           <div class="flex items-center gap-2">
             <button
               type="button"
               class="p-1 -m-1 text-gray-600 rounded hover:bg-gray-50"
-              @click="toggleUsageRecordsCollapsed"
+              @click.stop="toggleUsageRecordsCollapsed"
               :aria-label="usageRecordsCollapsed ? '展开使用记录' : '折叠使用记录'"
             >
               <svg v-if="!usageRecordsCollapsed" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -161,6 +165,7 @@
               </svg>
             </button>
             <span class="font-medium text-gray-800">使用记录</span>
+            <span v-if="usageRecordsCollapsed" class="ml-2 text-sm font-medium text-orange-500">已折叠</span>
           </div>
           <span class="text-gray-600 text-sm">
             总数{{ card.total_times }}次/剩余{{ card.remain_times }}次
@@ -260,10 +265,7 @@
             </svg>
           </button>
         </div>
-        <div v-else-if="usageRecordsCollapsed" class="text-center text-gray-400 py-4">
-          使用记录已折叠
-        </div>
-        <div v-else class="text-center text-gray-400 py-4">
+        <div v-else-if="!usageRecordsCollapsed" class="text-center text-gray-400 py-4">
           暂无使用记录
         </div>
       </div>
@@ -2295,6 +2297,11 @@ const goBack = () => {
 
 const toggleUsageRecordsCollapsed = () => {
   usageRecordsCollapsed.value = !usageRecordsCollapsed.value
+}
+
+const handleUsageHeaderClick = () => {
+  if (!usageRecordsCollapsed.value) return
+  usageRecordsCollapsed.value = false
 }
 
 const loadMoreUsages = () => {
