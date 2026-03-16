@@ -91,11 +91,8 @@
                 <h3 class="text-lg font-bold">{{ item.merchant?.name }}</h3>
                 <p class="text-gray-500 text-xs mt-0.5">{{ item.card_type }}</p>
               </div>
-              <div class="flex items-center gap-2">
-                <span v-if="item.hasAppointment" class="px-1.5 py-0.5 bg-red-500 text-white text-xs rounded flex-shrink-0">预约</span>
-                <div class="bg-gray-100 px-2.5 py-0.5 rounded-full">
-                  <span class="text-xs font-medium">NO: {{ item.card_no }}</span>
-                </div>
+              <div class="bg-gray-100 px-2.5 py-0.5 rounded-full">
+                <span class="text-xs font-medium">NO: {{ item.card_no }}</span>
               </div>
             </div>
 
@@ -103,7 +100,10 @@
             <div v-if="!(item.locked && (item.remain_times === 0 || (item.remain_balance === 0 && item.card_type?.includes('储值'))) && currentStatus === 'active')" class="flex justify-between items-end" :class="item.pinnedNotice ? 'mb-2' : 'mb-3'">
               <div>
                 <div class="text-gray-500 text-xs mb-0.5">{{ item.card_type?.includes('储值') ? '剩余余额' : '剩余次数' }}</div>
-                <div class="text-5xl font-bold leading-none">{{ item.card_type?.includes('储值') ? `¥${(item.remain_balance / 100).toFixed(2)}` : item.remain_times }}</div>
+                <div class="flex items-start gap-2">
+                  <div class="text-5xl font-bold leading-none">{{ item.card_type?.includes('储值') ? `¥${(item.remain_balance / 100).toFixed(2)}` : item.remain_times }}</div>
+                  <span v-if="item.hasAppointment" class="mt-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded flex-shrink-0 leading-none">预约</span>
+                </div>
               </div>
               <div class="text-right">
                 <div class="text-gray-500 text-xs mb-0.5">有效期至</div>
