@@ -476,7 +476,7 @@ func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Tim
 
 func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) (bool, error) {
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	activeSessionStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
+	activeSessionStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 
 	type candLite struct {
 		ID            uint `gorm:"column:id"`
@@ -555,7 +555,7 @@ func autoCallNextForMultiQueueIfPossible(tx *gorm.DB, merchant *models.Merchant,
 	}
 
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	activeSessionStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
+	activeSessionStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 
 	type candLite struct {
 		ID           uint `gorm:"column:id"`
@@ -829,6 +829,8 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 			return handleRoomLockedOrStaffSelecting(tx, &s, now)
 		case "room_selecting":
 			return handleRoomSelecting(tx, &s, now)
+		case "appointment_waiting":
+			return handleAppointmentWaiting(tx, &s, now)
 		case "start_pending":
 			return handleStartPending(tx, &s, now)
 		case "delay_pending":
@@ -870,6 +872,66 @@ func handleTimeoutFailed(tx *gorm.DB, s *models.ServiceSession, now time.Time) e
 	}
 
 	return nil
+}
+
+func handleAppointmentWaiting(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
+	if tx == nil || s == nil {
+		return nil
+	}
+	if s.TechnicianID == nil || *s.TechnicianID == 0 {
+		return tx.Model(&models.ServiceSession{}).
+			Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("appointment_waiting")).
+			Updates(map[string]interface{}{
+				"status":                              models.ApplyStatusPrefix(s.Status, "staff_selecting"),
+				"predicted_ready_at":                  nil,
+				"predicted_appointment_delay_minutes": 0,
+			}).Error
+	}
+
+	var merchant models.Merchant
+	if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+		return err
+	}
+
+	var blocker models.ServiceSession
+	err := tx.Where("merchant_id = ? AND technician_id = ? AND id <> ? AND status IN ?",
+		s.MerchantID, *s.TechnicianID, s.ID,
+		models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
+		Order("COALESCE(scheduled_finish_at, updated_at) asc").
+		First(&blocker).Error
+	if err == nil {
+		if blocker.ScheduledFinishAt != nil {
+			readyAt := blocker.ScheduledFinishAt.Add(time.Duration(merchantAppointmentPredictionBufferMinutes(merchant)) * time.Minute)
+			return tx.Model(&models.ServiceSession{}).
+				Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("appointment_waiting")).
+				Update("predicted_ready_at", readyAt).Error
+		}
+		return nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	if merchant.SupportRoom && s.RoomID == nil {
+		if err := autoAssignRoom(tx, s, now); err != nil {
+			return err
+		}
+		return tx.Model(&models.ServiceSession{}).
+			Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("appointment_waiting")).
+			Updates(map[string]interface{}{
+				"status":             models.ApplyStatusPrefix(s.Status, "room_selecting"),
+				"predicted_ready_at": nil,
+			}).Error
+	}
+
+	timeoutSeconds := config.GetMerchantTechnicianStartPendingTimeoutSeconds(tx, s.MerchantID, *s.TechnicianID)
+	return tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("appointment_waiting")).
+		Updates(map[string]interface{}{
+			"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
+			"predicted_ready_at":            nil,
+			"start_pending_timeout_seconds": timeoutSeconds,
+		}).Error
 }
 
 func advanceQueueAutoSingleSerialIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
@@ -1461,7 +1523,7 @@ func autoAssignRoom(tx *gorm.DB, s *models.ServiceSession, now time.Time) error 
 		r := rooms[i]
 		var cnt int64
 		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, r.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})).
+			Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, r.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})).
 			Count(&cnt).Error; err != nil {
 			return err
 		}

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"kabao/config"
 	"kabao/models"
 	"kabao/queue"
@@ -18,87 +17,9 @@ const (
 )
 
 type serviceSessionSource struct {
-	SourceType string
-	SourceID   *uint
-}
-
-func detectServiceSessionSource(tx *gorm.DB, merchantID uint, card models.Card, now time.Time) (serviceSessionSource, error) {
-	source := serviceSessionSource{SourceType: serviceSessionSourceWalkIn}
-	if tx == nil || merchantID == 0 || card.ID == 0 {
-		return source, nil
-	}
-
-	rows, err := tx.
-		Table("appointments").
-		Select("id, appointment_time").
-		Where("card_id = ? AND merchant_id = ? AND status = 'confirmed' AND appointment_time IS NOT NULL", card.ID, merchantID).
-		Order("appointment_time asc").
-		Limit(1).
-		Rows()
-	if err != nil {
-		return source, err
-	}
-	defer rows.Close()
-	if !rows.Next() {
-		return source, nil
-	}
-
-	var apptID uint
-	var rawAppointmentTime any
-	if err := rows.Scan(&apptID, &rawAppointmentTime); err != nil {
-		return source, err
-	}
-	at, ok := parseDBTimeValue(rawAppointmentTime)
-	if !ok {
-		return source, fmt.Errorf("unsupported appointment_time value: %T", rawAppointmentTime)
-	}
-	if at.Format("2006-01-02") != now.Format("2006-01-02") {
-		return source, nil
-	}
-	diff := now.Sub(at)
-	if diff < 0 {
-		diff = -diff
-	}
-	if diff > 30*time.Minute {
-		return source, nil
-	}
-
-	source.SourceType = serviceSessionSourceAppointment
-	source.SourceID = &apptID
-	return source, nil
-}
-
-func parseDBTimeValue(v any) (time.Time, bool) {
-	switch x := v.(type) {
-	case time.Time:
-		return x, true
-	case *time.Time:
-		if x != nil {
-			return *x, true
-		}
-	case string:
-		return parseDBTimeString(x)
-	case []byte:
-		return parseDBTimeString(string(x))
-	}
-	return time.Time{}, false
-}
-
-func parseDBTimeString(v string) (time.Time, bool) {
-	layouts := []string{
-		"2006-01-02 15:04:05.999999999-07:00",
-		"2006-01-02 15:04:05.999999999",
-		"2006-01-02 15:04:05.999",
-		"2006-01-02 15:04:05",
-		time.RFC3339Nano,
-		time.RFC3339,
-	}
-	for _, layout := range layouts {
-		if t, err := time.Parse(layout, v); err == nil {
-			return t, true
-		}
-	}
-	return time.Time{}, false
+	SourceType  string
+	SourceID    *uint
+	Appointment *models.Appointment
 }
 
 func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card models.Card, verifyCode models.VerifyCode, usage models.Usage, now time.Time) (models.ServiceSession, string, bool, error) {
@@ -108,7 +29,7 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 	}
 
 	isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
-	source, err := detectServiceSessionSource(tx, merchant.ID, card, now)
+	source, err := detectServiceSessionSource(tx, merchant, card, now)
 	if err != nil {
 		return session, "", false, err
 	}
@@ -120,6 +41,8 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 	var startConfirmedAt *time.Time
 	var scheduledStartAt *time.Time
 	autoFinishDelaySeconds := 60
+	predictedAppointmentDelayMinutes := 0
+	var predictedReadyAt *time.Time
 
 	durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchant.ID, verifyCode.ProjectID, 50, 60)
 	if isQueueMode {
@@ -144,24 +67,58 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		status = models.WithCSPrefix(status)
 	}
 
+	if merchant.SupportCustomerServiceMode && source.Appointment != nil && source.Appointment.TechnicianID != nil && *source.Appointment.TechnicianID > 0 {
+		techID := *source.Appointment.TechnicianID
+		availability, err := evaluateWalkInTechnicianAvailability(tx, merchant, techID, now, durationMinutes)
+		if err != nil {
+			return models.ServiceSession{}, "", false, err
+		}
+		// 预约客户到店后，若原预约客服仍被前序服务占用，则直接进入预约优先等待状态，
+		// 避免掉入普通现场流转并被后续现场单再次插队。
+		if availability.State != appointmentAvailabilitySafe && availability.PredictedWaitMinutes > 0 {
+			status = models.WithCSPrefix("appointment_waiting")
+			nextStep = ""
+		} else if merchant.SupportRoom {
+			status = models.WithCSPrefix("room_selecting")
+			nextStep = "room_select"
+		} else {
+			status = models.WithCSPrefix("start_pending")
+			nextStep = ""
+		}
+		session.TechnicianID = &techID
+		session.LastTechnicianID = &techID
+		predictedAppointmentDelayMinutes = availability.PredictedWaitMinutes
+	}
+
 	session = models.ServiceSession{
-		MerchantID:             merchant.ID,
-		UserID:                 card.UserID,
-		CardID:                 card.ID,
-		ProjectID:              verifyCode.ProjectID,
-		InitialUsageID:         usage.ID,
-		VerifyCode:             verifyCode.Code,
-		SessionMode:            sessionMode,
-		SourceType:             source.SourceType,
-		SourceID:               source.SourceID,
-		Status:                 status,
-		RoomSelectDeadlineAt:   roomSelectDeadlineAt,
-		StartConfirmedAt:       startConfirmedAt,
-		StartDelaySeconds:      delaySeconds,
-		ScheduledStartAt:       scheduledStartAt,
-		DurationMinutes:        durationMinutes,
-		AutoFinishDelaySeconds: autoFinishDelaySeconds,
-		AutoIdleAfterSeconds:   180,
+		MerchantID:                       merchant.ID,
+		UserID:                           card.UserID,
+		CardID:                           card.ID,
+		ProjectID:                        verifyCode.ProjectID,
+		InitialUsageID:                   usage.ID,
+		VerifyCode:                       verifyCode.Code,
+		SessionMode:                      sessionMode,
+		SourceType:                       source.SourceType,
+		SourceID:                         source.SourceID,
+		TechnicianID:                     session.TechnicianID,
+		LastTechnicianID:                 session.LastTechnicianID,
+		Status:                           status,
+		RoomSelectDeadlineAt:             roomSelectDeadlineAt,
+		StartConfirmedAt:                 startConfirmedAt,
+		StartDelaySeconds:                delaySeconds,
+		ScheduledStartAt:                 scheduledStartAt,
+		DurationMinutes:                  durationMinutes,
+		AutoFinishDelaySeconds:           autoFinishDelaySeconds,
+		AutoIdleAfterSeconds:             180,
+		PredictedReadyAt:                 predictedReadyAt,
+		PredictedAppointmentDelayMinutes: predictedAppointmentDelayMinutes,
+	}
+	if source.Appointment != nil {
+		if status == models.WithCSPrefix("appointment_waiting") {
+			readyAt := appointmentPredictedFinishAt(now, durationMinutes, &merchant)
+			session.PredictedReadyAt = &readyAt
+			session.PredictedAppointmentDelayMinutes = predictedAppointmentDelayMinutes
+		}
 	}
 	if err := tx.Create(&session).Error; err != nil {
 		return models.ServiceSession{}, "", false, err
@@ -175,7 +132,7 @@ func enqueueVerifyUsageIfNeeded(merchant models.Merchant, card models.Card, usag
 	}
 
 	now := time.Now()
-	source, err := detectServiceSessionSource(config.DB, merchant.ID, card, now)
+	source, err := detectServiceSessionSource(config.DB, merchant, card, now)
 	if err != nil {
 		log.Printf("WARN: detect service session source for enqueue failed: merchant=%d card=%d usage=%d err=%v", merchant.ID, card.ID, usageID, err)
 	}

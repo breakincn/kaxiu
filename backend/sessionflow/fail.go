@@ -96,10 +96,12 @@ func CompleteUnstartedServiceSession(tx *gorm.DB, usageID uint, merchantID uint,
 		ID               uint       `gorm:"column:id"`
 		Status           string     `gorm:"column:status"`
 		TechnicianID     *uint      `gorm:"column:technician_id"`
+		SourceType       string     `gorm:"column:source_type"`
+		SourceID         *uint      `gorm:"column:source_id"`
 		StartConfirmedAt *time.Time `gorm:"column:start_confirmed_at"`
 	}
 	query := tx.Table("service_sessions").
-		Select("id,status,technician_id,start_confirmed_at").
+		Select("id,status,technician_id,source_type,source_id,start_confirmed_at").
 		Where("initial_usage_id = ?", usageID).
 		Order("id desc").
 		Limit(1).
@@ -138,6 +140,14 @@ func CompleteUnstartedServiceSession(tx *gorm.DB, usageID uint, merchantID uint,
 			"finished_at":   finishedAt,
 		}).Error; err != nil {
 		return false, err
+	}
+	if s.SourceType == "appointment" && s.SourceID != nil {
+		_ = tx.Model(&models.Appointment{}).
+			Where("id = ?", *s.SourceID).
+			Updates(map[string]interface{}{
+				"status":       "completed",
+				"completed_at": &finishedAt,
+			}).Error
 	}
 	return true, nil
 }

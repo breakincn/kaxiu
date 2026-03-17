@@ -19,6 +19,26 @@
             <input type="checkbox" v-model="form.support_appointment" />
           </div>
 
+          <div v-if="form.support_appointment" class="px-4 py-4 border-b border-gray-100 space-y-3">
+            <div>
+              <div class="text-sm text-gray-700 mb-1">预约前保留缓冲（分钟）</div>
+              <input v-model.number="form.appointment_reserve_buffer_minutes" type="number" min="0" max="120" class="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <div class="text-sm text-gray-700 mb-1">预约后宽限时间（分钟）</div>
+              <input v-model.number="form.appointment_grace_window_minutes" type="number" min="0" max="180" class="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <div class="text-sm text-gray-700 mb-1">预约最大等待（分钟）</div>
+              <input v-model.number="form.appointment_max_wait_minutes" type="number" min="0" max="180" class="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <div class="text-sm text-gray-700 mb-1">预约预测缓冲（分钟）</div>
+              <input v-model.number="form.appointment_prediction_buffer_minutes" type="number" min="0" max="60" class="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div class="text-xs text-gray-400">这些参数会同时影响预约页可选客服、客服模式现场派单和预约到店等待判断。</div>
+          </div>
+
           <div class="px-4 py-4 border-b border-gray-100 flex items-center justify-between">
             <div class="text-gray-800 font-medium">开启项目</div>
             <input type="checkbox" v-model="form.support_project" />
@@ -117,7 +137,11 @@ const form = ref({
   support_customer_service_mode: false,
   support_project: false,
   support_order_complete: false,
-  support_hand_card: false
+  support_hand_card: false,
+  appointment_reserve_buffer_minutes: 10,
+  appointment_grace_window_minutes: 15,
+  appointment_max_wait_minutes: 15,
+  appointment_prediction_buffer_minutes: 5
 })
 
 const normalizeForm = (value) => JSON.stringify({
@@ -129,7 +153,11 @@ const normalizeForm = (value) => JSON.stringify({
   support_customer_service_mode: !!value.support_customer_service_mode,
   support_project: !!value.support_project,
   support_order_complete: !!value.support_order_complete,
-  support_hand_card: !!value.support_hand_card
+  support_hand_card: !!value.support_hand_card,
+  appointment_reserve_buffer_minutes: Number(value.appointment_reserve_buffer_minutes ?? 10),
+  appointment_grace_window_minutes: Number(value.appointment_grace_window_minutes ?? 15),
+  appointment_max_wait_minutes: Number(value.appointment_max_wait_minutes ?? 15),
+  appointment_prediction_buffer_minutes: Number(value.appointment_prediction_buffer_minutes ?? 5)
 })
 
 const createFormState = (value = {}) => ({
@@ -141,7 +169,11 @@ const createFormState = (value = {}) => ({
   support_customer_service_mode: !!value.support_customer_service_mode,
   support_project: !!value.support_project,
   support_order_complete: !!value.support_order_complete,
-  support_hand_card: !!value.support_hand_card
+  support_hand_card: !!value.support_hand_card,
+  appointment_reserve_buffer_minutes: Number(value.appointment_reserve_buffer_minutes ?? 10),
+  appointment_grace_window_minutes: Number(value.appointment_grace_window_minutes ?? 15),
+  appointment_max_wait_minutes: Number(value.appointment_max_wait_minutes ?? 15),
+  appointment_prediction_buffer_minutes: Number(value.appointment_prediction_buffer_minutes ?? 5)
 })
 
 const restoreLastSavedForm = () => {
@@ -249,7 +281,11 @@ const save = async () => {
       support_customer_service_mode: form.value.support_customer_service_mode,
       support_project: form.value.support_project,
       support_order_complete: form.value.support_order_complete,
-      support_hand_card: form.value.support_hand_card
+      support_hand_card: form.value.support_hand_card,
+      appointment_reserve_buffer_minutes: Number(form.value.appointment_reserve_buffer_minutes || 0),
+      appointment_grace_window_minutes: Number(form.value.appointment_grace_window_minutes || 0),
+      appointment_max_wait_minutes: Number(form.value.appointment_max_wait_minutes || 0),
+      appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes || 0)
     })
     alert('保存成功')
     await load()

@@ -400,7 +400,10 @@
                 :class="selectedTechnicianId === t.id ? 'bg-primary text-white' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary'"
                 class="py-2 px-3 rounded-lg font-medium transition-all text-sm"
               >
-                {{ t.name }}
+                <div>{{ t.name }}</div>
+                <div v-if="t.availability_state === 'conditional'" class="text-[11px] opacity-80 mt-1">
+                  预计等待 {{ t.predicted_wait_minutes || 0 }} 分钟
+                </div>
               </button>
             </div>
           </div>
@@ -2238,12 +2241,20 @@ const displayedTimeSlots = computed(() => {
 
 const displayedTechnicians = computed(() => {
   const list = availableTechnicians.value || []
-  if (selectedTimeSlot.value && !selectedTechnicianId.value) {
+  if (selectedTimeSlot.value) {
     const slot = (timeSlots.value || []).find(s => s && s.time === selectedTimeSlot.value)
-    const ids = Array.isArray(slot?.technician_ids) ? slot.technician_ids : []
-    return list.filter(t => ids.includes(t.id))
+    const candidates = Array.isArray(slot?.technician_candidates) ? slot.technician_candidates : []
+    const byId = new Map(candidates.map(c => [Number(c.technician_id), c]))
+    return list
+      .filter(t => byId.has(Number(t.id)))
+      .map(t => ({
+        ...t,
+        availability_state: byId.get(Number(t.id))?.availability_state || 'safe',
+        predicted_wait_minutes: byId.get(Number(t.id))?.predicted_wait_minutes || 0,
+        availability_reason: byId.get(Number(t.id))?.availability_reason || ''
+      }))
   }
-  return list
+  return list.map(t => ({ ...t, availability_state: 'safe', predicted_wait_minutes: 0, availability_reason: '' }))
 })
 
 const hasAppointmentProjects = computed(() => {
@@ -2488,7 +2499,7 @@ const isAppointmentFailed = computed(() => {
 const cancelButtonDisabled = computed(() => {
   if (!appointment.value) return true
   if (isAppointmentFailed.value) return true
-  return canceling.value || appointment.value.status === 'finished' || appointment.value.status === 'canceled'
+  return canceling.value || appointment.value.status === 'completed' || appointment.value.status === 'canceled'
 })
 
 const cancelButtonText = computed(() => {
@@ -2778,7 +2789,8 @@ const getAppointmentStatusClass = (status) => {
   const classes = {
     pending: 'text-primary',
     confirmed: 'text-primary',
-    finished: 'text-gray-600',
+    arrived: 'text-primary',
+    completed: 'text-gray-600',
     canceled: 'text-gray-400'
   }
   return classes[status] || 'text-gray-500'
@@ -2787,9 +2799,11 @@ const getAppointmentStatusClass = (status) => {
 const getAppointmentStatusText = (status) => {
   const texts = {
     pending: '待确认',
-    confirmed: '排队中',
-    finished: '已完成',
-    canceled: '已取消'
+    confirmed: '待到店',
+    arrived: '已到店',
+    completed: '已完成',
+    canceled: '已取消',
+    no_show: '已失约'
   }
   return texts[status] || status
 }

@@ -45,9 +45,14 @@ type Merchant struct {
 	SupportMultiCustomerService bool       `json:"support_multi_customer_service" gorm:"default:false;comment:是否开启多个客服（多窗口叫号）"`
 	SupportOrderComplete        bool       `json:"support_order_complete" gorm:"default:false;comment:是否开启服务结束功能（0-不开启，1-开启）"`
 	StartDelaySeconds           int        `json:"start_delay_seconds" gorm:"default:60;comment:核销后开始服务延迟秒数（未开启客服但开启服务结束功能时使用）"`
-	TechnicianAlias             string     `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
-	StartTerm                   string     `json:"start_term" gorm:"size:20;default:'';comment:开始服务显示名词（可为空）"`
-	FinishTerm                  string     `json:"finish_term" gorm:"size:20;default:'';comment:结束服务显示名词（可为空）"`
+	// 预约保护参数：confirmed 预约会占用未来产能，客服模式现场派单/预约选人都复用这些阈值。
+	AppointmentReserveBufferMinutes   int    `json:"appointment_reserve_buffer_minutes" gorm:"default:10;comment:预约前保留缓冲分钟数"`
+	AppointmentGraceWindowMinutes     int    `json:"appointment_grace_window_minutes" gorm:"default:15;comment:预约后到店宽限分钟数"`
+	AppointmentMaxWaitMinutes         int    `json:"appointment_max_wait_minutes" gorm:"default:15;comment:预约客户最大可承诺等待分钟数"`
+	AppointmentPredictionBufferMinute int    `json:"appointment_prediction_buffer_minutes" gorm:"column:appointment_prediction_buffer_minutes;default:5;comment:预约保护预测缓冲分钟数"`
+	TechnicianAlias                   string `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
+	StartTerm                         string `json:"start_term" gorm:"size:20;default:'';comment:开始服务显示名词（可为空）"`
+	FinishTerm                        string `json:"finish_term" gorm:"size:20;default:'';comment:结束服务显示名词（可为空）"`
 	// 手牌设置
 	HandCardPrefix  string `json:"hand_card_prefix" gorm:"size:20;default:'H';comment:手牌前缀"`
 	HandCardStartNo int    `json:"hand_card_start_no" gorm:"default:1;comment:手牌起始号码"`
@@ -203,18 +208,26 @@ func (Notice) TableComment() string {
 }
 
 type Appointment struct {
-	ID              uint       `json:"id" gorm:"primaryKey;comment:预约ID"`
-	CardID          uint       `json:"card_id" gorm:"index;comment:卡片ID（外键关联cards表）"`
-	MerchantID      uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
-	UserID          uint       `json:"user_id" gorm:"index;comment:用户ID（外键关联users表）"`
-	ProjectID       *uint      `json:"project_id" gorm:"index;comment:项目ID（merchant_projects表主键，可为空）"`
-	TechnicianID    *uint      `json:"technician_id" gorm:"index;comment:技师ID（technicians表主键，可为空）"`
-	AppointmentTime *time.Time `json:"appointment_time" gorm:"type:datetime(3);comment:预约时间"`
-	Status          string     `json:"status" gorm:"size:20;default:pending;comment:预约状态（pending-待确认，confirmed-已确认/排队中，finished-已完成，canceled-已取消，failed-失败）"`
-	CanceledAt      *time.Time `json:"canceled_at" gorm:"type:datetime(3);comment:取消时间"`
-	FailedAt        *time.Time `json:"failed_at" gorm:"type:datetime(3);comment:失败时间（自动分配失败时填充）"`
-	FailedReason    string     `json:"failed_reason" gorm:"size:255;default:'';comment:失败原因（自动分配失败时说明）"`
-	CreatedAt       *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	ID                   uint       `json:"id" gorm:"primaryKey;comment:预约ID"`
+	CardID               uint       `json:"card_id" gorm:"index;comment:卡片ID（外键关联cards表）"`
+	MerchantID           uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
+	UserID               uint       `json:"user_id" gorm:"index;comment:用户ID（外键关联users表）"`
+	ProjectID            *uint      `json:"project_id" gorm:"index;comment:项目ID（merchant_projects表主键，可为空）"`
+	TechnicianID         *uint      `json:"technician_id" gorm:"index;comment:技师ID（technicians表主键，可为空）"`
+	AppointmentTime      *time.Time `json:"appointment_time" gorm:"type:datetime(3);comment:预约时间"`
+	Status               string     `json:"status" gorm:"size:20;default:pending;comment:预约状态（pending-待确认，confirmed-已确认，arrived-已到店，completed-已完成，canceled-已取消，failed-失败，no_show-失约；历史finished按completed兼容读取）"`
+	ConfirmedAt          *time.Time `json:"confirmed_at" gorm:"type:datetime(3);comment:确认时间"`
+	ArrivedAt            *time.Time `json:"arrived_at" gorm:"type:datetime(3);comment:到店核销时间"`
+	CompletedAt          *time.Time `json:"completed_at" gorm:"type:datetime(3);comment:完成时间"`
+	NoShowAt             *time.Time `json:"no_show_at" gorm:"type:datetime(3);comment:失约时间"`
+	ServiceSessionID     *uint      `json:"service_session_id" gorm:"index;comment:关联服务会话ID"`
+	UsageID              *uint      `json:"usage_id" gorm:"index;comment:关联核销记录ID"`
+	PredictedWaitMinutes int        `json:"predicted_wait_minutes" gorm:"default:0;comment:预约预计等待分钟数（风险预约/到店等待时回写）"`
+	ResolutionNote       string     `json:"resolution_note" gorm:"size:255;default:'';comment:改签/补偿/人工处理备注"`
+	CanceledAt           *time.Time `json:"canceled_at" gorm:"type:datetime(3);comment:取消时间"`
+	FailedAt             *time.Time `json:"failed_at" gorm:"type:datetime(3);comment:失败时间（自动分配失败时填充）"`
+	FailedReason         string     `json:"failed_reason" gorm:"size:255;default:'';comment:失败原因（自动分配失败时说明）"`
+	CreatedAt            *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	User       User             `json:"user" gorm:"foreignKey:UserID"`
 	Card       Card             `json:"card" gorm:"foreignKey:CardID"`

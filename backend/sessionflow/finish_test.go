@@ -184,3 +184,63 @@ func TestFinalizeUsageAndSessionReturnsFalseWhenSessionMissing(t *testing.T) {
 		t.Fatalf("want missing session to be ignored")
 	}
 }
+
+func TestFinishServiceSessionMarksLinkedAppointmentCompleted(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:sessionflow_finish_appointment_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Appointment{}, &models.Usage{}, &models.ServiceSession{}); err != nil {
+		t.Fatalf("migrate failed: %v", err)
+	}
+
+	now := time.Now()
+	merchant := models.Merchant{Name: "m-appointment", Phone: "18800000029", Password: "pwd"}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	appointmentTime := now.Add(-10 * time.Minute)
+	appointment := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          1,
+		CardID:          1,
+		Status:          "arrived",
+		AppointmentTime: &appointmentTime,
+	}
+	if err := db.Create(&appointment).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	usage := models.Usage{MerchantID: merchant.ID, Status: "in_progress"}
+	if err := db.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+	session := models.ServiceSession{
+		MerchantID:       merchant.ID,
+		InitialUsageID:   usage.ID,
+		Status:           "serving",
+		SourceType:       "appointment",
+		SourceID:         &appointment.ID,
+		StartConfirmedAt: &now,
+	}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	if err := FinishServiceSession(db, &session, &merchant, now, FinishOptions{}); err != nil {
+		t.Fatalf("FinishServiceSession failed: %v", err)
+	}
+
+	var got struct {
+		Status         string `gorm:"column:status"`
+		CompletedAtRaw string `gorm:"column:completed_at"`
+	}
+	if err := db.Table("appointments").Select("status, completed_at").Where("id = ?", appointment.ID).Scan(&got).Error; err != nil {
+		t.Fatalf("reload appointment failed: %v", err)
+	}
+	if got.Status != "completed" {
+		t.Fatalf("want completed appointment, got %s", got.Status)
+	}
+	if got.CompletedAtRaw == "" {
+		t.Fatalf("want completed_at filled")
+	}
+}

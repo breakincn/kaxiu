@@ -67,6 +67,31 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE service_sessions ADD INDEX idx_service_sessions_source_id (source_id)",
 		},
 	},
+	{
+		Version: "2026031701",
+		Name:    "add_appointment_closure_fields",
+		Statements: []string{
+			"ALTER TABLE merchants ADD COLUMN appointment_reserve_buffer_minutes INT NOT NULL DEFAULT 10 COMMENT '预约前保留缓冲分钟数'",
+			"ALTER TABLE merchants ADD COLUMN appointment_grace_window_minutes INT NOT NULL DEFAULT 15 COMMENT '预约后到店宽限分钟数'",
+			"ALTER TABLE merchants ADD COLUMN appointment_max_wait_minutes INT NOT NULL DEFAULT 15 COMMENT '预约客户最大可承诺等待分钟数'",
+			"ALTER TABLE merchants ADD COLUMN appointment_prediction_buffer_minutes INT NOT NULL DEFAULT 5 COMMENT '预约保护预测缓冲分钟数'",
+			"ALTER TABLE appointments ADD COLUMN confirmed_at datetime(3) NULL DEFAULT NULL COMMENT '确认时间'",
+			"ALTER TABLE appointments ADD COLUMN arrived_at datetime(3) NULL DEFAULT NULL COMMENT '到店核销时间'",
+			"ALTER TABLE appointments ADD COLUMN completed_at datetime(3) NULL DEFAULT NULL COMMENT '完成时间'",
+			"ALTER TABLE appointments ADD COLUMN no_show_at datetime(3) NULL DEFAULT NULL COMMENT '失约时间'",
+			"ALTER TABLE appointments ADD COLUMN service_session_id bigint unsigned NULL DEFAULT NULL COMMENT '关联服务会话ID'",
+			"ALTER TABLE appointments ADD COLUMN usage_id bigint unsigned NULL DEFAULT NULL COMMENT '关联核销记录ID'",
+			"ALTER TABLE appointments ADD COLUMN predicted_wait_minutes INT NOT NULL DEFAULT 0 COMMENT '预约预计等待分钟数'",
+			"ALTER TABLE appointments ADD COLUMN resolution_note varchar(255) NOT NULL DEFAULT '' COMMENT '改签/补偿/人工处理备注'",
+			"ALTER TABLE appointments ADD INDEX idx_appointments_service_session_id (service_session_id)",
+			"ALTER TABLE appointments ADD INDEX idx_appointments_usage_id (usage_id)",
+			"ALTER TABLE service_sessions ADD COLUMN occupies_next_appointment BOOLEAN NOT NULL DEFAULT 0 COMMENT '是否占用了下一预约的预计时段'",
+			"ALTER TABLE service_sessions ADD COLUMN next_appointment_id bigint unsigned NULL DEFAULT NULL COMMENT '受影响的下一预约ID'",
+			"ALTER TABLE service_sessions ADD COLUMN predicted_appointment_delay_minutes INT NOT NULL DEFAULT 0 COMMENT '压预约派单预计会造成的预约等待分钟数'",
+			"ALTER TABLE service_sessions ADD COLUMN predicted_ready_at datetime(3) NULL DEFAULT NULL COMMENT '预计可开始服务时间'",
+			"ALTER TABLE service_sessions ADD INDEX idx_service_sessions_next_appointment_id (next_appointment_id)",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

@@ -4,6 +4,8 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"log"
+	"math"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -15,6 +17,136 @@ const (
 	appointmentAssignDelay           = 10 * time.Minute
 	appointmentSchedulerBatchLimit   = 200
 )
+
+func merchantAppointmentMaxWaitMinutes(m models.Merchant) int {
+	if m.AppointmentMaxWaitMinutes > 0 {
+		return m.AppointmentMaxWaitMinutes
+	}
+	return 15
+}
+
+func merchantAppointmentPredictionBufferMinutes(m models.Merchant) int {
+	if m.AppointmentPredictionBufferMinute > 0 {
+		return m.AppointmentPredictionBufferMinute
+	}
+	return 5
+}
+
+func merchantAppointmentGraceWindowMinutes(m models.Merchant) int {
+	if m.AppointmentGraceWindowMinutes > 0 {
+		return m.AppointmentGraceWindowMinutes
+	}
+	return 15
+}
+
+func parseSchedulerDBTimeString(s string) (time.Time, bool) {
+	value := strings.TrimSpace(s)
+	if value == "" {
+		return time.Time{}, false
+	}
+	layouts := []string{
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05.999",
+		"2006-01-02 15:04:05",
+		time.RFC3339Nano,
+		time.RFC3339,
+	}
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func parseSchedulerDBTimeValue(raw interface{}) (*time.Time, bool) {
+	switch v := raw.(type) {
+	case nil:
+		return nil, false
+	case time.Time:
+		tm := v
+		return &tm, true
+	case *time.Time:
+		if v == nil {
+			return nil, false
+		}
+		tm := *v
+		return &tm, true
+	case []byte:
+		if parsed, ok := parseSchedulerDBTimeString(string(v)); ok {
+			return &parsed, true
+		}
+	case string:
+		if parsed, ok := parseSchedulerDBTimeString(v); ok {
+			return &parsed, true
+		}
+	}
+	return nil, false
+}
+
+func predictedAppointmentFinishAt(start time.Time, durationMinutes int, merchant models.Merchant) time.Time {
+	if durationMinutes <= 0 {
+		durationMinutes = 30
+	}
+	return start.Add(time.Duration(durationMinutes+3+merchantAppointmentPredictionBufferMinutes(merchant)) * time.Minute)
+}
+
+func evaluateSchedulerBookingAvailability(tx *gorm.DB, merchant models.Merchant, technicianID uint, start time.Time, durationMinutes int, excludeAppointmentID uint) (string, int, error) {
+	var appointments []models.Appointment
+	if err := tx.Where("merchant_id = ? AND technician_id = ? AND status IN ? AND appointment_time IS NOT NULL",
+		merchant.ID, technicianID, []string{"confirmed", "arrived", "finished", "completed"}).
+		Where("id <> ?", excludeAppointmentID).
+		Order("appointment_time asc").
+		Find(&appointments).Error; err != nil {
+		return "unavailable", 0, err
+	}
+
+	state := "safe"
+	predictedWait := 0
+	newFinish := predictedAppointmentFinishAt(start, durationMinutes, merchant)
+	for _, appt := range appointments {
+		if appt.AppointmentTime == nil {
+			continue
+		}
+		existingStart := *appt.AppointmentTime
+		existingFinish := predictedAppointmentFinishAt(existingStart, getSchedulerAppointmentDuration(tx, merchant.ID, appt.ProjectID), merchant)
+		if existingStart.Before(start) {
+			waitMinutes := int(math.Ceil(existingFinish.Sub(start).Minutes()))
+			if waitMinutes > merchantAppointmentMaxWaitMinutes(merchant) {
+				return "unavailable", waitMinutes, nil
+			}
+			if waitMinutes > predictedWait {
+				state = "conditional"
+				predictedWait = waitMinutes
+			}
+			continue
+		}
+		waitMinutes := int(math.Ceil(newFinish.Sub(existingStart).Minutes()))
+		if waitMinutes > merchantAppointmentMaxWaitMinutes(merchant) {
+			return "unavailable", waitMinutes, nil
+		}
+		if waitMinutes > predictedWait {
+			state = "conditional"
+			predictedWait = waitMinutes
+		}
+	}
+	return state, predictedWait, nil
+}
+
+func getSchedulerAppointmentDuration(tx *gorm.DB, merchantID uint, projectID *uint) int {
+	if projectID == nil || *projectID == 0 {
+		return 30
+	}
+	var p models.MerchantProject
+	if err := tx.Where("id = ? AND merchant_id = ?", *projectID, merchantID).First(&p).Error; err != nil {
+		return 30
+	}
+	if p.Duration <= 0 {
+		return 30
+	}
+	return p.Duration
+}
 
 func StartAppointmentScheduler() {
 	go func() {
@@ -50,6 +182,66 @@ func runAppointmentAssignOnce(db *gorm.DB) error {
 		a := appts[i]
 		if err := tryAssignOneAppointment(db, a.ID, now); err != nil {
 			log.Printf("assign appointment %d error: %v", a.ID, err)
+		}
+	}
+	return runAppointmentNoShowOnce(db, now)
+}
+
+func runAppointmentNoShowOnce(db *gorm.DB, now time.Time) error {
+	rows, err := db.Model(&models.Appointment{}).
+		Select("id, merchant_id, appointment_time").
+		Where("status = ? AND appointment_time IS NOT NULL", "confirmed").
+		Order("appointment_time asc").
+		Limit(appointmentSchedulerBatchLimit).
+		Rows()
+	if err != nil {
+		return err
+	}
+	type appointmentDeadlineCheck struct {
+		AppointmentID   uint
+		MerchantID      uint
+		AppointmentTime time.Time
+	}
+	checks := make([]appointmentDeadlineCheck, 0, appointmentSchedulerBatchLimit)
+
+	for rows.Next() {
+		var appointmentID uint
+		var merchantID uint
+		var appointmentTimeRaw interface{}
+		if err := rows.Scan(&appointmentID, &merchantID, &appointmentTimeRaw); err != nil {
+			return err
+		}
+		appointmentTime, ok := parseSchedulerDBTimeValue(appointmentTimeRaw)
+		if !ok || appointmentTime == nil {
+			continue
+		}
+		checks = append(checks, appointmentDeadlineCheck{
+			AppointmentID:   appointmentID,
+			MerchantID:      merchantID,
+			AppointmentTime: *appointmentTime,
+		})
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	for _, check := range checks {
+		var merchant models.Merchant
+		if err := db.First(&merchant, check.MerchantID).Error; err != nil {
+			log.Printf("load merchant for appointment %d error: %v", check.AppointmentID, err)
+			continue
+		}
+		deadline := check.AppointmentTime.Add(time.Duration(merchantAppointmentGraceWindowMinutes(merchant)) * time.Minute)
+		if now.Before(deadline) {
+			continue
+		}
+		if err := db.Model(&models.Appointment{}).
+			Where("id = ? AND status = ?", check.AppointmentID, "confirmed").
+			Updates(map[string]interface{}{
+				"status":     "no_show",
+				"no_show_at": &now,
+			}).Error; err != nil {
+			log.Printf("mark appointment %d no_show error: %v", check.AppointmentID, err)
 		}
 	}
 	return nil
@@ -132,7 +324,11 @@ func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) err
 			return s1.Before(e2) && s2.Before(e1)
 		}
 
-		// 从候选客服中选择一个在该时间段不冲突的
+		bestTechID := uint(0)
+		bestWaitMinutes := int(^uint(0) >> 1)
+		bestState := "unavailable"
+
+		// 从候选客服中选择一个满足预约保护规则的候选人：safe 优先，其次 conditional。
 		for _, t := range techs {
 			var existing []models.Appointment
 			err := tx.
@@ -159,11 +355,29 @@ func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) err
 			if conflict {
 				continue
 			}
+			state, predictedWaitMinutes, err := evaluateSchedulerBookingAvailability(tx, m, t.ID, start, serviceMinutes, a.ID)
+			if err != nil {
+				return err
+			}
+			if state == "unavailable" {
+				continue
+			}
+			if bestTechID == 0 || (state == "safe" && bestState != "safe") ||
+				(state == bestState && predictedWaitMinutes < bestWaitMinutes) {
+				bestTechID = t.ID
+				bestWaitMinutes = predictedWaitMinutes
+				bestState = state
+			}
+		}
 
-			// 绑定到该客服
+		if bestTechID > 0 {
+			updates := map[string]interface{}{
+				"technician_id":          bestTechID,
+				"predicted_wait_minutes": bestWaitMinutes,
+			}
 			if err := tx.Model(&models.Appointment{}).
 				Where("id = ? AND technician_id IS NULL AND status = ?", a.ID, "pending").
-				Update("technician_id", t.ID).Error; err != nil {
+				Updates(updates).Error; err != nil {
 				return err
 			}
 			return nil

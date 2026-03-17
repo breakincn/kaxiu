@@ -784,12 +784,16 @@ func VerifyCard(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "核销成功",
 		"data": gin.H{
-			"usage_id":     result.UsageID,
-			"card_id":      result.Card.ID,
-			"remain_times": result.RemainTimes,
-			"used_at":      result.UsedAt.Format("2006-01-02 15:04:05"),
-			"session_id":   result.SessionID,
-			"next_step":    result.NextStep,
+			"usage_id":               result.UsageID,
+			"card_id":                result.Card.ID,
+			"remain_times":           result.RemainTimes,
+			"used_at":                result.UsedAt.Format("2006-01-02 15:04:05"),
+			"session_id":             result.SessionID,
+			"next_step":              result.NextStep,
+			"appointment_status":     result.AppointmentStatus,
+			"predicted_wait_minutes": result.PredictedWaitMinutes,
+			"session_wait_state":     result.SessionWaitState,
+			"bound_technician_id":    result.BoundTechnicianID,
 		},
 	})
 	enqueueVerifyUsageIfNeeded(result.Merchant, result.Card, result.UsageID, result.ShouldEnqueueOnsite)
@@ -956,13 +960,17 @@ func ScanVerifyCard(c *gin.Context) {
 	}
 
 	resp := gin.H{
-		"action":       result.Action,
-		"card_id":      result.Card.ID,
-		"usage_id":     result.UsageID,
-		"remain_times": result.RemainTimes,
-		"used_at":      result.UsedAt.Format("2006-01-02 15:04:05"),
-		"session_id":   result.SessionID,
-		"next_step":    result.NextStep,
+		"action":                 result.Action,
+		"card_id":                result.Card.ID,
+		"usage_id":               result.UsageID,
+		"remain_times":           result.RemainTimes,
+		"used_at":                result.UsedAt.Format("2006-01-02 15:04:05"),
+		"session_id":             result.SessionID,
+		"next_step":              result.NextStep,
+		"appointment_status":     result.AppointmentStatus,
+		"predicted_wait_minutes": result.PredictedWaitMinutes,
+		"session_wait_state":     result.SessionWaitState,
+		"bound_technician_id":    result.BoundTechnicianID,
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "核销成功", "data": resp})
 	enqueueVerifyUsageIfNeeded(result.Merchant, result.Card, result.UsageID, result.ShouldEnqueueOnsite)

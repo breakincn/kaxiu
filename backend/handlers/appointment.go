@@ -231,6 +231,9 @@ func GetMerchantAppointments(c *gin.Context) {
 	}
 
 	query.Order("appointment_time ASC").Find(&appointments)
+	for i := range appointments {
+		appointments[i].Status = normalizeAppointmentStatus(appointments[i].Status)
+	}
 	c.JSON(http.StatusOK, gin.H{"data": appointments})
 }
 
@@ -247,6 +250,9 @@ func GetUserAppointments(c *gin.Context) {
 	}
 	var appointments []models.Appointment
 	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Where("user_id = ?", authUserID).Order("appointment_time DESC").Find(&appointments)
+	for i := range appointments {
+		appointments[i].Status = normalizeAppointmentStatus(appointments[i].Status)
+	}
 	c.JSON(http.StatusOK, gin.H{"data": appointments})
 }
 
@@ -272,7 +278,7 @@ func GetCardAppointment(c *gin.Context) {
 
 	var appointment models.Appointment
 	err := config.DB.Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").
-		Where("card_id = ? AND merchant_id = ? AND user_id = ? AND status IN ('pending', 'confirmed', 'failed')", card.ID, card.MerchantID, card.UserID).
+		Where("card_id = ? AND merchant_id = ? AND user_id = ? AND status IN ('pending', 'confirmed', 'arrived', 'failed')", card.ID, card.MerchantID, card.UserID).
 		Order("appointment_time ASC").
 		First(&appointment).Error
 
@@ -291,6 +297,7 @@ func GetCardAppointment(c *gin.Context) {
 	}
 
 	log.Printf("找到预约: ID=%d, 状态=%s, 时间=%v", appointment.ID, appointment.Status, appointment.AppointmentTime)
+	appointment.Status = normalizeAppointmentStatus(appointment.Status)
 
 	now := time.Now()
 	autoCanceled, autoCancelErr := autoCancelAppointmentIfOverdue(&appointment, now)
@@ -328,9 +335,12 @@ func GetCardAppointment(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"appointment":       appointment,
-			"queue_before":      queueBefore,
-			"estimated_minutes": int(queueBefore) * 30,
+			"appointment":            appointment,
+			"queue_before":           queueBefore,
+			"estimated_minutes":      int(queueBefore) * 30,
+			"service_session_id":     appointment.ServiceSessionID,
+			"predicted_wait_minutes": appointment.PredictedWaitMinutes,
+			"can_arrive_now":         canArriveForAppointment(appointment, &merchant, now),
 		},
 	})
 }
@@ -481,9 +491,31 @@ func CreateAppointment(c *gin.Context) {
 		AppointmentTime: &appointmentTime,
 		Status:          "pending",
 	}
-	result := config.DB.Create(&appointment)
-	if result.Error != nil {
-		log.Printf("创建预约失败: %v", result.Error)
+
+	// 预约创建必须做事务级校验：用户手选客服时，要在落库前重新检查“未来预约占产能”规则，
+	// 避免前端时段缓存与并发提交之间出现超卖或越过最大等待上限。
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if input.TechnicianID != nil && *input.TechnicianID > 0 {
+			availability, err := evaluateBookingTechnicianAvailability(tx, merchant, *input.TechnicianID, appointmentTime, serviceMinutes, 0)
+			if err != nil {
+				return err
+			}
+			if availability.State == appointmentAvailabilityUnavailable {
+				return apiErr{status: http.StatusBadRequest, msg: availability.Reason}
+			}
+			appointment.PredictedWaitMinutes = availability.PredictedWaitMinutes
+		}
+		if err := tx.Create(&appointment).Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		log.Printf("创建预约失败: %v", err)
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建预约失败"})
 		return
 	}
@@ -530,8 +562,13 @@ func ConfirmAppointment(c *gin.Context) {
 		return
 	}
 
-	config.DB.Model(&appointment).Update("status", "confirmed")
+	confirmedAt := time.Now()
+	config.DB.Model(&appointment).Updates(map[string]interface{}{
+		"status":       "confirmed",
+		"confirmed_at": &confirmedAt,
+	})
 	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Technician").First(&appointment, id)
+	appointment.Status = normalizeAppointmentStatus(appointment.Status)
 	// 入预约队列（内存队列）：仅 confirmed 才进入预约排队
 	if appointment.AppointmentTime != nil {
 		date := appointment.AppointmentTime.Format("2006-01-02")
@@ -542,6 +579,10 @@ func ConfirmAppointment(c *gin.Context) {
 }
 
 func FinishAppointment(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, gin.H{"error": "预约完成已改为随核销/服务会话自动闭环"})
+}
+
+func UpdateAppointmentResolution(c *gin.Context) {
 	id := c.Param("id")
 	var appointment models.Appointment
 	if err := config.DB.First(&appointment, id).Error; err != nil {
@@ -549,48 +590,31 @@ func FinishAppointment(c *gin.Context) {
 		return
 	}
 
-	if autoCanceled, autoCancelErr := autoCancelAppointmentIfOverdue(&appointment, time.Now()); autoCancelErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "自动取消预约失败"})
-		return
-	} else if autoCanceled {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "预约已超时取消，无法核销"})
+	if _, _, ok := checkMerchantAppointmentOwnership(c, appointment); !ok {
 		return
 	}
 
-	if appointment.Status != "confirmed" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "只能完成已确认的预约"})
+	var input struct {
+		ResolutionNote string `json:"resolution_note" binding:"required,max=255"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	if appointment.AppointmentTime == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "预约时间为空"})
+	note := strings.TrimSpace(input.ResolutionNote)
+	if note == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "处理备注不能为空"})
 		return
 	}
 
-	var merchant models.Merchant
-	if err := config.DB.First(&merchant, appointment.MerchantID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+	// 改签/补偿首版先把人工处理动作落到结构化备注，避免预约冲突只能靠线下口头同步。
+	if err := config.DB.Model(&appointment).Update("resolution_note", note).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存处理备注失败"})
 		return
 	}
-
-	serviceMinutes := getAppointmentServiceMinutes(merchant.ID, appointment)
-
-	now := time.Now()
-	finishDeadline := appointment.AppointmentTime.Add(time.Duration(serviceMinutes+30) * time.Minute)
-	if now.After(finishDeadline) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "已过服务时间，无法核销"})
-		return
-	}
-
-	config.DB.Model(&appointment).Update("status", "finished")
-	// 完成后推进预约队列
-	if appointment.AppointmentTime != nil {
-		date := appointment.AppointmentTime.Format("2006-01-02")
-		now2 := time.Now()
-		queue.Default.MarkDone(appointment.MerchantID, date, queue.QueueTypeAppointment, appointment.ID, now2)
-		queue.Default.CallNextUncalled(appointment.MerchantID, date, queue.QueueTypeAppointment, now2)
-	}
-	config.DB.Preload("User").Preload("Card").Preload("Merchant").First(&appointment, id)
+	appointment.ResolutionNote = note
+	appointment.Status = normalizeAppointmentStatus(appointment.Status)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 
@@ -636,7 +660,8 @@ func CancelAppointment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "取消预约失败"})
 		return
 	}
-	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Technician").First(&appointment, id)
+	appointment.Status = "canceled"
+	appointment.CanceledAt = &now
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 
@@ -793,11 +818,18 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	}
 
 	// 标记已被占用的时间段（按各自预约项目时长占用）
+	type TechnicianCandidate struct {
+		TechnicianID         uint   `json:"technician_id"`
+		AvailabilityState    string `json:"availability_state"`
+		PredictedWaitMinutes int    `json:"predicted_wait_minutes"`
+		AvailabilityReason   string `json:"availability_reason,omitempty"`
+	}
 	type TimeSlot struct {
-		Time          string `json:"time"`
-		Available     bool   `json:"available"`
-		UserName      string `json:"user_name,omitempty"`
-		TechnicianIDs []uint `json:"technician_ids,omitempty"`
+		Time                 string                `json:"time"`
+		Available            bool                  `json:"available"`
+		UserName             string                `json:"user_name,omitempty"`
+		TechnicianIDs        []uint                `json:"technician_ids,omitempty"`
+		TechnicianCandidates []TechnicianCandidate `json:"technician_candidates,omitempty"`
 	}
 
 	var timeSlots []TimeSlot
@@ -812,6 +844,7 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		available := true
 		userName := ""
 		availableTechIDs := make([]uint, 0)
+		candidates := make([]TechnicianCandidate, 0, len(technicians))
 
 		// 检查这个时间段是否与现有预约冲突
 		for _, apt := range appointments {
@@ -838,33 +871,35 @@ func GetAvailableTimeSlots(c *gin.Context) {
 
 		// 若没有“占用全部”的预约冲突，则为该时间段计算可预约技师列表
 		if available && len(allTechIDs) > 0 {
-			availableTechIDs = append(availableTechIDs, allTechIDs...)
-			// 逐个预约把冲突的技师剔除
-			for _, apt := range appointments {
-				if apt.AppointmentTime == nil || apt.TechnicianID == nil {
+			for _, tech := range technicians {
+				availability, err := evaluateBookingTechnicianAvailability(config.DB, merchant, tech.ID, slotTime, serviceMinutes, 0)
+				if err != nil {
+					log.Printf("evaluate booking availability failed: merchant=%d tech=%d slot=%s err=%v", merchant.ID, tech.ID, slot, err)
 					continue
 				}
-				aptTime := *apt.AppointmentTime
-				aptMinutes := getAppointmentServiceMinutes(merchant.ID, apt)
-				aptEnd := aptTime.Add(time.Duration(aptMinutes) * time.Minute)
-				slotEnd := slotTime.Add(time.Duration(serviceMinutes) * time.Minute)
-				if slotTime.Before(aptEnd) && aptTime.Before(slotEnd) {
-					// remove tech id
-					removeID := *apt.TechnicianID
-					filtered := make([]uint, 0, len(availableTechIDs))
-					for _, id := range availableTechIDs {
-						if id != removeID {
-							filtered = append(filtered, id)
-						}
-					}
-					availableTechIDs = filtered
+				candidates = append(candidates, TechnicianCandidate{
+					TechnicianID:         tech.ID,
+					AvailabilityState:    string(availability.State),
+					PredictedWaitMinutes: availability.PredictedWaitMinutes,
+					AvailabilityReason:   availability.Reason,
+				})
+				if availability.State != appointmentAvailabilityUnavailable {
+					availableTechIDs = append(availableTechIDs, tech.ID)
 				}
 			}
 		}
 
 		// 仅返回可预约的时间段（排除已被预约/占用的时间段）
 		if available {
-			timeSlots = append(timeSlots, TimeSlot{Time: slot, Available: true, UserName: userName, TechnicianIDs: availableTechIDs})
+			if len(allTechIDs) == 0 || len(availableTechIDs) > 0 {
+				timeSlots = append(timeSlots, TimeSlot{
+					Time:                 slot,
+					Available:            true,
+					UserName:             userName,
+					TechnicianIDs:        availableTechIDs,
+					TechnicianCandidates: candidates,
+				})
+			}
 		}
 	}
 

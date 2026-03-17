@@ -30,15 +30,19 @@ type preparedVerifyClaims struct {
 }
 
 type verifyCommitResult struct {
-	Merchant            models.Merchant
-	Card                models.Card
-	UsedAt              time.Time
-	RemainTimes         int
-	SessionID           uint
-	NextStep            string
-	UsageID             uint
-	ShouldEnqueueOnsite bool
-	Action              string
+	Merchant             models.Merchant
+	Card                 models.Card
+	UsedAt               time.Time
+	RemainTimes          int
+	SessionID            uint
+	NextStep             string
+	UsageID              uint
+	ShouldEnqueueOnsite  bool
+	Action               string
+	AppointmentStatus    string
+	PredictedWaitMinutes int
+	SessionWaitState     string
+	BoundTechnicianID    uint
 }
 
 func verifyTokenSecret() string {
@@ -286,6 +290,27 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 	result.SessionID = session.ID
 	result.NextStep = nextStep
 	result.ShouldEnqueueOnsite = shouldEnqueueOnsite
+	if session.TechnicianID != nil {
+		result.BoundTechnicianID = *session.TechnicianID
+	}
+	if session.SourceType == serviceSessionSourceAppointment && session.SourceID != nil {
+		arrivedAt := now
+		appointmentStatus := "arrived"
+		if err := tx.Model(&models.Appointment{}).
+			Where("id = ? AND status IN ?", *session.SourceID, []string{"confirmed", "arrived"}).
+			Updates(map[string]interface{}{
+				"status":                 appointmentStatus,
+				"arrived_at":             &arrivedAt,
+				"usage_id":               usage.ID,
+				"service_session_id":     session.ID,
+				"predicted_wait_minutes": session.PredictedAppointmentDelayMinutes,
+			}).Error; err != nil {
+			return result, err
+		}
+		result.AppointmentStatus = appointmentStatus
+		result.PredictedWaitMinutes = session.PredictedAppointmentDelayMinutes
+		result.SessionWaitState = models.NormalizeSessionStatus(session.Status)
+	}
 	return result, nil
 }
 
@@ -518,13 +543,17 @@ func CommitPreparedVerify(c *gin.Context) {
 	}
 
 	resp := gin.H{
-		"action":       result.Action,
-		"card_id":      result.Card.ID,
-		"usage_id":     result.UsageID,
-		"remain_times": result.RemainTimes,
-		"used_at":      result.UsedAt.Format("2006-01-02 15:04:05"),
-		"session_id":   result.SessionID,
-		"next_step":    result.NextStep,
+		"action":                 result.Action,
+		"card_id":                result.Card.ID,
+		"usage_id":               result.UsageID,
+		"remain_times":           result.RemainTimes,
+		"used_at":                result.UsedAt.Format("2006-01-02 15:04:05"),
+		"session_id":             result.SessionID,
+		"next_step":              result.NextStep,
+		"appointment_status":     result.AppointmentStatus,
+		"predicted_wait_minutes": result.PredictedWaitMinutes,
+		"session_wait_state":     result.SessionWaitState,
+		"bound_technician_id":    result.BoundTechnicianID,
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "核销成功", "data": resp})
 	enqueueVerifyUsageIfNeeded(result.Merchant, result.Card, result.UsageID, result.ShouldEnqueueOnsite)

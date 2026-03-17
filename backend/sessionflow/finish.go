@@ -63,6 +63,15 @@ func FinishServiceSession(tx *gorm.DB, s *models.ServiceSession, merchant *model
 		date := now.Format("2006-01-02")
 		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID, now)
 	}
+	if s.SourceType == "appointment" && s.SourceID != nil {
+		completedAt := finishedAt
+		_ = tx.Model(&models.Appointment{}).
+			Where("id = ?", *s.SourceID).
+			Updates(map[string]interface{}{
+				"status":       "completed",
+				"completed_at": &completedAt,
+			}).Error
+	}
 	return nil
 }
 
@@ -77,12 +86,14 @@ func FinalizeUsageAndSession(tx *gorm.DB, usageID uint, merchant *models.Merchan
 		InitialUsageID      uint   `gorm:"column:initial_usage_id"`
 		Status              string `gorm:"column:status"`
 		TechnicianID        *uint  `gorm:"column:technician_id"`
+		SourceType          string `gorm:"column:source_type"`
+		SourceID            *uint  `gorm:"column:source_id"`
 		StartConfirmedAtRaw string `gorm:"column:start_confirmed_at"`
 		FinishedAtRaw       string `gorm:"column:finished_at"`
 	}
 	query := tx.
 		Table("service_sessions").
-		Select("id", "merchant_id", "initial_usage_id", "status", "technician_id", "start_confirmed_at", "finished_at").
+		Select("id", "merchant_id", "initial_usage_id", "status", "technician_id", "source_type", "source_id", "start_confirmed_at", "finished_at").
 		Where("initial_usage_id = ?", usageID).
 		Order("id desc").
 		Limit(1).
@@ -115,6 +126,8 @@ func FinalizeUsageAndSession(tx *gorm.DB, usageID uint, merchant *models.Merchan
 		InitialUsageID: row.InitialUsageID,
 		Status:         row.Status,
 		TechnicianID:   row.TechnicianID,
+		SourceType:     row.SourceType,
+		SourceID:       row.SourceID,
 	}
 	s.StartConfirmedAt = &finishedAt
 

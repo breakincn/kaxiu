@@ -594,7 +594,7 @@ func assignRoomIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 		r := rooms[i]
 		var cnt int64
 		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, r.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})).
+			Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, r.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})).
 			Count(&cnt).Error; err != nil {
 			return err
 		}
@@ -778,6 +778,10 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		if baseStatus == "finished" || baseStatus == "canceled" {
 			return apiErr{status: http.StatusBadRequest, msg: "会话已结束"}
 		}
+		// 商户端手动改派只允许发生在“还没正式开始服务”的阶段，预约优先等待同样属于可改派状态。
+		if baseStatus != "room_locked" && baseStatus != "staff_selecting" && baseStatus != "appointment_waiting" {
+			return apiErr{status: http.StatusBadRequest, msg: "当前会话状态不支持改派客服"}
+		}
 		var m models.Merchant
 		if err := tx.First(&m, merchantID).Error; err != nil {
 			return err
@@ -786,7 +790,8 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		if err := models.ValidateSessionModeForEntry(&s, &m); err != nil {
 			return apiErr{status: http.StatusBadRequest, msg: err.Error()}
 		}
-		if m.SupportRoom && s.RoomID == nil {
+		// appointment_waiting 允许先换客服，再由调度器接手推进选房/待开始，避免房间约束把预约冲突卡死。
+		if m.SupportRoom && s.RoomID == nil && baseStatus != "appointment_waiting" {
 			return apiErr{status: http.StatusBadRequest, msg: "请先选择房间"}
 		}
 		var tech models.Technician
@@ -814,6 +819,7 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 			"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 			"staff_select_entered_at":       nil,
 			"staff_select_cooldown_until":   nil,
+			"predicted_ready_at":            nil,
 			"start_pending_timeout_seconds": timeoutSeconds,
 		}
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {

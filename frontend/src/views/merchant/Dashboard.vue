@@ -244,7 +244,7 @@
       <Table :embedded="true" />
     </div>
 
-    <!-- 预约（技师端） -->
+    <!-- 预约 -->
     <div v-if="currentTab === 'appointment' && showAppointmentTab" class="px-4 py-4 space-y-4">
       <div v-if="appointmentGroups.length > 0" class="space-y-4">
         <div v-for="group in appointmentGroups" :key="group.key" class="space-y-4">
@@ -264,6 +264,16 @@
               <div v-if="appt.status === 'confirmed' && getAppointmentCountdown(appt) !== null && !isServiceTimeExpired(appt)" :class="getServiceCountdownClass(appt)" class="mt-1">
                 服务开始: {{ getServiceCountdownDisplay(appt) }}
               </div>
+              <div
+                v-if="getAppointmentRiskHint(appt)"
+                class="mt-2 rounded-lg px-3 py-2 text-sm"
+                :class="appt.status === 'arrived' ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-primary-light text-primary border border-primary/10'"
+              >
+                {{ getAppointmentRiskHint(appt) }}
+              </div>
+              <div v-if="appt.resolution_note" class="mt-2 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 border border-gray-100">
+                处理备注: {{ appt.resolution_note }}
+              </div>
             </div>
             <span :class="getStatusBadgeClass(appt)">
               {{ getStatusText(appt) }}
@@ -271,8 +281,7 @@
           </div>
 
           <div class="flex gap-2 mt-3">
-            <!-- 技师登录才显示操作按钮；商户账号仅展示 -->
-            <template v-if="isTechnicianAuth() && canOperateAppointment(appt)">
+            <template v-if="canOperateAppointment(appt)">
               <button
                 v-if="appt.status === 'pending' && !isPendingExpired(appt)"
                 @click="confirmAppointment(appt.id)"
@@ -294,26 +303,9 @@
               >
                 未确认预约
               </button>
-              <div
-                v-if="appt.status === 'confirmed' && !shouldShowFinishButton(appt)"
-                class="flex-1 py-2 text-primary text-sm font-medium text-center"
-              >
-                已确认
+              <div v-if="appt.status === 'confirmed'" class="flex-1 py-2 text-primary text-sm font-medium text-center">
+                待到店核销
               </div>
-              <button
-                v-if="shouldShowFinishButton(appt) && !isWriteOffExpired(appt)"
-                @click="finishAppointment(appt.id)"
-                class="flex-1 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium"
-              >
-                完成服务 (扣次)
-              </button>
-              <button
-                v-if="appt.status === 'confirmed' && isWriteOffExpired(appt)"
-                disabled
-                class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
-              >
-                未核销
-              </button>
               <button
                 v-if="appt.status === 'confirmed'"
                 @click="cancelAppointment(appt.id)"
@@ -321,10 +313,27 @@
               >
                 取消
               </button>
-            </template>
-            <!-- 商户账号不显示任何按钮，仅做展示 -->
-            <template v-else>
-              <!-- 不渲染任何按钮 -->
+              <button
+                v-if="appt.status === 'arrived'"
+                @click="keepWaitingForAppointment(appt)"
+                class="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
+              >
+                继续等待原客服
+              </button>
+              <button
+                v-if="appt.status === 'arrived' && appt.service_session_id"
+                @click="reassignAppointmentService(appt)"
+                class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+              >
+                改派其他客服
+              </button>
+              <button
+                v-if="['confirmed', 'arrived', 'completed', 'no_show', 'failed'].includes(appt.status)"
+                @click="saveAppointmentResolution(appt)"
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+              >
+                改签/补偿
+              </button>
             </template>
           </div>
         </div>
@@ -1396,10 +1405,7 @@ const showStartTab = computed(() => {
 })
 
 const showAppointmentTab = computed(() => {
-  // 技师端：展示“预约”一级标签页（仅用于被指定客服确认预约）
-  return isTechnicianAuth() &&
-    !!merchant.value?.support_appointment &&
-    (canAppointmentView.value || canAppointmentManage.value)
+  return !!merchant.value?.support_appointment && (canAppointmentView.value || canAppointmentManage.value)
 })
 
 const showAppointmentSummaryCard = computed(() => {
@@ -1971,29 +1977,37 @@ const assignedAppointments = computed(() => {
   return (appointments.value || []).filter(a => Number(a?.technician_id) === Number(currentTechnicianId))
 })
 const appointmentGroups = computed(() => {
+  const list = appointments.value || []
   if (!isTechnicianAuth()) {
-    return (appointments.value || []).length > 0
-      ? [{ key: 'all', title: '', items: appointments.value || [] }]
-      : []
+    const active = list.filter(a => !['completed', 'no_show', 'failed'].includes(a?.status))
+    const settled = list.filter(a => ['completed', 'no_show', 'failed'].includes(a?.status))
+    const groups = []
+    if (active.length > 0) groups.push({ key: 'active', title: '进行中', items: active })
+    if (settled.length > 0) groups.push({ key: 'settled', title: '已结束', items: settled })
+    return groups
   }
 
   const groups = []
+  const myActive = assignedAppointments.value.filter(a => !['completed', 'no_show', 'failed'].includes(a?.status))
+  const mySettled = assignedAppointments.value.filter(a => ['completed', 'no_show', 'failed'].includes(a?.status))
   if (unassignedAppointments.value.length > 0) {
     groups.push({ key: 'unassigned', title: '待分配', items: unassignedAppointments.value })
   }
-  if (assignedAppointments.value.length > 0) {
+  if (myActive.length > 0) {
     groups.push({
       key: 'assigned',
       title: unassignedAppointments.value.length > 0 ? '我的预约' : '',
-      items: assignedAppointments.value
+      items: myActive
     })
+  }
+  if (mySettled.length > 0) {
+    groups.push({ key: 'assigned-settled', title: '已结束', items: mySettled })
   }
   return groups
 })
 const appointmentSummaryCount = computed(() => {
   if (!showAppointmentTab.value) return 0
-  if (!isTechnicianAuth()) return Number(pendingAppointments.value || 0)
-  return (appointments.value || []).filter(a => a?.status === 'pending').length
+  return (appointments.value || []).filter(a => ['pending', 'confirmed', 'arrived'].includes(a?.status)).length
 })
 const todayUsages = ref([])
 const todayStartUsages = ref([])
@@ -3400,7 +3414,9 @@ const fetchAppointments = async () => {
   }
   try {
     const res = await appointmentApi.getMerchantAppointments(merchantId.value)
-    appointments.value = (res.data.data || []).filter(a => a.status !== 'finished' && a.status !== 'canceled')
+    appointments.value = (res.data.data || [])
+      .filter(a => a.status !== 'canceled')
+      .sort((a, b) => new Date(a?.appointment_time || 0).getTime() - new Date(b?.appointment_time || 0).getTime())
   } catch (err) {
     console.error('获取预约列表失败:', err)
   }
@@ -3543,16 +3559,6 @@ const confirmAppointment = async (id) => {
   }
 }
 
-const finishAppointment = async (id) => {
-  try {
-    await appointmentApi.finishAppointment(id)
-    fetchAppointments()
-    fetchQueueStatus()
-  } catch (err) {
-    alert(err.response?.data?.error || '完成失败')
-  }
-}
-
 const cancelAppointment = async (id) => {
   if (!confirm('确定要取消这个预约吗？此操作不可撤销。')) {
     return
@@ -3576,9 +3582,18 @@ const verifyCard = async () => {
   
   try {
     const res = await cardApi.verifyCard(verifyCodeInput.value)
+    const data = res?.data?.data || {}
+    const extraMessages = []
+    if (data.appointment_status === 'arrived') {
+      if (data.session_wait_state === 'appointment_waiting' && Number(data.predicted_wait_minutes || 0) > 0) {
+        extraMessages.push(`预约客户已到店，预计等待 ${data.predicted_wait_minutes} 分钟`)
+      } else {
+        extraMessages.push('预约客户已到店，已进入服务闭环')
+      }
+    }
     verifyResult.value = {
       success: true,
-      message: `核销成功！剩余次数: ${res.data.data.remain_times}`
+      message: [`核销成功！剩余次数: ${data.remain_times}`, ...extraMessages].join('；')
     }
     verifyCodeInput.value = ''
     fetchQueueStatus()
@@ -3806,7 +3821,10 @@ const getStatusBadgeClass = (appt) => {
   const classes = {
     pending: 'px-2 py-1 rounded text-xs font-medium bg-primary-light text-primary',
     confirmed: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700',
-    finished: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700',
+    arrived: 'px-2 py-1 rounded text-xs font-medium bg-amber-50 text-amber-700',
+    completed: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700',
+    failed: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500',
+    no_show: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500',
     canceled: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500'
   }
   return classes[appt.status] || ''
@@ -3829,8 +3847,11 @@ const getStatusText = (appt) => {
 
   const texts = {
     pending: '待确认',
-    confirmed: '已确认',
-    finished: '已完成',
+    confirmed: '待到店',
+    arrived: '已到店',
+    completed: '已完成',
+    failed: '分配失败',
+    no_show: '已失约',
     canceled: '已取消'
   }
   return texts[appt.status] || appt.status
@@ -3925,10 +3946,96 @@ const getAppointmentCardNoDisplay = (appt) => {
 }
 
 const canOperateAppointment = (appt) => {
+  if (canAppointmentManage.value && getMerchantActiveAuth() === 'merchant') {
+    return true
+  }
   if (!isTechnicianAuth()) return false
   const currentTechnicianId = getTechnicianId()
   if (!currentTechnicianId) return false
+  if (!appt?.technician_id) {
+    return !!canAppointmentManage.value
+  }
   return Number(appt?.technician_id) === Number(currentTechnicianId)
+}
+
+const getAppointmentRiskHint = (appt) => {
+  const predictedWait = Number(appt?.predicted_wait_minutes || 0)
+  if (appt?.status === 'confirmed' && predictedWait > 0) {
+    return `该预约属于风险可约，若前序服务压单，预计到店等待 ${predictedWait} 分钟`
+  }
+  if (appt?.status === 'arrived' && predictedWait > 0) {
+    return `前序服务未结束，预计还需等待 ${predictedWait} 分钟，系统已按预约优先等待处理`
+  }
+  if (appt?.status === 'arrived' && appt?.service_session_id) {
+    return '客户已到店，服务会话已绑定到本次预约'
+  }
+  return ''
+}
+
+const getAppointmentReassignCandidates = async (appt) => {
+  const res = await attendanceApi.listAvailableTechnicians()
+  const currentTechnicianId = Number(appt?.technician_id || 0)
+  return (res.data?.data || []).filter(item => {
+    const technicianId = Number(item?.technician_id || item?.technician?.id || 0)
+    if (!technicianId || technicianId === currentTechnicianId) return false
+    const roleKey = String(item?.technician?.service_role?.key || '')
+    return roleKey !== 'store_manager' && roleKey !== 'front_desk'
+  })
+}
+
+const keepWaitingForAppointment = async (appt) => {
+  await fetchAppointments()
+  if (appt?.service_session_id) {
+    await fetchServiceSessions()
+  }
+  alert('已保持原客服等待顺序，系统会在该客服释放后优先推进此预约')
+}
+
+const reassignAppointmentService = async (appt) => {
+  if (!appt?.service_session_id) {
+    alert('当前预约尚未生成服务会话，无法改派')
+    return
+  }
+  try {
+    const candidates = await getAppointmentReassignCandidates(appt)
+    if (candidates.length === 0) {
+      alert('当前没有其他空闲客服可改派')
+      return
+    }
+    const promptText = candidates.map(item => {
+      const technicianId = Number(item?.technician_id || item?.technician?.id || 0)
+      const name = item?.technician?.account || item?.technician?.name || item?.technician?.code || `客服${technicianId}`
+      const roleName = item?.technician?.service_role?.name || ''
+      return `${technicianId}: ${roleName ? `${roleName} / ` : ''}${name}`
+    }).join('\n')
+    const nextTechnicianId = window.prompt(`请输入要改派的客服ID：\n${promptText}`)
+    const parsedTechnicianId = Number(nextTechnicianId || 0)
+    if (!parsedTechnicianId) return
+    await serviceSessionApi.chooseTechnician(appt.service_session_id, { technician_id: parsedTechnicianId })
+    alert('已改派客服，预约将按新的客服继续推进')
+    await fetchAppointments()
+    await fetchServiceSessions()
+  } catch (err) {
+    alert(err.response?.data?.error || '改派失败')
+  }
+}
+
+const saveAppointmentResolution = async (appt) => {
+  const initialValue = String(appt?.resolution_note || '').trim()
+  const note = window.prompt('请输入改签/补偿/人工处理备注', initialValue)
+  if (note === null) return
+  const nextNote = String(note || '').trim()
+  if (!nextNote) {
+    alert('处理备注不能为空')
+    return
+  }
+  try {
+    await appointmentApi.updateResolution(appt.id, { resolution_note: nextNote })
+    alert('处理备注已保存')
+    await fetchAppointments()
+  } catch (err) {
+    alert(err.response?.data?.error || '保存处理备注失败')
+  }
 }
 
 const getAppointmentProjectName = (appt) => {
@@ -4057,22 +4164,6 @@ const getServiceCountdownClass = (appt) => {
   }
   
   return 'text-gray-500 text-sm font-medium mt-1'
-}
-
-// 判断是否应该显示完成服务按钮
-const shouldShowFinishButton = (appt) => {
-  if (appt.status !== 'confirmed') return false
-  if (!appt.appointment_time) return false
-  
-  const appointmentTime = new Date(appt.appointment_time).getTime()
-  const now = currentTime.value
-  const elapsed = now - appointmentTime // 已过的时间（毫秒）
-  
-  // 需要过了预约时间 + 服务时长 - 1分钟 才显示按钮
-  const serviceMinutes = getAppointmentServiceMinutes(appt)
-  const requiredTime = (serviceMinutes - 1) * 60 * 1000
-  
-  return elapsed >= requiredTime
 }
 
 // 启动倒计时定时器
@@ -4458,6 +4549,7 @@ const getSessionStatusText = (status) => {
     room_selecting: '选房中',
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
+    appointment_waiting: '预约优先等待',
     start_pending: getMerchantPendingStartLabel(),
     delay_pending: getMerchantPendingStartLabel({ queueMode: true }),
     timeout_waiting: '过号等待',
