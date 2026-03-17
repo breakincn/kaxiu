@@ -4218,7 +4218,10 @@ const fetchAppointmentRescheduleSlots = async () => {
   appointmentRescheduleLoading.value = true
   try {
     const res = await appointmentApi.getAvailableTimeSlots(merchantId.value, appointmentRescheduleForm.value.date, appt?.project_id || appt?.project?.id)
-    appointmentRescheduleSlots.value = (res.data?.data || []).map(slot => ({
+    // available-slots 接口返回的是对象，时间段列表位于 data.time_slots。
+    // 这里兼容旧数组写法，避免弹窗把成功响应误判成“获取可改签时间失败”。
+    const rawSlots = Array.isArray(res.data?.data) ? res.data.data : (res.data?.data?.time_slots || [])
+    appointmentRescheduleSlots.value = rawSlots.map(slot => ({
       ...slot,
       label: slot?.time ? String(slot.time).slice(11, 16) : ''
     }))
