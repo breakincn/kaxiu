@@ -98,8 +98,8 @@
 
         <button
           @click="save"
-          :disabled="saving"
-          class="w-full mt-6 bg-primary text-white py-3 rounded-lg hover:bg-primary-dark font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+          :disabled="loading || saving || !isDirty"
+          class="w-full mt-6 bg-primary text-white py-3 rounded-lg hover:bg-primary-dark font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {{ saving ? '保存中...' : '保存' }}
         </button>
@@ -109,13 +109,14 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
 
 const router = useRouter()
 const loading = ref(true)
 const saving = ref(false)
+const initialSnapshot = ref('')
 
 const form = ref({
   appointment_reserve_buffer_minutes: 10,
@@ -123,6 +124,16 @@ const form = ref({
   appointment_max_wait_minutes: 15,
   appointment_prediction_buffer_minutes: 5
 })
+
+// 保存按钮与其他设置页保持一致，只有表单发生实际变化时才允许提交。
+const buildSnapshot = () => JSON.stringify({
+  appointment_reserve_buffer_minutes: Number(form.value.appointment_reserve_buffer_minutes ?? 0),
+  appointment_grace_window_minutes: Number(form.value.appointment_grace_window_minutes ?? 0),
+  appointment_max_wait_minutes: Number(form.value.appointment_max_wait_minutes ?? 0),
+  appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes ?? 0)
+})
+
+const isDirty = computed(() => buildSnapshot() !== initialSnapshot.value)
 
 const goBack = () => {
   if (window.history.length > 1) {
@@ -153,6 +164,7 @@ const load = async () => {
       appointment_max_wait_minutes: Number(m.appointment_max_wait_minutes ?? 15),
       appointment_prediction_buffer_minutes: Number(m.appointment_prediction_buffer_minutes ?? 5)
     }
+    initialSnapshot.value = buildSnapshot()
   } catch (e) {
     alert(e?.response?.data?.error || '加载失败')
   } finally {
@@ -161,7 +173,7 @@ const load = async () => {
 }
 
 const save = async () => {
-  if (saving.value) return
+  if (loading.value || saving.value || !isDirty.value) return
   saving.value = true
   try {
     await merchantApi.updateCurrentMerchantServices({

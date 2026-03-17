@@ -29,7 +29,7 @@
           
           <button
             @click="startChanging"
-            class="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 font-medium"
+            class="w-full bg-primary text-white py-3 rounded-lg hover:bg-primary-dark font-medium transition-colors"
           >
             更换手机号
           </button>
@@ -88,8 +88,8 @@
               <button
                 type="button"
                 @click="sendCode"
-                :disabled="countdown > 0"
-                class="px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed whitespace-nowrap"
+                :disabled="!canSendCode"
+                class="px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
               >
                 {{ countdown > 0 ? `${countdown}秒后重试` : '发送验证码' }}
               </button>
@@ -99,7 +99,8 @@
           <!-- 提交按钮 -->
           <button
             type="submit"
-            class="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 font-medium mt-6"
+            :disabled="!canSubmit"
+            class="w-full bg-primary text-white py-3 rounded-lg hover:bg-primary-dark font-medium mt-6 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {{ currentPhone ? '确认更换' : '确认绑定' }}
           </button>
@@ -130,7 +131,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi } from '../../api'
 
@@ -147,6 +148,13 @@ const countdown = ref(0)
 let timer = null
 
 const isTechnician = () => getMerchantActiveAuth() === 'staff'
+const isValidPhone = computed(() => /^1[3-9]\d{9}$/.test(phone.value))
+const canSendCode = computed(() => isValidPhone.value && countdown.value <= 0)
+const canSubmit = computed(() => {
+  if (!isValidPhone.value || !code.value) return false
+  if (!isTechnician() && currentPhone.value && !password.value) return false
+  return true
+})
 
 // 获取当前账号信息
 const fetchMerchantInfo = async () => {
