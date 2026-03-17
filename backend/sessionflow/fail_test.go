@@ -74,3 +74,26 @@ func TestFailServiceSessionAndRefundMarksUsageFailedAndRefundsCard(t *testing.T)
 		t.Fatalf("want queue MarkDone on usage %d, got %+v", usage.ID, stub.doneIDs)
 	}
 }
+
+func TestCompleteUnstartedServiceSessionReturnsNilWhenSessionMissing(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:sessionflow_complete_missing_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Usage{}, &models.ServiceSession{}, &models.TechnicianAttendance{}); err != nil {
+		t.Fatalf("migrate failed: %v", err)
+	}
+
+	usage := models.Usage{MerchantID: 1, Status: "in_progress"}
+	if err := db.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	handled, err := CompleteUnstartedServiceSession(db, usage.ID, 1, time.Now())
+	if err != nil {
+		t.Fatalf("CompleteUnstartedServiceSession failed: %v", err)
+	}
+	if handled {
+		t.Fatalf("want missing session to be ignored")
+	}
+}

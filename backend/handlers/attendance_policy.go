@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"errors"
 	"kabao/config"
 	"kabao/models"
 	"time"
@@ -19,12 +18,12 @@ func isRoleAttendanceRequired(tx *gorm.DB, merchantID uint, serviceRoleID uint) 
 
 	// 商户覆盖优先
 	var cfg models.MerchantRoleAttendanceConfig
-	err := tx.Where("merchant_id = ? AND service_role_id = ?", merchantID, serviceRoleID).First(&cfg).Error
-	if err == nil {
-		return cfg.RequireAttendance, nil
+	query := tx.Where("merchant_id = ? AND service_role_id = ?", merchantID, serviceRoleID).Limit(1).Find(&cfg)
+	if query.Error != nil {
+		return true, query.Error
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return true, err
+	if query.RowsAffected > 0 {
+		return cfg.RequireAttendance, nil
 	}
 
 	// 否则取岗位默认
@@ -46,14 +45,15 @@ func ensureAttendanceForNoCheckinRole(tx *gorm.DB, merchantID uint, technicianID
 
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	var att models.TechnicianAttendance
-	err := tx.Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, technicianID, start).
+	query := tx.Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, technicianID, start).
 		Order("id desc").
-		First(&att).Error
-	if err == nil {
-		return nil
+		Limit(1).
+		Find(&att)
+	if query.Error != nil {
+		return query.Error
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+	if query.RowsAffected > 0 {
+		return nil
 	}
 
 	att = models.TechnicianAttendance{MerchantID: merchantID, TechnicianID: technicianID, CheckedInAt: &now, CheckedOutAt: nil, Status: "idle", NextStatus: nil}

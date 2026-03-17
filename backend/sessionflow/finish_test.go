@@ -161,3 +161,26 @@ func TestFinalizeUsageAndSessionCompletesUnstartedSessionAndMarksQueueDone(t *te
 		t.Fatalf("want queue MarkDone on usage %d, got %+v", usage.ID, stub.doneIDs)
 	}
 }
+
+func TestFinalizeUsageAndSessionReturnsFalseWhenSessionMissing(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:sessionflow_finalize_missing_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Usage{}, &models.ServiceSession{}); err != nil {
+		t.Fatalf("migrate failed: %v", err)
+	}
+
+	usage := models.Usage{MerchantID: 1, Status: "in_progress"}
+	if err := db.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	handled, err := FinalizeUsageAndSession(db, usage.ID, nil, time.Now(), FinishOptions{})
+	if err != nil {
+		t.Fatalf("FinalizeUsageAndSession failed: %v", err)
+	}
+	if handled {
+		t.Fatalf("want missing session to be ignored")
+	}
+}

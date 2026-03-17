@@ -80,16 +80,18 @@ func FinalizeUsageAndSession(tx *gorm.DB, usageID uint, merchant *models.Merchan
 		StartConfirmedAtRaw string `gorm:"column:start_confirmed_at"`
 		FinishedAtRaw       string `gorm:"column:finished_at"`
 	}
-	if err := tx.
+	query := tx.
 		Table("service_sessions").
 		Select("id", "merchant_id", "initial_usage_id", "status", "technician_id", "start_confirmed_at", "finished_at").
 		Where("initial_usage_id = ?", usageID).
 		Order("id desc").
-		First(&row).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return false, nil
-		}
-		return false, err
+		Limit(1).
+		Find(&row)
+	if query.Error != nil {
+		return false, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return false, nil
 	}
 
 	if row.StartConfirmedAtRaw == "" {

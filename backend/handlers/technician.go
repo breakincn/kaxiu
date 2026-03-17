@@ -159,9 +159,11 @@ func GetCurrentTechnician(c *gin.Context) {
 	// 应用商户对“岗位是否需要签到”的覆盖配置
 	{
 		var o models.MerchantRoleAttendanceConfig
-		if err := config.DB.
+		query := config.DB.
 			Where("merchant_id = ? AND service_role_id = ?", merchantID, tech.ServiceRoleID).
-			First(&o).Error; err == nil {
+			Limit(1).
+			Find(&o)
+		if query.Error == nil && query.RowsAffected > 0 {
 			tech.ServiceRole.RequireAttendance = o.RequireAttendance
 		}
 	}

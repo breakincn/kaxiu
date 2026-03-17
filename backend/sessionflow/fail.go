@@ -57,11 +57,12 @@ func FailUsageAndRefund(tx *gorm.DB, usageID uint, merchant *models.Merchant, no
 		queue.Default.MarkDone(merchant.ID, date, queue.QueueTypeOnsite, usageID, now)
 	}
 	var usage models.Usage
-	if err := tx.Select("id", "card_id", "used_times", "status").First(&usage, usageID).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil
-		}
-		return err
+	query := tx.Select("id", "card_id", "used_times", "status").Limit(1).Find(&usage, usageID)
+	if query.Error != nil {
+		return query.Error
+	}
+	if query.RowsAffected == 0 {
+		return nil
 	}
 	if usage.Status != "in_progress" {
 		return nil
@@ -97,15 +98,17 @@ func CompleteUnstartedServiceSession(tx *gorm.DB, usageID uint, merchantID uint,
 		TechnicianID     *uint      `gorm:"column:technician_id"`
 		StartConfirmedAt *time.Time `gorm:"column:start_confirmed_at"`
 	}
-	if err := tx.Table("service_sessions").
+	query := tx.Table("service_sessions").
 		Select("id,status,technician_id,start_confirmed_at").
 		Where("initial_usage_id = ?", usageID).
 		Order("id desc").
-		First(&s).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return false, nil
-		}
-		return false, err
+		Limit(1).
+		Find(&s)
+	if query.Error != nil {
+		return false, query.Error
+	}
+	if query.RowsAffected == 0 {
+		return false, nil
 	}
 	if s.StartConfirmedAt != nil {
 		return false, nil
