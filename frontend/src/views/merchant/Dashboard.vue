@@ -118,7 +118,7 @@
       'grid-cols-3': visibleStatsCount === 3
     }">
       <button
-        v-if="canDirectSaleManage && merchant.support_direct_sale"
+        v-if="canDirectSaleManage && merchant.support_direct_sale && pendingDirectPurchases > 0"
         type="button"
         class="bg-white rounded-xl p-4 text-left border border-gray-100"
         @click="goToDirectPurchaseOrders"
@@ -138,7 +138,7 @@
         <div class="text-gray-500 text-sm">人</div>
       </button>
       <button
-        v-if="canVerify"
+        v-if="canVerify && todayVerifyCount > 0"
         type="button"
         class="bg-white rounded-xl p-4 text-left border border-gray-100"
         @click="selectTab('verify')"
