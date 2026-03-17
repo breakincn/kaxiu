@@ -217,6 +217,7 @@ type Appointment struct {
 	CreatedAt       *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	User       User             `json:"user" gorm:"foreignKey:UserID"`
+	Card       Card             `json:"card" gorm:"foreignKey:CardID"`
 	Merchant   Merchant         `json:"merchant" gorm:"foreignKey:MerchantID"`
 	Project    *MerchantProject `json:"project" gorm:"foreignKey:ProjectID"`
 	Technician *Technician      `json:"technician" gorm:"foreignKey:TechnicianID"`

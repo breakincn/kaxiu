@@ -220,7 +220,7 @@ func GetMerchantAppointments(c *gin.Context) {
 	status := c.Query("status")
 
 	var appointments []models.Appointment
-	query := config.DB.Preload("User").Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").Where("merchant_id = ?", merchantID)
+	query := config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").Where("merchant_id = ?", merchantID)
 
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -490,7 +490,7 @@ func CreateAppointment(c *gin.Context) {
 
 	log.Printf("预约创建成功: ID=%d, 状态=%s", appointment.ID, appointment.Status)
 
-	config.DB.Preload("User").Preload("Merchant").Preload("Project").Preload("Technician").First(&appointment, appointment.ID)
+	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Project").Preload("Technician").First(&appointment, appointment.ID)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 
@@ -531,7 +531,7 @@ func ConfirmAppointment(c *gin.Context) {
 	}
 
 	config.DB.Model(&appointment).Update("status", "confirmed")
-	config.DB.Preload("User").Preload("Merchant").Preload("Technician").First(&appointment, id)
+	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Technician").First(&appointment, id)
 	// 入预约队列（内存队列）：仅 confirmed 才进入预约排队
 	if appointment.AppointmentTime != nil {
 		date := appointment.AppointmentTime.Format("2006-01-02")
@@ -590,7 +590,7 @@ func FinishAppointment(c *gin.Context) {
 		queue.Default.MarkDone(appointment.MerchantID, date, queue.QueueTypeAppointment, appointment.ID, now2)
 		queue.Default.CallNextUncalled(appointment.MerchantID, date, queue.QueueTypeAppointment, now2)
 	}
-	config.DB.Preload("User").Preload("Merchant").First(&appointment, id)
+	config.DB.Preload("User").Preload("Card").Preload("Merchant").First(&appointment, id)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 
@@ -636,7 +636,7 @@ func CancelAppointment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "取消预约失败"})
 		return
 	}
-	config.DB.Preload("User").Preload("Merchant").Preload("Technician").First(&appointment, id)
+	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Technician").First(&appointment, id)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 

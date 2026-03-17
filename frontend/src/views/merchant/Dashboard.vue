@@ -253,6 +253,8 @@
           <div class="flex justify-between items-start">
             <div>
               <div class="font-medium text-gray-800">{{ appt.user?.nickname || appt.user_id }} <span class="ml-2 text-gray-500 text-sm font-normal">{{ formatAppointmentTechnicianDisplay(appt) }}</span></div>
+              <div v-if="getAppointmentCardTypeDisplay(appt)" class="text-gray-500 text-sm mt-1">预约卡片: {{ getAppointmentCardTypeDisplay(appt) }}</div>
+              <div v-if="getAppointmentCardNoDisplay(appt)" class="text-gray-500 text-sm mt-1">预约卡号: {{ getAppointmentCardNoDisplay(appt) }}</div>
               <div v-if="getAppointmentProjectDisplay(appt)" class="text-gray-500 text-sm mt-1">预约项目: {{ getAppointmentProjectDisplay(appt) }}</div>
               <div class="text-gray-500 text-sm mt-1">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
               <div v-if="appt.status === 'pending' && getPendingCountdown(appt) !== null" :class="getPendingCountdownClass(appt)" class="mt-1">
@@ -3844,7 +3846,7 @@ const isWriteOffExpired = (appt) => {
   if (!appt || appt.status !== 'confirmed' || !appt.appointment_time) return false
 
   const appointmentTime = new Date(appt.appointment_time).getTime()
-  const serviceMinutes = 30
+  const serviceMinutes = getAppointmentServiceMinutes(appt)
   const deadlineMs = appointmentTime + (serviceMinutes + 30) * 60 * 1000
   return currentTime.value > deadlineMs
 }
@@ -3854,7 +3856,7 @@ const isServiceTimeExpired = (appt) => {
   if (!appt || appt.status !== 'confirmed' || !appt.appointment_time) return false
 
   const appointmentTime = new Date(appt.appointment_time).getTime()
-  const serviceMinutes = 30
+  const serviceMinutes = getAppointmentServiceMinutes(appt)
   const serviceDeadlineMs = appointmentTime + serviceMinutes * 60 * 1000
   return currentTime.value > serviceDeadlineMs
 }
@@ -3914,6 +3916,14 @@ const formatAppointmentTechnicianDisplay = (appt) => {
   return text || '待分配'
 }
 
+const getAppointmentCardTypeDisplay = (appt) => {
+  return String(appt?.card?.card_type || '').trim()
+}
+
+const getAppointmentCardNoDisplay = (appt) => {
+  return String(appt?.card?.card_no || '').trim()
+}
+
 const canOperateAppointment = (appt) => {
   if (!isTechnicianAuth()) return false
   const currentTechnicianId = getTechnicianId()
@@ -3936,6 +3946,11 @@ const getAppointmentProjectDisplay = (appt) => {
     return `${nameTrimmed}（${duration}分钟）`
   }
   return nameTrimmed
+}
+
+const getAppointmentServiceMinutes = (appt) => {
+  const duration = Number(appt?.project?.duration || 0)
+  return duration > 0 ? duration : 30
 }
 
 // 计算预约倒计时（秒）
@@ -4054,7 +4069,7 @@ const shouldShowFinishButton = (appt) => {
   const elapsed = now - appointmentTime // 已过的时间（毫秒）
   
   // 需要过了预约时间 + 服务时长 - 1分钟 才显示按钮
-  const serviceMinutes = 30
+  const serviceMinutes = getAppointmentServiceMinutes(appt)
   const requiredTime = (serviceMinutes - 1) * 60 * 1000
   
   return elapsed >= requiredTime
