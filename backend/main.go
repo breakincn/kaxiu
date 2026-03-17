@@ -34,6 +34,7 @@ func main() {
 
 	// 初始化 Gin
 	r := gin.Default()
+	config.ConfigureTrustedProxies(r)
 
 	// CORS 配置
 	r.Use(cors.New(middleware.CORSMiddleware()))
@@ -42,7 +43,10 @@ func main() {
 	routes.SetupRoutes(r)
 
 	// 获取SSL证书的绝对路径
-	workDir, _ := os.Getwd()
+	workDir, err := os.Getwd()
+	if err != nil {
+		log.Fatal("获取工作目录失败:", err)
+	}
 	certPath := filepath.Join(workDir, "..", "frontend", "ssl", "cert.pem")
 	keyPath := filepath.Join(workDir, "..", "frontend", "ssl", "key.pem")
 	if _, err := os.Stat(certPath); err != nil {
@@ -57,7 +61,7 @@ func main() {
 	// 启动服务
 	log.Println("卡包后端服务启动于 https://10.0.0.20:8080")
 	log.Println("SSL证书路径:", certPath)
-	if err := r.RunTLS(":8080", certPath, keyPath); err != nil {
+	if err := config.NewTLSServer(":8080", r).ListenAndServeTLS(certPath, keyPath); err != nil {
 		log.Fatal("HTTPS服务启动失败:", err)
 	}
 }

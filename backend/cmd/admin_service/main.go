@@ -28,6 +28,7 @@ func main() {
 	scheduler.StartAppointmentScheduler()
 
 	r := gin.Default()
+	config.ConfigureTrustedProxies(r)
 	r.Use(cors.New(middleware.CORSMiddleware()))
 
 	routes.SetupStaticRoutes(r)
