@@ -64,6 +64,22 @@
         </button>
 
         <button
+          v-if="canAppointmentSettings"
+          @click="goToAppointmentSettings"
+          class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10m-11 9h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v11a2 2 0 002 2z"/>
+            </svg>
+            <span class="text-gray-800 font-medium">预约设置</span>
+          </div>
+          <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
+
+        <button
           v-if="canQueueSettings"
           @click="goToQueueSettings"
           class="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors border-b border-gray-100"
@@ -192,6 +208,10 @@ const canCustomerServiceManage = computed(() => {
   return hasMerchantPermission('merchant.cs.manage') && !!merchant.value?.support_customer_service
 })
 
+const canAppointmentSettings = computed(() => {
+  return hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_appointment
+})
+
 const canProjectManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_project)
 const canQueueSettings = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_queue)
 const canHandCardManage = computed(() => hasMerchantPermission('merchant.service.manage') && !!merchant.value?.support_hand_card)
@@ -231,6 +251,10 @@ const goToMerchantInfo = () => {
 
 const goToCustomerService = () => {
   router.push('/merchant/customer-service')
+}
+
+const goToAppointmentSettings = () => {
+  router.push('/merchant/appointment-settings')
 }
 
 const goToProjectSettings = () => {
