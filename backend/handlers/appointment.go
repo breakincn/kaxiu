@@ -105,6 +105,10 @@ func appointmentCompensationPreload(db *gorm.DB) *gorm.DB {
 	return db.Order("id DESC")
 }
 
+func appointmentRescheduleRequestPreload(db *gorm.DB) *gorm.DB {
+	return db.Order("id DESC")
+}
+
 func hydrateAppointmentRelations(tx *gorm.DB, appt *models.Appointment) error {
 	if tx == nil || appt == nil || appt.ID == 0 {
 		return nil
@@ -145,7 +149,128 @@ func hydrateAppointmentRelations(tx *gorm.DB, appt *models.Appointment) error {
 		return err
 	}
 	appt.Compensations = compensations
+	var requests []models.AppointmentRescheduleRequest
+	if err := tx.Scopes(appointmentRescheduleRequestPreload).Where("appointment_id = ?", appt.ID).Find(&requests).Error; err != nil {
+		return err
+	}
+	appt.RescheduleRequests = requests
 	return nil
+}
+
+func latestPendingRescheduleRequest(appt *models.Appointment) *models.AppointmentRescheduleRequest {
+	if appt == nil {
+		return nil
+	}
+	for i := range appt.RescheduleRequests {
+		status := strings.TrimSpace(appt.RescheduleRequests[i].Status)
+		if status == "pending_user" || status == "pending_merchant" {
+			return &appt.RescheduleRequests[i]
+		}
+	}
+	return nil
+}
+
+func loadAppointmentRescheduleRequestByID(tx *gorm.DB, requestID uint) (*models.AppointmentRescheduleRequest, error) {
+	if tx == nil || requestID == 0 {
+		return nil, nil
+	}
+	rows, err := tx.Table("appointment_reschedule_requests").
+		Select("id, appointment_id, merchant_id, user_id, current_project_id, current_technician_id, current_time, new_project_id, new_technician_id, new_appointment_time, status, reason, proposed_by_type, proposed_by_id, confirmed_by_type, confirmed_by_id, confirmed_at, result_appointment_id, created_at").
+		Where("id = ?", requestID).
+		Limit(1).
+		Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+
+	var (
+		req                    models.AppointmentRescheduleRequest
+		currentProjectIDRaw    interface{}
+		currentTechnicianIDRaw interface{}
+		currentTimeRaw         interface{}
+		newProjectIDRaw        interface{}
+		newTechnicianIDRaw     interface{}
+		newTimeRaw             interface{}
+		proposedByIDRaw        interface{}
+		confirmedByIDRaw       interface{}
+		confirmedAtRaw         interface{}
+		resultAppointmentIDRaw interface{}
+		createdAtRaw           interface{}
+	)
+	if err := rows.Scan(
+		&req.ID,
+		&req.AppointmentID,
+		&req.MerchantID,
+		&req.UserID,
+		&currentProjectIDRaw,
+		&currentTechnicianIDRaw,
+		&currentTimeRaw,
+		&newProjectIDRaw,
+		&newTechnicianIDRaw,
+		&newTimeRaw,
+		&req.Status,
+		&req.Reason,
+		&req.ProposedByType,
+		&proposedByIDRaw,
+		&req.ConfirmedByType,
+		&confirmedByIDRaw,
+		&confirmedAtRaw,
+		&resultAppointmentIDRaw,
+		&createdAtRaw,
+	); err != nil {
+		return nil, err
+	}
+	if v, ok := gormValueToUint(currentProjectIDRaw); ok {
+		req.CurrentProjectID = &v
+	}
+	if v, ok := gormValueToUint(currentTechnicianIDRaw); ok {
+		req.CurrentTechnicianID = &v
+	}
+	if v, ok := parseDBTimeValue(currentTimeRaw); ok {
+		req.CurrentTime = &v
+	}
+	if v, ok := gormValueToUint(newProjectIDRaw); ok {
+		req.NewProjectID = &v
+	}
+	if v, ok := gormValueToUint(newTechnicianIDRaw); ok {
+		req.NewTechnicianID = &v
+	}
+	if v, ok := parseDBTimeValue(newTimeRaw); ok {
+		req.NewAppointmentTime = &v
+	}
+	if v, ok := gormValueToUint(proposedByIDRaw); ok {
+		req.ProposedByID = &v
+	}
+	if v, ok := gormValueToUint(confirmedByIDRaw); ok {
+		req.ConfirmedByID = &v
+	}
+	if v, ok := parseDBTimeValue(confirmedAtRaw); ok {
+		req.ConfirmedAt = &v
+	}
+	if v, ok := gormValueToUint(resultAppointmentIDRaw); ok {
+		req.ResultAppointmentID = &v
+	}
+	if v, ok := parseDBTimeValue(createdAtRaw); ok {
+		req.CreatedAt = &v
+	}
+	return &req, nil
+}
+
+func hasPendingRescheduleRequest(tx *gorm.DB, appointmentID uint) (bool, error) {
+	if tx == nil || appointmentID == 0 {
+		return false, nil
+	}
+	var count int64
+	if err := tx.Table("appointment_reschedule_requests").
+		Where("appointment_id = ? AND status IN ?", appointmentID, []string{"pending_user", "pending_merchant"}).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func getAppointmentActor(c *gin.Context) (string, *uint) {
@@ -394,7 +519,7 @@ func GetMerchantAppointments(c *gin.Context) {
 	status := c.Query("status")
 
 	var appointments []models.Appointment
-	query := config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).Where("merchant_id = ?", merchantID)
+	query := config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).Preload("RescheduleRequests", appointmentRescheduleRequestPreload).Where("merchant_id = ?", merchantID)
 
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -423,7 +548,7 @@ func GetUserAppointments(c *gin.Context) {
 		return
 	}
 	var appointments []models.Appointment
-	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).Where("user_id = ?", authUserID).Order("appointment_time DESC").Find(&appointments)
+	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).Preload("RescheduleRequests", appointmentRescheduleRequestPreload).Where("user_id = ?", authUserID).Order("appointment_time DESC").Find(&appointments)
 	for i := range appointments {
 		appointments[i].Status = normalizeAppointmentStatus(appointments[i].Status)
 	}
@@ -451,7 +576,7 @@ func GetCardAppointment(c *gin.Context) {
 	log.Printf("查询预约: 卡片ID=%s, 用户ID=%d, 商户ID=%d", cardID, card.UserID, card.MerchantID)
 
 	var appointment models.Appointment
-	err := config.DB.Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).
+	err := config.DB.Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).Preload("RescheduleRequests", appointmentRescheduleRequestPreload).
 		Where("card_id = ? AND merchant_id = ? AND user_id = ? AND status IN ('pending', 'confirmed', 'arrived', 'failed')", card.ID, card.MerchantID, card.UserID).
 		Order("appointment_time ASC").
 		First(&appointment).Error
@@ -696,7 +821,7 @@ func CreateAppointment(c *gin.Context) {
 
 	log.Printf("预约创建成功: ID=%d, 状态=%s", appointment.ID, appointment.Status)
 
-	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Project").Preload("Technician").Preload("Compensations", appointmentCompensationPreload).First(&appointment, appointment.ID)
+	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Project").Preload("Technician").Preload("Compensations", appointmentCompensationPreload).Preload("RescheduleRequests", appointmentRescheduleRequestPreload).First(&appointment, appointment.ID)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 
@@ -741,7 +866,7 @@ func ConfirmAppointment(c *gin.Context) {
 		"status":       "confirmed",
 		"confirmed_at": &confirmedAt,
 	})
-	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Technician").Preload("Compensations", appointmentCompensationPreload).First(&appointment, id)
+	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Technician").Preload("Compensations", appointmentCompensationPreload).Preload("RescheduleRequests", appointmentRescheduleRequestPreload).First(&appointment, id)
 	appointment.Status = normalizeAppointmentStatus(appointment.Status)
 	// 入预约队列（内存队列）：仅 confirmed 才进入预约排队
 	if appointment.AppointmentTime != nil {
@@ -792,7 +917,156 @@ func UpdateAppointmentResolution(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 
-func RescheduleAppointment(c *gin.Context) {
+type appointmentReschedulePayload struct {
+	AppointmentTime string `json:"appointment_time" binding:"required"`
+	TechnicianID    *uint  `json:"technician_id"`
+	ProjectID       *uint  `json:"project_id"`
+	Reason          string `json:"reason" binding:"required,max=255"`
+}
+
+func parseAppointmentReschedulePayload(input appointmentReschedulePayload) (time.Time, string, *time.Location, error) {
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		return time.Time{}, "", nil, apiErr{status: http.StatusBadRequest, msg: "改签原因不能为空"}
+	}
+	loc, locErr := time.LoadLocation("Asia/Shanghai")
+	if locErr != nil {
+		loc = time.Local
+	}
+	newAppointmentTime, err := time.ParseInLocation("2006-01-02 15:04:05", input.AppointmentTime, loc)
+	if err != nil {
+		return time.Time{}, "", nil, apiErr{status: http.StatusBadRequest, msg: "预约时间格式错误"}
+	}
+	if newAppointmentTime.Before(time.Now().In(loc).Add(-1 * time.Minute)) {
+		return time.Time{}, "", nil, apiErr{status: http.StatusBadRequest, msg: "不能改签到过去时间"}
+	}
+	return newAppointmentTime, reason, loc, nil
+}
+
+func executeAppointmentReschedule(tx *gorm.DB, appointmentID uint, proposal models.AppointmentRescheduleRequest, actorType string, actorID *uint, now time.Time) (models.Appointment, models.Appointment, error) {
+	var oldAppointment models.Appointment
+	var newAppointment models.Appointment
+	currentPtr, err := loadAppointmentByID(tx, appointmentID)
+	if err != nil {
+		return oldAppointment, newAppointment, err
+	}
+	if currentPtr == nil {
+		return oldAppointment, newAppointment, gorm.ErrRecordNotFound
+	}
+	current := *currentPtr
+	if !appointmentAllowsReschedule(current.Status) {
+		return oldAppointment, newAppointment, apiErr{status: http.StatusBadRequest, msg: "当前预约状态不可改签"}
+	}
+	if proposal.NewAppointmentTime == nil {
+		return oldAppointment, newAppointment, apiErr{status: http.StatusBadRequest, msg: "改签时间不能为空"}
+	}
+
+	var merchant models.Merchant
+	if err := tx.First(&merchant, current.MerchantID).Error; err != nil {
+		return oldAppointment, newAppointment, err
+	}
+	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, proposal.NewAppointmentTime.In(time.Local))
+	if !ok || !isWithinBusinessIntervals(*proposal.NewAppointmentTime, intervals) {
+		return oldAppointment, newAppointment, apiErr{status: http.StatusBadRequest, msg: "改签时间不在营业时间内"}
+	}
+
+	projectID := current.ProjectID
+	serviceMinutes := getAppointmentServiceMinutes(current.MerchantID, current)
+	if proposal.NewProjectID != nil && *proposal.NewProjectID > 0 {
+		var project models.MerchantProject
+		if err := tx.Where("id = ? AND merchant_id = ? AND is_active = ?", *proposal.NewProjectID, current.MerchantID, true).First(&project).Error; err != nil {
+			return oldAppointment, newAppointment, apiErr{status: http.StatusBadRequest, msg: "无效的项目"}
+		}
+		projectID = proposal.NewProjectID
+		serviceMinutes = project.Duration
+	}
+	if serviceMinutes <= 0 {
+		serviceMinutes = 30
+	}
+
+	technicianID := current.TechnicianID
+	if proposal.NewTechnicianID != nil {
+		if *proposal.NewTechnicianID == 0 {
+			technicianID = nil
+		} else {
+			technicianID = proposal.NewTechnicianID
+		}
+	}
+
+	if technicianID != nil && *technicianID > 0 {
+		availability, err := evaluateBookingTechnicianAvailability(tx, merchant, *technicianID, *proposal.NewAppointmentTime, serviceMinutes, current.ID)
+		if err != nil {
+			return oldAppointment, newAppointment, err
+		}
+		if availability.State == appointmentAvailabilityUnavailable {
+			return oldAppointment, newAppointment, apiErr{status: http.StatusBadRequest, msg: "新时间下该客服不可预约"}
+		}
+		current.PredictedWaitMinutes = availability.PredictedWaitMinutes
+	} else {
+		current.PredictedWaitMinutes = 0
+	}
+
+	if normalizeAppointmentStatus(current.Status) == "arrived" {
+		// 到店后接受改签，需要先回滚未开始服务的占用，再关闭旧预约。
+		if err := cancelUnstartedAppointmentArrival(tx, &current, now); err != nil {
+			return oldAppointment, newAppointment, err
+		}
+	}
+
+	newStatus := "pending"
+	newConfirmedAt := (*time.Time)(nil)
+	if normalizeAppointmentStatus(current.Status) == "confirmed" || normalizeAppointmentStatus(current.Status) == "arrived" {
+		newStatus = "confirmed"
+		newConfirmedAt = &now
+	}
+	newAppointment = models.Appointment{
+		CardID:                current.CardID,
+		MerchantID:            current.MerchantID,
+		UserID:                current.UserID,
+		ProjectID:             projectID,
+		TechnicianID:          technicianID,
+		AppointmentTime:       proposal.NewAppointmentTime,
+		Status:                newStatus,
+		ConfirmedAt:           newConfirmedAt,
+		PredictedWaitMinutes:  current.PredictedWaitMinutes,
+		ReplacesAppointmentID: &current.ID,
+		RescheduleReason:      proposal.Reason,
+		ResolutionNote:        appendAppointmentResolutionNote("", "改签说明："+proposal.Reason),
+	}
+	if err := tx.Create(&newAppointment).Error; err != nil {
+		return oldAppointment, newAppointment, err
+	}
+
+	closeUpdates := map[string]interface{}{
+		"status":                     "canceled",
+		"closed_reason":              "rescheduled",
+		"closed_by_type":             actorType,
+		"closed_by_id":               actorID,
+		"reschedule_reason":          proposal.Reason,
+		"replaced_by_appointment_id": newAppointment.ID,
+		"canceled_at":                &now,
+		"resolution_note":            appendAppointmentResolutionNote(current.ResolutionNote, fmt.Sprintf("改签到 %s", proposal.NewAppointmentTime.Format("2006-01-02 15:04"))),
+		"arrived_at":                 nil,
+		"service_session_id":         nil,
+		"usage_id":                   nil,
+		"predicted_wait_minutes":     0,
+	}
+	if err := tx.Model(&models.Appointment{}).Where("id = ?", current.ID).Updates(closeUpdates).Error; err != nil {
+		return oldAppointment, newAppointment, err
+	}
+
+	oldAppointment = current
+	oldAppointment.Status = "canceled"
+	oldAppointment.ClosedReason = "rescheduled"
+	oldAppointment.ClosedByType = actorType
+	oldAppointment.ClosedByID = actorID
+	oldAppointment.RescheduleReason = proposal.Reason
+	oldAppointment.ReplacedByAppointmentID = &newAppointment.ID
+	oldAppointment.CanceledAt = &now
+	return oldAppointment, newAppointment, nil
+}
+
+func CreateAppointmentRescheduleRequest(c *gin.Context) {
 	id := c.Param("id")
 	appointmentID64, err := strconv.ParseUint(strings.TrimSpace(id), 10, 64)
 	if err != nil || appointmentID64 == 0 {
@@ -804,45 +1078,50 @@ func RescheduleAppointment(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
 		return
 	}
-	if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+
+	authType := strings.TrimSpace(c.GetString("auth_type"))
+	switch authType {
+	case "merchant", "staff":
+		if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+			return
+		}
+	case "user":
+		authUserID, ok := mustUserID(c)
+		if !ok {
+			return
+		}
+		if appointment.UserID != authUserID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此预约"})
+			return
+		}
+	default:
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
 		return
 	}
 
-	var input struct {
-		AppointmentTime string `json:"appointment_time" binding:"required"`
-		TechnicianID    *uint  `json:"technician_id"`
-		ProjectID       *uint  `json:"project_id"`
-		Reason          string `json:"reason" binding:"required,max=255"`
-	}
+	var input appointmentReschedulePayload
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	reason := strings.TrimSpace(input.Reason)
-	if reason == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "改签原因不能为空"})
-		return
-	}
-
-	loc, locErr := time.LoadLocation("Asia/Shanghai")
-	if locErr != nil {
-		loc = time.Local
-	}
-	newAppointmentTime, err := time.ParseInLocation("2006-01-02 15:04:05", input.AppointmentTime, loc)
+	newAppointmentTime, reason, _, err := parseAppointmentReschedulePayload(input)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "预约时间格式错误"})
-		return
-	}
-	if newAppointmentTime.Before(time.Now().In(loc).Add(-1 * time.Minute)) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不能改签到过去时间"})
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	actorType, actorID := getAppointmentActor(c)
-	now := time.Now()
-	var oldAppointment models.Appointment
-	var newAppointment models.Appointment
+	requestStatus := "pending_user"
+	if authType == "user" {
+		requestStatus = "pending_merchant"
+	}
 
+	var proposal models.AppointmentRescheduleRequest
 	err = config.DB.Transaction(func(tx *gorm.DB) error {
 		currentPtr, err := loadAppointmentByID(tx, appointment.ID)
 		if err != nil {
@@ -855,111 +1134,34 @@ func RescheduleAppointment(c *gin.Context) {
 		if !appointmentAllowsReschedule(current.Status) {
 			return apiErr{status: http.StatusBadRequest, msg: "当前预约状态不可改签"}
 		}
-
-		var merchant models.Merchant
-		if err := tx.First(&merchant, current.MerchantID).Error; err != nil {
+		if exists, err := hasPendingRescheduleRequest(tx, current.ID); err != nil {
 			return err
-		}
-		intervals, ok := getMerchantBusinessIntervalsForDate(merchant, newAppointmentTime.In(loc))
-		if !ok || !isWithinBusinessIntervals(newAppointmentTime, intervals) {
-			return apiErr{status: http.StatusBadRequest, msg: "改签时间不在营业时间内"}
+		} else if exists {
+			return apiErr{status: http.StatusBadRequest, msg: "当前预约已有待确认的改签提议"}
 		}
 
-		projectID := current.ProjectID
-		serviceMinutes := getAppointmentServiceMinutes(current.MerchantID, current)
-		if input.ProjectID != nil && *input.ProjectID > 0 {
-			var project models.MerchantProject
-			if err := tx.Where("id = ? AND merchant_id = ? AND is_active = ?", *input.ProjectID, current.MerchantID, true).First(&project).Error; err != nil {
-				return apiErr{status: http.StatusBadRequest, msg: "无效的项目"}
-			}
-			projectID = input.ProjectID
-			serviceMinutes = project.Duration
+		proposal = models.AppointmentRescheduleRequest{
+			AppointmentID:       current.ID,
+			MerchantID:          current.MerchantID,
+			UserID:              current.UserID,
+			CurrentProjectID:    current.ProjectID,
+			CurrentTechnicianID: current.TechnicianID,
+			CurrentTime:         current.AppointmentTime,
+			NewProjectID:        current.ProjectID,
+			NewTechnicianID:     current.TechnicianID,
+			NewAppointmentTime:  &newAppointmentTime,
+			Status:              requestStatus,
+			Reason:              reason,
+			ProposedByType:      actorType,
+			ProposedByID:        actorID,
 		}
-		if serviceMinutes <= 0 {
-			serviceMinutes = 30
+		if input.ProjectID != nil {
+			proposal.NewProjectID = input.ProjectID
 		}
-
-		technicianID := current.TechnicianID
 		if input.TechnicianID != nil {
-			if *input.TechnicianID == 0 {
-				technicianID = nil
-			} else {
-				technicianID = input.TechnicianID
-			}
+			proposal.NewTechnicianID = input.TechnicianID
 		}
-
-		if technicianID != nil && *technicianID > 0 {
-			availability, err := evaluateBookingTechnicianAvailability(tx, merchant, *technicianID, newAppointmentTime, serviceMinutes, current.ID)
-			if err != nil {
-				return err
-			}
-			if availability.State == appointmentAvailabilityUnavailable {
-				return apiErr{status: http.StatusBadRequest, msg: "新时间下该客服不可预约"}
-			}
-			current.PredictedWaitMinutes = availability.PredictedWaitMinutes
-		} else {
-			current.PredictedWaitMinutes = 0
-		}
-
-		if normalizeAppointmentStatus(current.Status) == "arrived" {
-			// 已到店但尚未正式开始服务时，改签必须先撤销本次到店核销占用，
-			// 否则会残留 usage / service_session，导致“旧预约已关闭但服务仍在占位”。
-			if err := cancelUnstartedAppointmentArrival(tx, &current, now); err != nil {
-				return err
-			}
-		}
-
-		newStatus := "pending"
-		newConfirmedAt := (*time.Time)(nil)
-		if normalizeAppointmentStatus(current.Status) == "confirmed" || normalizeAppointmentStatus(current.Status) == "arrived" {
-			newStatus = "confirmed"
-			newConfirmedAt = &now
-		}
-		newAppointment = models.Appointment{
-			CardID:                current.CardID,
-			MerchantID:            current.MerchantID,
-			UserID:                current.UserID,
-			ProjectID:             projectID,
-			TechnicianID:          technicianID,
-			AppointmentTime:       &newAppointmentTime,
-			Status:                newStatus,
-			ConfirmedAt:           newConfirmedAt,
-			PredictedWaitMinutes:  current.PredictedWaitMinutes,
-			ReplacesAppointmentID: &current.ID,
-			RescheduleReason:      reason,
-			ResolutionNote:        appendAppointmentResolutionNote("", "改签说明："+reason),
-		}
-		if err := tx.Create(&newAppointment).Error; err != nil {
-			return err
-		}
-
-		closeUpdates := map[string]interface{}{
-			"status":                     "canceled",
-			"closed_reason":              "rescheduled",
-			"closed_by_type":             actorType,
-			"closed_by_id":               actorID,
-			"reschedule_reason":          reason,
-			"replaced_by_appointment_id": newAppointment.ID,
-			"canceled_at":                &now,
-			"resolution_note":            appendAppointmentResolutionNote(current.ResolutionNote, fmt.Sprintf("改签到 %s", newAppointmentTime.Format("2006-01-02 15:04"))),
-			"arrived_at":                 nil,
-			"service_session_id":         nil,
-			"usage_id":                   nil,
-			"predicted_wait_minutes":     0,
-		}
-		if err := tx.Model(&models.Appointment{}).Where("id = ?", current.ID).Updates(closeUpdates).Error; err != nil {
-			return err
-		}
-
-		oldAppointment = current
-		oldAppointment.Status = "canceled"
-		oldAppointment.ClosedReason = "rescheduled"
-		oldAppointment.ClosedByType = actorType
-		oldAppointment.ClosedByID = actorID
-		oldAppointment.RescheduleReason = reason
-		oldAppointment.ReplacedByAppointmentID = &newAppointment.ID
-		oldAppointment.CanceledAt = &now
-		return nil
+		return tx.Create(&proposal).Error
 	})
 	if err != nil {
 		var ae apiErr
@@ -970,18 +1172,160 @@ func RescheduleAppointment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	c.JSON(http.StatusOK, gin.H{"data": proposal})
+}
 
-	reloadedAppointment, err := loadAppointmentByID(config.DB, newAppointment.ID)
-	if err == nil && reloadedAppointment != nil {
-		newAppointment = *reloadedAppointment
-		if hydrateErr := hydrateAppointmentRelations(config.DB, &newAppointment); hydrateErr != nil {
-			log.Printf("hydrate rescheduled appointment failed: id=%d err=%v", newAppointment.ID, hydrateErr)
+func AcceptAppointmentRescheduleRequest(c *gin.Context) {
+	requestID64, err := strconv.ParseUint(strings.TrimSpace(c.Param("request_id")), 10, 64)
+	if err != nil || requestID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的改签提议ID"})
+		return
+	}
+	req, err := loadAppointmentRescheduleRequestByID(config.DB, uint(requestID64))
+	if err != nil || req == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "改签提议不存在"})
+		return
+	}
+	appointment, err := loadAppointmentByID(config.DB, req.AppointmentID)
+	if err != nil || appointment == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
+		return
+	}
+
+	authType := strings.TrimSpace(c.GetString("auth_type"))
+	switch authType {
+	case "merchant", "staff":
+		if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+			return
 		}
+		if req.Status != "pending_merchant" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前改签提议无需商户确认"})
+			return
+		}
+	case "user":
+		authUserID, ok := mustUserID(c)
+		if !ok {
+			return
+		}
+		if appointment.UserID != authUserID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此改签提议"})
+			return
+		}
+		if req.Status != "pending_user" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前改签提议无需用户确认"})
+			return
+		}
+	default:
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	actorType, actorID := getAppointmentActor(c)
+	now := time.Now()
+	var oldAppointment, newAppointment models.Appointment
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		currentReq, err := loadAppointmentRescheduleRequestByID(tx, req.ID)
+		if err != nil {
+			return err
+		}
+		if currentReq == nil {
+			return gorm.ErrRecordNotFound
+		}
+		if strings.TrimSpace(currentReq.Status) != strings.TrimSpace(req.Status) {
+			return apiErr{status: http.StatusBadRequest, msg: "改签提议状态已变化，请刷新后重试"}
+		}
+		oldAppointment, newAppointment, err = executeAppointmentReschedule(tx, currentReq.AppointmentID, *currentReq, actorType, actorID, now)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&models.AppointmentRescheduleRequest{}).Where("id = ?", currentReq.ID).Updates(map[string]interface{}{
+			"status":                "accepted",
+			"confirmed_by_type":     actorType,
+			"confirmed_by_id":       actorID,
+			"confirmed_at":          &now,
+			"result_appointment_id": newAppointment.ID,
+		}).Error
+	})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if reloadedAppointment, err := loadAppointmentByID(config.DB, newAppointment.ID); err == nil && reloadedAppointment != nil {
+		newAppointment = *reloadedAppointment
+		_ = hydrateAppointmentRelations(config.DB, &newAppointment)
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
 		"old_appointment": oldAppointment,
 		"new_appointment": newAppointment,
 	}})
+}
+
+func RejectAppointmentRescheduleRequest(c *gin.Context) {
+	requestID64, err := strconv.ParseUint(strings.TrimSpace(c.Param("request_id")), 10, 64)
+	if err != nil || requestID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的改签提议ID"})
+		return
+	}
+	req, err := loadAppointmentRescheduleRequestByID(config.DB, uint(requestID64))
+	if err != nil || req == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "改签提议不存在"})
+		return
+	}
+	appointment, err := loadAppointmentByID(config.DB, req.AppointmentID)
+	if err != nil || appointment == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
+		return
+	}
+	authType := strings.TrimSpace(c.GetString("auth_type"))
+	switch authType {
+	case "merchant", "staff":
+		if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+			return
+		}
+		if req.Status != "pending_merchant" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前改签提议无需商户处理"})
+			return
+		}
+	case "user":
+		authUserID, ok := mustUserID(c)
+		if !ok {
+			return
+		}
+		if appointment.UserID != authUserID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此改签提议"})
+			return
+		}
+		if req.Status != "pending_user" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前改签提议无需用户处理"})
+			return
+		}
+	default:
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+	actorType, actorID := getAppointmentActor(c)
+	now := time.Now()
+	if err := config.DB.Model(&models.AppointmentRescheduleRequest{}).
+		Where("id = ? AND status = ?", req.ID, req.Status).
+		Updates(map[string]interface{}{
+			"status":            "rejected",
+			"confirmed_by_type": actorType,
+			"confirmed_by_id":   actorID,
+			"confirmed_at":      &now,
+		}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "拒绝改签提议失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"id": req.ID, "status": "rejected"}})
+}
+
+func RescheduleAppointment(c *gin.Context) {
+	CreateAppointmentRescheduleRequest(c)
 }
 
 func ListAppointmentCompensations(c *gin.Context) {

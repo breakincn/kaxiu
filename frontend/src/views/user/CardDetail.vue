@@ -129,15 +129,48 @@
               <div class="text-2xl font-bold text-gray-800">{{ estimatedMinutes }}<span class="text-sm font-normal">分钟</span></div>
             </div>
           </div>
-          <p class="text-xs text-gray-400">* 排队进度由商户服务确认后即时更新</p>
-
-          <button
-            @click="cancelAppointment"
-            :disabled="cancelButtonDisabled"
-            class="w-full py-2.5 border-2 border-red-400 text-red-500 font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-3"
+          <div
+            v-if="latestAppointmentRescheduleRequest"
+            class="rounded-lg px-3 py-3 text-sm border"
+            :class="isUserRescheduleConfirmationPending ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-blue-50 text-blue-700 border-blue-100'"
           >
-            {{ cancelButtonText }}
-          </button>
+            <div class="font-medium">
+              {{ isUserRescheduleConfirmationPending ? '商户发起了改签提议，请确认' : '改签申请已提交，待商户确认' }}
+            </div>
+            <div class="mt-1">提议时间：{{ formatDateTime(latestAppointmentRescheduleRequest.new_appointment_time) }}</div>
+            <div v-if="latestAppointmentRescheduleRequest.reason" class="mt-1">原因：{{ latestAppointmentRescheduleRequest.reason }}</div>
+          </div>
+          <p class="text-xs text-gray-400">* 排队进度由商户服务确认后即时更新</p>
+          <div class="space-y-2 mt-3">
+            <button
+              v-if="showUserRescheduleAction"
+              @click="openUserRescheduleModal"
+              class="w-full py-2.5 border-2 border-primary text-primary font-medium rounded-lg hover:bg-primary-light transition-colors"
+            >
+              申请改签
+            </button>
+            <button
+              v-if="isUserRescheduleConfirmationPending"
+              @click="acceptUserRescheduleRequest"
+              class="w-full py-2.5 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark transition-colors"
+            >
+              同意改签
+            </button>
+            <button
+              v-if="isUserRescheduleConfirmationPending"
+              @click="rejectUserRescheduleRequest"
+              class="w-full py-2.5 border-2 border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              拒绝改签
+            </button>
+            <button
+              @click="cancelAppointment"
+              :disabled="cancelButtonDisabled"
+              class="w-full py-2.5 border-2 border-red-400 text-red-500 font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {{ cancelButtonText }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -447,6 +480,79 @@
             class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {{ appointing ? '预约中...' : '确认预约' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showUserRescheduleModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeUserRescheduleModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
+        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between flex-shrink-0">
+          <h3 class="font-medium text-lg">申请改签到新时间</h3>
+          <button @click="closeUserRescheduleModal" class="text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="overflow-y-auto flex-1">
+          <div class="px-5 py-3 border-b text-sm text-gray-600">
+            当前预约：{{ getAppointmentProjectDisplay(appointment) || '默认项目' }}
+          </div>
+          <div class="px-5 py-3 border-b">
+            <div class="text-sm font-medium text-gray-700 mb-2">新日期</div>
+            <input v-model="userRescheduleDate" type="date" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+          </div>
+          <div v-if="userRescheduleTechnicians.length > 0" class="px-5 py-3 border-b">
+            <div class="text-sm font-medium text-gray-700 mb-2">选择专业客服</div>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="t in userDisplayedRescheduleTechnicians"
+                :key="t.id"
+                type="button"
+                @click="toggleUserRescheduleTechnician(t.id)"
+                :class="userRescheduleTechnicianId === t.id ? 'bg-primary text-white' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary'"
+                class="py-2 px-3 rounded-lg font-medium transition-all text-sm"
+              >
+                <div>{{ t.name }}</div>
+                <div v-if="t.availability_state === 'conditional'" class="text-[11px] opacity-80 mt-1">
+                  预计等待 {{ t.predicted_wait_minutes || 0 }} 分钟
+                </div>
+              </button>
+            </div>
+          </div>
+          <div class="px-5 py-4">
+            <div v-if="userRescheduleLoading" class="text-center py-8 text-gray-400">加载中...</div>
+            <div v-else-if="userRescheduleError" class="text-center py-8 text-gray-400">{{ userRescheduleError }}</div>
+            <div v-else-if="userRescheduleSlots.length === 0" class="text-center py-8 text-gray-400">暂无可改签时间段</div>
+            <div v-else-if="userDisplayedRescheduleSlots.length === 0" class="text-center py-8 text-gray-400">当前所选专业客服无可用时间段</div>
+            <div v-else class="grid grid-cols-2 gap-3">
+              <button
+                v-for="slot in userDisplayedRescheduleSlots"
+                :key="slot.time"
+                @click="selectUserRescheduleSlot(slot)"
+                :class="{
+                  'bg-primary text-white': userRescheduleTime === slot.time,
+                  'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary': userRescheduleTime !== slot.time
+                }"
+                class="py-3 px-4 rounded-lg font-medium transition-all"
+              >
+                <div>{{ formatTime(slot.time) }}</div>
+              </button>
+            </div>
+          </div>
+          <div class="px-5 py-3 border-t">
+            <div class="text-sm font-medium text-gray-700 mb-2">改签原因</div>
+            <textarea v-model="userRescheduleReason" rows="3" class="w-full px-3 py-2 border border-gray-200 rounded-lg" placeholder="例如：我下午更方便到店"></textarea>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t flex-shrink-0 bg-white">
+          <button
+            @click="submitUserRescheduleRequest"
+            :disabled="!userRescheduleTime || userRescheduleSubmitting"
+            class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {{ userRescheduleSubmitting ? '提交中...' : '提交改签申请' }}
           </button>
         </div>
       </div>
@@ -2225,6 +2331,16 @@ const selectedTimeSlot = ref('')
 const timeSlots = ref([])
 const timeSlotError = ref('')
 const loadingSlots = ref(false)
+const showUserRescheduleModal = ref(false)
+const userRescheduleDate = ref('')
+const userRescheduleTime = ref('')
+const userRescheduleSlots = ref([])
+const userRescheduleError = ref('')
+const userRescheduleLoading = ref(false)
+const userRescheduleSubmitting = ref(false)
+const userRescheduleReason = ref('')
+const userRescheduleTechnicians = ref([])
+const userRescheduleTechnicianId = ref(null)
 
 const selectedAppointmentProjectId = ref(null)
 
@@ -2259,6 +2375,44 @@ const displayedTechnicians = computed(() => {
 
 const hasAppointmentProjects = computed(() => {
   return Array.isArray(card.value?.projects) && card.value.projects.length > 0
+})
+
+const latestAppointmentRescheduleRequest = computed(() => {
+  const list = Array.isArray(appointment.value?.reschedule_requests) ? appointment.value.reschedule_requests : []
+  return list.find(item => item?.status === 'pending_user' || item?.status === 'pending_merchant') || null
+})
+
+const isUserRescheduleConfirmationPending = computed(() => latestAppointmentRescheduleRequest.value?.status === 'pending_user')
+
+const showUserRescheduleAction = computed(() => {
+  if (!appointment.value) return false
+  if (latestAppointmentRescheduleRequest.value) return false
+  return appointment.value.status === 'confirmed' || appointment.value.status === 'arrived'
+})
+
+const userDisplayedRescheduleSlots = computed(() => {
+  const list = userRescheduleSlots.value || []
+  if (userRescheduleTechnicianId.value) {
+    return list.filter(s => Array.isArray(s?.technician_ids) && s.technician_ids.includes(userRescheduleTechnicianId.value))
+  }
+  return list
+})
+
+const userDisplayedRescheduleTechnicians = computed(() => {
+  const list = userRescheduleTechnicians.value || []
+  if (userRescheduleTime.value) {
+    const slot = (userRescheduleSlots.value || []).find(s => s && s.time === userRescheduleTime.value)
+    const candidates = Array.isArray(slot?.technician_candidates) ? slot.technician_candidates : []
+    const byId = new Map(candidates.map(c => [Number(c.technician_id), c]))
+    return list
+      .filter(t => byId.has(Number(t.id)))
+      .map(t => ({
+        ...t,
+        availability_state: byId.get(Number(t.id))?.availability_state || 'safe',
+        predicted_wait_minutes: byId.get(Number(t.id))?.predicted_wait_minutes || 0
+      }))
+  }
+  return list.map(t => ({ ...t, availability_state: 'safe', predicted_wait_minutes: 0 }))
 })
 
 const visibleUsages = computed(() => {
@@ -2486,6 +2640,116 @@ const fetchAppointment = async () => {
   }
 }
 
+const resetUserRescheduleForm = () => {
+  userRescheduleDate.value = ''
+  userRescheduleTime.value = ''
+  userRescheduleSlots.value = []
+  userRescheduleError.value = ''
+  userRescheduleReason.value = ''
+  userRescheduleTechnicians.value = []
+  userRescheduleTechnicianId.value = null
+}
+
+const closeUserRescheduleModal = () => {
+  showUserRescheduleModal.value = false
+  userRescheduleLoading.value = false
+  userRescheduleSubmitting.value = false
+  resetUserRescheduleForm()
+}
+
+const loadUserRescheduleSlots = async (date) => {
+  if (!card.value?.merchant_id || !appointment.value) return
+  userRescheduleLoading.value = true
+  userRescheduleError.value = ''
+  try {
+    const projectId = appointment.value?.project_id || appointment.value?.project?.id || selectedAppointmentProjectId.value || undefined
+    const res = await appointmentApi.getAvailableTimeSlots(card.value.merchant_id, date, projectId)
+    userRescheduleSlots.value = res.data?.data?.time_slots || []
+    userRescheduleTechnicians.value = res.data?.data?.technicians || []
+  } catch (err) {
+    userRescheduleSlots.value = []
+    userRescheduleTechnicians.value = []
+    userRescheduleError.value = err.response?.data?.error || '获取可改签时间失败'
+    alert(userRescheduleError.value)
+  } finally {
+    userRescheduleLoading.value = false
+  }
+}
+
+const openUserRescheduleModal = async () => {
+  if (!appointment.value) return
+  resetUserRescheduleForm()
+  userRescheduleDate.value = String(appointment.value?.appointment_time || '').slice(0, 10)
+  showUserRescheduleModal.value = true
+  await loadUserRescheduleSlots(userRescheduleDate.value)
+}
+
+const toggleUserRescheduleTechnician = (id) => {
+  const next = Number(id || 0)
+  if (!next) return
+  userRescheduleTechnicianId.value = userRescheduleTechnicianId.value === next ? null : next
+  if (userRescheduleTime.value) {
+    const slot = (userRescheduleSlots.value || []).find(s => s?.time === userRescheduleTime.value)
+    const ids = Array.isArray(slot?.technician_ids) ? slot.technician_ids : []
+    if (ids.length > 0 && !ids.includes(next)) {
+      userRescheduleTime.value = ''
+    }
+  }
+}
+
+const selectUserRescheduleSlot = (slot) => {
+  userRescheduleTime.value = slot?.time || ''
+  if (userRescheduleTechnicianId.value) {
+    const ids = Array.isArray(slot?.technician_ids) ? slot.technician_ids : []
+    if (ids.length > 0 && !ids.includes(userRescheduleTechnicianId.value)) {
+      userRescheduleTechnicianId.value = null
+    }
+  }
+}
+
+const submitUserRescheduleRequest = async () => {
+  if (!appointment.value || !userRescheduleTime.value || userRescheduleSubmitting.value) return
+  userRescheduleSubmitting.value = true
+  try {
+    await appointmentApi.createUserRescheduleRequest(appointment.value.id, {
+      appointment_time: userRescheduleTime.value,
+      technician_id: userRescheduleTechnicianId.value ? Number(userRescheduleTechnicianId.value) : null,
+      reason: String(userRescheduleReason.value || '').trim() || '用户申请改签'
+    })
+    closeUserRescheduleModal()
+    await fetchAppointment()
+    alert('改签申请已提交，等待商户确认')
+  } catch (err) {
+    alert(err.response?.data?.error || '提交改签申请失败')
+  } finally {
+    userRescheduleSubmitting.value = false
+  }
+}
+
+const acceptUserRescheduleRequest = async () => {
+  const req = latestAppointmentRescheduleRequest.value
+  if (!appointment.value || !req) return
+  try {
+    await appointmentApi.acceptUserRescheduleRequest(appointment.value.id, req.id)
+    await fetchAppointment()
+    alert('你已确认改签，新的预约已生效')
+  } catch (err) {
+    alert(err.response?.data?.error || '确认改签失败')
+  }
+}
+
+const rejectUserRescheduleRequest = async () => {
+  const req = latestAppointmentRescheduleRequest.value
+  if (!appointment.value || !req) return
+  try {
+    await appointmentApi.rejectUserRescheduleRequest(appointment.value.id, req.id)
+    await fetchAppointment()
+    alert('你已拒绝该改签提议')
+  } catch (err) {
+    alert(err.response?.data?.error || '拒绝改签失败')
+  }
+}
+
 
 const isAppointmentFailed = computed(() => {
   if (!appointment.value || !appointment.value.appointment_time) return false
@@ -2642,6 +2906,11 @@ const onAppointmentProjectChange = async () => {
 
 watch(selectedAppointmentProjectId, () => {
   onAppointmentProjectChange()
+})
+
+watch(userRescheduleDate, async (nextDate, prevDate) => {
+  if (!showUserRescheduleModal.value || !nextDate || nextDate === prevDate) return
+  await loadUserRescheduleSlots(nextDate)
 })
 
 // 获取明天日期

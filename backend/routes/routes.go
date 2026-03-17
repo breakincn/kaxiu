@@ -63,6 +63,9 @@ func SetupUserRoutes(r *gin.Engine) {
 	auth.GET("/cards/:id/appointment", handlers.GetCardAppointment)
 	auth.POST("/appointments", handlers.CreateAppointment)
 	auth.PUT("/appointments/:id/cancel", handlers.CancelAppointment)
+	auth.POST("/appointments/:id/reschedule-requests", handlers.CreateAppointmentRescheduleRequest)
+	auth.POST("/appointments/:id/reschedule-requests/:request_id/accept", handlers.AcceptAppointmentRescheduleRequest)
+	auth.POST("/appointments/:id/reschedule-requests/:request_id/reject", handlers.RejectAppointmentRescheduleRequest)
 
 	// 用户端：直购流程
 	auth.POST("/direct-purchase", handlers.CreateDirectPurchase)
@@ -153,6 +156,9 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.PUT("/appointments/:id/cancel", handlers.CancelAppointment)
 	auth.PUT("/appointments/:id/resolution", middleware.RequirePermission("merchant.appointment.manage"), handlers.UpdateAppointmentResolution)
 	auth.POST("/appointments/:id/reschedule", middleware.RequirePermission("merchant.appointment.manage"), handlers.RescheduleAppointment)
+	auth.POST("/appointments/:id/reschedule-requests", middleware.RequirePermission("merchant.appointment.manage"), handlers.CreateAppointmentRescheduleRequest)
+	auth.POST("/appointments/:id/reschedule-requests/:request_id/accept", middleware.RequirePermission("merchant.appointment.manage"), handlers.AcceptAppointmentRescheduleRequest)
+	auth.POST("/appointments/:id/reschedule-requests/:request_id/reject", middleware.RequirePermission("merchant.appointment.manage"), handlers.RejectAppointmentRescheduleRequest)
 	auth.GET("/appointments/:id/compensations", handlers.ListAppointmentCompensations)
 	auth.POST("/appointments/:id/compensations", middleware.RequirePermission("merchant.appointment.manage"), handlers.CreateAppointmentCompensation)
 

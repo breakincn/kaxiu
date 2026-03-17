@@ -235,12 +235,13 @@ type Appointment struct {
 	FailedReason            string     `json:"failed_reason" gorm:"size:255;default:'';comment:失败原因（自动分配失败时说明）"`
 	CreatedAt               *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
-	User          User                      `json:"user" gorm:"foreignKey:UserID"`
-	Card          Card                      `json:"card" gorm:"foreignKey:CardID"`
-	Merchant      Merchant                  `json:"merchant" gorm:"foreignKey:MerchantID"`
-	Project       *MerchantProject          `json:"project" gorm:"foreignKey:ProjectID"`
-	Technician    *Technician               `json:"technician" gorm:"foreignKey:TechnicianID"`
-	Compensations []AppointmentCompensation `json:"compensations" gorm:"foreignKey:AppointmentID"`
+	User               User                           `json:"user" gorm:"foreignKey:UserID"`
+	Card               Card                           `json:"card" gorm:"foreignKey:CardID"`
+	Merchant           Merchant                       `json:"merchant" gorm:"foreignKey:MerchantID"`
+	Project            *MerchantProject               `json:"project" gorm:"foreignKey:ProjectID"`
+	Technician         *Technician                    `json:"technician" gorm:"foreignKey:TechnicianID"`
+	Compensations      []AppointmentCompensation      `json:"compensations" gorm:"foreignKey:AppointmentID"`
+	RescheduleRequests []AppointmentRescheduleRequest `json:"reschedule_requests" gorm:"foreignKey:AppointmentID"`
 }
 
 func (Appointment) TableName() string {
@@ -277,6 +278,41 @@ func (AppointmentCompensation) TableName() string {
 
 func (AppointmentCompensation) TableComment() string {
 	return "预约补偿记录表"
+}
+
+type AppointmentRescheduleRequest struct {
+	ID                  uint       `json:"id" gorm:"primaryKey;comment:预约改签提议ID"`
+	AppointmentID       uint       `json:"appointment_id" gorm:"index;comment:关联预约ID"`
+	MerchantID          uint       `json:"merchant_id" gorm:"index;comment:商户ID"`
+	UserID              uint       `json:"user_id" gorm:"index;comment:用户ID"`
+	CurrentProjectID    *uint      `json:"current_project_id" gorm:"index;comment:原项目ID"`
+	CurrentTechnicianID *uint      `json:"current_technician_id" gorm:"index;comment:原客服ID"`
+	CurrentTime         *time.Time `json:"current_time" gorm:"type:datetime(3);comment:原预约时间"`
+	NewProjectID        *uint      `json:"new_project_id" gorm:"index;comment:新项目ID"`
+	NewTechnicianID     *uint      `json:"new_technician_id" gorm:"index;comment:新客服ID"`
+	NewAppointmentTime  *time.Time `json:"new_appointment_time" gorm:"type:datetime(3);comment:提议的新预约时间"`
+	Status              string     `json:"status" gorm:"size:30;default:pending_user;comment:状态（pending_user/pending_merchant/accepted/rejected/canceled）"`
+	Reason              string     `json:"reason" gorm:"size:255;default:'';comment:改签原因"`
+	ProposedByType      string     `json:"proposed_by_type" gorm:"size:20;default:'';comment:提议发起方类型（merchant/staff/user）"`
+	ProposedByID        *uint      `json:"proposed_by_id" gorm:"index;comment:提议发起方ID"`
+	ConfirmedByType     string     `json:"confirmed_by_type" gorm:"size:20;default:'';comment:确认/拒绝方类型（merchant/staff/user）"`
+	ConfirmedByID       *uint      `json:"confirmed_by_id" gorm:"index;comment:确认/拒绝方ID"`
+	ConfirmedAt         *time.Time `json:"confirmed_at" gorm:"type:datetime(3);comment:确认/拒绝时间"`
+	ResultAppointmentID *uint      `json:"result_appointment_id" gorm:"index;comment:接受后生成的新预约ID"`
+	CreatedAt           *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+
+	CurrentProject    *MerchantProject `json:"current_project,omitempty" gorm:"foreignKey:CurrentProjectID"`
+	NewProject        *MerchantProject `json:"new_project,omitempty" gorm:"foreignKey:NewProjectID"`
+	CurrentTechnician *Technician      `json:"current_technician,omitempty" gorm:"foreignKey:CurrentTechnicianID"`
+	NewTechnician     *Technician      `json:"new_technician,omitempty" gorm:"foreignKey:NewTechnicianID"`
+}
+
+func (AppointmentRescheduleRequest) TableName() string {
+	return "appointment_reschedule_requests"
+}
+
+func (AppointmentRescheduleRequest) TableComment() string {
+	return "预约改签提议表"
 }
 
 type VerifyCode struct {

@@ -271,6 +271,21 @@
               >
                 {{ getAppointmentRiskHint(appt) }}
               </div>
+              <div
+                v-if="getLatestPendingRescheduleRequest(appt)"
+                class="mt-2 rounded-lg px-3 py-2 text-sm border"
+                :class="isMerchantConfirmationPending(appt) ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-blue-50 text-blue-700 border-blue-100'"
+              >
+                <div class="font-medium">
+                  {{ isMerchantConfirmationPending(appt) ? '待商户确认改签' : '已向用户发起改签提议' }}
+                </div>
+                <div class="mt-1">
+                  提议时间：{{ formatDateTime(getLatestPendingRescheduleRequest(appt)?.new_appointment_time) }}
+                </div>
+                <div v-if="getLatestPendingRescheduleRequest(appt)?.reason" class="mt-1">
+                  原因：{{ getLatestPendingRescheduleRequest(appt)?.reason }}
+                </div>
+              </div>
               <div v-if="appt.resolution_note" class="mt-2 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 border border-gray-100">
                 处理备注: {{ appt.resolution_note }}
               </div>
@@ -339,11 +354,25 @@
                 改派其他客服
               </button>
               <button
+                v-if="isMerchantConfirmationPending(appt)"
+                @click="acceptAppointmentRescheduleRequest(appt)"
+                class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+              >
+                确认改签
+              </button>
+              <button
+                v-if="isMerchantConfirmationPending(appt)"
+                @click="rejectAppointmentRescheduleRequest(appt)"
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+              >
+                拒绝
+              </button>
+              <button
                 v-if="shouldShowAppointmentReschedule(appt)"
                 @click="openAppointmentRescheduleModal(appt)"
                 class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
               >
-                改签
+                发起改签
               </button>
               <button
                 v-if="shouldShowAppointmentCompensation(appt)"
@@ -4116,7 +4145,17 @@ const getAppointmentRiskHint = (appt) => {
 const shouldShowAppointmentReschedule = (appt) => {
   if (!appt) return false
   // 改签是重新安排预约，只有“还没彻底结束”的预约才允许改到新时间。
-  return appt.status === 'confirmed' || appt.status === 'arrived'
+  return (appt.status === 'confirmed' || appt.status === 'arrived') && !getLatestPendingRescheduleRequest(appt)
+}
+
+const getLatestPendingRescheduleRequest = (appt) => {
+  const list = Array.isArray(appt?.reschedule_requests) ? appt.reschedule_requests : []
+  return list.find(item => item?.status === 'pending_user' || item?.status === 'pending_merchant') || null
+}
+
+const isMerchantConfirmationPending = (appt) => {
+  const req = getLatestPendingRescheduleRequest(appt)
+  return req?.status === 'pending_merchant'
 }
 
 const shouldShowAppointmentCompensation = (appt) => {
@@ -4267,14 +4306,38 @@ const submitAppointmentReschedule = async () => {
       technician_id: appointmentRescheduleForm.value.technician_id ? Number(appointmentRescheduleForm.value.technician_id) : null,
       reason: String(appointmentRescheduleForm.value.reason || '').trim()
     }
-    await appointmentApi.reschedule(appt.id, payload)
-    alert('改签成功，原预约已关闭并生成新预约')
+    await appointmentApi.createMerchantRescheduleRequest(appt.id, payload)
+    alert('改签提议已发送，等待用户确认')
     closeAppointmentRescheduleModal()
     await fetchAppointments()
   } catch (err) {
     alert(err.response?.data?.error || '改签失败')
   } finally {
     appointmentRescheduleSubmitting.value = false
+  }
+}
+
+const acceptAppointmentRescheduleRequest = async (appt) => {
+  const req = getLatestPendingRescheduleRequest(appt)
+  if (!req) return
+  try {
+    await appointmentApi.acceptMerchantRescheduleRequest(appt.id, req.id)
+    alert('已确认用户改签申请，系统已生成新预约')
+    await fetchAppointments()
+  } catch (err) {
+    alert(err.response?.data?.error || '确认改签失败')
+  }
+}
+
+const rejectAppointmentRescheduleRequest = async (appt) => {
+  const req = getLatestPendingRescheduleRequest(appt)
+  if (!req) return
+  try {
+    await appointmentApi.rejectMerchantRescheduleRequest(appt.id, req.id)
+    alert('已拒绝该改签申请')
+    await fetchAppointments()
+  } catch (err) {
+    alert(err.response?.data?.error || '拒绝改签失败')
   }
 }
 
