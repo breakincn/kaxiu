@@ -2177,7 +2177,9 @@ const appointmentGroups = computed(() => {
 })
 const appointmentSummaryCount = computed(() => {
   if (!showAppointmentTab.value) return 0
-  return (appointments.value || []).filter(a => ['pending', 'confirmed', 'arrived'].includes(a?.status)).length
+  // 统计卡文案是“待确认预约”，这里只统计真正仍待商户确认的 pending，
+  // 已 confirmed / arrived 的预约应继续留在列表里，但不应再占用顶部待确认数字。
+  return (appointments.value || []).filter(a => a?.status === 'pending').length
 })
 const todayUsages = ref([])
 const todayStartUsages = ref([])
