@@ -175,7 +175,7 @@ func loadAppointmentRescheduleRequestByID(tx *gorm.DB, requestID uint) (*models.
 		return nil, nil
 	}
 	rows, err := tx.Table("appointment_reschedule_requests").
-		Select("id, appointment_id, merchant_id, user_id, current_project_id, current_technician_id, current_time, new_project_id, new_technician_id, new_appointment_time, status, reason, proposed_by_type, proposed_by_id, confirmed_by_type, confirmed_by_id, confirmed_at, result_appointment_id, created_at").
+		Select("id, appointment_id, merchant_id, user_id, current_project_id, current_technician_id, current_appointment_time, new_project_id, new_technician_id, new_appointment_time, status, reason, proposed_by_type, proposed_by_id, confirmed_by_type, confirmed_by_id, confirmed_at, result_appointment_id, created_at").
 		Where("id = ?", requestID).
 		Limit(1).
 		Rows()
@@ -188,18 +188,18 @@ func loadAppointmentRescheduleRequestByID(tx *gorm.DB, requestID uint) (*models.
 	}
 
 	var (
-		req                    models.AppointmentRescheduleRequest
-		currentProjectIDRaw    interface{}
-		currentTechnicianIDRaw interface{}
-		currentTimeRaw         interface{}
-		newProjectIDRaw        interface{}
-		newTechnicianIDRaw     interface{}
-		newTimeRaw             interface{}
-		proposedByIDRaw        interface{}
-		confirmedByIDRaw       interface{}
-		confirmedAtRaw         interface{}
-		resultAppointmentIDRaw interface{}
-		createdAtRaw           interface{}
+		req                       models.AppointmentRescheduleRequest
+		currentProjectIDRaw       interface{}
+		currentTechnicianIDRaw    interface{}
+		currentAppointmentTimeRaw interface{}
+		newProjectIDRaw           interface{}
+		newTechnicianIDRaw        interface{}
+		newTimeRaw                interface{}
+		proposedByIDRaw           interface{}
+		confirmedByIDRaw          interface{}
+		confirmedAtRaw            interface{}
+		resultAppointmentIDRaw    interface{}
+		createdAtRaw              interface{}
 	)
 	if err := rows.Scan(
 		&req.ID,
@@ -208,7 +208,7 @@ func loadAppointmentRescheduleRequestByID(tx *gorm.DB, requestID uint) (*models.
 		&req.UserID,
 		&currentProjectIDRaw,
 		&currentTechnicianIDRaw,
-		&currentTimeRaw,
+		&currentAppointmentTimeRaw,
 		&newProjectIDRaw,
 		&newTechnicianIDRaw,
 		&newTimeRaw,
@@ -230,8 +230,8 @@ func loadAppointmentRescheduleRequestByID(tx *gorm.DB, requestID uint) (*models.
 	if v, ok := gormValueToUint(currentTechnicianIDRaw); ok {
 		req.CurrentTechnicianID = &v
 	}
-	if v, ok := parseDBTimeValue(currentTimeRaw); ok {
-		req.CurrentTime = &v
+	if v, ok := parseDBTimeValue(currentAppointmentTimeRaw); ok {
+		req.CurrentAppointmentTime = &v
 	}
 	if v, ok := gormValueToUint(newProjectIDRaw); ok {
 		req.NewProjectID = &v
@@ -1141,19 +1141,19 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 		}
 
 		proposal = models.AppointmentRescheduleRequest{
-			AppointmentID:       current.ID,
-			MerchantID:          current.MerchantID,
-			UserID:              current.UserID,
-			CurrentProjectID:    current.ProjectID,
-			CurrentTechnicianID: current.TechnicianID,
-			CurrentTime:         current.AppointmentTime,
-			NewProjectID:        current.ProjectID,
-			NewTechnicianID:     current.TechnicianID,
-			NewAppointmentTime:  &newAppointmentTime,
-			Status:              requestStatus,
-			Reason:              reason,
-			ProposedByType:      actorType,
-			ProposedByID:        actorID,
+			AppointmentID:          current.ID,
+			MerchantID:             current.MerchantID,
+			UserID:                 current.UserID,
+			CurrentProjectID:       current.ProjectID,
+			CurrentTechnicianID:    current.TechnicianID,
+			CurrentAppointmentTime: current.AppointmentTime,
+			NewProjectID:           current.ProjectID,
+			NewTechnicianID:        current.TechnicianID,
+			NewAppointmentTime:     &newAppointmentTime,
+			Status:                 requestStatus,
+			Reason:                 reason,
+			ProposedByType:         actorType,
+			ProposedByID:           actorID,
 		}
 		if input.ProjectID != nil {
 			proposal.NewProjectID = input.ProjectID
