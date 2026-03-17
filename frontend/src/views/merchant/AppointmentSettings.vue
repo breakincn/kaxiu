@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-gray-50">
+  <div class="min-h-screen bg-gray-50 pb-6">
     <header class="bg-white px-4 py-3 flex items-center gap-3 border-b sticky top-0 z-10">
       <button @click="goBack" class="p-1">
         <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -9,70 +9,97 @@
       <span class="font-medium text-gray-800">预约设置</span>
     </header>
 
-    <div class="px-4 py-6">
+    <div class="px-4 mt-4">
       <div v-if="loading" class="text-gray-400 text-center py-10">加载中...</div>
 
       <div v-else class="space-y-4">
-        <div class="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div class="px-4 py-4 border-b border-gray-100">
-            <div class="text-gray-800 font-medium">预约前保留缓冲</div>
-            <div class="text-gray-500 text-sm mt-1">预约开始前，预留给预约客户的客服时间</div>
+        <div class="bg-white rounded-xl p-4 shadow-sm">
+          <div class="flex items-center gap-2 mb-4">
+            <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10m-11 9h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v11a2 2 0 002 2z"/>
+            </svg>
+            <span class="font-medium text-gray-800">预约保护参数</span>
           </div>
-          <div class="px-4 py-4">
-            <div class="relative">
-              <input v-model.number="form.appointment_reserve_buffer_minutes" type="number" min="0" max="120" class="w-full px-4 py-3 pr-14 border border-gray-300 rounded-lg" />
-              <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
+
+          <div class="space-y-4">
+            <div>
+              <label class="text-sm font-medium text-gray-700 mb-2 block">预约前保留缓冲</label>
+              <p class="text-xs text-gray-500 mb-2">预约开始前，预留给预约客户的客服时间</p>
+              <div class="relative">
+                <input
+                  v-model.number="form.appointment_reserve_buffer_minutes"
+                  type="number"
+                  min="0"
+                  max="120"
+                  class="w-full px-3 py-2 pr-14 border border-gray-200 rounded-lg focus:outline-none focus:border-primary text-sm"
+                />
+                <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="text-sm font-medium text-gray-700 mb-2 block">预约后宽限时间</label>
+              <p class="text-xs text-gray-500 mb-2">客户在预约开始后仍可到店签到的宽限时长</p>
+              <div class="relative">
+                <input
+                  v-model.number="form.appointment_grace_window_minutes"
+                  type="number"
+                  min="0"
+                  max="180"
+                  class="w-full px-3 py-2 pr-14 border border-gray-200 rounded-lg focus:outline-none focus:border-primary text-sm"
+                />
+                <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="text-sm font-medium text-gray-700 mb-2 block">预约最大等待</label>
+              <p class="text-xs text-gray-500 mb-2">系统允许预约客户因前序服务而产生的最大等待时间</p>
+              <div class="relative">
+                <input
+                  v-model.number="form.appointment_max_wait_minutes"
+                  type="number"
+                  min="0"
+                  max="180"
+                  class="w-full px-3 py-2 pr-14 border border-gray-200 rounded-lg focus:outline-none focus:border-primary text-sm"
+                />
+                <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="text-sm font-medium text-gray-700 mb-2 block">预约预测缓冲</label>
+              <p class="text-xs text-gray-500 mb-2">用于估算服务可能延长的风险缓冲</p>
+              <div class="relative">
+                <input
+                  v-model.number="form.appointment_prediction_buffer_minutes"
+                  type="number"
+                  min="0"
+                  max="60"
+                  class="w-full px-3 py-2 pr-14 border border-gray-200 rounded-lg focus:outline-none focus:border-primary text-sm"
+                />
+                <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div class="px-4 py-4 border-b border-gray-100">
-            <div class="text-gray-800 font-medium">预约后宽限时间</div>
-            <div class="text-gray-500 text-sm mt-1">客户在预约开始后仍可到店签到的宽限时长</div>
+        <div class="bg-white rounded-xl p-4 shadow-sm">
+          <div class="flex items-center gap-2 mb-4">
+            <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <span class="font-medium text-gray-800">参数说明</span>
           </div>
-          <div class="px-4 py-4">
-            <div class="relative">
-              <input v-model.number="form.appointment_grace_window_minutes" type="number" min="0" max="180" class="w-full px-4 py-3 pr-14 border border-gray-300 rounded-lg" />
-              <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div class="px-4 py-4 border-b border-gray-100">
-            <div class="text-gray-800 font-medium">预约最大等待</div>
-            <div class="text-gray-500 text-sm mt-1">系统允许预约客户因前序服务而产生的最大等待时间</div>
-          </div>
-          <div class="px-4 py-4">
-            <div class="relative">
-              <input v-model.number="form.appointment_max_wait_minutes" type="number" min="0" max="180" class="w-full px-4 py-3 pr-14 border border-gray-300 rounded-lg" />
-              <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div class="px-4 py-4 border-b border-gray-100">
-            <div class="text-gray-800 font-medium">预约预测缓冲</div>
-            <div class="text-gray-500 text-sm mt-1">用于估算服务可能延长的风险缓冲</div>
-          </div>
-          <div class="px-4 py-4">
-            <div class="relative">
-              <input v-model.number="form.appointment_prediction_buffer_minutes" type="number" min="0" max="60" class="w-full px-4 py-3 pr-14 border border-gray-300 rounded-lg" />
-              <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="text-xs text-gray-400 px-1">
-          这些参数会同时影响预约页可选客服、客服模式现场派单、改签可用时段和预约到店等待判断。
+          <p class="text-sm leading-6 text-gray-500">
+            这些参数会同时影响预约页可选客服、客服模式现场派单、改签可用时段和预约到店等待判断。
+          </p>
         </div>
 
         <button
           @click="save"
           :disabled="saving"
-          class="w-full bg-primary text-white py-3 rounded-lg hover:bg-primary-dark font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+          class="w-full mt-6 bg-primary text-white py-3 rounded-lg hover:bg-primary-dark font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
         >
           {{ saving ? '保存中...' : '保存' }}
         </button>

@@ -72,7 +72,10 @@
             <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10m-11 9h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v11a2 2 0 002 2z"/>
             </svg>
-            <span class="text-gray-800 font-medium">预约设置</span>
+            <div class="text-left">
+              <div class="text-gray-800 font-medium">预约设置</div>
+              <div class="text-xs text-gray-400 mt-0.5">预约保护参数与改签时段规则</div>
+            </div>
           </div>
           <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
