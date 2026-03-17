@@ -274,6 +274,17 @@
               <div v-if="appt.resolution_note" class="mt-2 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 border border-gray-100">
                 处理备注: {{ appt.resolution_note }}
               </div>
+              <div v-if="(appt.compensations || []).length > 0" class="mt-2 space-y-2">
+                <div
+                  v-for="comp in appt.compensations"
+                  :key="comp.id"
+                  class="rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 border border-gray-100"
+                >
+                  <div class="font-medium">补偿：{{ getCompensationTypeText(comp.type) }}</div>
+                  <div v-if="getCompensationValueText(comp)" class="mt-1">{{ getCompensationValueText(comp) }}</div>
+                  <div class="mt-1 text-gray-500">{{ comp.reason }}</div>
+                </div>
+              </div>
             </div>
             <span :class="getStatusBadgeClass(appt)">
               {{ getStatusText(appt) }}
@@ -328,11 +339,18 @@
                 改派其他客服
               </button>
               <button
-                v-if="['confirmed', 'arrived', 'completed', 'no_show', 'failed'].includes(appt.status)"
-                @click="saveAppointmentResolution(appt)"
+                v-if="shouldShowAppointmentReschedule(appt)"
+                @click="openAppointmentRescheduleModal(appt)"
                 class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
               >
-                改签/补偿
+                改签
+              </button>
+              <button
+                v-if="shouldShowAppointmentCompensation(appt)"
+                @click="openAppointmentCompensationModal(appt)"
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+              >
+                补偿
               </button>
             </template>
           </div>
@@ -1192,6 +1210,99 @@
       </div>
     </div>
 
+    <div v-if="showAppointmentRescheduleModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click.self="closeAppointmentRescheduleModal">
+      <div class="bg-white w-full max-w-lg rounded-2xl p-4 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-3">
+          <div class="font-medium text-gray-800">改签到新时间</div>
+          <button class="text-gray-500" @click="closeAppointmentRescheduleModal">关闭</button>
+        </div>
+        <div class="text-sm text-gray-600">当前预约：{{ rescheduleAppointmentTarget?.user?.nickname || '-' }} / {{ getAppointmentProjectDisplay(rescheduleAppointmentTarget) || '默认项目' }}</div>
+        <div class="mt-3">
+          <div class="text-sm text-gray-600 mb-1">新日期</div>
+          <input v-model="appointmentRescheduleForm.date" type="date" class="w-full px-4 py-3 border border-gray-200 rounded-lg" />
+        </div>
+        <div class="mt-3">
+          <div class="text-sm text-gray-600 mb-1">可选时间</div>
+          <div v-if="appointmentRescheduleLoading" class="text-sm text-gray-400 py-3">加载中...</div>
+          <div v-else-if="appointmentRescheduleSlots.length === 0" class="text-sm text-gray-400 py-3">该日期暂无可改签时间</div>
+          <div v-else class="flex flex-wrap gap-2">
+            <button
+              v-for="slot in appointmentRescheduleSlots"
+              :key="slot.time"
+              type="button"
+              @click="selectAppointmentRescheduleSlot(slot)"
+              :class="selectedAppointmentRescheduleTime === slot.time ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
+              class="px-3 py-2 rounded-lg border text-sm"
+            >
+              {{ slot.label || slot.time.slice(11, 16) }}
+            </button>
+          </div>
+        </div>
+        <div v-if="selectedAppointmentRescheduleCandidates.length > 0" class="mt-3">
+          <div class="text-sm text-gray-600 mb-1">可选客服</div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="item in selectedAppointmentRescheduleCandidates"
+              :key="item.technician_id"
+              type="button"
+              @click="toggleAppointmentRescheduleTechnician(item.technician_id)"
+              :class="appointmentRescheduleForm.technician_id === item.technician_id ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
+              class="px-3 py-2 rounded-lg border text-sm"
+            >
+              {{ item.label }}
+            </button>
+          </div>
+        </div>
+        <div class="mt-3">
+          <div class="text-sm text-gray-600 mb-1">改签原因</div>
+          <textarea v-model="appointmentRescheduleForm.reason" rows="3" class="w-full px-4 py-3 border border-gray-200 rounded-lg" placeholder="例如：客户主动改到明天下午"></textarea>
+        </div>
+        <div class="mt-4 flex gap-2">
+          <button @click="closeAppointmentRescheduleModal" class="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium">取消</button>
+          <button @click="submitAppointmentReschedule" :disabled="appointmentRescheduleSubmitting || !selectedAppointmentRescheduleTime || !appointmentRescheduleForm.reason.trim()" class="flex-1 px-4 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50">
+            {{ appointmentRescheduleSubmitting ? '提交中...' : '确认改签' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showAppointmentCompensationModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click.self="closeAppointmentCompensationModal">
+      <div class="bg-white w-full max-w-lg rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div class="font-medium text-gray-800">预约补偿</div>
+          <button class="text-gray-500" @click="closeAppointmentCompensationModal">关闭</button>
+        </div>
+        <div class="text-sm text-gray-600">仅在门店未兑现预约承诺时使用。补偿会形成正式记录并立即执行。</div>
+        <div class="mt-3">
+          <div class="text-sm text-gray-600 mb-1">补偿类型</div>
+          <select v-model="appointmentCompensationForm.type" class="w-full px-4 py-3 border border-gray-200 rounded-lg">
+            <option value="extra_times">补次数</option>
+            <option value="extend_minutes">补时长</option>
+            <option value="discount_note">优惠减免记录</option>
+            <option value="other_note">其他补偿记录</option>
+          </select>
+        </div>
+        <div v-if="['extra_times', 'extend_minutes'].includes(appointmentCompensationForm.type)" class="mt-3">
+          <div class="text-sm text-gray-600 mb-1">{{ appointmentCompensationForm.type === 'extra_times' ? '补偿次数' : '补偿分钟数' }}</div>
+          <input v-model.number="appointmentCompensationForm.value" type="number" min="1" class="w-full px-4 py-3 border border-gray-200 rounded-lg" />
+        </div>
+        <div class="mt-3">
+          <div class="text-sm text-gray-600 mb-1">补偿原因</div>
+          <input v-model="appointmentCompensationForm.reason" type="text" class="w-full px-4 py-3 border border-gray-200 rounded-lg" placeholder="例如：到店等待超过15分钟" />
+        </div>
+        <div class="mt-3">
+          <div class="text-sm text-gray-600 mb-1">备注</div>
+          <textarea v-model="appointmentCompensationForm.remark" rows="3" class="w-full px-4 py-3 border border-gray-200 rounded-lg" placeholder="可填写赠送内容或减免说明"></textarea>
+        </div>
+        <div class="mt-4 flex gap-2">
+          <button @click="closeAppointmentCompensationModal" class="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium">取消</button>
+          <button @click="submitAppointmentCompensation" :disabled="appointmentCompensationSubmitting || !appointmentCompensationForm.reason.trim()" class="flex-1 px-4 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50">
+            {{ appointmentCompensationSubmitting ? '处理中...' : '确认补偿' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 营业状态切换弹窗 -->
     <div v-if="showBusinessStatusModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showBusinessStatusModal = false">
       <div class="bg-white rounded-2xl w-11/12 max-w-sm overflow-hidden">
@@ -1966,6 +2077,36 @@ const todayVerifyCount = ref(0)
 const pendingAppointments = ref(0)
 const pendingDirectPurchases = ref(0)
 const appointments = ref([])
+const showAppointmentRescheduleModal = ref(false)
+const rescheduleAppointmentTarget = ref(null)
+const appointmentRescheduleLoading = ref(false)
+const appointmentRescheduleSubmitting = ref(false)
+const appointmentRescheduleSlots = ref([])
+const selectedAppointmentRescheduleTime = ref('')
+const selectedAppointmentRescheduleCandidates = computed(() => {
+  const slot = (appointmentRescheduleSlots.value || []).find(item => item.time === selectedAppointmentRescheduleTime.value)
+  const candidates = slot?.technician_candidates || []
+  return candidates.map(item => ({
+    technician_id: Number(item.technician_id || 0),
+    label: item.availability_state === 'conditional'
+      ? `客服${item.technician_id}（预计等${item.predicted_wait_minutes || 0}分）`
+      : `客服${item.technician_id}`
+  }))
+})
+const appointmentRescheduleForm = ref({
+  date: '',
+  technician_id: null,
+  reason: ''
+})
+const showAppointmentCompensationModal = ref(false)
+const compensationAppointmentTarget = ref(null)
+const appointmentCompensationSubmitting = ref(false)
+const appointmentCompensationForm = ref({
+  type: 'extra_times',
+  value: 1,
+  reason: '',
+  remark: ''
+})
 const unassignedAppointments = computed(() => {
   if (!isTechnicianAuth()) return []
   return (appointments.value || []).filter(a => !a?.technician_id)
@@ -3972,6 +4113,36 @@ const getAppointmentRiskHint = (appt) => {
   return ''
 }
 
+const shouldShowAppointmentReschedule = (appt) => {
+  if (!appt) return false
+  // 改签是重新安排预约，只有“还没彻底结束”的预约才允许改到新时间。
+  return appt.status === 'confirmed' || appt.status === 'arrived'
+}
+
+const shouldShowAppointmentCompensation = (appt) => {
+  if (!appt) return false
+  // 补偿不是常驻动作，只在门店承诺已经受损或服务异常结束后开放。
+  if (appt.status === 'arrived') {
+    return Number(appt?.predicted_wait_minutes || 0) > 0 || !!appt?.service_session_id
+  }
+  return appt.status === 'completed' || appt.status === 'failed'
+}
+
+const getCompensationTypeText = (type) => {
+  if (type === 'extra_times') return '补次数'
+  if (type === 'extend_minutes') return '补时长'
+  if (type === 'discount_note') return '优惠减免'
+  return '其他补偿'
+}
+
+const getCompensationValueText = (comp) => {
+  const value = Number(comp?.value || 0)
+  if (comp?.type === 'extra_times' && value > 0) return `增加 ${value} 次`
+  if (comp?.type === 'extend_minutes' && value > 0) return `增加 ${value} 分钟`
+  if (comp?.remark) return comp.remark
+  return ''
+}
+
 const getAppointmentReassignCandidates = async (appt) => {
   const res = await attendanceApi.listAvailableTechnicians()
   const currentTechnicianId = Number(appt?.technician_id || 0)
@@ -4020,21 +4191,134 @@ const reassignAppointmentService = async (appt) => {
   }
 }
 
-const saveAppointmentResolution = async (appt) => {
-  const initialValue = String(appt?.resolution_note || '').trim()
-  const note = window.prompt('请输入改签/补偿/人工处理备注', initialValue)
-  if (note === null) return
-  const nextNote = String(note || '').trim()
-  if (!nextNote) {
-    alert('处理备注不能为空')
+const resetAppointmentRescheduleForm = () => {
+  appointmentRescheduleForm.value = {
+    date: '',
+    technician_id: null,
+    reason: ''
+  }
+  appointmentRescheduleSlots.value = []
+  selectedAppointmentRescheduleTime.value = ''
+}
+
+const closeAppointmentRescheduleModal = () => {
+  showAppointmentRescheduleModal.value = false
+  rescheduleAppointmentTarget.value = null
+  appointmentRescheduleLoading.value = false
+  appointmentRescheduleSubmitting.value = false
+  resetAppointmentRescheduleForm()
+}
+
+const fetchAppointmentRescheduleSlots = async () => {
+  const appt = rescheduleAppointmentTarget.value
+  if (!appt || !appointmentRescheduleForm.value.date) {
+    appointmentRescheduleSlots.value = []
     return
   }
+  appointmentRescheduleLoading.value = true
   try {
-    await appointmentApi.updateResolution(appt.id, { resolution_note: nextNote })
-    alert('处理备注已保存')
+    const res = await appointmentApi.getAvailableTimeSlots(merchantId.value, appointmentRescheduleForm.value.date, appt?.project_id || appt?.project?.id)
+    appointmentRescheduleSlots.value = (res.data?.data || []).map(slot => ({
+      ...slot,
+      label: slot?.time ? String(slot.time).slice(11, 16) : ''
+    }))
+    if (!appointmentRescheduleSlots.value.some(item => item.time === selectedAppointmentRescheduleTime.value)) {
+      selectedAppointmentRescheduleTime.value = ''
+      appointmentRescheduleForm.value.technician_id = null
+    }
+  } catch (err) {
+    appointmentRescheduleSlots.value = []
+    alert(err.response?.data?.error || '获取可改签时间失败')
+  } finally {
+    appointmentRescheduleLoading.value = false
+  }
+}
+
+const openAppointmentRescheduleModal = async (appt) => {
+  rescheduleAppointmentTarget.value = appt
+  resetAppointmentRescheduleForm()
+  appointmentRescheduleForm.value.date = String(appt?.appointment_time || '').slice(0, 10)
+  appointmentRescheduleForm.value.reason = String(appt?.reschedule_reason || '').trim()
+  showAppointmentRescheduleModal.value = true
+  await fetchAppointmentRescheduleSlots()
+}
+
+const selectAppointmentRescheduleSlot = (slot) => {
+  selectedAppointmentRescheduleTime.value = slot?.time || ''
+  appointmentRescheduleForm.value.technician_id = null
+}
+
+const toggleAppointmentRescheduleTechnician = (technicianId) => {
+  const next = Number(technicianId || 0)
+  if (!next) return
+  appointmentRescheduleForm.value.technician_id = appointmentRescheduleForm.value.technician_id === next ? null : next
+}
+
+const submitAppointmentReschedule = async () => {
+  const appt = rescheduleAppointmentTarget.value
+  if (!appt || !selectedAppointmentRescheduleTime.value) return
+  appointmentRescheduleSubmitting.value = true
+  try {
+    const payload = {
+      appointment_time: selectedAppointmentRescheduleTime.value,
+      technician_id: appointmentRescheduleForm.value.technician_id ? Number(appointmentRescheduleForm.value.technician_id) : null,
+      reason: String(appointmentRescheduleForm.value.reason || '').trim()
+    }
+    await appointmentApi.reschedule(appt.id, payload)
+    alert('改签成功，原预约已关闭并生成新预约')
+    closeAppointmentRescheduleModal()
     await fetchAppointments()
   } catch (err) {
-    alert(err.response?.data?.error || '保存处理备注失败')
+    alert(err.response?.data?.error || '改签失败')
+  } finally {
+    appointmentRescheduleSubmitting.value = false
+  }
+}
+
+const closeAppointmentCompensationModal = () => {
+  showAppointmentCompensationModal.value = false
+  compensationAppointmentTarget.value = null
+  appointmentCompensationSubmitting.value = false
+  appointmentCompensationForm.value = {
+    type: 'extra_times',
+    value: 1,
+    reason: '',
+    remark: ''
+  }
+}
+
+const openAppointmentCompensationModal = (appt) => {
+  compensationAppointmentTarget.value = appt
+  appointmentCompensationForm.value = {
+    type: 'extra_times',
+    value: 1,
+    reason: '',
+    remark: ''
+  }
+  showAppointmentCompensationModal.value = true
+}
+
+const submitAppointmentCompensation = async () => {
+  const appt = compensationAppointmentTarget.value
+  if (!appt) return
+  appointmentCompensationSubmitting.value = true
+  try {
+    await appointmentApi.createCompensation(appt.id, {
+      type: appointmentCompensationForm.value.type,
+      value: Number(appointmentCompensationForm.value.value || 0),
+      reason: String(appointmentCompensationForm.value.reason || '').trim(),
+      remark: String(appointmentCompensationForm.value.remark || '').trim()
+    })
+    alert('补偿已执行并记录')
+    closeAppointmentCompensationModal()
+    await fetchAppointments()
+    if (appt?.service_session_id) {
+      await fetchServiceSessions()
+    }
+  } catch (err) {
+    alert(err.response?.data?.error || '补偿失败')
+  } finally {
+    appointmentCompensationSubmitting.value = false
   }
 }
 
@@ -4186,6 +4470,14 @@ watch(currentTime, () => {
   syncServiceTabRefreshOnCountdownBoundary()
   syncStartTabRefreshOnCountdownBoundary()
 })
+
+watch(
+  () => appointmentRescheduleForm.value.date,
+  async (nextDate, prevDate) => {
+    if (!showAppointmentRescheduleModal.value || !nextDate || nextDate === prevDate) return
+    await fetchAppointmentRescheduleSlots()
+  }
+)
 
 watch(currentTab, (tab) => {
   const normalizedTab = tab === 'start' ? 'service' : tab

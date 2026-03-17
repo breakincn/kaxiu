@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"kabao/config"
 	"kabao/models"
 	"kabao/queue"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func parseHHMMToMinuteOfDay(s string) (int, bool) {
@@ -97,6 +99,178 @@ func getAppointmentServiceMinutes(merchantID uint, appt models.Appointment) int 
 		}
 	}
 	return 30
+}
+
+func appointmentCompensationPreload(db *gorm.DB) *gorm.DB {
+	return db.Order("id DESC")
+}
+
+func hydrateAppointmentRelations(tx *gorm.DB, appt *models.Appointment) error {
+	if tx == nil || appt == nil || appt.ID == 0 {
+		return nil
+	}
+	// 预约主记录统一通过 raw loader 读取，避免 sqlite 在测试环境里把 datetime 字符串直接扫进 *time.Time。
+	// 这里单独补齐关联关系，保证接口返回结构与原来保持一致。
+	if err := tx.Where("id = ?", appt.UserID).First(&appt.User).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if err := tx.Where("id = ?", appt.CardID).First(&appt.Card).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if err := tx.Where("id = ?", appt.MerchantID).First(&appt.Merchant).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if appt.ProjectID != nil && *appt.ProjectID > 0 {
+		var project models.MerchantProject
+		if err := tx.Where("id = ?", *appt.ProjectID).First(&project).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		} else {
+			appt.Project = &project
+		}
+	}
+	if appt.TechnicianID != nil && *appt.TechnicianID > 0 {
+		var technician models.Technician
+		if err := tx.Preload("ServiceRole").Where("id = ?", *appt.TechnicianID).First(&technician).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		} else {
+			appt.Technician = &technician
+		}
+	}
+	var compensations []models.AppointmentCompensation
+	if err := tx.Scopes(appointmentCompensationPreload).Where("appointment_id = ?", appt.ID).Find(&compensations).Error; err != nil {
+		return err
+	}
+	appt.Compensations = compensations
+	return nil
+}
+
+func getAppointmentActor(c *gin.Context) (string, *uint) {
+	authType := strings.TrimSpace(c.GetString("auth_type"))
+	switch authType {
+	case "merchant":
+		if merchantID, ok := c.Get("merchant_id"); ok {
+			if id, ok := merchantID.(uint); ok && id > 0 {
+				return "merchant", &id
+			}
+		}
+	case "staff":
+		if technicianID, ok := c.Get("technician_id"); ok {
+			if id, ok := technicianID.(uint); ok && id > 0 {
+				return "staff", &id
+			}
+		}
+	case "user":
+		if userID, ok := c.Get("user_id"); ok {
+			if id, ok := userID.(uint); ok && id > 0 {
+				return "user", &id
+			}
+		}
+	}
+	return authType, nil
+}
+
+func appointmentAllowsReschedule(status string) bool {
+	switch normalizeAppointmentStatus(status) {
+	case "pending", "confirmed", "arrived", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
+func appendAppointmentResolutionNote(current, next string) string {
+	left := strings.TrimSpace(current)
+	right := strings.TrimSpace(next)
+	if left == "" {
+		return right
+	}
+	if right == "" {
+		return left
+	}
+	return left + "\n" + right
+}
+
+func cancelUnstartedAppointmentArrival(tx *gorm.DB, appt *models.Appointment, now time.Time) error {
+	if appt == nil || appt.UsageID == nil || appt.ServiceSessionID == nil {
+		return apiErr{status: http.StatusBadRequest, msg: "当前预约未生成可撤回的到店记录"}
+	}
+
+	var usage models.Usage
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", *appt.UsageID).First(&usage).Error; err != nil {
+		return err
+	}
+	if usage.Status != "in_progress" {
+		return apiErr{status: http.StatusBadRequest, msg: "当前预约已进入不可改签阶段"}
+	}
+
+	var session models.ServiceSession
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", *appt.ServiceSessionID).First(&session).Error; err != nil {
+		return err
+	}
+	baseStatus := models.NormalizeSessionStatus(session.Status)
+	switch baseStatus {
+	case "room_selecting", "room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending":
+	default:
+		return apiErr{status: http.StatusBadRequest, msg: "当前预约已开始服务，不能改签"}
+	}
+
+	var card models.Card
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&card, appt.CardID).Error; err != nil {
+		return err
+	}
+	used := usage.UsedTimes
+	if used <= 0 {
+		used = 1
+	}
+	if err := tx.Model(&models.Card{}).Where("id = ?", card.ID).Updates(map[string]interface{}{
+		"remain_times": gorm.Expr("remain_times + ?", used),
+		"used_times":   gorm.Expr("CASE WHEN used_times >= ? THEN used_times - ? ELSE 0 END", used, used),
+	}).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&models.Usage{}).Where("id = ? AND status = ?", usage.ID, "in_progress").Updates(map[string]interface{}{
+		"status":        "failed",
+		"finished_at":   &now,
+		"technician_id": nil,
+	}).Error; err != nil {
+		return err
+	}
+
+	updates := map[string]interface{}{
+		"status":                  models.ApplyStatusPrefix(session.Status, "canceled"),
+		"technician_id":           nil,
+		"room_id":                 nil,
+		"room_locked_at":          nil,
+		"room_select_deadline_at": nil,
+		"start_confirmed_at":      nil,
+		"predicted_ready_at":      nil,
+	}
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND status NOT IN ?", session.ID, models.ExpandStatusesWithKnownPrefixes([]string{"finished", "canceled"})).
+		Updates(updates).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func compensationDisplayText(t string, value int, remark string) string {
+	switch t {
+	case "extra_times":
+		return fmt.Sprintf("补偿次数 +%d", value)
+	case "extend_minutes":
+		return fmt.Sprintf("补偿时长 +%d分钟", value)
+	case "discount_note":
+		if strings.TrimSpace(remark) != "" {
+			return "补偿优惠：" + strings.TrimSpace(remark)
+		}
+		return "补偿优惠"
+	default:
+		return strings.TrimSpace(remark)
+	}
 }
 
 func cancelAppointmentWithTime(appointment *models.Appointment, canceledAt time.Time) error {
@@ -220,7 +394,7 @@ func GetMerchantAppointments(c *gin.Context) {
 	status := c.Query("status")
 
 	var appointments []models.Appointment
-	query := config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").Where("merchant_id = ?", merchantID)
+	query := config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).Where("merchant_id = ?", merchantID)
 
 	if status != "" {
 		query = query.Where("status = ?", status)
@@ -249,7 +423,7 @@ func GetUserAppointments(c *gin.Context) {
 		return
 	}
 	var appointments []models.Appointment
-	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Where("user_id = ?", authUserID).Order("appointment_time DESC").Find(&appointments)
+	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).Where("user_id = ?", authUserID).Order("appointment_time DESC").Find(&appointments)
 	for i := range appointments {
 		appointments[i].Status = normalizeAppointmentStatus(appointments[i].Status)
 	}
@@ -277,7 +451,7 @@ func GetCardAppointment(c *gin.Context) {
 	log.Printf("查询预约: 卡片ID=%s, 用户ID=%d, 商户ID=%d", cardID, card.UserID, card.MerchantID)
 
 	var appointment models.Appointment
-	err := config.DB.Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").
+	err := config.DB.Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).
 		Where("card_id = ? AND merchant_id = ? AND user_id = ? AND status IN ('pending', 'confirmed', 'arrived', 'failed')", card.ID, card.MerchantID, card.UserID).
 		Order("appointment_time ASC").
 		First(&appointment).Error
@@ -522,7 +696,7 @@ func CreateAppointment(c *gin.Context) {
 
 	log.Printf("预约创建成功: ID=%d, 状态=%s", appointment.ID, appointment.Status)
 
-	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Project").Preload("Technician").First(&appointment, appointment.ID)
+	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Project").Preload("Technician").Preload("Compensations", appointmentCompensationPreload).First(&appointment, appointment.ID)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 
@@ -567,7 +741,7 @@ func ConfirmAppointment(c *gin.Context) {
 		"status":       "confirmed",
 		"confirmed_at": &confirmedAt,
 	})
-	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Technician").First(&appointment, id)
+	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Technician").Preload("Compensations", appointmentCompensationPreload).First(&appointment, id)
 	appointment.Status = normalizeAppointmentStatus(appointment.Status)
 	// 入预约队列（内存队列）：仅 confirmed 才进入预约排队
 	if appointment.AppointmentTime != nil {
@@ -616,6 +790,362 @@ func UpdateAppointmentResolution(c *gin.Context) {
 	appointment.ResolutionNote = note
 	appointment.Status = normalizeAppointmentStatus(appointment.Status)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
+}
+
+func RescheduleAppointment(c *gin.Context) {
+	id := c.Param("id")
+	appointmentID64, err := strconv.ParseUint(strings.TrimSpace(id), 10, 64)
+	if err != nil || appointmentID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的预约ID"})
+		return
+	}
+	appointment, err := loadAppointmentByID(config.DB, uint(appointmentID64))
+	if err != nil || appointment == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
+		return
+	}
+	if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+		return
+	}
+
+	var input struct {
+		AppointmentTime string `json:"appointment_time" binding:"required"`
+		TechnicianID    *uint  `json:"technician_id"`
+		ProjectID       *uint  `json:"project_id"`
+		Reason          string `json:"reason" binding:"required,max=255"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "改签原因不能为空"})
+		return
+	}
+
+	loc, locErr := time.LoadLocation("Asia/Shanghai")
+	if locErr != nil {
+		loc = time.Local
+	}
+	newAppointmentTime, err := time.ParseInLocation("2006-01-02 15:04:05", input.AppointmentTime, loc)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "预约时间格式错误"})
+		return
+	}
+	if newAppointmentTime.Before(time.Now().In(loc).Add(-1 * time.Minute)) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能改签到过去时间"})
+		return
+	}
+
+	actorType, actorID := getAppointmentActor(c)
+	now := time.Now()
+	var oldAppointment models.Appointment
+	var newAppointment models.Appointment
+
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		currentPtr, err := loadAppointmentByID(tx, appointment.ID)
+		if err != nil {
+			return err
+		}
+		if currentPtr == nil {
+			return gorm.ErrRecordNotFound
+		}
+		current := *currentPtr
+		if !appointmentAllowsReschedule(current.Status) {
+			return apiErr{status: http.StatusBadRequest, msg: "当前预约状态不可改签"}
+		}
+
+		var merchant models.Merchant
+		if err := tx.First(&merchant, current.MerchantID).Error; err != nil {
+			return err
+		}
+		intervals, ok := getMerchantBusinessIntervalsForDate(merchant, newAppointmentTime.In(loc))
+		if !ok || !isWithinBusinessIntervals(newAppointmentTime, intervals) {
+			return apiErr{status: http.StatusBadRequest, msg: "改签时间不在营业时间内"}
+		}
+
+		projectID := current.ProjectID
+		serviceMinutes := getAppointmentServiceMinutes(current.MerchantID, current)
+		if input.ProjectID != nil && *input.ProjectID > 0 {
+			var project models.MerchantProject
+			if err := tx.Where("id = ? AND merchant_id = ? AND is_active = ?", *input.ProjectID, current.MerchantID, true).First(&project).Error; err != nil {
+				return apiErr{status: http.StatusBadRequest, msg: "无效的项目"}
+			}
+			projectID = input.ProjectID
+			serviceMinutes = project.Duration
+		}
+		if serviceMinutes <= 0 {
+			serviceMinutes = 30
+		}
+
+		technicianID := current.TechnicianID
+		if input.TechnicianID != nil {
+			if *input.TechnicianID == 0 {
+				technicianID = nil
+			} else {
+				technicianID = input.TechnicianID
+			}
+		}
+
+		if technicianID != nil && *technicianID > 0 {
+			availability, err := evaluateBookingTechnicianAvailability(tx, merchant, *technicianID, newAppointmentTime, serviceMinutes, current.ID)
+			if err != nil {
+				return err
+			}
+			if availability.State == appointmentAvailabilityUnavailable {
+				return apiErr{status: http.StatusBadRequest, msg: "新时间下该客服不可预约"}
+			}
+			current.PredictedWaitMinutes = availability.PredictedWaitMinutes
+		} else {
+			current.PredictedWaitMinutes = 0
+		}
+
+		if normalizeAppointmentStatus(current.Status) == "arrived" {
+			// 已到店但尚未正式开始服务时，改签必须先撤销本次到店核销占用，
+			// 否则会残留 usage / service_session，导致“旧预约已关闭但服务仍在占位”。
+			if err := cancelUnstartedAppointmentArrival(tx, &current, now); err != nil {
+				return err
+			}
+		}
+
+		newStatus := "pending"
+		newConfirmedAt := (*time.Time)(nil)
+		if normalizeAppointmentStatus(current.Status) == "confirmed" || normalizeAppointmentStatus(current.Status) == "arrived" {
+			newStatus = "confirmed"
+			newConfirmedAt = &now
+		}
+		newAppointment = models.Appointment{
+			CardID:                current.CardID,
+			MerchantID:            current.MerchantID,
+			UserID:                current.UserID,
+			ProjectID:             projectID,
+			TechnicianID:          technicianID,
+			AppointmentTime:       &newAppointmentTime,
+			Status:                newStatus,
+			ConfirmedAt:           newConfirmedAt,
+			PredictedWaitMinutes:  current.PredictedWaitMinutes,
+			ReplacesAppointmentID: &current.ID,
+			RescheduleReason:      reason,
+			ResolutionNote:        appendAppointmentResolutionNote("", "改签说明："+reason),
+		}
+		if err := tx.Create(&newAppointment).Error; err != nil {
+			return err
+		}
+
+		closeUpdates := map[string]interface{}{
+			"status":                     "canceled",
+			"closed_reason":              "rescheduled",
+			"closed_by_type":             actorType,
+			"closed_by_id":               actorID,
+			"reschedule_reason":          reason,
+			"replaced_by_appointment_id": newAppointment.ID,
+			"canceled_at":                &now,
+			"resolution_note":            appendAppointmentResolutionNote(current.ResolutionNote, fmt.Sprintf("改签到 %s", newAppointmentTime.Format("2006-01-02 15:04"))),
+			"arrived_at":                 nil,
+			"service_session_id":         nil,
+			"usage_id":                   nil,
+			"predicted_wait_minutes":     0,
+		}
+		if err := tx.Model(&models.Appointment{}).Where("id = ?", current.ID).Updates(closeUpdates).Error; err != nil {
+			return err
+		}
+
+		oldAppointment = current
+		oldAppointment.Status = "canceled"
+		oldAppointment.ClosedReason = "rescheduled"
+		oldAppointment.ClosedByType = actorType
+		oldAppointment.ClosedByID = actorID
+		oldAppointment.RescheduleReason = reason
+		oldAppointment.ReplacedByAppointmentID = &newAppointment.ID
+		oldAppointment.CanceledAt = &now
+		return nil
+	})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	reloadedAppointment, err := loadAppointmentByID(config.DB, newAppointment.ID)
+	if err == nil && reloadedAppointment != nil {
+		newAppointment = *reloadedAppointment
+		if hydrateErr := hydrateAppointmentRelations(config.DB, &newAppointment); hydrateErr != nil {
+			log.Printf("hydrate rescheduled appointment failed: id=%d err=%v", newAppointment.ID, hydrateErr)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"old_appointment": oldAppointment,
+		"new_appointment": newAppointment,
+	}})
+}
+
+func ListAppointmentCompensations(c *gin.Context) {
+	id := c.Param("id")
+	appointmentID64, err := strconv.ParseUint(strings.TrimSpace(id), 10, 64)
+	if err != nil || appointmentID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的预约ID"})
+		return
+	}
+	appointment, err := loadAppointmentByID(config.DB, uint(appointmentID64))
+	if err != nil || appointment == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
+		return
+	}
+	if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+		return
+	}
+	var compensations []models.AppointmentCompensation
+	if err := config.DB.Where("appointment_id = ?", appointment.ID).Order("id DESC").Find(&compensations).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取补偿记录失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": compensations})
+}
+
+func CreateAppointmentCompensation(c *gin.Context) {
+	id := c.Param("id")
+	appointmentID64, err := strconv.ParseUint(strings.TrimSpace(id), 10, 64)
+	if err != nil || appointmentID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的预约ID"})
+		return
+	}
+	appointment, err := loadAppointmentByID(config.DB, uint(appointmentID64))
+	if err != nil || appointment == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
+		return
+	}
+	if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+		return
+	}
+
+	var input struct {
+		Type   string `json:"type" binding:"required"`
+		Value  int    `json:"value"`
+		Reason string `json:"reason" binding:"required,max=255"`
+		Remark string `json:"remark" binding:"max=255"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	input.Type = strings.TrimSpace(input.Type)
+	input.Reason = strings.TrimSpace(input.Reason)
+	input.Remark = strings.TrimSpace(input.Remark)
+	if input.Reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "补偿原因不能为空"})
+		return
+	}
+	switch input.Type {
+	case "extra_times":
+		if input.Value <= 0 || input.Value > 20 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "补偿次数范围应为 1-20"})
+			return
+		}
+	case "extend_minutes":
+		if input.Value < 5 || input.Value > 180 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "补偿时长范围应为 5-180 分钟"})
+			return
+		}
+	case "discount_note", "other_note":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的补偿类型"})
+		return
+	}
+
+	actorType, actorID := getAppointmentActor(c)
+	now := time.Now()
+	var compensation models.AppointmentCompensation
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		currentPtr, err := loadAppointmentByID(tx, appointment.ID)
+		if err != nil {
+			return err
+		}
+		if currentPtr == nil {
+			return gorm.ErrRecordNotFound
+		}
+		current := *currentPtr
+		compensation = models.AppointmentCompensation{
+			AppointmentID:    current.ID,
+			MerchantID:       current.MerchantID,
+			UserID:           current.UserID,
+			CardID:           current.CardID,
+			ServiceSessionID: current.ServiceSessionID,
+			Type:             input.Type,
+			Value:            input.Value,
+			Status:           "pending",
+			Reason:           input.Reason,
+			Remark:           input.Remark,
+			CreatedByType:    actorType,
+			CreatedByID:      actorID,
+		}
+		if err := tx.Create(&compensation).Error; err != nil {
+			return err
+		}
+
+		// 不同补偿类型直接驱动对应资源：
+		// 1. extra_times 立刻回充卡次数
+		// 2. extend_minutes 直接延长当前服务会话
+		// 3. discount_note / other_note 先形成正式补偿记录，供线下履约和后续稽核
+		switch input.Type {
+		case "extra_times":
+			if err := tx.Model(&models.Card{}).Where("id = ?", current.CardID).Updates(map[string]interface{}{
+				"total_times":  gorm.Expr("total_times + ?", input.Value),
+				"remain_times": gorm.Expr("remain_times + ?", input.Value),
+			}).Error; err != nil {
+				return err
+			}
+		case "extend_minutes":
+			if current.ServiceSessionID == nil {
+				return apiErr{status: http.StatusBadRequest, msg: "当前预约没有关联服务会话，不能补时"}
+			}
+			var session models.ServiceSession
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", *current.ServiceSessionID).First(&session).Error; err != nil {
+				return err
+			}
+			baseStatus := models.NormalizeSessionStatus(session.Status)
+			if baseStatus != "serving" && baseStatus != "start_pending" && baseStatus != "delay_pending" && baseStatus != "appointment_waiting" {
+				return apiErr{status: http.StatusBadRequest, msg: "当前阶段不能补时"}
+			}
+			updates := map[string]interface{}{
+				"duration_minutes": gorm.Expr("duration_minutes + ?", input.Value),
+			}
+			if session.ScheduledFinishAt != nil {
+				updates["scheduled_finish_at"] = session.ScheduledFinishAt.Add(time.Duration(input.Value) * time.Minute)
+			}
+			if err := tx.Model(&models.ServiceSession{}).Where("id = ?", session.ID).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+
+		noteText := compensationDisplayText(input.Type, input.Value, input.Remark)
+		if err := tx.Model(&models.Appointment{}).Where("id = ?", current.ID).Updates(map[string]interface{}{
+			"resolution_note": appendAppointmentResolutionNote(current.ResolutionNote, noteText),
+		}).Error; err != nil {
+			return err
+		}
+
+		compensation.Status = "applied"
+		compensation.AppliedAt = &now
+		return tx.Model(&models.AppointmentCompensation{}).Where("id = ?", compensation.ID).Updates(map[string]interface{}{
+			"status":     "applied",
+			"applied_at": &now,
+		}).Error
+	})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": compensation})
 }
 
 func CancelAppointment(c *gin.Context) {
@@ -729,9 +1259,14 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	}
 
 	now := time.Now().In(loc)
+	todayDate := now.Format("2006-01-02")
 	tomorrowDate := now.Add(24 * time.Hour).Format("2006-01-02")
 	if date == "" {
-		date = tomorrowDate
+		if authType == "user" {
+			date = tomorrowDate
+		} else {
+			date = todayDate
+		}
 	}
 
 	// 验证日期格式
@@ -751,9 +1286,17 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		return
 	}
 
-	if date != tomorrowDate {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持预约明天"})
-		return
+	if authType == "user" {
+		if date != tomorrowDate {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持预约明天"})
+			return
+		}
+	} else {
+		selectedDate, _ := time.ParseInLocation("2006-01-02", date, loc)
+		if selectedDate.Before(time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "不能查询过去的日期"})
+			return
+		}
 	}
 	serviceMinutes := 30
 	if projectID > 0 {

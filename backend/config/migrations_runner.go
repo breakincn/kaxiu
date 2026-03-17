@@ -92,6 +92,22 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE service_sessions ADD INDEX idx_service_sessions_next_appointment_id (next_appointment_id)",
 		},
 	},
+	{
+		Version: "2026031702",
+		Name:    "add_appointment_reschedule_and_compensation",
+		Statements: []string{
+			"ALTER TABLE appointments ADD COLUMN closed_reason varchar(50) NOT NULL DEFAULT '' COMMENT '关闭原因（canceled/rescheduled/no_show/completed等）'",
+			"ALTER TABLE appointments ADD COLUMN closed_by_type varchar(20) NOT NULL DEFAULT '' COMMENT '关闭操作人类型（merchant/staff/system/user）'",
+			"ALTER TABLE appointments ADD COLUMN closed_by_id bigint unsigned NULL DEFAULT NULL COMMENT '关闭操作人ID'",
+			"ALTER TABLE appointments ADD COLUMN reschedule_reason varchar(255) NOT NULL DEFAULT '' COMMENT '改签原因'",
+			"ALTER TABLE appointments ADD COLUMN replaced_by_appointment_id bigint unsigned NULL DEFAULT NULL COMMENT '本预约被哪条新预约替代'",
+			"ALTER TABLE appointments ADD COLUMN replaces_appointment_id bigint unsigned NULL DEFAULT NULL COMMENT '本预约替代了哪条旧预约'",
+			"ALTER TABLE appointments ADD INDEX idx_appointments_closed_by_id (closed_by_id)",
+			"ALTER TABLE appointments ADD INDEX idx_appointments_replaced_by_appointment_id (replaced_by_appointment_id)",
+			"ALTER TABLE appointments ADD INDEX idx_appointments_replaces_appointment_id (replaces_appointment_id)",
+			"CREATE TABLE IF NOT EXISTS appointment_compensations (\n  id bigint unsigned NOT NULL AUTO_INCREMENT,\n  appointment_id bigint unsigned NOT NULL,\n  merchant_id bigint unsigned NOT NULL,\n  user_id bigint unsigned NOT NULL,\n  card_id bigint unsigned NOT NULL,\n  service_session_id bigint unsigned NULL DEFAULT NULL,\n  type varchar(30) NOT NULL COMMENT '补偿类型（extra_times/extend_minutes/discount_note/other_note）',\n  value int NOT NULL DEFAULT 0,\n  status varchar(20) NOT NULL DEFAULT 'pending' COMMENT '状态（pending/applied/canceled）',\n  reason varchar(255) NOT NULL DEFAULT '',\n  remark varchar(255) NOT NULL DEFAULT '',\n  created_by_type varchar(20) NOT NULL DEFAULT '',\n  created_by_id bigint unsigned NULL DEFAULT NULL,\n  applied_at datetime(3) NULL DEFAULT NULL,\n  created_at datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),\n  PRIMARY KEY (id),\n  KEY idx_appointment_compensations_appointment_id (appointment_id),\n  KEY idx_appointment_compensations_merchant_id (merchant_id),\n  KEY idx_appointment_compensations_user_id (user_id),\n  KEY idx_appointment_compensations_card_id (card_id),\n  KEY idx_appointment_compensations_service_session_id (service_session_id),\n  KEY idx_appointment_compensations_created_by_id (created_by_id)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='预约补偿记录表'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

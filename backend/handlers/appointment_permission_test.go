@@ -27,6 +27,7 @@ func setupAppointmentPermissionTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&models.Merchant{},
 		&models.User{},
+		&models.Card{},
 		&models.MerchantProject{},
 		&models.Permission{},
 		&models.SystemConfig{},
@@ -35,6 +36,7 @@ func setupAppointmentPermissionTestDB(t *testing.T) *gorm.DB {
 		&models.MerchantRolePermissionOverride{},
 		&models.Technician{},
 		&models.Appointment{},
+		&models.AppointmentCompensation{},
 	); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
@@ -44,7 +46,14 @@ func setupAppointmentPermissionTestDB(t *testing.T) *gorm.DB {
 func seedAppointmentPermissionFixture(t *testing.T, db *gorm.DB) (models.Merchant, models.User, models.Technician, models.Technician, models.ServiceRole, models.ServiceRole) {
 	t.Helper()
 
-	merchant := models.Merchant{Name: "m", Phone: "18800009999", Password: "pwd"}
+	merchant := models.Merchant{
+		Name:               "m",
+		Phone:              "18800009999",
+		Password:           "pwd",
+		SupportAppointment: true,
+		AllDayStart:        "09:00",
+		AllDayEnd:          "22:00",
+	}
 	if err := db.Create(&merchant).Error; err != nil {
 		t.Fatalf("create merchant failed: %v", err)
 	}

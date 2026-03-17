@@ -1,10 +1,10 @@
 package handlers
 
 import (
-	"errors"
 	"fmt"
 	"kabao/models"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -393,12 +393,142 @@ func loadAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appointment, 
 	if tx == nil || appointmentID == 0 {
 		return nil, nil
 	}
-	var appt models.Appointment
-	if err := tx.Where("id = ?", appointmentID).First(&appt).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
+	rows, err := tx.Table("appointments").
+		Select("id, card_id, merchant_id, user_id, project_id, technician_id, appointment_time, status, confirmed_at, arrived_at, completed_at, no_show_at, service_session_id, usage_id, predicted_wait_minutes, resolution_note, closed_reason, closed_by_type, closed_by_id, reschedule_reason, replaced_by_appointment_id, replaces_appointment_id, canceled_at, failed_at, failed_reason, created_at").
+		Where("id = ?", appointmentID).
+		Limit(1).
+		Rows()
+	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+	var (
+		appt                       models.Appointment
+		projectIDRaw               interface{}
+		technicianIDRaw            interface{}
+		appointmentTimeRaw         interface{}
+		confirmedAtRaw             interface{}
+		arrivedAtRaw               interface{}
+		completedAtRaw             interface{}
+		noShowAtRaw                interface{}
+		serviceSessionIDRaw        interface{}
+		usageIDRaw                 interface{}
+		closedByIDRaw              interface{}
+		replacedByAppointmentIDRaw interface{}
+		replacesAppointmentIDRaw   interface{}
+		canceledAtRaw              interface{}
+		failedAtRaw                interface{}
+		createdAtRaw               interface{}
+	)
+	if err := rows.Scan(
+		&appt.ID,
+		&appt.CardID,
+		&appt.MerchantID,
+		&appt.UserID,
+		&projectIDRaw,
+		&technicianIDRaw,
+		&appointmentTimeRaw,
+		&appt.Status,
+		&confirmedAtRaw,
+		&arrivedAtRaw,
+		&completedAtRaw,
+		&noShowAtRaw,
+		&serviceSessionIDRaw,
+		&usageIDRaw,
+		&appt.PredictedWaitMinutes,
+		&appt.ResolutionNote,
+		&appt.ClosedReason,
+		&appt.ClosedByType,
+		&closedByIDRaw,
+		&appt.RescheduleReason,
+		&replacedByAppointmentIDRaw,
+		&replacesAppointmentIDRaw,
+		&canceledAtRaw,
+		&failedAtRaw,
+		&appt.FailedReason,
+		&createdAtRaw,
+	); err != nil {
+		return nil, err
+	}
+	if v, ok := gormValueToUint(projectIDRaw); ok {
+		appt.ProjectID = &v
+	}
+	if v, ok := gormValueToUint(technicianIDRaw); ok {
+		appt.TechnicianID = &v
+	}
+	if v, ok := parseDBTimeValue(appointmentTimeRaw); ok {
+		appt.AppointmentTime = &v
+	}
+	if v, ok := parseDBTimeValue(confirmedAtRaw); ok {
+		appt.ConfirmedAt = &v
+	}
+	if v, ok := parseDBTimeValue(arrivedAtRaw); ok {
+		appt.ArrivedAt = &v
+	}
+	if v, ok := parseDBTimeValue(completedAtRaw); ok {
+		appt.CompletedAt = &v
+	}
+	if v, ok := parseDBTimeValue(noShowAtRaw); ok {
+		appt.NoShowAt = &v
+	}
+	if v, ok := gormValueToUint(serviceSessionIDRaw); ok {
+		appt.ServiceSessionID = &v
+	}
+	if v, ok := gormValueToUint(usageIDRaw); ok {
+		appt.UsageID = &v
+	}
+	if v, ok := gormValueToUint(closedByIDRaw); ok {
+		appt.ClosedByID = &v
+	}
+	if v, ok := gormValueToUint(replacedByAppointmentIDRaw); ok {
+		appt.ReplacedByAppointmentID = &v
+	}
+	if v, ok := gormValueToUint(replacesAppointmentIDRaw); ok {
+		appt.ReplacesAppointmentID = &v
+	}
+	if v, ok := parseDBTimeValue(canceledAtRaw); ok {
+		appt.CanceledAt = &v
+	}
+	if v, ok := parseDBTimeValue(failedAtRaw); ok {
+		appt.FailedAt = &v
+	}
+	if v, ok := parseDBTimeValue(createdAtRaw); ok {
+		appt.CreatedAt = &v
+	}
 	return &appt, nil
+}
+
+func gormValueToUint(v any) (uint, bool) {
+	switch x := v.(type) {
+	case uint:
+		return x, true
+	case int64:
+		if x > 0 {
+			return uint(x), true
+		}
+	case int:
+		if x > 0 {
+			return uint(x), true
+		}
+	case int32:
+		if x > 0 {
+			return uint(x), true
+		}
+	case uint64:
+		if x > 0 {
+			return uint(x), true
+		}
+	case []byte:
+		if parsed, err := strconv.ParseUint(string(x), 10, 64); err == nil && parsed > 0 {
+			return uint(parsed), true
+		}
+	case string:
+		if parsed, err := strconv.ParseUint(x, 10, 64); err == nil && parsed > 0 {
+			return uint(parsed), true
+		}
+	}
+	return 0, false
 }

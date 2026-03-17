@@ -418,6 +418,9 @@ export const appointmentApi = {
   confirmAppointment: (id) => api.put(`/merchant/appointments/${id}/confirm`),
   finishAppointment: (id) => api.put(`/merchant/appointments/${id}/finish`),
   updateResolution: (id, data) => api.put(`/merchant/appointments/${id}/resolution`, data),
+  reschedule: (id, data) => api.post(`/merchant/appointments/${id}/reschedule`, data),
+  listCompensations: (id) => api.get(`/merchant/appointments/${id}/compensations`),
+  createCompensation: (id, data) => api.post(`/merchant/appointments/${id}/compensations`, data),
   cancelAppointment: (id) => api.put(`/user/appointments/${id}/cancel`),
   cancelMerchantAppointment: (id) => api.put(`/merchant/appointments/${id}/cancel`)
 }
