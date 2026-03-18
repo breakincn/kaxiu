@@ -499,9 +499,23 @@
           <div class="px-5 py-3 border-b text-sm text-gray-600">
             当前预约：{{ getAppointmentProjectDisplay(appointment) || '默认项目' }}
           </div>
+          <div
+            v-if="userRescheduleEligibility && !userRescheduleEligibility.allowed"
+            class="mx-5 mt-4 rounded-lg bg-orange-50 text-orange-700 border border-orange-100 px-3 py-3 text-sm"
+          >
+            {{ userRescheduleEligibility.reason || '当前不可改签' }}
+          </div>
           <div class="px-5 py-3 border-b">
             <div class="text-sm font-medium text-gray-700 mb-2">新日期</div>
-            <input v-model="userRescheduleDate" type="date" class="w-full px-3 py-2 border border-gray-200 rounded-lg" />
+            <input
+              v-model="userRescheduleDate"
+              type="date"
+              :min="userRescheduleDateMin"
+              :max="userRescheduleDateMax"
+              :disabled="userRescheduleEligibility && !userRescheduleEligibility.allowed"
+              class="w-full px-3 py-2 border border-gray-200 rounded-lg disabled:bg-gray-50 disabled:text-gray-400"
+            />
+            <div v-if="userRescheduleDateHint" class="text-xs text-gray-400 mt-2">{{ userRescheduleDateHint }}</div>
           </div>
           <div v-if="userRescheduleTechnicians.length > 0" class="px-5 py-3 border-b">
             <div class="text-sm font-medium text-gray-700 mb-2">选择专业客服</div>
@@ -549,7 +563,7 @@
         <div class="px-5 py-4 border-t flex-shrink-0 bg-white">
           <button
             @click="submitUserRescheduleRequest"
-            :disabled="!userRescheduleTime || userRescheduleSubmitting"
+            :disabled="!userRescheduleTime || userRescheduleSubmitting || (userRescheduleEligibility && !userRescheduleEligibility.allowed)"
             class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {{ userRescheduleSubmitting ? '提交中...' : '提交改签申请' }}
@@ -2341,6 +2355,7 @@ const userRescheduleSubmitting = ref(false)
 const userRescheduleReason = ref('')
 const userRescheduleTechnicians = ref([])
 const userRescheduleTechnicianId = ref(null)
+const userRescheduleEligibility = ref(null)
 
 const selectedAppointmentProjectId = ref(null)
 
@@ -2396,6 +2411,36 @@ const userDisplayedRescheduleSlots = computed(() => {
     return list.filter(s => Array.isArray(s?.technician_ids) && s.technician_ids.includes(userRescheduleTechnicianId.value))
   }
   return list
+})
+
+const userRescheduleDateMin = computed(() => {
+  const dates = userRescheduleEligibility.value?.allowed_dates || []
+  return dates[0] || ''
+})
+
+const userRescheduleDateMax = computed(() => {
+  const dates = userRescheduleEligibility.value?.allowed_dates || []
+  return dates.length > 0 ? dates[dates.length - 1] : ''
+})
+
+const userRescheduleDateHint = computed(() => {
+  const eligibility = userRescheduleEligibility.value
+  if (!eligibility?.allowed) return ''
+  if (
+    eligibility.rule_mode === 'today_or_tomorrow' &&
+    userRescheduleDate.value === userRescheduleDateMin.value &&
+    userRescheduleSlots.value.length === 0 &&
+    !userRescheduleLoading.value
+  ) {
+    return '今天已无可改签时段，可改签到明天'
+  }
+  if (eligibility.rule_mode === 'tomorrow_only') {
+    return '当前规则仅允许改签到明天'
+  }
+  if (eligibility.rule_mode === 'today_or_tomorrow') {
+    return '当前规则允许改签到今天或明天'
+  }
+  return ''
 })
 
 const userDisplayedRescheduleTechnicians = computed(() => {
@@ -2641,6 +2686,7 @@ const fetchAppointment = async () => {
 }
 
 const resetUserRescheduleForm = () => {
+  userRescheduleEligibility.value = null
   userRescheduleDate.value = ''
   userRescheduleTime.value = ''
   userRescheduleSlots.value = []
@@ -2662,8 +2708,8 @@ const loadUserRescheduleSlots = async (date) => {
   userRescheduleLoading.value = true
   userRescheduleError.value = ''
   try {
-    const projectId = appointment.value?.project_id || appointment.value?.project?.id || selectedAppointmentProjectId.value || undefined
-    const res = await appointmentApi.getAvailableTimeSlots(card.value.merchant_id, date, projectId)
+    const res = await appointmentApi.getUserRescheduleSlots(appointment.value.id, date)
+    userRescheduleEligibility.value = res.data?.data?.eligibility || userRescheduleEligibility.value
     userRescheduleSlots.value = res.data?.data?.time_slots || []
     userRescheduleTechnicians.value = res.data?.data?.technicians || []
   } catch (err) {
@@ -2679,9 +2725,17 @@ const loadUserRescheduleSlots = async (date) => {
 const openUserRescheduleModal = async () => {
   if (!appointment.value) return
   resetUserRescheduleForm()
-  userRescheduleDate.value = String(appointment.value?.appointment_time || '').slice(0, 10)
-  showUserRescheduleModal.value = true
-  await loadUserRescheduleSlots(userRescheduleDate.value)
+  try {
+    const eligibilityRes = await appointmentApi.getUserRescheduleEligibility(appointment.value.id)
+    userRescheduleEligibility.value = eligibilityRes.data?.data || null
+    userRescheduleDate.value = userRescheduleEligibility.value?.default_date || ''
+    showUserRescheduleModal.value = true
+    if (userRescheduleEligibility.value?.allowed && userRescheduleDate.value) {
+      await loadUserRescheduleSlots(userRescheduleDate.value)
+    }
+  } catch (err) {
+    alert(err.response?.data?.error || '获取改签资格失败')
+  }
 }
 
 const toggleUserRescheduleTechnician = (id) => {
@@ -2910,6 +2964,11 @@ watch(selectedAppointmentProjectId, () => {
 
 watch(userRescheduleDate, async (nextDate, prevDate) => {
   if (!showUserRescheduleModal.value || !nextDate || nextDate === prevDate) return
+  const allowedDates = userRescheduleEligibility.value?.allowed_dates || []
+  if (allowedDates.length > 0 && !allowedDates.includes(nextDate)) {
+    userRescheduleDate.value = userRescheduleEligibility.value?.default_date || allowedDates[0] || ''
+    return
+  }
   await loadUserRescheduleSlots(nextDate)
 })
 

@@ -1246,9 +1246,23 @@
           <button class="text-gray-500" @click="closeAppointmentRescheduleModal">关闭</button>
         </div>
         <div class="text-sm text-gray-600">当前预约：{{ rescheduleAppointmentTarget?.user?.nickname || '-' }} / {{ getAppointmentProjectDisplay(rescheduleAppointmentTarget) || '默认项目' }}</div>
+        <div
+          v-if="appointmentRescheduleEligibility && !appointmentRescheduleEligibility.allowed"
+          class="mt-3 rounded-lg bg-orange-50 text-orange-700 border border-orange-100 px-3 py-2 text-sm"
+        >
+          {{ appointmentRescheduleEligibility.reason || '当前不可改签' }}
+        </div>
         <div class="mt-3">
           <div class="text-sm text-gray-600 mb-1">新日期</div>
-          <input v-model="appointmentRescheduleForm.date" type="date" class="w-full px-4 py-3 border border-gray-200 rounded-lg" />
+          <input
+            v-model="appointmentRescheduleForm.date"
+            type="date"
+            :min="appointmentRescheduleDateMin"
+            :max="appointmentRescheduleDateMax"
+            :disabled="appointmentRescheduleEligibility && !appointmentRescheduleEligibility.allowed"
+            class="w-full px-4 py-3 border border-gray-200 rounded-lg disabled:bg-gray-50 disabled:text-gray-400"
+          />
+          <div v-if="appointmentRescheduleDateHint" class="text-xs text-gray-400 mt-2">{{ appointmentRescheduleDateHint }}</div>
         </div>
         <div class="mt-3">
           <div class="text-sm text-gray-600 mb-1">可选时间</div>
@@ -1288,7 +1302,7 @@
         </div>
         <div class="mt-4 flex gap-2">
           <button @click="closeAppointmentRescheduleModal" class="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium">取消</button>
-          <button @click="submitAppointmentReschedule" :disabled="appointmentRescheduleSubmitting || !selectedAppointmentRescheduleTime || !appointmentRescheduleForm.reason.trim()" class="flex-1 px-4 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50">
+          <button @click="submitAppointmentReschedule" :disabled="appointmentRescheduleSubmitting || !selectedAppointmentRescheduleTime || !appointmentRescheduleForm.reason.trim() || (appointmentRescheduleEligibility && !appointmentRescheduleEligibility.allowed)" class="flex-1 px-4 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50">
             {{ appointmentRescheduleSubmitting ? '提交中...' : '确认改签' }}
           </button>
         </div>
@@ -2108,10 +2122,38 @@ const pendingDirectPurchases = ref(0)
 const appointments = ref([])
 const showAppointmentRescheduleModal = ref(false)
 const rescheduleAppointmentTarget = ref(null)
+const appointmentRescheduleEligibility = ref(null)
 const appointmentRescheduleLoading = ref(false)
 const appointmentRescheduleSubmitting = ref(false)
 const appointmentRescheduleSlots = ref([])
 const selectedAppointmentRescheduleTime = ref('')
+const appointmentRescheduleDateMin = computed(() => {
+  const dates = appointmentRescheduleEligibility.value?.allowed_dates || []
+  return dates[0] || ''
+})
+const appointmentRescheduleDateMax = computed(() => {
+  const dates = appointmentRescheduleEligibility.value?.allowed_dates || []
+  return dates.length > 0 ? dates[dates.length - 1] : ''
+})
+const appointmentRescheduleDateHint = computed(() => {
+  const eligibility = appointmentRescheduleEligibility.value
+  if (!eligibility?.allowed) return ''
+  if (
+    eligibility.rule_mode === 'today_or_tomorrow' &&
+    appointmentRescheduleForm.value.date === appointmentRescheduleDateMin.value &&
+    appointmentRescheduleSlots.value.length === 0 &&
+    !appointmentRescheduleLoading.value
+  ) {
+    return '今天已无可改签时段，可改签到明天'
+  }
+  if (eligibility.rule_mode === 'tomorrow_only') {
+    return '当前规则仅允许改签到明天'
+  }
+  if (eligibility.rule_mode === 'today_or_tomorrow') {
+    return '当前规则允许改签到今天或明天'
+  }
+  return ''
+})
 const selectedAppointmentRescheduleCandidates = computed(() => {
   const slot = (appointmentRescheduleSlots.value || []).find(item => item.time === selectedAppointmentRescheduleTime.value)
   const candidates = slot?.technician_candidates || []
@@ -4233,6 +4275,7 @@ const reassignAppointmentService = async (appt) => {
 }
 
 const resetAppointmentRescheduleForm = () => {
+  appointmentRescheduleEligibility.value = null
   appointmentRescheduleForm.value = {
     date: '',
     technician_id: null,
@@ -4258,10 +4301,9 @@ const fetchAppointmentRescheduleSlots = async () => {
   }
   appointmentRescheduleLoading.value = true
   try {
-    const res = await appointmentApi.getAvailableTimeSlots(merchantId.value, appointmentRescheduleForm.value.date, appt?.project_id || appt?.project?.id)
-    // available-slots 接口返回的是对象，时间段列表位于 data.time_slots。
-    // 这里兼容旧数组写法，避免弹窗把成功响应误判成“获取可改签时间失败”。
-    const rawSlots = Array.isArray(res.data?.data) ? res.data.data : (res.data?.data?.time_slots || [])
+    const res = await appointmentApi.getMerchantRescheduleSlots(appt.id, appointmentRescheduleForm.value.date)
+    appointmentRescheduleEligibility.value = res.data?.data?.eligibility || appointmentRescheduleEligibility.value
+    const rawSlots = res.data?.data?.time_slots || []
     appointmentRescheduleSlots.value = rawSlots.map(slot => ({
       ...slot,
       label: slot?.time ? String(slot.time).slice(11, 16) : ''
@@ -4272,6 +4314,10 @@ const fetchAppointmentRescheduleSlots = async () => {
     }
   } catch (err) {
     appointmentRescheduleSlots.value = []
+    if (err.response?.data?.error) {
+      alert(err.response.data.error)
+      return
+    }
     alert(err.response?.data?.error || '获取可改签时间失败')
   } finally {
     appointmentRescheduleLoading.value = false
@@ -4281,10 +4327,18 @@ const fetchAppointmentRescheduleSlots = async () => {
 const openAppointmentRescheduleModal = async (appt) => {
   rescheduleAppointmentTarget.value = appt
   resetAppointmentRescheduleForm()
-  appointmentRescheduleForm.value.date = String(appt?.appointment_time || '').slice(0, 10)
-  appointmentRescheduleForm.value.reason = String(appt?.reschedule_reason || '').trim()
-  showAppointmentRescheduleModal.value = true
-  await fetchAppointmentRescheduleSlots()
+  try {
+    const eligibilityRes = await appointmentApi.getMerchantRescheduleEligibility(appt.id)
+    appointmentRescheduleEligibility.value = eligibilityRes.data?.data || null
+    appointmentRescheduleForm.value.date = appointmentRescheduleEligibility.value?.default_date || ''
+    appointmentRescheduleForm.value.reason = String(appt?.reschedule_reason || '').trim()
+    showAppointmentRescheduleModal.value = true
+    if (appointmentRescheduleEligibility.value?.allowed && appointmentRescheduleForm.value.date) {
+      await fetchAppointmentRescheduleSlots()
+    }
+  } catch (err) {
+    alert(err.response?.data?.error || '获取改签资格失败')
+  }
 }
 
 const selectAppointmentRescheduleSlot = (slot) => {

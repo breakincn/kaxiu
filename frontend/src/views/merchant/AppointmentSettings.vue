@@ -81,6 +81,36 @@
                 <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
               </div>
             </div>
+
+            <div>
+              <label class="text-sm font-medium text-gray-700 mb-2 block">昨天预约可改签到今天/明天阈值</label>
+              <p class="text-xs text-gray-500 mb-2">仅影响昨天预约在今天的补救改签；超过该阈值时可改到今天或明天</p>
+              <div class="relative">
+                <input
+                  v-model.number="form.appointment_reschedule_same_or_next_day_threshold_minutes"
+                  type="number"
+                  min="0"
+                  max="1440"
+                  class="w-full px-3 py-2 pr-14 border border-gray-200 rounded-lg focus:outline-none focus:border-primary text-sm"
+                />
+                <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
+              </div>
+            </div>
+
+            <div>
+              <label class="text-sm font-medium text-gray-700 mb-2 block">昨天预约仅可改签到明天阈值</label>
+              <p class="text-xs text-gray-500 mb-2">仅影响昨天预约在今天的补救改签；小于等于该阈值时禁止改签</p>
+              <div class="relative">
+                <input
+                  v-model.number="form.appointment_reschedule_next_day_only_threshold_minutes"
+                  type="number"
+                  min="0"
+                  max="1440"
+                  class="w-full px-3 py-2 pr-14 border border-gray-200 rounded-lg focus:outline-none focus:border-primary text-sm"
+                />
+                <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -122,7 +152,9 @@ const form = ref({
   appointment_reserve_buffer_minutes: 10,
   appointment_grace_window_minutes: 15,
   appointment_max_wait_minutes: 15,
-  appointment_prediction_buffer_minutes: 5
+  appointment_prediction_buffer_minutes: 5,
+  appointment_reschedule_same_or_next_day_threshold_minutes: 180,
+  appointment_reschedule_next_day_only_threshold_minutes: 90
 })
 
 // 保存按钮与其他设置页保持一致，只有表单发生实际变化时才允许提交。
@@ -130,7 +162,9 @@ const buildSnapshot = () => JSON.stringify({
   appointment_reserve_buffer_minutes: Number(form.value.appointment_reserve_buffer_minutes ?? 0),
   appointment_grace_window_minutes: Number(form.value.appointment_grace_window_minutes ?? 0),
   appointment_max_wait_minutes: Number(form.value.appointment_max_wait_minutes ?? 0),
-  appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes ?? 0)
+  appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes ?? 0),
+  appointment_reschedule_same_or_next_day_threshold_minutes: Number(form.value.appointment_reschedule_same_or_next_day_threshold_minutes ?? 0),
+  appointment_reschedule_next_day_only_threshold_minutes: Number(form.value.appointment_reschedule_next_day_only_threshold_minutes ?? 0)
 })
 
 const isDirty = computed(() => buildSnapshot() !== initialSnapshot.value)
@@ -162,7 +196,9 @@ const load = async () => {
       appointment_reserve_buffer_minutes: Number(m.appointment_reserve_buffer_minutes ?? 10),
       appointment_grace_window_minutes: Number(m.appointment_grace_window_minutes ?? 15),
       appointment_max_wait_minutes: Number(m.appointment_max_wait_minutes ?? 15),
-      appointment_prediction_buffer_minutes: Number(m.appointment_prediction_buffer_minutes ?? 5)
+      appointment_prediction_buffer_minutes: Number(m.appointment_prediction_buffer_minutes ?? 5),
+      appointment_reschedule_same_or_next_day_threshold_minutes: Number(m.appointment_reschedule_same_or_next_day_threshold_minutes ?? 180),
+      appointment_reschedule_next_day_only_threshold_minutes: Number(m.appointment_reschedule_next_day_only_threshold_minutes ?? 90)
     }
     initialSnapshot.value = buildSnapshot()
   } catch (e) {
@@ -180,7 +216,9 @@ const save = async () => {
       appointment_reserve_buffer_minutes: Number(form.value.appointment_reserve_buffer_minutes || 0),
       appointment_grace_window_minutes: Number(form.value.appointment_grace_window_minutes || 0),
       appointment_max_wait_minutes: Number(form.value.appointment_max_wait_minutes || 0),
-      appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes || 0)
+      appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes || 0),
+      appointment_reschedule_same_or_next_day_threshold_minutes: Number(form.value.appointment_reschedule_same_or_next_day_threshold_minutes || 0),
+      appointment_reschedule_next_day_only_threshold_minutes: Number(form.value.appointment_reschedule_next_day_only_threshold_minutes || 0)
     })
     alert('保存成功')
     await load()

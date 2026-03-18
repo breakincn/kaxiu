@@ -320,6 +320,8 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		AppointmentGraceWindowMinutes     *int    `json:"appointment_grace_window_minutes"`
 		AppointmentMaxWaitMinutes         *int    `json:"appointment_max_wait_minutes"`
 		AppointmentPredictionBufferMinute *int    `json:"appointment_prediction_buffer_minutes"`
+		AppointmentRescheduleSameOrNextDayThresholdMinutes *int `json:"appointment_reschedule_same_or_next_day_threshold_minutes"`
+		AppointmentRescheduleNextDayOnlyThresholdMinutes  *int `json:"appointment_reschedule_next_day_only_threshold_minutes"`
 		HandCardPrefix                    *string `json:"hand_card_prefix"`
 		HandCardStartNo                   *int    `json:"hand_card_start_no"`
 		HandCardEndNo                     *int    `json:"hand_card_end_no"`
@@ -562,6 +564,20 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 			return
 		}
 		updates["appointment_prediction_buffer_minutes"] = *input.AppointmentPredictionBufferMinute
+	}
+	if input.AppointmentRescheduleSameOrNextDayThresholdMinutes != nil {
+		if *input.AppointmentRescheduleSameOrNextDayThresholdMinutes < 0 || *input.AppointmentRescheduleSameOrNextDayThresholdMinutes > 1440 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "昨天预约改签到今天/明天阈值范围应为 0-1440 分钟"})
+			return
+		}
+		updates["appointment_reschedule_same_or_next_day_threshold_minutes"] = *input.AppointmentRescheduleSameOrNextDayThresholdMinutes
+	}
+	if input.AppointmentRescheduleNextDayOnlyThresholdMinutes != nil {
+		if *input.AppointmentRescheduleNextDayOnlyThresholdMinutes < 0 || *input.AppointmentRescheduleNextDayOnlyThresholdMinutes > 1440 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "昨天预约仅改签到明天阈值范围应为 0-1440 分钟"})
+			return
+		}
+		updates["appointment_reschedule_next_day_only_threshold_minutes"] = *input.AppointmentRescheduleNextDayOnlyThresholdMinutes
 	}
 	if input.HandCardPrefix != nil {
 		updates["hand_card_prefix"] = strings.TrimSpace(*input.HandCardPrefix)

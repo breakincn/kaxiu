@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -30,6 +31,26 @@ type appointmentAvailability struct {
 	PredictedWaitMinutes int                          `json:"predicted_wait_minutes"`
 	Reason               string                       `json:"availability_reason"`
 	NextAppointmentID    *uint                        `json:"next_appointment_id,omitempty"`
+	AlternativeWaitMinutes int                        `json:"alternative_wait_minutes,omitempty"`
+	DecisionMode         string                       `json:"decision_mode,omitempty"`
+}
+
+type appointmentRescheduleRuleMode string
+
+const (
+	appointmentRescheduleForbidden       appointmentRescheduleRuleMode = "forbidden"
+	appointmentRescheduleTomorrowOnly    appointmentRescheduleRuleMode = "tomorrow_only"
+	appointmentRescheduleTodayOrTomorrow appointmentRescheduleRuleMode = "today_or_tomorrow"
+)
+
+type appointmentRescheduleEligibility struct {
+	Allowed             bool                          `json:"allowed"`
+	Reason              string                        `json:"reason"`
+	RuleMode            appointmentRescheduleRuleMode `json:"rule_mode"`
+	AllowedDates        []string                      `json:"allowed_dates"`
+	DefaultDate         string                        `json:"default_date"`
+	MinutesUntilAnchor  int                           `json:"minutes_until_anchor"`
+	ProtectionConsumed  bool                          `json:"protection_consumed"`
 }
 
 func normalizeAppointmentStatus(status string) string {
@@ -68,6 +89,20 @@ func merchantAppointmentPredictionBufferMinutes(m *models.Merchant) int {
 		return m.AppointmentPredictionBufferMinute
 	}
 	return 5
+}
+
+func merchantAppointmentRescheduleSameOrNextDayThresholdMinutes(m *models.Merchant) int {
+	if m != nil && m.AppointmentRescheduleSameOrNextDayThresholdMinutes > 0 {
+		return m.AppointmentRescheduleSameOrNextDayThresholdMinutes
+	}
+	return 180
+}
+
+func merchantAppointmentRescheduleNextDayOnlyThresholdMinutes(m *models.Merchant) int {
+	if m != nil && m.AppointmentRescheduleNextDayOnlyThresholdMinutes > 0 {
+		return m.AppointmentRescheduleNextDayOnlyThresholdMinutes
+	}
+	return 90
 }
 
 func appointmentProtectedStatuses() []string {
@@ -289,6 +324,7 @@ func evaluateWalkInTechnicianAvailability(tx *gorm.DB, merchant models.Merchant,
 	if delayReserved > merchantAppointmentMaxWaitMinutes(&merchant) {
 		out.State = appointmentAvailabilityUnavailable
 		out.Reason = fmt.Sprintf("该现场单会让后续预约等待 %d 分钟，超过上限", delayReserved)
+		out.DecisionMode = "max_wait_protection"
 		return out, nil
 	}
 
@@ -299,6 +335,8 @@ func evaluateWalkInTechnicianAvailability(tx *gorm.DB, merchant models.Merchant,
 	if hasAlt && float64(altWait)*appointmentWalkInWeight < float64(delayReserved)*appointmentReservedWeight {
 		out.State = appointmentAvailabilityUnavailable
 		out.Reason = fmt.Sprintf("等待其他客服约 %d 分钟比压后预约更优", altWait)
+		out.AlternativeWaitMinutes = altWait
+		out.DecisionMode = "alternative_preferred"
 		return out, nil
 	}
 	if delayReserved > 0 {
@@ -306,6 +344,111 @@ func evaluateWalkInTechnicianAvailability(tx *gorm.DB, merchant models.Merchant,
 		out.Reason = fmt.Sprintf("将影响 %s 的预约，预计等待 %d 分钟", next.AppointmentTime.Format("15:04"), delayReserved)
 	}
 	return out, nil
+}
+
+func hasAppointmentProtectionBlock(tx *gorm.DB, appointmentID uint) (bool, error) {
+	if tx == nil || appointmentID == 0 {
+		return false, nil
+	}
+	var count int64
+	if err := tx.Model(&models.AppointmentProtectionBlock{}).Where("appointment_id = ?", appointmentID).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func recordAppointmentProtectionBlock(tx *gorm.DB, merchantID uint, appointmentID uint, technicianID uint, walkInServiceSessionID *uint, availability appointmentAvailability, blockedAt time.Time) error {
+	if tx == nil || appointmentID == 0 || technicianID == 0 || availability.NextAppointmentID == nil || *availability.NextAppointmentID == 0 {
+		return nil
+	}
+	if availability.State != appointmentAvailabilityUnavailable {
+		return nil
+	}
+	row := models.AppointmentProtectionBlock{
+		MerchantID:                   merchantID,
+		AppointmentID:                appointmentID,
+		TechnicianID:                 technicianID,
+		WalkInServiceSessionID:       walkInServiceSessionID,
+		BlockedReason:                availability.Reason,
+		PredictedReservedWaitMinutes: availability.PredictedWaitMinutes,
+		AlternativeWaitMinutes:       availability.AlternativeWaitMinutes,
+		DecisionMode:                 strings.TrimSpace(availability.DecisionMode),
+		BlockedAt:                    &blockedAt,
+	}
+	if row.DecisionMode == "" {
+		row.DecisionMode = "max_wait_protection"
+	}
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
+}
+
+func computeAppointmentRescheduleEligibility(tx *gorm.DB, appt models.Appointment, merchant models.Merchant, now time.Time) (appointmentRescheduleEligibility, error) {
+	out := appointmentRescheduleEligibility{
+		Allowed:      false,
+		RuleMode:     appointmentRescheduleForbidden,
+		AllowedDates: []string{},
+	}
+	if !appointmentAllowsReschedule(appt.Status) {
+		out.Reason = "当前预约状态不可改签"
+		return out, nil
+	}
+	if appt.AppointmentTime == nil {
+		out.Reason = "预约时间不存在"
+		return out, nil
+	}
+
+	loc := now.Location()
+	appointmentTime := appt.AppointmentTime.In(loc)
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	appointmentDateStart := time.Date(appointmentTime.Year(), appointmentTime.Month(), appointmentTime.Day(), 0, 0, 0, 0, loc)
+	todayDate := todayStart.Format("2006-01-02")
+	tomorrowDate := todayStart.Add(24 * time.Hour).Format("2006-01-02")
+	yesterdayStart := todayStart.Add(-24 * time.Hour)
+
+	switch {
+	case appointmentDateStart.Equal(todayStart):
+		out.Allowed = true
+		out.RuleMode = appointmentRescheduleTomorrowOnly
+		out.AllowedDates = []string{tomorrowDate}
+		out.DefaultDate = tomorrowDate
+		return out, nil
+	case appointmentDateStart.Equal(yesterdayStart):
+		todayAnchorTime := time.Date(now.Year(), now.Month(), now.Day(), appointmentTime.Hour(), appointmentTime.Minute(), appointmentTime.Second(), appointmentTime.Nanosecond(), loc)
+		out.MinutesUntilAnchor = int(math.Ceil(todayAnchorTime.Sub(now).Minutes()))
+		protected, err := hasAppointmentProtectionBlock(tx, appt.ID)
+		if err != nil {
+			return out, err
+		}
+		out.ProtectionConsumed = protected
+		if protected {
+			out.Reason = "该预约已占用门店预约保护资源，当前不可改签"
+			return out, nil
+		}
+		if out.MinutesUntilAnchor <= merchantAppointmentRescheduleNextDayOnlyThresholdMinutes(&merchant) {
+			out.Reason = fmt.Sprintf("距原预约时间不足 %d 分钟，当前不可改签", merchantAppointmentRescheduleNextDayOnlyThresholdMinutes(&merchant))
+			return out, nil
+		}
+		if out.MinutesUntilAnchor > merchantAppointmentRescheduleSameOrNextDayThresholdMinutes(&merchant) {
+			out.Allowed = true
+			out.RuleMode = appointmentRescheduleTodayOrTomorrow
+			out.AllowedDates = []string{todayDate, tomorrowDate}
+			out.DefaultDate = todayDate
+			return out, nil
+		}
+		out.Allowed = true
+		out.RuleMode = appointmentRescheduleTomorrowOnly
+		out.AllowedDates = []string{tomorrowDate}
+		out.DefaultDate = tomorrowDate
+		return out, nil
+	case appointmentDateStart.Before(yesterdayStart):
+		out.Reason = "更早历史预约不支持改签"
+		return out, nil
+	default:
+		out.Allowed = true
+		out.RuleMode = appointmentRescheduleTomorrowOnly
+		out.AllowedDates = []string{tomorrowDate}
+		out.DefaultDate = tomorrowDate
+		return out, nil
+	}
 }
 
 func detectServiceSessionSource(tx *gorm.DB, merchant models.Merchant, card models.Card, now time.Time) (serviceSessionSource, error) {

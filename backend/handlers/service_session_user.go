@@ -5,6 +5,7 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -403,6 +404,11 @@ func UserListAvailableTechnicians(c *gin.Context) {
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	activeSessionStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 	var list []models.TechnicianAttendance
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, s.MerchantID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取商户信息失败"})
+		return
+	}
 	config.DB.
 		Model(&models.TechnicianAttendance{}).
 		Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
@@ -415,6 +421,29 @@ func UserListAvailableTechnicians(c *gin.Context) {
 		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 		Order("technician_attendances.updated_at asc").
 		Find(&list)
+
+	if strings.TrimSpace(s.SourceType) != serviceSessionSourceAppointment {
+		filtered := make([]models.TechnicianAttendance, 0, len(list))
+		serviceMinutes := s.DurationMinutes
+		if serviceMinutes <= 0 {
+			serviceMinutes = 30
+		}
+		for _, item := range list {
+			availability, err := evaluateWalkInTechnicianAvailability(config.DB, merchant, item.TechnicianID, now, serviceMinutes)
+			if err != nil {
+				continue
+			}
+			if availability.State == appointmentAvailabilityUnavailable {
+				if availability.NextAppointmentID != nil {
+					sessionID := s.ID
+					_ = recordAppointmentProtectionBlock(config.DB, merchant.ID, *availability.NextAppointmentID, item.TechnicianID, &sessionID, availability, now)
+				}
+				continue
+			}
+			filtered = append(filtered, item)
+		}
+		list = filtered
+	}
 
 	// 仅当确实存在可选客服时，才开始5分钟自动分配计时（避免无空闲客服时提前计时）
 	baseStatus := models.NormalizeSessionStatus(s.Status)
@@ -477,6 +506,25 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 		}
 		if merchant.SupportCustomerServiceMode && merchant.SupportRoom && s.RoomID == nil {
 			return apiErr{status: http.StatusBadRequest, msg: "请先选择房间"}
+		}
+		if strings.TrimSpace(s.SourceType) != serviceSessionSourceAppointment {
+			serviceMinutes := s.DurationMinutes
+			if serviceMinutes <= 0 {
+				serviceMinutes = 30
+			}
+			availability, err := evaluateWalkInTechnicianAvailability(tx, merchant, input.TechnicianID, now, serviceMinutes)
+			if err != nil {
+				return err
+			}
+			if availability.State == appointmentAvailabilityUnavailable {
+				if availability.NextAppointmentID != nil {
+					sessionID := s.ID
+					if err := recordAppointmentProtectionBlock(tx, merchant.ID, *availability.NextAppointmentID, input.TechnicianID, &sessionID, availability, now); err != nil {
+						return err
+					}
+				}
+				return apiErr{status: http.StatusBadRequest, msg: "工作人员不可选"}
+			}
 		}
 
 		// 避免对带 JOIN 的查询直接加 FOR UPDATE，MySQL/InnoDB 可能扩大锁范围并导致锁等待。

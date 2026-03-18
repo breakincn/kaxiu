@@ -50,6 +50,8 @@ type Merchant struct {
 	AppointmentGraceWindowMinutes     int    `json:"appointment_grace_window_minutes" gorm:"default:15;comment:预约后到店宽限分钟数"`
 	AppointmentMaxWaitMinutes         int    `json:"appointment_max_wait_minutes" gorm:"default:15;comment:预约客户最大可承诺等待分钟数"`
 	AppointmentPredictionBufferMinute int    `json:"appointment_prediction_buffer_minutes" gorm:"column:appointment_prediction_buffer_minutes;default:5;comment:预约保护预测缓冲分钟数"`
+	AppointmentRescheduleSameOrNextDayThresholdMinutes int `json:"appointment_reschedule_same_or_next_day_threshold_minutes" gorm:"default:180;comment:昨天预约可改签到今天或明天的剩余分钟阈值"`
+	AppointmentRescheduleNextDayOnlyThresholdMinutes  int `json:"appointment_reschedule_next_day_only_threshold_minutes" gorm:"default:90;comment:昨天预约仅可改签到明天的剩余分钟阈值"`
 	TechnicianAlias                   string `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
 	StartTerm                         string `json:"start_term" gorm:"size:20;default:'';comment:开始服务显示名词（可为空）"`
 	FinishTerm                        string `json:"finish_term" gorm:"size:20;default:'';comment:结束服务显示名词（可为空）"`
@@ -274,6 +276,24 @@ type AppointmentCompensation struct {
 
 func (AppointmentCompensation) TableName() string {
 	return "appointment_compensations"
+}
+
+type AppointmentProtectionBlock struct {
+	ID                           uint       `json:"id" gorm:"primaryKey;comment:主键ID"`
+	MerchantID                   uint       `json:"merchant_id" gorm:"index;comment:商户ID"`
+	AppointmentID                uint       `json:"appointment_id" gorm:"index;comment:被保护的预约ID"`
+	TechnicianID                 uint       `json:"technician_id" gorm:"index;comment:被保护预约绑定的客服ID"`
+	WalkInServiceSessionID       *uint      `json:"walk_in_service_session_id" gorm:"index;comment:被拒绝分配的现场服务会话ID"`
+	BlockedReason                string     `json:"blocked_reason" gorm:"size:255;default:'';comment:拒派原因说明"`
+	PredictedReservedWaitMinutes int        `json:"predicted_reserved_wait_minutes" gorm:"default:0;comment:若继续派单将导致预约等待的预计分钟数"`
+	AlternativeWaitMinutes       int        `json:"alternative_wait_minutes" gorm:"default:0;comment:改派其他客服的预计等待分钟数"`
+	DecisionMode                 string     `json:"decision_mode" gorm:"size:50;default:'';comment:拒派决策模式（max_wait_protection/alternative_preferred）"`
+	BlockedAt                    *time.Time `json:"blocked_at" gorm:"type:datetime(3);comment:拒派发生时间"`
+	CreatedAt                    *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+}
+
+func (AppointmentProtectionBlock) TableName() string {
+	return "appointment_protection_blocks"
 }
 
 func (AppointmentCompensation) TableComment() string {
