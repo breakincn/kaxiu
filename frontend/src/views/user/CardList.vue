@@ -355,6 +355,9 @@
             </div>
             <div v-else class="h-10"></div>
           </div>
+          <div v-if="selectedAppointmentTechnicianText" class="mx-5 mt-3 rounded-lg bg-primary-light text-primary border border-primary/10 px-3 py-2 text-sm">
+            已选客服：{{ selectedAppointmentTechnicianText }}
+          </div>
 
           <div
             v-if="selectedAppointmentProjectId || !hasAppointmentProjects"
@@ -578,6 +581,16 @@ const selectedTechnicianDisplayName = computed(() => {
   if (!availableTechnicians.value.length) return '系统自动分配'
   const t = (availableTechnicians.value || []).find(item => Number(item.id) === Number(selectedTechnicianId.value))
   return t?.name || '系统自动分配'
+})
+
+const selectedAppointmentTechnicianText = computed(() => {
+  const technicianId = Number(selectedTechnicianId.value || 0)
+  if (!technicianId) return ''
+  const technician = (availableTechnicians.value || []).find(item => Number(item?.id || 0) === technicianId)
+  if (!technician) return ''
+  const name = String(technician?.name || '').trim() || `客服${technicianId}`
+  const account = String(technician?.account || '').trim()
+  return account ? `${name} - ${account}` : name
 })
 
 const shouldAutoAssignTechnician = computed(() => {

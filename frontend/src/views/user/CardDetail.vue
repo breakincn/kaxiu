@@ -455,6 +455,9 @@
               </button>
             </div>
           </div>
+          <div v-if="selectedAppointmentTechnicianText" class="mx-5 mt-3 rounded-lg bg-primary-light text-primary border border-primary/10 px-3 py-2 text-sm">
+            已选客服：{{ selectedAppointmentTechnicianText }}
+          </div>
 
           <!-- 时间段列表 -->
           <div class="px-5 py-4">
@@ -2463,6 +2466,16 @@ const displayedTechnicians = computed(() => {
       }))
   }
   return list.map(t => ({ ...t, availability_state: 'safe', predicted_wait_minutes: 0, availability_reason: '' }))
+})
+
+const selectedAppointmentTechnicianText = computed(() => {
+  const technicianId = Number(selectedTechnicianId.value || 0)
+  if (!technicianId) return ''
+  const technician = (availableTechnicians.value || []).find(item => Number(item?.id || 0) === technicianId)
+  if (!technician) return ''
+  const name = String(technician?.name || '').trim() || `客服${technicianId}`
+  const account = String(technician?.account || '').trim()
+  return account ? `${name} - ${account}` : name
 })
 
 const hasAppointmentProjects = computed(() => {
