@@ -454,9 +454,9 @@
                 </div>
               </button>
             </div>
-          </div>
-          <div v-if="selectedAppointmentTechnicianText" class="mx-5 mt-3 rounded-lg bg-primary-light text-primary border border-primary/10 px-3 py-2 text-sm">
-            已选客服：{{ selectedAppointmentTechnicianText }}
+            <div v-if="selectedAppointmentTechnicianText" class="mt-2 rounded-lg bg-primary-light text-primary border border-primary/10 px-3 py-2 text-sm">
+              已选客服：{{ selectedAppointmentTechnicianText }}
+            </div>
           </div>
 
           <!-- 时间段列表 -->
@@ -572,9 +572,9 @@
                 </div>
               </button>
             </div>
-          </div>
-          <div v-if="selectedUserRescheduleTechnicianText" class="mx-5 mt-3 rounded-lg bg-primary-light text-primary border border-primary/10 px-3 py-2 text-sm">
-            已选客服：{{ selectedUserRescheduleTechnicianText }}
+            <div v-if="selectedUserRescheduleTechnicianText" class="mt-2 rounded-lg bg-primary-light text-primary border border-primary/10 px-3 py-2 text-sm">
+              已选客服：{{ selectedUserRescheduleTechnicianText }}
+            </div>
           </div>
           <div class="px-5 py-3 border-t">
             <div class="text-sm font-medium text-gray-700 mb-2">改签原因</div>

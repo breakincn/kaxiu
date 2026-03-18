@@ -354,9 +354,9 @@
               </button>
             </div>
             <div v-else class="h-10"></div>
-          </div>
-          <div v-if="selectedAppointmentTechnicianText" class="mx-5 mt-3 rounded-lg bg-primary-light text-primary border border-primary/10 px-3 py-2 text-sm">
-            已选客服：{{ selectedAppointmentTechnicianText }}
+            <div v-if="selectedAppointmentTechnicianText" class="mt-2 rounded-lg bg-primary-light text-primary border border-primary/10 px-3 py-2 text-sm">
+              已选客服：{{ selectedAppointmentTechnicianText }}
+            </div>
           </div>
 
           <div
