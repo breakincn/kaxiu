@@ -4225,10 +4225,10 @@ const getRescheduleRequestTechnicianText = (req) => {
   const technicianId = Number(req?.new_technician_id || 0)
   if (!technicianId) return ''
   const technician = (appointmentTechnicianDirectory.value || []).find(item => Number(item?.id || 0) === technicianId)
-  if (!technician) return `客服：${technicianId}`
-  const name = String(technician?.name || '').trim() || `客服${technicianId}`
+  if (!technician) return `改签客服：${technicianId}`
+  const name = String(technician?.name || '').trim() || `改签客服${technicianId}`
   const account = String(technician?.account || '').trim()
-  return account ? `客服：${name} - ${account}` : `客服：${name}`
+  return account ? `改签客服：${name} - ${account}` : `改签客服：${name}`
 }
 
 const isMerchantConfirmationPending = (appt) => {
