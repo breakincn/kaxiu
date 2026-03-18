@@ -69,3 +69,60 @@ func TestRunAppointmentNoShowOnceMarksConfirmedAppointmentAsNoShow(t *testing.T)
 		t.Fatalf("want no_show_at filled")
 	}
 }
+
+func TestRunAppointmentAssignOnceBackfillsConfirmedAppointmentWithoutTechnician(t *testing.T) {
+	db := setupAppointmentSchedulerTestDB(t)
+
+	now := time.Now()
+	merchant := models.Merchant{
+		Name:                            "appointment-backfill",
+		Phone:                           "18800000202",
+		Password:                        "pwd",
+		SupportAppointment:              true,
+		SupportCustomerServiceMode:      true,
+		AppointmentGraceWindowMinutes:   15,
+		AppointmentReserveBufferMinutes: 10,
+	}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	roleMerchantID := merchant.ID
+	role := models.ServiceRole{Name: "专业客服", Key: "professional", RoleType: "professional", MerchantID: &roleMerchantID}
+	if err := db.Create(&role).Error; err != nil {
+		t.Fatalf("create role failed: %v", err)
+	}
+	tech := models.Technician{MerchantID: merchant.ID, Name: "客服A", Account: "js0001", IsActive: true, ServiceRoleID: role.ID}
+	if err := db.Create(&tech).Error; err != nil {
+		t.Fatalf("create technician failed: %v", err)
+	}
+
+	appointmentTime := now.Add(2 * time.Hour).Truncate(time.Second)
+	appointment := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          1,
+		CardID:          1,
+		Status:          "confirmed",
+		AppointmentTime: &appointmentTime,
+	}
+	if err := db.Create(&appointment).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+
+	if err := runAppointmentAssignOnce(db); err != nil {
+		t.Fatalf("runAppointmentAssignOnce failed: %v", err)
+	}
+
+	var got struct {
+		Status       string `gorm:"column:status"`
+		TechnicianID *uint  `gorm:"column:technician_id"`
+	}
+	if err := db.Table("appointments").Select("status, technician_id").Where("id = ?", appointment.ID).Scan(&got).Error; err != nil {
+		t.Fatalf("reload appointment failed: %v", err)
+	}
+	if got.Status != "confirmed" {
+		t.Fatalf("want confirmed, got %s", got.Status)
+	}
+	if got.TechnicianID == nil || *got.TechnicianID != tech.ID {
+		t.Fatalf("want technician %d assigned, got %+v", tech.ID, got.TechnicianID)
+	}
+}

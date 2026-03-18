@@ -5,11 +5,11 @@ import (
 	"kabao/models"
 	"log"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 const (
@@ -83,6 +83,99 @@ func parseSchedulerDBTimeValue(raw interface{}) (*time.Time, bool) {
 		}
 	}
 	return nil, false
+}
+
+func schedulerValueToUint(v interface{}) (uint, bool) {
+	switch vv := v.(type) {
+	case uint:
+		return vv, true
+	case uint8:
+		return uint(vv), true
+	case uint16:
+		return uint(vv), true
+	case uint32:
+		return uint(vv), true
+	case uint64:
+		return uint(vv), true
+	case int:
+		if vv >= 0 {
+			return uint(vv), true
+		}
+	case int64:
+		if vv >= 0 {
+			return uint(vv), true
+		}
+	case []byte:
+		n, err := strconv.ParseUint(strings.TrimSpace(string(vv)), 10, 64)
+		if err == nil {
+			return uint(n), true
+		}
+	case string:
+		n, err := strconv.ParseUint(strings.TrimSpace(vv), 10, 64)
+		if err == nil {
+			return uint(n), true
+		}
+	}
+	return 0, false
+}
+
+func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appointment, error) {
+	if tx == nil || appointmentID == 0 {
+		return nil, nil
+	}
+	rows, err := tx.Table("appointments").
+		Select("id, card_id, merchant_id, user_id, project_id, technician_id, appointment_time, status, predicted_wait_minutes, failed_at, failed_reason, created_at").
+		Where("id = ?", appointmentID).
+		Limit(1).
+		Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+
+	var (
+		appt                  models.Appointment
+		projectIDRaw          interface{}
+		technicianIDRaw       interface{}
+		appointmentTimeRaw    interface{}
+		failedAtRaw           interface{}
+		createdAtRaw          interface{}
+	)
+	if err := rows.Scan(
+		&appt.ID,
+		&appt.CardID,
+		&appt.MerchantID,
+		&appt.UserID,
+		&projectIDRaw,
+		&technicianIDRaw,
+		&appointmentTimeRaw,
+		&appt.Status,
+		&appt.PredictedWaitMinutes,
+		&failedAtRaw,
+		&appt.FailedReason,
+		&createdAtRaw,
+	); err != nil {
+		return nil, err
+	}
+	if v, ok := schedulerValueToUint(projectIDRaw); ok {
+		appt.ProjectID = &v
+	}
+	if v, ok := schedulerValueToUint(technicianIDRaw); ok {
+		appt.TechnicianID = &v
+	}
+	if v, ok := parseSchedulerDBTimeValue(appointmentTimeRaw); ok {
+		appt.AppointmentTime = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(failedAtRaw); ok {
+		appt.FailedAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(createdAtRaw); ok {
+		appt.CreatedAt = v
+	}
+	return &appt, nil
 }
 
 func predictedAppointmentFinishAt(start time.Time, durationMinutes int, merchant models.Merchant) time.Time {
@@ -168,20 +261,35 @@ func runAppointmentAssignOnce(db *gorm.DB) error {
 	now := time.Now()
 	cutoff := now.Add(-appointmentAssignDelay)
 
-	var appts []models.Appointment
-	err := db.
+	var pendingIDs []uint
+	err := db.Model(&models.Appointment{}).
 		Where("technician_id IS NULL AND status = ? AND appointment_time IS NOT NULL AND created_at IS NOT NULL AND created_at <= ?", "pending", cutoff).
-		Order("created_at asc").
-		Limit(appointmentSchedulerBatchLimit).
-		Find(&appts).Error
+		Pluck("id", &pendingIDs).Error
 	if err != nil {
 		return err
 	}
 
-	for i := range appts {
-		a := appts[i]
-		if err := tryAssignOneAppointment(db, a.ID, now); err != nil {
-			log.Printf("assign appointment %d error: %v", a.ID, err)
+	// 已确认但仍未分配客服的预约不能只在创建后尝试一次。
+	// 真实门店里，客服空闲状态会不断变化，所以 confirmed + technician_id IS NULL
+	// 必须持续回补自动分配，直到成功分配、到店核销或超过宽限进入 no_show。
+	var confirmedIDs []uint
+	err = db.Model(&models.Appointment{}).
+		Where("technician_id IS NULL AND status = ? AND appointment_time IS NOT NULL AND appointment_time >= ?", "confirmed", now.Add(-24*time.Hour)).
+		Order("created_at asc").
+		Limit(appointmentSchedulerBatchLimit).
+		Pluck("id", &confirmedIDs).Error
+	if err != nil {
+		return err
+	}
+
+	for _, appointmentID := range pendingIDs {
+		if err := tryAssignOneAppointment(db, appointmentID, now); err != nil {
+			log.Printf("assign appointment %d error: %v", appointmentID, err)
+		}
+	}
+	for _, appointmentID := range confirmedIDs {
+		if err := tryAssignOneAppointment(db, appointmentID, now); err != nil {
+			log.Printf("assign appointment %d error: %v", appointmentID, err)
 		}
 	}
 	return runAppointmentNoShowOnce(db, now)
@@ -249,11 +357,15 @@ func runAppointmentNoShowOnce(db *gorm.DB, now time.Time) error {
 
 func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) error {
 	return db.Transaction(func(tx *gorm.DB) error {
-		var a models.Appointment
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&a, appointmentID).Error; err != nil {
+		aPtr, err := loadSchedulerAppointmentByID(tx, appointmentID)
+		if err != nil {
 			return err
 		}
-		if a.Status != "pending" {
+		if aPtr == nil {
+			return gorm.ErrRecordNotFound
+		}
+		a := *aPtr
+		if a.Status != "pending" && a.Status != "confirmed" {
 			return nil
 		}
 		if a.TechnicianID != nil {
@@ -274,7 +386,7 @@ func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) err
 
 		// 查找候选专业客服（排除运营客服；兼容历史 role_type 为空）
 		var techs []models.Technician
-		err := tx.
+		err = tx.
 			Model(&models.Technician{}).
 			Joins("JOIN service_roles sr ON sr.id = technicians.service_role_id").
 			Where("technicians.merchant_id = ? AND technicians.is_active = ? AND (sr.role_type IS NULL OR sr.role_type = '' OR sr.role_type <> ?)", a.MerchantID, true, "operational").
@@ -284,6 +396,9 @@ func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) err
 			return err
 		}
 		if len(techs) == 0 {
+			if a.Status == "confirmed" {
+				return nil
+			}
 			failAt := now
 			return tx.Model(&models.Appointment{}).
 				Where("id = ? AND technician_id IS NULL AND status = ?", a.ID, "pending").
@@ -374,12 +489,20 @@ func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) err
 			updates := map[string]interface{}{
 				"technician_id":          bestTechID,
 				"predicted_wait_minutes": bestWaitMinutes,
+				"failed_at":              nil,
+				"failed_reason":          "",
 			}
-			if err := tx.Model(&models.Appointment{}).
-				Where("id = ? AND technician_id IS NULL AND status = ?", a.ID, "pending").
-				Updates(updates).Error; err != nil {
-				return err
-			}
+		if err := tx.Model(&models.Appointment{}).
+			Where("id = ? AND technician_id IS NULL AND status = ?", a.ID, a.Status).
+			Updates(updates).Error; err != nil {
+			return err
+		}
+			return nil
+		}
+
+		// pending 仍沿用旧语义：创建 10 分钟后若还完全无客服可分配，则标记失败。
+		// confirmed 不直接失败，因为它已经是商户确认过的预约，需要持续等待后续客服空闲时回补分配。
+		if a.Status == "confirmed" {
 			return nil
 		}
 
