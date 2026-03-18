@@ -406,103 +406,6 @@
     <!-- 动态占位元素：仅在需要滚动到通知区域时显示，确保页面可以滚动到通知区域 -->
     <div v-if="bottomSpacerHeight > 0" :style="{ height: `${bottomSpacerHeight}px` }"></div>
 
-    <!-- 预约时间选择弹窗 -->
-    <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeModal">
-      <div class="bg-white rounded-2xl w-11/12 max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
-        <!-- 弹窗头部 -->
-        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between flex-shrink-0">
-          <h3 class="font-medium text-lg">选择预约时间</h3>
-          <button @click="closeModal" class="text-white">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-
-        <!-- 可滚动内容区域 -->
-        <div class="overflow-y-auto flex-1">
-          <!-- 项目选择（先选项目，再选时间） -->
-          <div class="px-5 py-3 border-b">
-            <div class="text-sm font-medium text-gray-700 mb-2">选择项目</div>
-            <div v-if="!hasAppointmentProjects" class="text-gray-400 text-sm">当前卡片未设置项目，将按默认服务时长预约</div>
-            <div v-else class="space-y-2">
-              <label v-for="p in card.projects" :key="p.id" class="flex items-center gap-3">
-                <input type="radio" name="appt_project" :value="p.id" v-model="selectedAppointmentProjectId" />
-                <div class="flex-1">
-                  <div class="text-gray-800">{{ p.name }}</div>
-                  <div v-if="p.duration" class="text-gray-400 text-xs">时长 {{ p.duration }} 分钟</div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <!-- 专业客服（可选）：仅在商户开启客服且有启用客服时展示；与时间段双向联动 -->
-          <div v-if="availableTechnicians.length > 0" class="px-5 py-3 border-b">
-            <div class="text-sm font-medium text-gray-700 mb-2">选择专业客服</div>
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="t in displayedTechnicians"
-                :key="t.id"
-                type="button"
-                @click="toggleTechnician(t.id)"
-                :class="selectedTechnicianId === t.id ? 'bg-primary text-white' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary'"
-                class="py-2 px-3 rounded-lg font-medium transition-all text-sm"
-              >
-                <div>{{ t.name }}</div>
-                <div v-if="t.availability_state === 'conditional'" class="text-[11px] opacity-80 mt-1">
-                  预计等待 {{ t.predicted_wait_minutes || 0 }} 分钟
-                </div>
-              </button>
-            </div>
-            <div v-if="selectedAppointmentTechnicianText" class="mt-2 rounded-lg bg-primary-light text-primary border border-primary/10 px-3 py-2 text-sm">
-              已选客服：{{ selectedAppointmentTechnicianText }}
-            </div>
-          </div>
-
-          <!-- 时间段列表 -->
-          <div class="px-5 py-4">
-            <div v-if="loadingSlots" class="text-center py-8 text-gray-400">
-              加载中...
-            </div>
-            <div v-else-if="timeSlotError" class="text-center py-8 text-gray-400">
-              {{ timeSlotError }}
-            </div>
-            <div v-else-if="timeSlots.length === 0" class="text-center py-8 text-gray-400">
-              暂无可预约时间段
-            </div>
-            <div v-else-if="displayedTimeSlots.length === 0" class="text-center py-8 text-gray-400">
-              当前所选专业客服无可用时间段
-            </div>
-            <div v-else class="grid grid-cols-2 gap-3">
-              <button
-                v-for="slot in displayedTimeSlots"
-                :key="slot.time"
-                @click="selectTimeSlot(slot)"
-                :class="{
-                  'bg-primary text-white': selectedTimeSlot === slot.time,
-                  'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary': selectedTimeSlot !== slot.time
-                }"
-                class="py-3 px-4 rounded-lg font-medium transition-all"
-              >
-                <div>{{ formatTime(slot.time) }}</div>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 弹窗底部 -->
-        <div class="px-5 py-4 border-t flex-shrink-0 bg-white">
-          <button
-            @click="confirmAppointment"
-            :disabled="!selectedTimeSlot || appointing"
-            class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {{ appointing ? '预约中...' : '确认预约' }}
-          </button>
-        </div>
-      </div>
-    </div>
-
     <div v-if="showUserRescheduleModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeUserRescheduleModal">
       <div class="bg-white rounded-2xl w-11/12 max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
         <div class="bg-primary text-white px-5 py-4 flex items-center justify-between flex-shrink-0">
@@ -699,7 +602,6 @@ const verifyStatusChecking = ref(false)
 const hasJumpedToRoomSelect = ref(false)
 const showProjectModal = ref(false)
 const selectedProjectId = ref(null)
-const appointing = ref(false)
 const canceling = ref(false)
 
 const showUsageQrModal = ref(false)
@@ -2418,13 +2320,6 @@ const usagesAnchor = ref(null)
 const usageRecordsSection = ref(null)
 const bottomSpacerHeight = ref(0)
 
-// 预约弹窗相关
-const showModal = ref(false)
-const selectedDate = ref('')
-const selectedTimeSlot = ref('')
-const timeSlots = ref([])
-const timeSlotError = ref('')
-const loadingSlots = ref(false)
 const showUserRescheduleModal = ref(false)
 const userRescheduleDate = ref('')
 const userRescheduleTime = ref('')
@@ -2436,51 +2331,6 @@ const userRescheduleReason = ref('')
 const userRescheduleTechnicians = ref([])
 const userRescheduleTechnicianId = ref(null)
 const userRescheduleEligibility = ref(null)
-
-const selectedAppointmentProjectId = ref(null)
-
-const availableTechnicians = ref([])
-const selectedTechnicianId = ref(null)
-
-const displayedTimeSlots = computed(() => {
-  const list = timeSlots.value || []
-  if (selectedTechnicianId.value) {
-    return list.filter(s => Array.isArray(s?.technician_ids) && s.technician_ids.includes(selectedTechnicianId.value))
-  }
-  return list
-})
-
-const displayedTechnicians = computed(() => {
-  const list = availableTechnicians.value || []
-  if (selectedTimeSlot.value) {
-    const slot = (timeSlots.value || []).find(s => s && s.time === selectedTimeSlot.value)
-    const candidates = Array.isArray(slot?.technician_candidates) ? slot.technician_candidates : []
-    const byId = new Map(candidates.map(c => [Number(c.technician_id), c]))
-    return list
-      .filter(t => byId.has(Number(t.id)))
-      .map(t => ({
-        ...t,
-        availability_state: byId.get(Number(t.id))?.availability_state || 'safe',
-        predicted_wait_minutes: byId.get(Number(t.id))?.predicted_wait_minutes || 0,
-        availability_reason: byId.get(Number(t.id))?.availability_reason || ''
-      }))
-  }
-  return list.map(t => ({ ...t, availability_state: 'safe', predicted_wait_minutes: 0, availability_reason: '' }))
-})
-
-const selectedAppointmentTechnicianText = computed(() => {
-  const technicianId = Number(selectedTechnicianId.value || 0)
-  if (!technicianId) return ''
-  const technician = (availableTechnicians.value || []).find(item => Number(item?.id || 0) === technicianId)
-  if (!technician) return ''
-  const name = String(technician?.name || '').trim() || `客服${technicianId}`
-  const account = String(technician?.account || '').trim()
-  return account ? `${name} - ${account}` : name
-})
-
-const hasAppointmentProjects = computed(() => {
-  return Array.isArray(card.value?.projects) && card.value.projects.length > 0
-})
 
 const latestAppointmentRescheduleRequest = computed(() => {
   const list = Array.isArray(appointment.value?.reschedule_requests) ? appointment.value.reschedule_requests : []
@@ -3080,50 +2930,6 @@ const generateCode = async () => {
   }
 }
 
-// 显示预约弹窗
-const showAppointmentModal = async () => {
-  if (!card.value || !card.value.merchant_id) {
-    alert('卡片信息加载中，请稍后再试')
-    return
-  }
-  
-  showModal.value = true
-  selectedTechnicianId.value = null
-  selectedDate.value = getTomorrowDate()
-  selectedAppointmentProjectId.value = null
-  selectedTimeSlot.value = ''
-  timeSlots.value = []
-  timeSlotError.value = ''
-  availableTechnicians.value = []
-  if (!hasAppointmentProjects.value) {
-    await loadTimeSlots(selectedDate.value)
-  }
-}
-
-// 关闭弹窗
-const closeModal = () => {
-  showModal.value = false
-  selectedTechnicianId.value = null
-  selectedDate.value = ''
-  selectedAppointmentProjectId.value = null
-  selectedTimeSlot.value = ''
-  timeSlots.value = []
-  timeSlotError.value = ''
-  availableTechnicians.value = []
-}
-
-const onAppointmentProjectChange = async () => {
-  selectedTimeSlot.value = ''
-  timeSlots.value = []
-  timeSlotError.value = ''
-  if (!selectedAppointmentProjectId.value && hasAppointmentProjects.value) return
-  await loadTimeSlots(selectedDate.value)
-}
-
-watch(selectedAppointmentProjectId, () => {
-  onAppointmentProjectChange()
-})
-
 watch(userRescheduleDate, async (nextDate, prevDate) => {
   if (!showUserRescheduleModal.value || !nextDate || nextDate === prevDate) return
   const allowedDates = userRescheduleEligibility.value?.allowed_dates || []
@@ -3134,73 +2940,6 @@ watch(userRescheduleDate, async (nextDate, prevDate) => {
   await loadUserRescheduleSlots(nextDate)
 })
 
-// 获取明天日期
-const getTomorrowDate = () => {
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  return tomorrow.toISOString().slice(0, 10)
-}
-
-// 加载可用时间段
-const loadTimeSlots = async (date) => {
-  if (!card.value.merchant_id) {
-    console.error('商户ID不存在')
-    return
-  }
-  loadingSlots.value = true
-  timeSlotError.value = ''
-  try {
-    console.log('正在获取时间段，商户ID:', card.value.merchant_id, '日期:', date)
-    const res = await appointmentApi.getAvailableTimeSlots(card.value.merchant_id, date, selectedAppointmentProjectId.value || undefined)
-    console.log('获取时间段响应:', res.data)
-    timeSlots.value = res.data.data.time_slots || []
-
-    availableTechnicians.value = res.data.data.technicians || []
-
-  } catch (err) {
-    console.error('获取可用时间段失败:', err)
-    console.error('错误详情:', err.response?.data)
-    timeSlots.value = []
-    availableTechnicians.value = []
-    timeSlotError.value = `获取可用时间段失败: ${err.response?.data?.error || err.message}`
-    alert(timeSlotError.value)
-  } finally {
-    loadingSlots.value = false
-  }
-}
-
-const toggleTechnician = (id) => {
-  const next = Number(id)
-  if (!next) return
-
-  if (selectedTechnicianId.value === next) {
-    selectedTechnicianId.value = null
-    return
-  }
-
-  selectedTechnicianId.value = next
-  // 若当前已选时间段不支持该客服，则清空时间段
-  if (selectedTimeSlot.value) {
-    const slot = (timeSlots.value || []).find(s => s && s.time === selectedTimeSlot.value)
-    const ids = Array.isArray(slot?.technician_ids) ? slot.technician_ids : []
-    if (ids.length > 0 && !ids.includes(next)) {
-      selectedTimeSlot.value = ''
-    }
-  }
-}
-
-// 选择时间段
-const selectTimeSlot = (slot) => {
-  selectedTimeSlot.value = slot.time
-  // 若尚未选择客服，则联动上方客服列表（通过 displayedTechnicians 计算属性实现）
-  if (selectedTechnicianId.value) {
-    const ids = Array.isArray(slot?.technician_ids) ? slot.technician_ids : []
-    if (ids.length > 0 && !ids.includes(selectedTechnicianId.value)) {
-      selectedTechnicianId.value = null
-    }
-  }
-}
-
 // 格式化时间显示
 const formatTime = (timeStr) => {
   if (!timeStr) return ''
@@ -3208,47 +2947,6 @@ const formatTime = (timeStr) => {
   const hours = date.getHours().toString().padStart(2, '0')
   const minutes = date.getMinutes().toString().padStart(2, '0')
   return `${hours}:${minutes}`
-}
-
-// 确认预约
-const confirmAppointment = async () => {
-  if (!selectedTimeSlot.value || appointing.value) return
-
-  if ((availableTechnicians.value || []).length > 0 && !selectedTechnicianId.value) {
-    const ok = window.confirm('你未选择客服，系统稍后将自动分配客服')
-    if (!ok) return
-  }
-
-  appointing.value = true
-  try {
-    const userId = localStorage.getItem('userId')
-    if (!userId) {
-      alert('请先登录')
-      router.push('/login')
-      return
-    }
-    
-    const payload = {
-      card_id: Number(route.params.id),
-      merchant_id: card.value.merchant_id,
-      user_id: parseInt(userId),
-      technician_id: selectedTechnicianId.value ? Number(selectedTechnicianId.value) : null,
-      appointment_time: selectedTimeSlot.value
-    }
-    if (selectedAppointmentProjectId.value) {
-      payload.project_id = Number(selectedAppointmentProjectId.value)
-    }
-
-    await appointmentApi.createAppointment(payload)
-    
-    closeModal()
-    await fetchAppointment()
-    alert('预约成功！')
-  } catch (err) {
-    alert(err.response?.data?.error || '预约失败')
-  } finally {
-    appointing.value = false
-  }
 }
 
 const cancelAppointment = async () => {
