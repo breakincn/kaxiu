@@ -132,7 +132,7 @@
           <div
             v-if="latestAppointmentRescheduleRequest"
             class="rounded-lg px-3 py-3 text-sm border"
-            :class="isUserRescheduleConfirmationPending ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-blue-50 text-blue-700 border-blue-100'"
+            :class="'bg-orange-50 text-orange-700 border-orange-100'"
           >
             <div class="font-medium">
               {{ isUserRescheduleConfirmationPending ? '商户发起了改签提议，请确认' : '改签申请已提交，待商户确认' }}
@@ -532,24 +532,6 @@
             />
             <div v-if="userRescheduleDateHint" class="text-xs text-gray-400 mt-2">{{ userRescheduleDateHint }}</div>
           </div>
-          <div v-if="userRescheduleTechnicians.length > 0" class="px-5 py-3 border-b">
-            <div class="text-sm font-medium text-gray-700 mb-2">选择专业客服</div>
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="t in userDisplayedRescheduleTechnicians"
-                :key="t.id"
-                type="button"
-                @click="toggleUserRescheduleTechnician(t.id)"
-                :class="userRescheduleTechnicianId === t.id ? 'bg-primary text-white' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary'"
-                class="py-2 px-3 rounded-lg font-medium transition-all text-sm"
-              >
-                <div>{{ t.name }}</div>
-                <div v-if="t.availability_state === 'conditional'" class="text-[11px] opacity-80 mt-1">
-                  预计等待 {{ t.predicted_wait_minutes || 0 }} 分钟
-                </div>
-              </button>
-            </div>
-          </div>
           <div class="px-5 py-4">
             <div v-if="userRescheduleLoading" class="text-center py-8 text-gray-400">加载中...</div>
             <div v-else-if="userRescheduleError" class="text-center py-8 text-gray-400">{{ userRescheduleError }}</div>
@@ -569,6 +551,27 @@
                 <div>{{ formatTime(slot.time) }}</div>
               </button>
             </div>
+          </div>
+          <div v-if="userDisplayedRescheduleTechnicians.length > 0" class="px-5 py-3 border-t">
+            <div class="text-sm font-medium text-gray-700 mb-2">可选客服</div>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="t in userDisplayedRescheduleTechnicians"
+                :key="t.id"
+                type="button"
+                @click="toggleUserRescheduleTechnician(t.id)"
+                :class="userRescheduleTechnicianId === t.id ? 'bg-primary text-white' : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary'"
+                class="py-2 px-3 rounded-lg font-medium transition-all text-sm"
+              >
+                <div>{{ t.name }}</div>
+                <div v-if="t.availability_state === 'conditional'" class="text-[11px] opacity-80 mt-1">
+                  预计等待 {{ t.predicted_wait_minutes || 0 }} 分钟
+                </div>
+              </button>
+            </div>
+          </div>
+          <div v-if="selectedUserRescheduleTechnicianText" class="mx-5 mt-3 rounded-lg bg-primary-light text-primary border border-primary/10 px-3 py-2 text-sm">
+            已选客服：{{ selectedUserRescheduleTechnicianText }}
           </div>
           <div class="px-5 py-3 border-t">
             <div class="text-sm font-medium text-gray-700 mb-2">改签原因</div>
@@ -2498,6 +2501,16 @@ const userDisplayedRescheduleSlots = computed(() => {
   return list
 })
 
+const selectedUserRescheduleTechnicianText = computed(() => {
+  const technicianId = Number(userRescheduleTechnicianId.value || 0)
+  if (!technicianId) return ''
+  const technician = (userRescheduleTechnicians.value || []).find(item => Number(item?.id || 0) === technicianId)
+  if (!technician) return ''
+  const name = String(technician?.name || '').trim() || `客服${technicianId}`
+  const account = String(technician?.account || '').trim()
+  return account ? `${name} - ${account}` : name
+})
+
 const userRescheduleDateMin = computed(() => {
   const dates = userRescheduleEligibility.value?.allowed_dates || []
   return dates[0] || ''
@@ -2530,19 +2543,29 @@ const userRescheduleDateHint = computed(() => {
 
 const userDisplayedRescheduleTechnicians = computed(() => {
   const list = userRescheduleTechnicians.value || []
+  const currentTechnicianId = Number(appointment.value?.technician_id || 0)
   if (userRescheduleTime.value) {
     const slot = (userRescheduleSlots.value || []).find(s => s && s.time === userRescheduleTime.value)
     const candidates = Array.isArray(slot?.technician_candidates) ? slot.technician_candidates : []
     const byId = new Map(candidates.map(c => [Number(c.technician_id), c]))
     return list
-      .filter(t => byId.has(Number(t.id)))
+      .filter(t => {
+        const technicianId = Number(t?.id || 0)
+        if (!byId.has(technicianId)) return false
+        return !currentTechnicianId || technicianId !== currentTechnicianId
+      })
       .map(t => ({
         ...t,
         availability_state: byId.get(Number(t.id))?.availability_state || 'safe',
         predicted_wait_minutes: byId.get(Number(t.id))?.predicted_wait_minutes || 0
       }))
   }
-  return list.map(t => ({ ...t, availability_state: 'safe', predicted_wait_minutes: 0 }))
+  return list
+    .filter(t => {
+      const technicianId = Number(t?.id || 0)
+      return !currentTechnicianId || technicianId !== currentTechnicianId
+    })
+    .map(t => ({ ...t, availability_state: 'safe', predicted_wait_minutes: 0 }))
 })
 
 const visibleUsages = computed(() => {
@@ -2791,6 +2814,17 @@ const closeUserRescheduleModal = () => {
   resetUserRescheduleForm()
 }
 
+const buildUserAppointmentMinuteKey = (value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  const normalized = raw.replace('T', ' ').replace(/\.\d+$/, '').replace(/\//g, '-')
+  const match = normalized.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/)
+  if (match) {
+    return `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}`
+  }
+  return normalized.slice(0, 16)
+}
+
 const loadUserRescheduleSlots = async (date) => {
   if (!card.value?.merchant_id || !appointment.value) return
   userRescheduleLoading.value = true
@@ -2798,8 +2832,17 @@ const loadUserRescheduleSlots = async (date) => {
   try {
     const res = await appointmentApi.getUserRescheduleSlots(appointment.value.id, date)
     userRescheduleEligibility.value = res.data?.data?.eligibility || userRescheduleEligibility.value
-    userRescheduleSlots.value = res.data?.data?.time_slots || []
+    const currentMinute = buildUserAppointmentMinuteKey(appointment.value?.appointment_time)
+    const rawSlots = (res.data?.data?.time_slots || []).filter(slot => {
+      const slotMinute = buildUserAppointmentMinuteKey(slot?.time)
+      return !currentMinute || slotMinute !== currentMinute
+    })
+    userRescheduleSlots.value = rawSlots
     userRescheduleTechnicians.value = res.data?.data?.technicians || []
+    const currentTechnicianId = Number(appointment.value?.technician_id || 0)
+    if (currentTechnicianId > 0) {
+      userRescheduleTechnicians.value = userRescheduleTechnicians.value.filter(item => Number(item?.id || 0) !== currentTechnicianId)
+    }
   } catch (err) {
     userRescheduleSlots.value = []
     userRescheduleTechnicians.value = []

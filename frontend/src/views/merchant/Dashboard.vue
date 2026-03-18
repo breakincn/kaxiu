@@ -2170,6 +2170,7 @@ const selectedAppointmentRescheduleCandidates = computed(() => {
   const slot = (appointmentRescheduleSlots.value || []).find(item => item.time === selectedAppointmentRescheduleTime.value)
   const candidates = slot?.technician_candidates || []
   const byId = new Map((appointmentRescheduleTechnicians.value || []).map(item => [Number(item.id || 0), item]))
+  const currentTechnicianId = Number(rescheduleAppointmentTarget.value?.technician_id || 0)
   return candidates.map(item => ({
     technician_id: Number(item.technician_id || 0),
     label: (() => {
@@ -2179,7 +2180,7 @@ const selectedAppointmentRescheduleCandidates = computed(() => {
         ? `${name}（预计等${item.predicted_wait_minutes || 0}分）`
         : name
     })()
-  }))
+  })).filter(item => !currentTechnicianId || item.technician_id !== currentTechnicianId)
 })
 const selectedAppointmentRescheduleTechnicianText = computed(() => {
   const technicianId = Number(appointmentRescheduleForm.value.technician_id || 0)
