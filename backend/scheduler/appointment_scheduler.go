@@ -137,12 +137,12 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 	}
 
 	var (
-		appt                  models.Appointment
-		projectIDRaw          interface{}
-		technicianIDRaw       interface{}
-		appointmentTimeRaw    interface{}
-		failedAtRaw           interface{}
-		createdAtRaw          interface{}
+		appt               models.Appointment
+		projectIDRaw       interface{}
+		technicianIDRaw    interface{}
+		appointmentTimeRaw interface{}
+		failedAtRaw        interface{}
+		createdAtRaw       interface{}
 	)
 	if err := rows.Scan(
 		&appt.ID,
@@ -180,15 +180,15 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 
 func predictedAppointmentFinishAt(start time.Time, durationMinutes int, merchant models.Merchant) time.Time {
 	if durationMinutes <= 0 {
-		durationMinutes = 30
+		durationMinutes = 33
 	}
-	return start.Add(time.Duration(durationMinutes+3+merchantAppointmentPredictionBufferMinutes(merchant)) * time.Minute)
+	return start.Add(time.Duration(durationMinutes+merchantAppointmentPredictionBufferMinutes(merchant)) * time.Minute)
 }
 
 func evaluateSchedulerBookingAvailability(tx *gorm.DB, merchant models.Merchant, technicianID uint, start time.Time, durationMinutes int, excludeAppointmentID uint) (string, int, error) {
 	var appointments []models.Appointment
 	if err := tx.Where("merchant_id = ? AND technician_id = ? AND status IN ? AND appointment_time IS NOT NULL",
-		merchant.ID, technicianID, []string{"confirmed", "arrived", "finished", "completed"}).
+		merchant.ID, technicianID, []string{"pending", "confirmed", "arrived", "finished", "completed"}).
 		Where("id <> ?", excludeAppointmentID).
 		Order("appointment_time asc").
 		Find(&appointments).Error; err != nil {
@@ -229,16 +229,21 @@ func evaluateSchedulerBookingAvailability(tx *gorm.DB, merchant models.Merchant,
 
 func getSchedulerAppointmentDuration(tx *gorm.DB, merchantID uint, projectID *uint) int {
 	if projectID == nil || *projectID == 0 {
-		return 30
+		return 33
 	}
 	var p models.MerchantProject
 	if err := tx.Where("id = ? AND merchant_id = ?", *projectID, merchantID).First(&p).Error; err != nil {
-		return 30
+		return 33
 	}
-	if p.Duration <= 0 {
-		return 30
+	duration := p.Duration
+	if duration <= 0 {
+		duration = 30
 	}
-	return p.Duration
+	gap := p.ServiceGapMinutes
+	if gap < 0 {
+		gap = 3
+	}
+	return duration + gap
 }
 
 func StartAppointmentScheduler() {
@@ -492,11 +497,11 @@ func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) err
 				"failed_at":              nil,
 				"failed_reason":          "",
 			}
-		if err := tx.Model(&models.Appointment{}).
-			Where("id = ? AND technician_id IS NULL AND status = ?", a.ID, a.Status).
-			Updates(updates).Error; err != nil {
-			return err
-		}
+			if err := tx.Model(&models.Appointment{}).
+				Where("id = ? AND technician_id IS NULL AND status = ?", a.ID, a.Status).
+				Updates(updates).Error; err != nil {
+				return err
+			}
 			return nil
 		}
 

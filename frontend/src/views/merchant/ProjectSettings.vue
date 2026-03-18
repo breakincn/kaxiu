@@ -65,6 +65,18 @@
                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
+
+              <div>
+                <div class="text-sm font-medium text-gray-700 mb-2">服务间歇时间（分钟）</div>
+                <input
+                  v-model.number="project.service_gap_minutes"
+                  type="number"
+                  min="0"
+                  max="60"
+                  placeholder="如 3"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
             </div>
             
             <button
@@ -110,6 +122,7 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
     id: project.id ?? null,
     name: String(project.name || '').trim(),
     duration: Number(project.duration || 0),
+    service_gap_minutes: Number(project.service_gap_minutes ?? 3),
     start_delay_seconds: Number(project.start_delay_seconds ?? 60)
   })),
   removedProjectIds: [...removedIds].sort((a, b) => Number(a) - Number(b))
@@ -144,6 +157,7 @@ const load = async () => {
           id: p.id,
           name: p.name,
           duration: p.duration,
+          service_gap_minutes: Number(p.service_gap_minutes ?? 3),
           start_delay_seconds: Number(p.start_delay_seconds ?? 60)
         }))
         : []
@@ -158,7 +172,7 @@ const load = async () => {
 }
 
 const addProject = () => {
-  form.value.projects.push({ id: null, name: '', duration: null, start_delay_seconds: null })
+  form.value.projects.push({ id: null, name: '', duration: null, service_gap_minutes: 3, start_delay_seconds: null })
 }
 
 const removeProject = (index) => {
@@ -188,6 +202,11 @@ const save = async () => {
       alert(`项目 ${i + 1} 的服务开始延迟时间必须在 0-3600 秒之间`)
       return
     }
+    const gapMinutes = Number(project.service_gap_minutes ?? 3)
+    if (!Number.isFinite(gapMinutes) || gapMinutes < 0 || gapMinutes > 60) {
+      alert(`项目 ${i + 1} 的服务间歇时间必须在 0-60 分钟之间`)
+      return
+    }
   }
 
   saving.value = true
@@ -206,6 +225,7 @@ const save = async () => {
       const payload = {
         name: (p.name || '').trim(),
         duration: Number(p.duration || 0),
+        service_gap_minutes: Number(p.service_gap_minutes ?? 3),
         start_delay_seconds: Number(p.start_delay_seconds ?? 60)
       }
       if (p.id) {

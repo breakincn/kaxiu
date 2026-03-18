@@ -124,6 +124,14 @@ var defaultMigrations = []dbMigration{
 			"CREATE TABLE IF NOT EXISTS appointment_protection_blocks (\n  id bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',\n  merchant_id bigint unsigned NOT NULL COMMENT '商户ID',\n  appointment_id bigint unsigned NOT NULL COMMENT '被保护的预约ID',\n  technician_id bigint unsigned NOT NULL COMMENT '被保护预约绑定的客服ID',\n  walk_in_service_session_id bigint unsigned NULL DEFAULT NULL COMMENT '被拒绝分配的现场服务会话ID',\n  blocked_reason varchar(255) NOT NULL DEFAULT '' COMMENT '拒派原因说明',\n  predicted_reserved_wait_minutes INT NOT NULL DEFAULT 0 COMMENT '若继续派单将导致预约等待的预计分钟数',\n  alternative_wait_minutes INT NOT NULL DEFAULT 0 COMMENT '改派其他客服的预计等待分钟数',\n  decision_mode varchar(50) NOT NULL DEFAULT '' COMMENT '拒派决策模式（max_wait_protection/alternative_preferred）',\n  blocked_at datetime(3) NULL DEFAULT NULL COMMENT '拒派发生时间',\n  created_at datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',\n  PRIMARY KEY (id),\n  UNIQUE KEY uidx_appointment_protection_blocks_once (appointment_id, technician_id, walk_in_service_session_id, decision_mode),\n  KEY idx_appointment_protection_blocks_merchant_id (merchant_id),\n  KEY idx_appointment_protection_blocks_appointment_id (appointment_id),\n  KEY idx_appointment_protection_blocks_technician_id (technician_id),\n  KEY idx_appointment_protection_blocks_walk_in_service_session_id (walk_in_service_session_id),\n  KEY idx_appointment_protection_blocks_blocked_at (blocked_at)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='预约保护拒派审计表'",
 		},
 	},
+	{
+		Version: "2026031802",
+		Name:    "add_project_gap_and_appointment_slot_granularity",
+		Statements: []string{
+			"ALTER TABLE merchant_projects ADD COLUMN service_gap_minutes INT NOT NULL DEFAULT 3 COMMENT '服务间歇时间（分钟）'",
+			"ALTER TABLE merchants ADD COLUMN appointment_slot_granularity_minutes INT NOT NULL DEFAULT 15 COMMENT '预约时段展示粒度分钟数'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

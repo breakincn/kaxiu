@@ -90,15 +90,18 @@ func isWithinBusinessIntervals(t time.Time, intervals []businessInterval) bool {
 }
 
 func getAppointmentServiceMinutes(merchantID uint, appt models.Appointment) int {
-	if appt.ProjectID != nil && *appt.ProjectID > 0 {
-		var p models.MerchantProject
-		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ?", *appt.ProjectID, merchantID, true).First(&p).Error; err == nil {
-			if p.Duration > 0 {
-				return p.Duration
-			}
-		}
-	}
-	return 30
+	serviceMinutes, _ := resolveProjectBookingConfig(config.DB, merchantID, appt.ProjectID, 30, 3)
+	return serviceMinutes
+}
+
+func getAppointmentGapMinutes(merchantID uint, appt models.Appointment) int {
+	_, gapMinutes := resolveProjectBookingConfig(config.DB, merchantID, appt.ProjectID, 30, 3)
+	return gapMinutes
+}
+
+func getAppointmentOccupiedMinutes(merchantID uint, appt models.Appointment) int {
+	serviceMinutes, gapMinutes := resolveProjectBookingConfig(config.DB, merchantID, appt.ProjectID, 30, 3)
+	return projectBookingOccupiedMinutes(serviceMinutes, gapMinutes)
 }
 
 type appointmentTechnicianCandidate struct {
@@ -109,11 +112,20 @@ type appointmentTechnicianCandidate struct {
 }
 
 type appointmentTimeSlot struct {
-	Time                 string                         `json:"time"`
-	Available            bool                           `json:"available"`
-	UserName             string                         `json:"user_name,omitempty"`
-	TechnicianIDs        []uint                         `json:"technician_ids,omitempty"`
+	Time                 string                           `json:"time"`
+	Available            bool                             `json:"available"`
+	UserName             string                           `json:"user_name,omitempty"`
+	TechnicianIDs        []uint                           `json:"technician_ids,omitempty"`
 	TechnicianCandidates []appointmentTechnicianCandidate `json:"technician_candidates,omitempty"`
+}
+
+type availableTimeSlotsOptions struct {
+	ExcludeAppointmentID uint
+}
+
+type appointmentOccupiedRange struct {
+	Start time.Time
+	End   time.Time
 }
 
 func appointmentLocation() *time.Location {
@@ -124,18 +136,239 @@ func appointmentLocation() *time.Location {
 	return loc
 }
 
-func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, date string, projectID uint, loc *time.Location) (gin.H, error) {
+func loadCoreAppointmentOccupiedMinutes(tx *gorm.DB, merchantID uint) ([]int, error) {
+	if tx == nil || merchantID == 0 {
+		return []int{projectBookingOccupiedMinutes(30, 3)}, nil
+	}
+	var projects []models.MerchantProject
+	if err := tx.Where("merchant_id = ? AND is_active = ?", merchantID, true).Find(&projects).Error; err != nil {
+		return nil, err
+	}
+	out := make([]int, 0, len(projects))
+	seen := make(map[int]struct{}, len(projects))
+	for _, p := range projects {
+		occupied := projectBookingOccupiedMinutes(p.Duration, p.ServiceGapMinutes)
+		if occupied <= 0 {
+			continue
+		}
+		if _, ok := seen[occupied]; ok {
+			continue
+		}
+		seen[occupied] = struct{}{}
+		out = append(out, occupied)
+	}
+	if len(out) == 0 {
+		out = append(out, projectBookingOccupiedMinutes(30, 3))
+	}
+	return out, nil
+}
+
+func checkNonTechnicianAppointmentOverlap(tx *gorm.DB, merchantID uint, appointmentStart time.Time, occupiedMinutes int, excludeAppointmentID uint) (bool, error) {
+	var appointments []models.Appointment
+	q := tx.Where("merchant_id = ? AND technician_id IS NULL AND appointment_time IS NOT NULL AND status IN ?",
+		merchantID, appointmentProtectedStatuses())
+	if excludeAppointmentID > 0 {
+		q = q.Where("id <> ?", excludeAppointmentID)
+	}
+	if err := q.Find(&appointments).Error; err != nil {
+		return false, err
+	}
+	appointmentEnd := appointmentStart.Add(time.Duration(occupiedMinutes) * time.Minute)
+	for _, apt := range appointments {
+		if apt.AppointmentTime == nil {
+			continue
+		}
+		aptStart := *apt.AppointmentTime
+		aptEnd := aptStart.Add(time.Duration(getAppointmentOccupiedMinutes(merchantID, apt)) * time.Minute)
+		if appointmentStart.Before(aptEnd) && aptStart.Before(appointmentEnd) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func loadAppointmentOccupiedRangesForFragment(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, technicianID *uint, excludeAppointmentID uint) ([]appointmentOccupiedRange, error) {
+	dayStart := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, targetDate.Location())
+	dayEnd := dayStart.Add(24 * time.Hour)
+	var appointments []models.Appointment
+	q := tx.Where("merchant_id = ? AND appointment_time IS NOT NULL AND appointment_time >= ? AND appointment_time < ? AND status IN ?",
+		merchant.ID, dayStart, dayEnd, appointmentProtectedStatuses())
+	if excludeAppointmentID > 0 {
+		q = q.Where("id <> ?", excludeAppointmentID)
+	}
+	if technicianID != nil && *technicianID > 0 {
+		q = q.Where("technician_id = ?", *technicianID)
+	} else if merchant.SupportCustomerServiceMode {
+		q = q.Where("technician_id IS NULL")
+	}
+	if err := q.Order("appointment_time asc").Find(&appointments).Error; err != nil {
+		return nil, err
+	}
+	ranges := make([]appointmentOccupiedRange, 0, len(appointments))
+	for _, apt := range appointments {
+		if apt.AppointmentTime == nil {
+			continue
+		}
+		start := *apt.AppointmentTime
+		end := start.Add(time.Duration(getAppointmentOccupiedMinutes(merchant.ID, apt)) * time.Minute)
+		if end.After(start) {
+			ranges = append(ranges, appointmentOccupiedRange{Start: start, End: end})
+		}
+	}
+	return ranges, nil
+}
+
+func wouldCreateAppointmentFragments(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, appointmentStart time.Time, occupiedMinutes int, technicianID *uint, excludeAppointmentID uint) (bool, string, error) {
+	if tx == nil {
+		return false, "", nil
+	}
+	coreOccupied, err := loadCoreAppointmentOccupiedMinutes(tx, merchant.ID)
+	if err != nil {
+		return false, "", err
+	}
+	occupiedRanges, err := loadAppointmentOccupiedRangesForFragment(tx, merchant, targetDate, technicianID, excludeAppointmentID)
+	if err != nil {
+		return false, "", err
+	}
+	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
+	if !ok {
+		return false, "", nil
+	}
+	candidateEnd := appointmentStart.Add(time.Duration(occupiedMinutes) * time.Minute)
+	for _, it := range intervals {
+		if appointmentStart.Before(it.Start) || candidateEnd.After(it.End) {
+			continue
+		}
+		leftAnchor := it.Start
+		rightAnchor := it.End
+		hasPrevOccupied := false
+		hasNextOccupied := false
+		for _, r := range occupiedRanges {
+			if !r.End.After(it.Start) || !r.Start.Before(it.End) {
+				continue
+			}
+			if !r.End.After(appointmentStart) && r.End.After(leftAnchor) {
+				leftAnchor = r.End
+				hasPrevOccupied = true
+			}
+			if !r.Start.Before(candidateEnd) && r.Start.Before(rightAnchor) {
+				rightAnchor = r.Start
+				hasNextOccupied = true
+			}
+		}
+		leftMinutes := int(appointmentStart.Sub(leftAnchor).Minutes())
+		rightMinutes := int(rightAnchor.Sub(candidateEnd).Minutes())
+		if hasPrevOccupied && leftMinutes > 0 {
+			fit := false
+			for _, core := range coreOccupied {
+				if leftMinutes >= core {
+					fit = true
+					break
+				}
+			}
+			if !fit {
+				return true, "该时段会在前段留下不可复用的碎片时间", nil
+			}
+		}
+		if hasNextOccupied && rightMinutes > 0 {
+			fit := false
+			for _, core := range coreOccupied {
+				if rightMinutes >= core {
+					fit = true
+					break
+				}
+			}
+			if !fit {
+				return true, "该时段会在后段留下不可复用的碎片时间", nil
+			}
+		}
+		return false, "", nil
+	}
+	return false, "", nil
+}
+
+func validateAppointmentPlacementRules(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, appointmentStart time.Time, occupiedMinutes int, technicianID *uint, excludeAppointmentID uint) (int, error) {
+	predictedWaitMinutes := 0
+	if technicianID != nil && *technicianID > 0 {
+		availability, err := evaluateBookingTechnicianAvailability(tx, merchant, *technicianID, appointmentStart, occupiedMinutes, excludeAppointmentID)
+		if err != nil {
+			return 0, err
+		}
+		if availability.State == appointmentAvailabilityUnavailable {
+			return 0, apiErr{status: http.StatusBadRequest, msg: availability.Reason}
+		}
+		predictedWaitMinutes = availability.PredictedWaitMinutes
+	} else if merchant.SupportCustomerServiceMode {
+		var technicians []models.Technician
+		if err := tx.
+			Joins("JOIN service_roles sr ON sr.id = technicians.service_role_id").
+			Where("technicians.merchant_id = ? AND technicians.is_active = ? AND (sr.role_type IS NULL OR sr.role_type = '' OR sr.role_type <> ?)", merchant.ID, true, "operational").
+			Find(&technicians).Error; err != nil {
+			return 0, err
+		}
+		if len(technicians) == 0 {
+			return 0, apiErr{status: http.StatusBadRequest, msg: "当前无可预约客服"}
+		}
+		hasCandidate := false
+		for _, tech := range technicians {
+			availability, err := evaluateBookingTechnicianAvailability(tx, merchant, tech.ID, appointmentStart, occupiedMinutes, excludeAppointmentID)
+			if err != nil {
+				return 0, err
+			}
+			if availability.State == appointmentAvailabilityUnavailable {
+				continue
+			}
+			createsFragment, _, err := wouldCreateAppointmentFragments(tx, merchant, targetDate, appointmentStart, occupiedMinutes, &tech.ID, excludeAppointmentID)
+			if err != nil {
+				return 0, err
+			}
+			if createsFragment {
+				continue
+			}
+			hasCandidate = true
+			break
+		}
+		if !hasCandidate {
+			return 0, apiErr{status: http.StatusBadRequest, msg: "当前时段无可预约客服"}
+		}
+	} else {
+		conflicted, err := checkNonTechnicianAppointmentOverlap(tx, merchant.ID, appointmentStart, occupiedMinutes, excludeAppointmentID)
+		if err != nil {
+			return 0, err
+		}
+		if conflicted {
+			return 0, apiErr{status: http.StatusBadRequest, msg: "该时间段已被占用"}
+		}
+	}
+	createsFragment, fragmentReason, err := wouldCreateAppointmentFragments(tx, merchant, targetDate, appointmentStart, occupiedMinutes, technicianID, excludeAppointmentID)
+	if err != nil {
+		return 0, err
+	}
+	if createsFragment {
+		return 0, apiErr{status: http.StatusBadRequest, msg: fragmentReason}
+	}
+	return predictedWaitMinutes, nil
+}
+
+func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, date string, projectID uint, loc *time.Location, opts *availableTimeSlotsOptions) (gin.H, error) {
 	now := time.Now().In(loc)
 	serviceMinutes := 30
+	serviceGapMinutes := 3
 	if projectID > 0 {
 		var project models.MerchantProject
 		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ?", projectID, merchant.ID, true).First(&project).Error; err != nil {
 			return nil, apiErr{status: http.StatusBadRequest, msg: "无效的项目"}
 		}
 		serviceMinutes = project.Duration
+		serviceGapMinutes = project.ServiceGapMinutes
 		if serviceMinutes <= 0 {
 			return nil, apiErr{status: http.StatusBadRequest, msg: "项目时长无效"}
 		}
+	}
+	occupiedMinutes := projectBookingOccupiedMinutes(serviceMinutes, serviceGapMinutes)
+	excludeAppointmentID := uint(0)
+	if opts != nil {
+		excludeAppointmentID = opts.ExcludeAppointmentID
 	}
 
 	// 懒更新：自动取消该商户已超时(>=35分钟)但未核销的预约，避免继续占用时间段。
@@ -146,11 +379,6 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 			"status":      "canceled",
 			"canceled_at": now,
 		})
-
-	var appointments []models.Appointment
-	datePrefix := date + " %"
-	config.DB.Preload("User").Where("merchant_id = ? AND appointment_time LIKE ? AND status IN ('pending', 'confirmed')",
-		merchantID, datePrefix).Order("appointment_time ASC").Find(&appointments)
 
 	var technicians []models.Technician
 	if merchant.SupportCustomerServiceMode {
@@ -168,9 +396,10 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 	}
 
 	var allSlots []string
+	granularity := merchantAppointmentSlotGranularityMinutes(&merchant)
 	for _, it := range intervals {
-		latestStart := it.End.Add(-time.Duration(serviceMinutes) * time.Minute)
-		for t := it.Start; !t.After(latestStart); t = t.Add(time.Duration(serviceMinutes) * time.Minute) {
+		latestStart := it.End.Add(-time.Duration(occupiedMinutes) * time.Minute)
+		for t := it.Start; !t.After(latestStart); t = t.Add(time.Duration(granularity) * time.Minute) {
 			allSlots = append(allSlots, t.Format("2006-01-02 15:04:05"))
 		}
 	}
@@ -184,46 +413,59 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 
 	timeSlots := make([]appointmentTimeSlot, 0, len(allSlots))
 	for _, slot := range allSlots {
-		slotTime, _ := time.Parse("2006-01-02 15:04:05", slot)
+		slotTime, _ := time.ParseInLocation("2006-01-02 15:04:05", slot, loc)
 		available := true
 		userName := ""
 		availableTechIDs := make([]uint, 0)
 		candidates := make([]appointmentTechnicianCandidate, 0, len(technicians))
 
-		for _, apt := range appointments {
-			if apt.AppointmentTime == nil {
-				continue
-			}
-			aptTime := *apt.AppointmentTime
-			aptMinutes := getAppointmentServiceMinutes(merchant.ID, apt)
-			aptEnd := aptTime.Add(time.Duration(aptMinutes) * time.Minute)
-			slotEnd := slotTime.Add(time.Duration(serviceMinutes) * time.Minute)
-			if slotTime.Before(aptEnd) && aptTime.Before(slotEnd) {
-				if apt.TechnicianID == nil {
-					available = false
-					if apt.User.Nickname != "" {
-						userName = apt.User.Nickname
-					}
-					break
-				}
-			}
-		}
-
 		if available && len(allTechIDs) > 0 {
 			for _, tech := range technicians {
-				availability, err := evaluateBookingTechnicianAvailability(config.DB, merchant, tech.ID, slotTime, serviceMinutes, 0)
+				availability, err := evaluateBookingTechnicianAvailability(config.DB, merchant, tech.ID, slotTime, occupiedMinutes, excludeAppointmentID)
 				if err != nil {
 					log.Printf("evaluate booking availability failed: merchant=%d tech=%d slot=%s err=%v", merchant.ID, tech.ID, slot, err)
 					continue
 				}
+				createsFragment, fragmentReason, err := wouldCreateAppointmentFragments(config.DB, merchant, targetDate, slotTime, occupiedMinutes, &tech.ID, excludeAppointmentID)
+				if err != nil {
+					log.Printf("evaluate booking fragments failed: merchant=%d tech=%d slot=%s err=%v", merchant.ID, tech.ID, slot, err)
+					continue
+				}
+				reason := availability.Reason
+				state := availability.State
+				if createsFragment {
+					state = appointmentAvailabilityUnavailable
+					reason = fragmentReason
+				}
 				candidates = append(candidates, appointmentTechnicianCandidate{
 					TechnicianID:         tech.ID,
-					AvailabilityState:    string(availability.State),
+					AvailabilityState:    string(state),
 					PredictedWaitMinutes: availability.PredictedWaitMinutes,
-					AvailabilityReason:   availability.Reason,
+					AvailabilityReason:   reason,
 				})
-				if availability.State != appointmentAvailabilityUnavailable {
+				if state != appointmentAvailabilityUnavailable {
 					availableTechIDs = append(availableTechIDs, tech.ID)
+				}
+			}
+		}
+
+		if available && len(allTechIDs) == 0 {
+			conflicted, err := checkNonTechnicianAppointmentOverlap(config.DB, merchantID, slotTime, occupiedMinutes, excludeAppointmentID)
+			if err != nil {
+				log.Printf("check booking overlap failed: merchant=%d slot=%s err=%v", merchant.ID, slot, err)
+				continue
+			}
+			if conflicted {
+				available = false
+			}
+			if available {
+				createsFragment, _, err := wouldCreateAppointmentFragments(config.DB, merchant, targetDate, slotTime, occupiedMinutes, nil, excludeAppointmentID)
+				if err != nil {
+					log.Printf("evaluate booking fragments failed: merchant=%d slot=%s err=%v", merchant.ID, slot, err)
+					continue
+				}
+				if createsFragment {
+					available = false
 				}
 			}
 		}
@@ -920,10 +1162,13 @@ func CreateAppointment(c *gin.Context) {
 		return
 	}
 	serviceMinutes := 30
+	serviceGapMinutes := 3
 	if input.ProjectID != nil {
 		serviceMinutes = project.Duration
+		serviceGapMinutes = project.ServiceGapMinutes
 	}
-	serviceEnd := appointmentTime.Add(time.Duration(serviceMinutes) * time.Minute)
+	occupiedMinutes := projectBookingOccupiedMinutes(serviceMinutes, serviceGapMinutes)
+	serviceEnd := appointmentTime.Add(time.Duration(occupiedMinutes) * time.Minute)
 	if !isWithinBusinessIntervals(serviceEnd.Add(-1*time.Second), intervals) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "服务必须在营业时间内完成"})
 		return
@@ -942,16 +1187,11 @@ func CreateAppointment(c *gin.Context) {
 	// 预约创建必须做事务级校验：用户手选客服时，要在落库前重新检查“未来预约占产能”规则，
 	// 避免前端时段缓存与并发提交之间出现超卖或越过最大等待上限。
 	if err := config.DB.Transaction(func(tx *gorm.DB) error {
-		if input.TechnicianID != nil && *input.TechnicianID > 0 {
-			availability, err := evaluateBookingTechnicianAvailability(tx, merchant, *input.TechnicianID, appointmentTime, serviceMinutes, 0)
-			if err != nil {
-				return err
-			}
-			if availability.State == appointmentAvailabilityUnavailable {
-				return apiErr{status: http.StatusBadRequest, msg: availability.Reason}
-			}
-			appointment.PredictedWaitMinutes = availability.PredictedWaitMinutes
+		predictedWaitMinutes, err := validateAppointmentPlacementRules(tx, merchant, targetDate, appointmentTime, occupiedMinutes, input.TechnicianID, 0)
+		if err != nil {
+			return err
 		}
+		appointment.PredictedWaitMinutes = predictedWaitMinutes
 		if err := tx.Create(&appointment).Error; err != nil {
 			return err
 		}
@@ -1009,11 +1249,40 @@ func ConfirmAppointment(c *gin.Context) {
 		return
 	}
 
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, appointment.MerchantID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "商户不存在"})
+		return
+	}
+	occupiedMinutes := getAppointmentOccupiedMinutes(appointment.MerchantID, appointment)
+	targetDate := appointment.AppointmentTime.In(appointmentLocation())
 	confirmedAt := time.Now()
-	config.DB.Model(&appointment).Updates(map[string]interface{}{
-		"status":       "confirmed",
-		"confirmed_at": &confirmedAt,
-	})
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		var current models.Appointment
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, appointment.ID).Error; err != nil {
+			return err
+		}
+		if current.Status != "pending" {
+			return apiErr{status: http.StatusBadRequest, msg: "只能确认待处理的预约"}
+		}
+		predictedWaitMinutes, err := validateAppointmentPlacementRules(tx, merchant, targetDate, *current.AppointmentTime, occupiedMinutes, current.TechnicianID, current.ID)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&current).Updates(map[string]interface{}{
+			"status":                 "confirmed",
+			"confirmed_at":           &confirmedAt,
+			"predicted_wait_minutes": predictedWaitMinutes,
+		}).Error
+	}); err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "确认预约失败"})
+		return
+	}
 	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Technician").Preload("Compensations", appointmentCompensationPreload).Preload("RescheduleRequests", appointmentRescheduleRequestPreload).First(&appointment, id)
 	appointment.Status = normalizeAppointmentStatus(appointment.Status)
 	// 入预约队列（内存队列）：仅 confirmed 才进入预约排队
@@ -1178,6 +1447,7 @@ func executeAppointmentReschedule(tx *gorm.DB, appointmentID uint, proposal mode
 
 	projectID := current.ProjectID
 	serviceMinutes := getAppointmentServiceMinutes(current.MerchantID, current)
+	serviceGapMinutes := getAppointmentGapMinutes(current.MerchantID, current)
 	if proposal.NewProjectID != nil && *proposal.NewProjectID > 0 {
 		var project models.MerchantProject
 		if err := tx.Where("id = ? AND merchant_id = ? AND is_active = ?", *proposal.NewProjectID, current.MerchantID, true).First(&project).Error; err != nil {
@@ -1185,10 +1455,12 @@ func executeAppointmentReschedule(tx *gorm.DB, appointmentID uint, proposal mode
 		}
 		projectID = proposal.NewProjectID
 		serviceMinutes = project.Duration
+		serviceGapMinutes = project.ServiceGapMinutes
 	}
 	if serviceMinutes <= 0 {
 		serviceMinutes = 30
 	}
+	occupiedMinutes := projectBookingOccupiedMinutes(serviceMinutes, serviceGapMinutes)
 
 	technicianID := current.TechnicianID
 	if proposal.NewTechnicianID != nil {
@@ -1199,18 +1471,11 @@ func executeAppointmentReschedule(tx *gorm.DB, appointmentID uint, proposal mode
 		}
 	}
 
-	if technicianID != nil && *technicianID > 0 {
-		availability, err := evaluateBookingTechnicianAvailability(tx, merchant, *technicianID, *proposal.NewAppointmentTime, serviceMinutes, current.ID)
-		if err != nil {
-			return oldAppointment, newAppointment, err
-		}
-		if availability.State == appointmentAvailabilityUnavailable {
-			return oldAppointment, newAppointment, apiErr{status: http.StatusBadRequest, msg: "新时间下该客服不可预约"}
-		}
-		current.PredictedWaitMinutes = availability.PredictedWaitMinutes
-	} else {
-		current.PredictedWaitMinutes = 0
+	predictedWaitMinutes, err := validateAppointmentPlacementRules(tx, merchant, proposal.NewAppointmentTime.In(appointmentLocation()), *proposal.NewAppointmentTime, occupiedMinutes, technicianID, current.ID)
+	if err != nil {
+		return oldAppointment, newAppointment, err
 	}
+	current.PredictedWaitMinutes = predictedWaitMinutes
 
 	if normalizeAppointmentStatus(current.Status) == "arrived" {
 		// 到店后接受改签，需要先回滚未开始服务的占用，再关闭旧预约。
@@ -1324,7 +1589,7 @@ func GetAppointmentRescheduleSlots(c *gin.Context) {
 	if appointment.ProjectID != nil {
 		projectID = *appointment.ProjectID
 	}
-	payload, err := buildAvailableTimeSlotsPayload(merchant, merchant.ID, date, projectID, loc)
+	payload, err := buildAvailableTimeSlotsPayload(merchant, merchant.ID, date, projectID, loc, &availableTimeSlotsOptions{ExcludeAppointmentID: appointment.ID})
 	if err != nil {
 		var ae apiErr
 		if errors.As(err, &ae) {
@@ -1378,6 +1643,7 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 		return
 	}
 	serviceMinutes := getAppointmentServiceMinutes(appointment.MerchantID, *appointment)
+	serviceGapMinutes := getAppointmentGapMinutes(appointment.MerchantID, *appointment)
 	if input.ProjectID != nil && *input.ProjectID > 0 {
 		var project models.MerchantProject
 		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ?", *input.ProjectID, appointment.MerchantID, true).First(&project).Error; err != nil {
@@ -1385,17 +1651,17 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 			return
 		}
 		serviceMinutes = project.Duration
+		serviceGapMinutes = project.ServiceGapMinutes
 	}
-	if input.TechnicianID != nil && *input.TechnicianID > 0 {
-		availability, err := evaluateBookingTechnicianAvailability(config.DB, merchant, *input.TechnicianID, newAppointmentTime, serviceMinutes, appointment.ID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "校验改签客服失败"})
+	occupiedMinutes := projectBookingOccupiedMinutes(serviceMinutes, serviceGapMinutes)
+	if _, err := validateAppointmentPlacementRules(config.DB, merchant, newAppointmentTime.In(appointmentLocation()), newAppointmentTime, occupiedMinutes, input.TechnicianID, appointment.ID); err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
 			return
 		}
-		if availability.State == appointmentAvailabilityUnavailable {
-			c.JSON(http.StatusBadRequest, gin.H{"error": availability.Reason})
-			return
-		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "校验改签时间失败"})
+		return
 	}
 
 	actorType, actorID := getAppointmentActor(c)
@@ -1988,7 +2254,7 @@ func GetAvailableTimeSlots(c *gin.Context) {
 		}
 	}
 
-	payload, err := buildAvailableTimeSlotsPayload(merchant, merchantID, date, projectID, loc)
+	payload, err := buildAvailableTimeSlotsPayload(merchant, merchantID, date, projectID, loc, nil)
 	if err != nil {
 		var ae apiErr
 		if errors.As(err, &ae) {

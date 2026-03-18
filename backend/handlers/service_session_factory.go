@@ -69,7 +69,12 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 
 	if merchant.SupportCustomerServiceMode && source.Appointment != nil && source.Appointment.TechnicianID != nil && *source.Appointment.TechnicianID > 0 {
 		techID := *source.Appointment.TechnicianID
-		availability, err := evaluateWalkInTechnicianAvailability(tx, merchant, techID, now, durationMinutes)
+		occupiedMinutes := projectBookingOccupiedMinutes(durationMinutes, 3)
+		if verifyCode.ProjectID != nil {
+			_, gapMinutes := resolveProjectBookingConfig(tx, merchant.ID, verifyCode.ProjectID, durationMinutes, 3)
+			occupiedMinutes = projectBookingOccupiedMinutes(durationMinutes, gapMinutes)
+		}
+		availability, err := evaluateWalkInTechnicianAvailability(tx, merchant, techID, now, occupiedMinutes)
 		if err != nil {
 			return models.ServiceSession{}, "", false, err
 		}
@@ -115,7 +120,12 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 	}
 	if source.Appointment != nil {
 		if status == models.WithCSPrefix("appointment_waiting") {
-			readyAt := appointmentPredictedFinishAt(now, durationMinutes, &merchant)
+			occupiedMinutes := projectBookingOccupiedMinutes(durationMinutes, 3)
+			if verifyCode.ProjectID != nil {
+				_, gapMinutes := resolveProjectBookingConfig(tx, merchant.ID, verifyCode.ProjectID, durationMinutes, 3)
+				occupiedMinutes = projectBookingOccupiedMinutes(durationMinutes, gapMinutes)
+			}
+			readyAt := appointmentPredictedFinishAt(now, occupiedMinutes, &merchant)
 			session.PredictedReadyAt = &readyAt
 			session.PredictedAppointmentDelayMinutes = predictedAppointmentDelayMinutes
 		}

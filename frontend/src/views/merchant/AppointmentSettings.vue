@@ -83,6 +83,22 @@
             </div>
 
             <div>
+              <label class="text-sm font-medium text-gray-700 mb-2 block">预约时段展示粒度</label>
+              <p class="text-xs text-gray-500 mb-2">用户预约时展示的时间网格，建议使用 15 分钟</p>
+              <div class="relative">
+                <input
+                  v-model.number="form.appointment_slot_granularity_minutes"
+                  type="number"
+                  min="5"
+                  max="60"
+                  step="5"
+                  class="w-full px-3 py-2 pr-14 border border-gray-200 rounded-lg focus:outline-none focus:border-primary text-sm"
+                />
+                <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
+              </div>
+            </div>
+
+            <div>
               <label class="text-sm font-medium text-gray-700 mb-2 block">昨天预约可改签到今天/明天阈值</label>
               <p class="text-xs text-gray-500 mb-2">仅影响昨天预约在今天的补救改签；超过该阈值时可改到今天或明天</p>
               <div class="relative">
@@ -153,6 +169,7 @@ const form = ref({
   appointment_grace_window_minutes: 15,
   appointment_max_wait_minutes: 15,
   appointment_prediction_buffer_minutes: 5,
+  appointment_slot_granularity_minutes: 15,
   appointment_reschedule_same_or_next_day_threshold_minutes: 180,
   appointment_reschedule_next_day_only_threshold_minutes: 90
 })
@@ -163,6 +180,7 @@ const buildSnapshot = () => JSON.stringify({
   appointment_grace_window_minutes: Number(form.value.appointment_grace_window_minutes ?? 0),
   appointment_max_wait_minutes: Number(form.value.appointment_max_wait_minutes ?? 0),
   appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes ?? 0),
+  appointment_slot_granularity_minutes: Number(form.value.appointment_slot_granularity_minutes ?? 0),
   appointment_reschedule_same_or_next_day_threshold_minutes: Number(form.value.appointment_reschedule_same_or_next_day_threshold_minutes ?? 0),
   appointment_reschedule_next_day_only_threshold_minutes: Number(form.value.appointment_reschedule_next_day_only_threshold_minutes ?? 0)
 })
@@ -197,6 +215,7 @@ const load = async () => {
       appointment_grace_window_minutes: Number(m.appointment_grace_window_minutes ?? 15),
       appointment_max_wait_minutes: Number(m.appointment_max_wait_minutes ?? 15),
       appointment_prediction_buffer_minutes: Number(m.appointment_prediction_buffer_minutes ?? 5),
+      appointment_slot_granularity_minutes: Number(m.appointment_slot_granularity_minutes ?? 15),
       appointment_reschedule_same_or_next_day_threshold_minutes: Number(m.appointment_reschedule_same_or_next_day_threshold_minutes ?? 180),
       appointment_reschedule_next_day_only_threshold_minutes: Number(m.appointment_reschedule_next_day_only_threshold_minutes ?? 90)
     }
@@ -217,6 +236,7 @@ const save = async () => {
       appointment_grace_window_minutes: Number(form.value.appointment_grace_window_minutes || 0),
       appointment_max_wait_minutes: Number(form.value.appointment_max_wait_minutes || 0),
       appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes || 0),
+      appointment_slot_granularity_minutes: Number(form.value.appointment_slot_granularity_minutes || 0),
       appointment_reschedule_same_or_next_day_threshold_minutes: Number(form.value.appointment_reschedule_same_or_next_day_threshold_minutes || 0),
       appointment_reschedule_next_day_only_threshold_minutes: Number(form.value.appointment_reschedule_next_day_only_threshold_minutes || 0)
     })

@@ -428,8 +428,10 @@ func UserListAvailableTechnicians(c *gin.Context) {
 		if serviceMinutes <= 0 {
 			serviceMinutes = 30
 		}
+		_, gapMinutes := resolveProjectBookingConfig(config.DB, merchant.ID, s.ProjectID, serviceMinutes, 3)
+		occupiedMinutes := projectBookingOccupiedMinutes(serviceMinutes, gapMinutes)
 		for _, item := range list {
-			availability, err := evaluateWalkInTechnicianAvailability(config.DB, merchant, item.TechnicianID, now, serviceMinutes)
+			availability, err := evaluateWalkInTechnicianAvailability(config.DB, merchant, item.TechnicianID, now, occupiedMinutes)
 			if err != nil {
 				continue
 			}
@@ -512,7 +514,9 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			if serviceMinutes <= 0 {
 				serviceMinutes = 30
 			}
-			availability, err := evaluateWalkInTechnicianAvailability(tx, merchant, input.TechnicianID, now, serviceMinutes)
+			_, gapMinutes := resolveProjectBookingConfig(tx, merchant.ID, s.ProjectID, serviceMinutes, 3)
+			occupiedMinutes := projectBookingOccupiedMinutes(serviceMinutes, gapMinutes)
+			availability, err := evaluateWalkInTechnicianAvailability(tx, merchant, input.TechnicianID, now, occupiedMinutes)
 			if err != nil {
 				return err
 			}

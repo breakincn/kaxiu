@@ -31,6 +31,7 @@ func CreateMerchantProject(c *gin.Context) {
 	var input struct {
 		Name              string  `json:"name" binding:"required"`
 		Duration          int     `json:"duration" binding:"required,min=1"`
+		ServiceGapMinutes *int    `json:"service_gap_minutes"`
 		StartDelaySeconds *int    `json:"start_delay_seconds"`
 		Price             float64 `json:"price"`
 		Description       string  `json:"description"`
@@ -63,6 +64,14 @@ func CreateMerchantProject(c *gin.Context) {
 		}
 		startDelaySeconds = *input.StartDelaySeconds
 	}
+	serviceGapMinutes := 3
+	if input.ServiceGapMinutes != nil {
+		if *input.ServiceGapMinutes < 0 || *input.ServiceGapMinutes > 60 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "服务间歇时间范围应为 0-60 分钟"})
+			return
+		}
+		serviceGapMinutes = *input.ServiceGapMinutes
+	}
 
 	isActive := true
 	if input.IsActive != nil {
@@ -77,6 +86,7 @@ func CreateMerchantProject(c *gin.Context) {
 		MerchantID:        merchantID,
 		Name:              name,
 		Duration:          input.Duration,
+		ServiceGapMinutes: serviceGapMinutes,
 		StartDelaySeconds: startDelaySeconds,
 		Price:             input.Price,
 		Description:       strings.TrimSpace(input.Description),
@@ -110,6 +120,7 @@ func UpdateMerchantProject(c *gin.Context) {
 	var input struct {
 		Name              *string  `json:"name"`
 		Duration          *int     `json:"duration"`
+		ServiceGapMinutes *int     `json:"service_gap_minutes"`
 		StartDelaySeconds *int     `json:"start_delay_seconds"`
 		Price             *float64 `json:"price"`
 		Description       *string  `json:"description"`
@@ -143,6 +154,13 @@ func UpdateMerchantProject(c *gin.Context) {
 			return
 		}
 		updates["start_delay_seconds"] = *input.StartDelaySeconds
+	}
+	if input.ServiceGapMinutes != nil {
+		if *input.ServiceGapMinutes < 0 || *input.ServiceGapMinutes > 60 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "服务间歇时间范围应为 0-60 分钟"})
+			return
+		}
+		updates["service_gap_minutes"] = *input.ServiceGapMinutes
 	}
 	if input.Price != nil {
 		if *input.Price < 0 {

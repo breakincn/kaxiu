@@ -27,12 +27,12 @@ const (
 )
 
 type appointmentAvailability struct {
-	State                appointmentAvailabilityState `json:"availability_state"`
-	PredictedWaitMinutes int                          `json:"predicted_wait_minutes"`
-	Reason               string                       `json:"availability_reason"`
-	NextAppointmentID    *uint                        `json:"next_appointment_id,omitempty"`
-	AlternativeWaitMinutes int                        `json:"alternative_wait_minutes,omitempty"`
-	DecisionMode         string                       `json:"decision_mode,omitempty"`
+	State                  appointmentAvailabilityState `json:"availability_state"`
+	PredictedWaitMinutes   int                          `json:"predicted_wait_minutes"`
+	Reason                 string                       `json:"availability_reason"`
+	NextAppointmentID      *uint                        `json:"next_appointment_id,omitempty"`
+	AlternativeWaitMinutes int                          `json:"alternative_wait_minutes,omitempty"`
+	DecisionMode           string                       `json:"decision_mode,omitempty"`
 }
 
 type appointmentRescheduleRuleMode string
@@ -44,13 +44,13 @@ const (
 )
 
 type appointmentRescheduleEligibility struct {
-	Allowed             bool                          `json:"allowed"`
-	Reason              string                        `json:"reason"`
-	RuleMode            appointmentRescheduleRuleMode `json:"rule_mode"`
-	AllowedDates        []string                      `json:"allowed_dates"`
-	DefaultDate         string                        `json:"default_date"`
-	MinutesUntilAnchor  int                           `json:"minutes_until_anchor"`
-	ProtectionConsumed  bool                          `json:"protection_consumed"`
+	Allowed            bool                          `json:"allowed"`
+	Reason             string                        `json:"reason"`
+	RuleMode           appointmentRescheduleRuleMode `json:"rule_mode"`
+	AllowedDates       []string                      `json:"allowed_dates"`
+	DefaultDate        string                        `json:"default_date"`
+	MinutesUntilAnchor int                           `json:"minutes_until_anchor"`
+	ProtectionConsumed bool                          `json:"protection_consumed"`
 }
 
 func normalizeAppointmentStatus(status string) string {
@@ -91,6 +91,13 @@ func merchantAppointmentPredictionBufferMinutes(m *models.Merchant) int {
 	return 5
 }
 
+func merchantAppointmentSlotGranularityMinutes(m *models.Merchant) int {
+	if m != nil && m.AppointmentSlotGranularityMinutes > 0 {
+		return normalizeAppointmentSlotGranularityMinutes(m.AppointmentSlotGranularityMinutes)
+	}
+	return 15
+}
+
 func merchantAppointmentRescheduleSameOrNextDayThresholdMinutes(m *models.Merchant) int {
 	if m != nil && m.AppointmentRescheduleSameOrNextDayThresholdMinutes > 0 {
 		return m.AppointmentRescheduleSameOrNextDayThresholdMinutes
@@ -106,15 +113,15 @@ func merchantAppointmentRescheduleNextDayOnlyThresholdMinutes(m *models.Merchant
 }
 
 func appointmentProtectedStatuses() []string {
-	return []string{"confirmed", "arrived", "finished", "completed"}
+	return []string{"pending", "confirmed", "arrived", "finished", "completed"}
 }
 
-func appointmentPredictedFinishAt(start time.Time, serviceMinutes int, merchant *models.Merchant) time.Time {
-	if serviceMinutes <= 0 {
-		serviceMinutes = 30
+func appointmentPredictedFinishAt(start time.Time, occupiedMinutes int, merchant *models.Merchant) time.Time {
+	if occupiedMinutes <= 0 {
+		occupiedMinutes = projectBookingOccupiedMinutes(30, 3)
 	}
 	// 预测公式对前后台保持一致：项目标准时长 + 固定收尾缓冲 + 商户可配置的风险缓冲。
-	totalMinutes := serviceMinutes + appointmentCleanupBufferMinutes + merchantAppointmentPredictionBufferMinutes(merchant)
+	totalMinutes := occupiedMinutes + merchantAppointmentPredictionBufferMinutes(merchant)
 	return start.Add(time.Duration(totalMinutes) * time.Minute)
 }
 
@@ -158,6 +165,11 @@ func getProjectDurationForAppointment(tx *gorm.DB, merchantID uint, projectID *u
 	return p.Duration
 }
 
+func getProjectOccupiedMinutesForAppointment(tx *gorm.DB, merchantID uint, projectID *uint) int {
+	durationMinutes, gapMinutes := resolveProjectBookingConfig(tx, merchantID, projectID, 30, 3)
+	return projectBookingOccupiedMinutes(durationMinutes, gapMinutes)
+}
+
 func loadProtectedAppointmentsForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, start, end time.Time, excludeAppointmentID uint) ([]models.Appointment, error) {
 	if tx == nil || merchantID == 0 || technicianID == 0 {
 		return nil, nil
@@ -176,7 +188,7 @@ func loadProtectedAppointmentsForTechnician(tx *gorm.DB, merchantID uint, techni
 	return list, nil
 }
 
-func evaluateBookingTechnicianAvailability(tx *gorm.DB, merchant models.Merchant, technicianID uint, appointmentStart time.Time, projectDuration int, excludeAppointmentID uint) (appointmentAvailability, error) {
+func evaluateBookingTechnicianAvailability(tx *gorm.DB, merchant models.Merchant, technicianID uint, appointmentStart time.Time, projectOccupiedMinutes int, excludeAppointmentID uint) (appointmentAvailability, error) {
 	out := appointmentAvailability{State: appointmentAvailabilitySafe}
 	if technicianID == 0 {
 		return out, nil
@@ -189,14 +201,14 @@ func evaluateBookingTechnicianAvailability(tx *gorm.DB, merchant models.Merchant
 		return out, err
 	}
 
-	newFinish := appointmentPredictedFinishAt(appointmentStart, projectDuration, &merchant)
+	newFinish := appointmentPredictedFinishAt(appointmentStart, projectOccupiedMinutes, &merchant)
 	maxWait := merchantAppointmentMaxWaitMinutes(&merchant)
 	for _, appt := range existing {
 		if appt.AppointmentTime == nil {
 			continue
 		}
 		existingStart := *appt.AppointmentTime
-		existingFinish := appointmentPredictedFinishAt(existingStart, getAppointmentServiceMinutes(merchant.ID, appt), &merchant)
+		existingFinish := appointmentPredictedFinishAt(existingStart, getAppointmentOccupiedMinutes(merchant.ID, appt), &merchant)
 
 		if existingStart.Before(appointmentStart) {
 			waitMinutes := int(math.Ceil(existingFinish.Sub(appointmentStart).Minutes()))
@@ -293,7 +305,7 @@ func earliestAlternativeTechnicianWaitMinutes(tx *gorm.DB, merchant models.Merch
 	return best, found, nil
 }
 
-func evaluateWalkInTechnicianAvailability(tx *gorm.DB, merchant models.Merchant, technicianID uint, walkInStart time.Time, projectDuration int) (appointmentAvailability, error) {
+func evaluateWalkInTechnicianAvailability(tx *gorm.DB, merchant models.Merchant, technicianID uint, walkInStart time.Time, projectOccupiedMinutes int) (appointmentAvailability, error) {
 	out := appointmentAvailability{State: appointmentAvailabilitySafe}
 	if tx == nil || technicianID == 0 {
 		return out, nil
@@ -314,7 +326,7 @@ func evaluateWalkInTechnicianAvailability(tx *gorm.DB, merchant models.Merchant,
 		return out, nil
 	}
 
-	predictedFinish := appointmentPredictedFinishAt(walkInStart, projectDuration, &merchant)
+	predictedFinish := appointmentPredictedFinishAt(walkInStart, projectOccupiedMinutes, &merchant)
 	delayReserved := int(math.Ceil(predictedFinish.Sub(*next.AppointmentTime).Minutes()))
 	if delayReserved < 0 {
 		delayReserved = 0
