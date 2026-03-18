@@ -589,7 +589,15 @@ const hasAppointmentProjects = computed(() => {
 })
 
 const selectedAppointmentTimeText = computed(() => {
-  return selectedTimeSlot.value ? formatSlotTime(selectedTimeSlot.value) : '-'
+  if (!selectedTimeSlot.value) return '-'
+  const d = new Date(selectedTimeSlot.value)
+  if (Number.isNaN(d.getTime())) return String(selectedTimeSlot.value).slice(0, 16).replace('T', ' ')
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`
 })
 
 const displayedTimeSlots = computed(() => {
