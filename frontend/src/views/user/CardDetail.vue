@@ -143,6 +143,13 @@
           <p class="text-xs text-gray-400">* 排队进度由商户服务确认后即时更新</p>
           <div class="space-y-2 mt-3">
             <button
+              v-if="showAppointmentArrivalVerifyButton"
+              @click="openAppointmentArrivalVerifyFlow"
+              class="w-full py-2.5 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark transition-colors"
+            >
+              到店核销
+            </button>
+            <button
               v-if="showUserRescheduleAction"
               @click="openUserRescheduleModal"
               class="w-full py-2.5 border-2 border-primary text-primary font-medium rounded-lg hover:bg-primary-light transition-colors"
@@ -571,6 +578,61 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showProjectModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[55]" @click.self="closeProjectModal">
+      <div class="bg-white rounded-xl w-[90%] max-w-sm overflow-hidden">
+        <div class="px-4 py-3 border-b flex items-center justify-between">
+          <div class="font-medium text-gray-800">请选择项目</div>
+          <button class="text-gray-400" @click="closeProjectModal">×</button>
+        </div>
+        <div class="p-4 max-h-[60vh] overflow-y-auto">
+          <div v-if="!card?.projects || card.projects.length === 0" class="text-center text-gray-400 py-6">暂无可选项目</div>
+          <label v-for="p in card.projects" :key="p.id" class="flex items-center gap-3 py-2">
+            <input type="radio" name="verify_project_detail" :value="p.id" v-model="selectedProjectId" />
+            <div class="flex-1">
+              <div class="text-gray-800">{{ p.name }}</div>
+              <div v-if="p.duration" class="text-gray-400 text-xs">时长 {{ p.duration }} 分钟</div>
+            </div>
+          </label>
+        </div>
+        <div class="px-4 py-3 border-t flex gap-3">
+          <button class="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600" @click="closeProjectModal">取消</button>
+          <button class="flex-1 py-2.5 rounded-lg bg-primary text-white disabled:opacity-50" :disabled="!selectedProjectId || generating" @click="confirmProjectAndGenerate">确认</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showVerifyCodeModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[55]" @click.self="closeVerifyCodeModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-lg overflow-hidden">
+        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
+          <h3 class="font-medium text-lg">到店出示核销码</h3>
+          <button @click="closeVerifyCodeModal" class="text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="px-5 py-5">
+          <div class="text-center">
+            <div class="text-gray-800 font-medium">{{ card?.merchant?.name || '商户' }}</div>
+            <div class="text-gray-500 text-sm mt-1">{{ card?.card_type || '' }}</div>
+          </div>
+          <div class="mt-2 text-center text-gray-600 text-sm">
+            请向工作人员出示此码，由工作人员扫码完成到店核销
+          </div>
+          <div v-if="verifyQrDataUrl" class="mt-4 flex justify-center">
+            <img :src="verifyQrDataUrl" alt="核销二维码" class="w-56 h-56" />
+          </div>
+          <div v-if="verifyCodeProject" class="text-center text-gray-800 text-sm mt-3 font-medium">
+            {{ verifyCodeProject.name }}
+            <span v-if="verifyCodeProject.duration" class="text-gray-500">（{{ verifyCodeProject.duration }}分钟）</span>
+          </div>
+          <p v-if="codeExpireTime" class="text-center text-gray-400 text-sm mt-2">
+            有效期至 {{ codeExpireTime }}
+          </p>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -603,6 +665,7 @@ const notices = ref([])
 const appointment = ref(null)
 const queueBefore = ref(0)
 const estimatedMinutes = ref(0)
+const canArriveNow = ref(false)
 const countdown = ref(0)
 const usageRecordsCollapsed = ref(false)
 const visibleUsageCount = ref(10)
@@ -614,6 +677,7 @@ const codeExpireTime = ref('')
 const generating = ref(false)
 const verifyQrDataUrl = ref('')
 const verifyCodeProject = ref(null) // 当前核销码对应的项目
+const showVerifyCodeModal = ref(false)
 let verifyExpireTimer = null
 
 let verifyStatusPollTimer = null
@@ -976,6 +1040,7 @@ const checkVerifyStatusAndMaybeJump = async () => {
     if (used && supportRoom && nextStep === 'room_select' && sessionId) {
       hasJumpedToRoomSelect.value = true
       stopVerifyStatusPoll()
+      closeVerifyCodeModal()
       router.push({ path: `/user/service-sessions/${sessionId}`, query: { next_step: 'room_select' } })
       return
     }
@@ -988,6 +1053,7 @@ const checkVerifyStatusAndMaybeJump = async () => {
       } catch (_) {
         // ignore
       }
+      closeVerifyCodeModal()
       verifyCode.value = ''
       codeExpireTime.value = ''
       verifyQrDataUrl.value = ''
@@ -2665,6 +2731,7 @@ const fetchAppointment = async () => {
       appointment.value = data.appointment
       queueBefore.value = data.queue_before || 0
       estimatedMinutes.value = data.estimated_minutes || 0
+      canArriveNow.value = Boolean(data.can_arrive_now)
       console.log('预约信息已设置:', appointment.value)
       // 启动倒计时
       startCountdownTimer()
@@ -2678,10 +2745,12 @@ const fetchAppointment = async () => {
     appointment.value = null
     queueBefore.value = 0
     estimatedMinutes.value = 0
+    canArriveNow.value = false
     stopCountdownTimer()
   } catch (err) {
     console.error('获取预约信息失败:', err)
     console.error('错误详情:', err.response?.data)
+    canArriveNow.value = false
   }
 }
 
@@ -2829,6 +2898,10 @@ const closeProjectModal = () => {
   showProjectModal.value = false
 }
 
+const closeVerifyCodeModal = () => {
+  showVerifyCodeModal.value = false
+}
+
 const getUsageProjectText = (usage) => {
   const pFromUsage = usage?.project
   if (pFromUsage && pFromUsage.name) {
@@ -2890,6 +2963,7 @@ const confirmProjectAndGenerate = async () => {
   try {
     await doGenerateVerifyCode(Number(selectedProjectId.value))
     showProjectModal.value = false
+    showVerifyCodeModal.value = true
   } catch (err) {
     alert(err.response?.data?.error || '生成核销码失败')
   } finally {
@@ -2911,6 +2985,7 @@ const generateCode = async () => {
   try {
     const onlyProjectId = projects.length === 1 ? projects[0].id : null
     await doGenerateVerifyCode(onlyProjectId)
+    showVerifyCodeModal.value = true
   } catch (err) {
     alert(err.response?.data?.error || '生成核销码失败')
   } finally {
@@ -3236,17 +3311,35 @@ const shouldShowVerifyCode = () => {
   }
   
   // 如果有预约，判断条件
-  // 1. 预约状态必须是已确认(confirmed)
-  // 2. 当前时间距离预约时间小于等于5分钟（即倒计时 <= 300秒 且 > -60秒）
+  // 预约到店核销统一以后端返回的 can_arrive_now 为准，
+  // 这样能复用预约保护窗口与宽限时间判断，不再依赖前端本地倒计时硬编码。
   if (appointment.value.status === 'confirmed') {
-    // countdown.value > 0 表示还没到预约时间
-    // countdown.value <= 300 表示距离预约时间小于等于5分钟
-    // countdown.value > -60 表示还没有超过预约时间1分钟
-    return countdown.value <= 300 && countdown.value > -60
+    return canArriveNow.value
   }
   
   // 其他状态（pending, finished, canceled）不显示核销码
   return false
+}
+
+const showAppointmentArrivalVerifyButton = computed(() => {
+  return Boolean(appointment.value && appointment.value.status === 'confirmed' && shouldShowVerifyCode())
+})
+
+const openAppointmentArrivalVerifyFlow = async () => {
+  if (!showAppointmentArrivalVerifyButton.value || generating.value) return
+  if (appointment.value?.project_id) {
+    generating.value = true
+    try {
+      await doGenerateVerifyCode(Number(appointment.value.project_id))
+      showVerifyCodeModal.value = true
+    } catch (err) {
+      alert(err.response?.data?.error || '生成核销码失败')
+    } finally {
+      generating.value = false
+    }
+    return
+  }
+  await generateCode()
 }
 
 // 获取商家地址
