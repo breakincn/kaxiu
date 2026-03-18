@@ -1296,6 +1296,9 @@
             </button>
           </div>
         </div>
+        <div v-if="selectedAppointmentRescheduleTechnicianText" class="mt-3 rounded-lg bg-primary-light text-primary border border-primary/10 px-3 py-2 text-sm">
+          已选客服：{{ selectedAppointmentRescheduleTechnicianText }}
+        </div>
         <div class="mt-3">
           <div class="text-sm text-gray-600 mb-1">改签原因</div>
           <textarea v-model="appointmentRescheduleForm.reason" rows="3" class="w-full px-4 py-3 border border-gray-200 rounded-lg" placeholder="例如：客户主动改到明天下午"></textarea>
@@ -2126,6 +2129,7 @@ const appointmentRescheduleEligibility = ref(null)
 const appointmentRescheduleLoading = ref(false)
 const appointmentRescheduleSubmitting = ref(false)
 const appointmentRescheduleSlots = ref([])
+const appointmentRescheduleTechnicians = ref([])
 const selectedAppointmentRescheduleTime = ref('')
 const appointmentRescheduleDateMin = computed(() => {
   const dates = appointmentRescheduleEligibility.value?.allowed_dates || []
@@ -2157,12 +2161,26 @@ const appointmentRescheduleDateHint = computed(() => {
 const selectedAppointmentRescheduleCandidates = computed(() => {
   const slot = (appointmentRescheduleSlots.value || []).find(item => item.time === selectedAppointmentRescheduleTime.value)
   const candidates = slot?.technician_candidates || []
+  const byId = new Map((appointmentRescheduleTechnicians.value || []).map(item => [Number(item.id || 0), item]))
   return candidates.map(item => ({
     technician_id: Number(item.technician_id || 0),
-    label: item.availability_state === 'conditional'
-      ? `客服${item.technician_id}（预计等${item.predicted_wait_minutes || 0}分）`
-      : `客服${item.technician_id}`
+    label: (() => {
+      const technician = byId.get(Number(item.technician_id || 0))
+      const name = String(technician?.name || '').trim() || `客服${item.technician_id}`
+      return item.availability_state === 'conditional'
+        ? `${name}（预计等${item.predicted_wait_minutes || 0}分）`
+        : name
+    })()
   }))
+})
+const selectedAppointmentRescheduleTechnicianText = computed(() => {
+  const technicianId = Number(appointmentRescheduleForm.value.technician_id || 0)
+  if (!technicianId) return ''
+  const technician = (appointmentRescheduleTechnicians.value || []).find(item => Number(item.id || 0) === technicianId)
+  if (!technician) return ''
+  const name = String(technician.name || '').trim() || `客服${technicianId}`
+  const account = String(technician.account || '').trim()
+  return account ? `${name} - ${account}` : name
 })
 const appointmentRescheduleForm = ref({
   date: '',
@@ -4276,6 +4294,7 @@ const reassignAppointmentService = async (appt) => {
 
 const resetAppointmentRescheduleForm = () => {
   appointmentRescheduleEligibility.value = null
+  appointmentRescheduleTechnicians.value = []
   appointmentRescheduleForm.value = {
     date: '',
     technician_id: null,
@@ -4293,17 +4312,38 @@ const closeAppointmentRescheduleModal = () => {
   resetAppointmentRescheduleForm()
 }
 
+const buildAppointmentMinuteKey = (value) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  const parsed = new Date(raw)
+  if (!Number.isNaN(parsed.getTime())) {
+    const yyyy = parsed.getFullYear()
+    const mm = String(parsed.getMonth() + 1).padStart(2, '0')
+    const dd = String(parsed.getDate()).padStart(2, '0')
+    const hh = String(parsed.getHours()).padStart(2, '0')
+    const min = String(parsed.getMinutes()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}`
+  }
+  return raw.replace('T', ' ').slice(0, 16)
+}
+
 const fetchAppointmentRescheduleSlots = async () => {
   const appt = rescheduleAppointmentTarget.value
   if (!appt || !appointmentRescheduleForm.value.date) {
     appointmentRescheduleSlots.value = []
+    appointmentRescheduleTechnicians.value = []
     return
   }
   appointmentRescheduleLoading.value = true
   try {
     const res = await appointmentApi.getMerchantRescheduleSlots(appt.id, appointmentRescheduleForm.value.date)
     appointmentRescheduleEligibility.value = res.data?.data?.eligibility || appointmentRescheduleEligibility.value
-    const rawSlots = res.data?.data?.time_slots || []
+    appointmentRescheduleTechnicians.value = res.data?.data?.technicians || []
+    const currentMinute = buildAppointmentMinuteKey(appt?.appointment_time)
+    const rawSlots = (res.data?.data?.time_slots || []).filter(slot => {
+      const slotMinute = buildAppointmentMinuteKey(slot?.time)
+      return !currentMinute || slotMinute !== currentMinute
+    })
     appointmentRescheduleSlots.value = rawSlots.map(slot => ({
       ...slot,
       label: slot?.time ? String(slot.time).slice(11, 16) : ''
