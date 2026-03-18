@@ -282,8 +282,8 @@
                 <div class="mt-1">
                   提议时间：{{ formatDateTime(getLatestPendingRescheduleRequest(appt)?.new_appointment_time) }}
                 </div>
-                <div v-if="getLatestPendingRescheduleRequest(appt)?.reason" class="mt-1">
-                  原因：{{ getLatestPendingRescheduleRequest(appt)?.reason }}
+                <div v-if="getRescheduleRequestTechnicianText(getLatestPendingRescheduleRequest(appt))" class="mt-1">
+                  {{ getRescheduleRequestTechnicianText(getLatestPendingRescheduleRequest(appt)) }}
                 </div>
               </div>
               <div v-if="appt.resolution_note" class="mt-2 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 border border-gray-100">
@@ -2123,6 +2123,7 @@ const todayVerifyCount = ref(0)
 const pendingAppointments = ref(0)
 const pendingDirectPurchases = ref(0)
 const appointments = ref([])
+const appointmentTechnicianDirectory = ref([])
 const showAppointmentRescheduleModal = ref(false)
 const rescheduleAppointmentTarget = ref(null)
 const appointmentRescheduleEligibility = ref(null)
@@ -3642,13 +3643,18 @@ const fetchPendingDirectPurchases = async () => {
 const fetchAppointments = async () => {
   if (!merchant.value.support_appointment) {
     appointments.value = []
+    appointmentTechnicianDirectory.value = []
     return
   }
   try {
-    const res = await appointmentApi.getMerchantAppointments(merchantId.value)
-    appointments.value = (res.data.data || [])
+    const [appointmentsRes, techniciansRes] = await Promise.all([
+      appointmentApi.getMerchantAppointments(merchantId.value),
+      appointmentApi.getMerchantTechnicians(merchantId.value)
+    ])
+    appointments.value = (appointmentsRes.data.data || [])
       .filter(a => a.status !== 'canceled')
       .sort((a, b) => new Date(a?.appointment_time || 0).getTime() - new Date(b?.appointment_time || 0).getTime())
+    appointmentTechnicianDirectory.value = techniciansRes.data?.data || []
   } catch (err) {
     console.error('获取预约列表失败:', err)
   }
@@ -4215,6 +4221,16 @@ const getLatestPendingRescheduleRequest = (appt) => {
   return list.find(item => item?.status === 'pending_user' || item?.status === 'pending_merchant') || null
 }
 
+const getRescheduleRequestTechnicianText = (req) => {
+  const technicianId = Number(req?.new_technician_id || 0)
+  if (!technicianId) return ''
+  const technician = (appointmentTechnicianDirectory.value || []).find(item => Number(item?.id || 0) === technicianId)
+  if (!technician) return `客服：${technicianId}`
+  const name = String(technician?.name || '').trim() || `客服${technicianId}`
+  const account = String(technician?.account || '').trim()
+  return account ? `客服：${name} - ${account}` : `客服：${name}`
+}
+
 const isMerchantConfirmationPending = (appt) => {
   const req = getLatestPendingRescheduleRequest(appt)
   return req?.status === 'pending_merchant'
@@ -4315,16 +4331,13 @@ const closeAppointmentRescheduleModal = () => {
 const buildAppointmentMinuteKey = (value) => {
   const raw = String(value || '').trim()
   if (!raw) return ''
-  const parsed = new Date(raw)
-  if (!Number.isNaN(parsed.getTime())) {
-    const yyyy = parsed.getFullYear()
-    const mm = String(parsed.getMonth() + 1).padStart(2, '0')
-    const dd = String(parsed.getDate()).padStart(2, '0')
-    const hh = String(parsed.getHours()).padStart(2, '0')
-    const min = String(parsed.getMinutes()).padStart(2, '0')
-    return `${yyyy}-${mm}-${dd} ${hh}:${min}`
+  // 这里按字符串取到分钟即可，避免 new Date() 受时区解析影响，导致原预约同一分钟没有被正确排除。
+  const normalized = raw.replace('T', ' ').replace(/\.\d+$/, '').replace(/\//g, '-')
+  const match = normalized.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/)
+  if (match) {
+    return `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}`
   }
-  return raw.replace('T', ' ').slice(0, 16)
+  return normalized.slice(0, 16)
 }
 
 const fetchAppointmentRescheduleSlots = async () => {
