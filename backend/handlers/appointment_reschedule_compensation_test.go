@@ -187,6 +187,84 @@ func TestUserRescheduleRequestNeedsMerchantAcceptance(t *testing.T) {
 	}
 }
 
+func TestCanceledRescheduleRequestCannotBeAccepted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, _, _, _ := seedAppointmentPermissionFixture(t, config.DB)
+	card := models.Card{MerchantID: merchant.ID, UserID: user.ID, CardNo: "A004", CardType: "次卡", TotalTimes: 10, RemainTimes: 8, UsedTimes: 2}
+	if err := config.DB.Create(&card).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+
+	oldTime := time.Now().Add(24 * time.Hour).Truncate(time.Second)
+	appt := models.Appointment{MerchantID: merchant.ID, UserID: user.ID, CardID: card.ID, TechnicianID: &tech.ID, AppointmentTime: &oldTime, Status: "confirmed"}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+
+	newTime := oldTime.Add(90 * time.Minute).Format("2006-01-02 15:04:05")
+	body, _ := json.Marshal(gin.H{
+		"appointment_time": newTime,
+		"technician_id":    tech.ID,
+		"reason":           "用户想提前",
+	})
+	uc, urec := newUserJSONContext(http.MethodPost, "/user/appointments/"+strconv.Itoa(int(appt.ID))+"/reschedule-requests", user.ID, body)
+	uc.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	CreateAppointmentRescheduleRequest(uc)
+	if urec.Code != http.StatusOK {
+		t.Fatalf("want 200 when user creates request, got %d body=%s", urec.Code, urec.Body.String())
+	}
+
+	var pendingReq struct {
+		ID     uint
+		Status string
+	}
+	if err := config.DB.Table("appointment_reschedule_requests").Select("id, status").Where("appointment_id = ?", appt.ID).Take(&pendingReq).Error; err != nil {
+		t.Fatalf("load pending request failed: %v", err)
+	}
+
+	cancelCtx, cancelRec := newUserJSONContext(http.MethodPost, "/user/appointments/"+strconv.Itoa(int(appt.ID))+"/reschedule-requests/"+strconv.Itoa(int(pendingReq.ID))+"/cancel", user.ID, nil)
+	cancelCtx.Params = gin.Params{
+		{Key: "id", Value: strconv.Itoa(int(appt.ID))},
+		{Key: "request_id", Value: strconv.Itoa(int(pendingReq.ID))},
+	}
+	CancelAppointmentRescheduleRequest(cancelCtx)
+	if cancelRec.Code != http.StatusOK {
+		t.Fatalf("want 200 when user cancels request, got %d body=%s", cancelRec.Code, cancelRec.Body.String())
+	}
+
+	acceptCtx, acceptRec := newMerchantJSONContext(http.MethodPost, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/reschedule-requests/"+strconv.Itoa(int(pendingReq.ID))+"/accept", merchant.ID, nil)
+	acceptCtx.Params = gin.Params{
+		{Key: "id", Value: strconv.Itoa(int(appt.ID))},
+		{Key: "request_id", Value: strconv.Itoa(int(pendingReq.ID))},
+	}
+	AcceptAppointmentRescheduleRequest(acceptCtx)
+	if acceptRec.Code == http.StatusOK {
+		t.Fatalf("want non-200 when merchant accepts canceled request, got body=%s", acceptRec.Body.String())
+	}
+
+	var reqGot struct {
+		Status string
+	}
+	if err := config.DB.Table("appointment_reschedule_requests").Select("status").Where("id = ?", pendingReq.ID).Take(&reqGot).Error; err != nil {
+		t.Fatalf("reload request failed: %v", err)
+	}
+	if reqGot.Status != "canceled" {
+		t.Fatalf("want request canceled, got %+v", reqGot)
+	}
+
+	var count int64
+	if err := config.DB.Table("appointments").Where("replaces_appointment_id = ?", appt.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count replacement appointments failed: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("want no replacement appointment created after cancel, got %d", count)
+	}
+}
+
 func TestCreateAppointmentCompensationAddsCardTimes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

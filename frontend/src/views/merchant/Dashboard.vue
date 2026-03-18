@@ -368,6 +368,13 @@
                 拒绝
               </button>
               <button
+                v-if="canCancelAppointmentRescheduleRequest(appt)"
+                @click="cancelAppointmentRescheduleRequest(appt)"
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+              >
+                撤销改签
+              </button>
+              <button
                 v-if="shouldShowAppointmentReschedule(appt)"
                 @click="openAppointmentRescheduleModal(appt)"
                 class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
@@ -4236,6 +4243,13 @@ const isMerchantConfirmationPending = (appt) => {
   return req?.status === 'pending_merchant'
 }
 
+const canCancelAppointmentRescheduleRequest = (appt) => {
+  const req = getLatestPendingRescheduleRequest(appt)
+  if (!req) return false
+  const proposer = String(req?.proposed_by_type || '').trim()
+  return proposer === 'merchant' || proposer === 'staff'
+}
+
 const shouldShowAppointmentCompensation = (appt) => {
   if (!appt) return false
   // 补偿不是常驻动作，只在门店承诺已经受损或服务异常结束后开放。
@@ -4447,6 +4461,18 @@ const rejectAppointmentRescheduleRequest = async (appt) => {
     await fetchAppointments()
   } catch (err) {
     alert(err.response?.data?.error || '拒绝改签失败')
+  }
+}
+
+const cancelAppointmentRescheduleRequest = async (appt) => {
+  const req = getLatestPendingRescheduleRequest(appt)
+  if (!req) return
+  try {
+    await appointmentApi.cancelMerchantRescheduleRequest(appt.id, req.id)
+    alert('已撤销改签提议')
+    await fetchAppointments()
+  } catch (err) {
+    alert(err.response?.data?.error || '撤销改签失败')
   }
 }
 

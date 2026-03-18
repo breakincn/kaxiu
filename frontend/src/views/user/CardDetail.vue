@@ -172,6 +172,13 @@
               拒绝改签
             </button>
             <button
+              v-if="canCancelUserRescheduleRequest"
+              @click="cancelUserRescheduleRequest"
+              class="w-full py-2.5 border-2 border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              撤销改签
+            </button>
+            <button
               @click="cancelAppointment"
               :disabled="cancelButtonDisabled"
               class="w-full py-2.5 border-2 border-red-400 text-red-500 font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -2473,6 +2480,9 @@ const latestAppointmentRescheduleTechnicianText = computed(() => {
 })
 
 const isUserRescheduleConfirmationPending = computed(() => latestAppointmentRescheduleRequest.value?.status === 'pending_user')
+const canCancelUserRescheduleRequest = computed(() => {
+  return String(latestAppointmentRescheduleRequest.value?.proposed_by_type || '').trim() === 'user'
+})
 
 const showUserRescheduleAction = computed(() => {
   if (!appointment.value) return false
@@ -2879,6 +2889,18 @@ const rejectUserRescheduleRequest = async () => {
     alert('你已拒绝该改签提议')
   } catch (err) {
     alert(err.response?.data?.error || '拒绝改签失败')
+  }
+}
+
+const cancelUserRescheduleRequest = async () => {
+  const req = latestAppointmentRescheduleRequest.value
+  if (!appointment.value || !req) return
+  try {
+    await appointmentApi.cancelUserRescheduleRequest(appointment.value.id, req.id)
+    await fetchAppointment()
+    alert('已撤销改签申请')
+  } catch (err) {
+    alert(err.response?.data?.error || '撤销改签失败')
   }
 }
 

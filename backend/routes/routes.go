@@ -66,6 +66,7 @@ func SetupUserRoutes(r *gin.Engine) {
 	auth.POST("/appointments/:id/reschedule-requests", handlers.CreateAppointmentRescheduleRequest)
 	auth.POST("/appointments/:id/reschedule-requests/:request_id/accept", handlers.AcceptAppointmentRescheduleRequest)
 	auth.POST("/appointments/:id/reschedule-requests/:request_id/reject", handlers.RejectAppointmentRescheduleRequest)
+	auth.POST("/appointments/:id/reschedule-requests/:request_id/cancel", handlers.CancelAppointmentRescheduleRequest)
 	auth.GET("/appointments/:id/reschedule-eligibility", handlers.GetAppointmentRescheduleEligibility)
 	auth.GET("/appointments/:id/reschedule-slots", handlers.GetAppointmentRescheduleSlots)
 
@@ -161,6 +162,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.POST("/appointments/:id/reschedule-requests", handlers.CreateAppointmentRescheduleRequest)
 	auth.POST("/appointments/:id/reschedule-requests/:request_id/accept", handlers.AcceptAppointmentRescheduleRequest)
 	auth.POST("/appointments/:id/reschedule-requests/:request_id/reject", handlers.RejectAppointmentRescheduleRequest)
+	auth.POST("/appointments/:id/reschedule-requests/:request_id/cancel", handlers.CancelAppointmentRescheduleRequest)
 	auth.GET("/appointments/:id/reschedule-eligibility", handlers.GetAppointmentRescheduleEligibility)
 	auth.GET("/appointments/:id/reschedule-slots", handlers.GetAppointmentRescheduleSlots)
 	auth.GET("/appointments/:id/compensations", handlers.ListAppointmentCompensations)

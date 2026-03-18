@@ -1607,6 +1607,75 @@ func RejectAppointmentRescheduleRequest(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"id": req.ID, "status": "rejected"}})
 }
 
+func CancelAppointmentRescheduleRequest(c *gin.Context) {
+	requestID64, err := strconv.ParseUint(strings.TrimSpace(c.Param("request_id")), 10, 64)
+	if err != nil || requestID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的改签提议ID"})
+		return
+	}
+	req, err := loadAppointmentRescheduleRequestByID(config.DB, uint(requestID64))
+	if err != nil || req == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "改签提议不存在"})
+		return
+	}
+	appointment, err := loadAppointmentByID(config.DB, req.AppointmentID)
+	if err != nil || appointment == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
+		return
+	}
+	authType := strings.TrimSpace(c.GetString("auth_type"))
+	switch authType {
+	case "merchant", "staff":
+		if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+			return
+		}
+		proposer := strings.TrimSpace(req.ProposedByType)
+		if proposer != "merchant" && proposer != "staff" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "只有发起改签的一方可以撤销"})
+			return
+		}
+	case "user":
+		authUserID, ok := mustUserID(c)
+		if !ok {
+			return
+		}
+		if appointment.UserID != authUserID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此改签提议"})
+			return
+		}
+		if strings.TrimSpace(req.ProposedByType) != "user" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "只有发起改签的一方可以撤销"})
+			return
+		}
+	default:
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+	if req.Status != "pending_user" && req.Status != "pending_merchant" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前改签提议不可撤销"})
+		return
+	}
+	actorType, actorID := getAppointmentActor(c)
+	now := time.Now()
+	result := config.DB.Model(&models.AppointmentRescheduleRequest{}).
+		Where("id = ? AND status = ?", req.ID, req.Status).
+		Updates(map[string]interface{}{
+			"status":            "canceled",
+			"confirmed_by_type": actorType,
+			"confirmed_by_id":   actorID,
+			"confirmed_at":      &now,
+		})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "撤销改签提议失败"})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "改签提议状态已变化，请刷新后重试"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"id": req.ID, "status": "canceled"}})
+}
+
 func RescheduleAppointment(c *gin.Context) {
 	CreateAppointmentRescheduleRequest(c)
 }
