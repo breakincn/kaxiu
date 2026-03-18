@@ -138,6 +138,7 @@
               {{ isUserRescheduleConfirmationPending ? '商户发起了改签提议，请确认' : '改签申请已提交，待商户确认' }}
             </div>
             <div class="mt-1">提议时间：{{ formatDateTime(latestAppointmentRescheduleRequest.new_appointment_time) }}</div>
+            <div v-if="latestAppointmentRescheduleTechnicianText" class="mt-1">改签客服：{{ latestAppointmentRescheduleTechnicianText }}</div>
             <div v-if="latestAppointmentRescheduleRequest.reason" class="mt-1">原因：{{ latestAppointmentRescheduleRequest.reason }}</div>
           </div>
           <p class="text-xs text-gray-400">* 排队进度由商户服务确认后即时更新</p>
@@ -2461,6 +2462,14 @@ const hasAppointmentProjects = computed(() => {
 const latestAppointmentRescheduleRequest = computed(() => {
   const list = Array.isArray(appointment.value?.reschedule_requests) ? appointment.value.reschedule_requests : []
   return list.find(item => item?.status === 'pending_user' || item?.status === 'pending_merchant') || null
+})
+
+const latestAppointmentRescheduleTechnicianText = computed(() => {
+  const technician = latestAppointmentRescheduleRequest.value?.new_technician
+  if (!technician) return ''
+  const name = String(technician?.name || '').trim() || `客服${technician?.id || ''}`
+  const account = String(technician?.account || '').trim()
+  return account ? `${name} - ${account}` : name
 })
 
 const isUserRescheduleConfirmationPending = computed(() => latestAppointmentRescheduleRequest.value?.status === 'pending_user')

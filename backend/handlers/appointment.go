@@ -252,7 +252,9 @@ func appointmentCompensationPreload(db *gorm.DB) *gorm.DB {
 }
 
 func appointmentRescheduleRequestPreload(db *gorm.DB) *gorm.DB {
-	return db.Order("id DESC")
+	// 改签提议在用户端/商户端都要展示改签后的客服信息，因此这里一并预加载新客服资料，
+	// 避免前端为了一个昵称和账号额外再发请求组装展示文本。
+	return db.Preload("NewTechnician").Order("id DESC")
 }
 
 func hydrateAppointmentRelations(tx *gorm.DB, appt *models.Appointment) error {
