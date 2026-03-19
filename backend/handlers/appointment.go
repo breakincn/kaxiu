@@ -8,6 +8,7 @@ import (
 	"kabao/queue"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -104,6 +105,20 @@ func getAppointmentOccupiedMinutes(merchantID uint, appt models.Appointment) int
 	return projectBookingOccupiedMinutes(serviceMinutes, gapMinutes)
 }
 
+func appointmentPlacementScore(leftMinutes, rightMinutes int) int {
+	if leftMinutes < 0 {
+		leftMinutes = 0
+	}
+	if rightMinutes < 0 {
+		rightMinutes = 0
+	}
+	splitPenalty := leftMinutes
+	if rightMinutes < splitPenalty {
+		splitPenalty = rightMinutes
+	}
+	return splitPenalty*10000 + leftMinutes + rightMinutes
+}
+
 type appointmentTechnicianCandidate struct {
 	TechnicianID         uint   `json:"technician_id"`
 	AvailabilityState    string `json:"availability_state"`
@@ -129,6 +144,12 @@ type appointmentFragmentEvaluation struct {
 	CreatesFragment bool
 	Reason          string
 	PlacementScore  int
+}
+
+type rankedAppointmentTimeSlot struct {
+	appointmentTimeSlot
+	PlacementScore int
+	SlotTime       time.Time
 }
 
 type availableTimeSlotsOptions struct {
@@ -176,17 +197,24 @@ func loadCoreAppointmentOccupiedMinutes(tx *gorm.DB, merchantID uint) ([]int, er
 }
 
 func checkNonTechnicianAppointmentOverlap(tx *gorm.DB, merchantID uint, appointmentStart time.Time, occupiedMinutes int, excludeAppointmentID uint) (bool, error) {
-	var appointments []models.Appointment
-	q := tx.Where("merchant_id = ? AND technician_id IS NULL AND appointment_time IS NOT NULL AND status IN ?",
-		merchantID, appointmentProtectedStatuses())
+	q := tx.Table("appointments").
+		Select("id, card_id, merchant_id, user_id, project_id, technician_id, appointment_time, status, confirmed_at, arrived_at, completed_at, no_show_at, service_session_id, usage_id, predicted_wait_minutes, resolution_note, closed_reason, closed_by_type, closed_by_id, reschedule_reason, replaced_by_appointment_id, replaces_appointment_id, canceled_at, failed_at, failed_reason, created_at").
+		Where("merchant_id = ? AND technician_id IS NULL AND appointment_time IS NOT NULL AND status IN ?",
+			merchantID, appointmentProtectedStatuses())
 	if excludeAppointmentID > 0 {
 		q = q.Where("id <> ?", excludeAppointmentID)
 	}
-	if err := q.Find(&appointments).Error; err != nil {
+	rows, err := q.Rows()
+	if err != nil {
 		return false, err
 	}
+	defer rows.Close()
 	appointmentEnd := appointmentStart.Add(time.Duration(occupiedMinutes) * time.Minute)
-	for _, apt := range appointments {
+	for rows.Next() {
+		apt, err := scanAppointmentRow(rows)
+		if err != nil {
+			return false, err
+		}
 		if apt.AppointmentTime == nil {
 			continue
 		}
@@ -217,9 +245,10 @@ func listAppointmentBookableTechnicians(tx *gorm.DB, merchant models.Merchant) (
 func loadAppointmentOccupiedRangesForFragment(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, technicianID *uint, excludeAppointmentID uint) ([]appointmentOccupiedRange, error) {
 	dayStart := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, targetDate.Location())
 	dayEnd := dayStart.Add(24 * time.Hour)
-	var appointments []models.Appointment
-	q := tx.Where("merchant_id = ? AND appointment_time IS NOT NULL AND appointment_time >= ? AND appointment_time < ? AND status IN ?",
-		merchant.ID, dayStart, dayEnd, appointmentProtectedStatuses())
+	q := tx.Table("appointments").
+		Select("id, card_id, merchant_id, user_id, project_id, technician_id, appointment_time, status, confirmed_at, arrived_at, completed_at, no_show_at, service_session_id, usage_id, predicted_wait_minutes, resolution_note, closed_reason, closed_by_type, closed_by_id, reschedule_reason, replaced_by_appointment_id, replaces_appointment_id, canceled_at, failed_at, failed_reason, created_at").
+		Where("merchant_id = ? AND appointment_time IS NOT NULL AND appointment_time >= ? AND appointment_time < ? AND status IN ?",
+			merchant.ID, dayStart, dayEnd, appointmentProtectedStatuses())
 	if excludeAppointmentID > 0 {
 		q = q.Where("id <> ?", excludeAppointmentID)
 	}
@@ -228,11 +257,17 @@ func loadAppointmentOccupiedRangesForFragment(tx *gorm.DB, merchant models.Merch
 	} else if merchant.SupportCustomerServiceMode {
 		q = q.Where("technician_id IS NULL")
 	}
-	if err := q.Order("appointment_time asc").Find(&appointments).Error; err != nil {
+	rows, err := q.Order("appointment_time asc").Rows()
+	if err != nil {
 		return nil, err
 	}
-	ranges := make([]appointmentOccupiedRange, 0, len(appointments))
-	for _, apt := range appointments {
+	defer rows.Close()
+	ranges := make([]appointmentOccupiedRange, 0)
+	for rows.Next() {
+		apt, err := scanAppointmentRow(rows)
+		if err != nil {
+			return nil, err
+		}
 		if apt.AppointmentTime == nil {
 			continue
 		}
@@ -286,7 +321,7 @@ func evaluateAppointmentFragmentImpact(tx *gorm.DB, merchant models.Merchant, ta
 		}
 		leftMinutes := int(appointmentStart.Sub(leftAnchor).Minutes())
 		rightMinutes := int(rightAnchor.Sub(candidateEnd).Minutes())
-		result.PlacementScore = leftMinutes + rightMinutes
+		result.PlacementScore = appointmentPlacementScore(leftMinutes, rightMinutes)
 		if hasPrevOccupied && leftMinutes > 0 {
 			fit := false
 			for _, core := range coreOccupied {
@@ -460,13 +495,14 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 		}
 	}
 
-	timeSlots := make([]appointmentTimeSlot, 0, len(allSlots))
+	timeSlots := make([]rankedAppointmentTimeSlot, 0, len(allSlots))
 	for _, slot := range allSlots {
 		slotTime, _ := time.ParseInLocation("2006-01-02 15:04:05", slot, loc)
 		available := true
 		userName := ""
 		availableTechIDs := make([]uint, 0)
 		candidates := make([]appointmentTechnicianCandidate, 0, len(technicians))
+		placementScore := int(^uint(0) >> 1)
 
 		if available && len(allTechIDs) > 0 {
 			for _, tech := range technicians {
@@ -485,6 +521,9 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 				if fragment.CreatesFragment {
 					state = appointmentAvailabilityUnavailable
 					reason = fragment.Reason
+				}
+				if state != appointmentAvailabilityUnavailable && fragment.PlacementScore < placementScore {
+					placementScore = fragment.PlacementScore
 				}
 				candidates = append(candidates, appointmentTechnicianCandidate{
 					TechnicianID:         tech.ID,
@@ -515,25 +554,46 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 				}
 				if fragment.CreatesFragment {
 					available = false
+				} else {
+					placementScore = fragment.PlacementScore
 				}
 			}
 		}
 
 		if available && (len(allTechIDs) == 0 || len(availableTechIDs) > 0) {
-			timeSlots = append(timeSlots, appointmentTimeSlot{
-				Time:                 slot,
-				Available:            true,
-				UserName:             userName,
-				TechnicianIDs:        availableTechIDs,
-				TechnicianCandidates: candidates,
+			if placementScore == int(^uint(0)>>1) {
+				placementScore = 0
+			}
+			timeSlots = append(timeSlots, rankedAppointmentTimeSlot{
+				appointmentTimeSlot: appointmentTimeSlot{
+					Time:                 slot,
+					Available:            true,
+					UserName:             userName,
+					TechnicianIDs:        availableTechIDs,
+					TechnicianCandidates: candidates,
+				},
+				PlacementScore: placementScore,
+				SlotTime:       slotTime,
 			})
 		}
+	}
+
+	sort.SliceStable(timeSlots, func(i, j int) bool {
+		if timeSlots[i].PlacementScore != timeSlots[j].PlacementScore {
+			return timeSlots[i].PlacementScore < timeSlots[j].PlacementScore
+		}
+		return timeSlots[i].SlotTime.Before(timeSlots[j].SlotTime)
+	})
+
+	orderedSlots := make([]appointmentTimeSlot, 0, len(timeSlots))
+	for _, slot := range timeSlots {
+		orderedSlots = append(orderedSlots, slot.appointmentTimeSlot)
 	}
 
 	return gin.H{
 		"date":            date,
 		"service_minutes": serviceMinutes,
-		"time_slots":      timeSlots,
+		"time_slots":      orderedSlots,
 		"technicians":     technicians,
 	}, nil
 }

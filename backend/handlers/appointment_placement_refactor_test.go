@@ -196,6 +196,86 @@ func TestAvailableSlotsAndCreateRejectNonBookableProject(t *testing.T) {
 	}
 }
 
+func TestAvailableSlotsPrefersLowerCrossSlotFragmentScore(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, _, _, card1, _ := seedAppointmentPlacementFixture(t, false)
+	if err := config.DB.Model(&models.MerchantProject{}).Where("merchant_id = ?", merchant.ID).Update("bookable_online", false).Error; err != nil {
+		t.Fatalf("disable default bookable projects failed: %v", err)
+	}
+	merchant.AllDayStart = "10:00"
+	merchant.AllDayEnd = "12:00"
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Updates(map[string]interface{}{
+		"all_day_start": "10:00",
+		"all_day_end":   "12:00",
+	}).Error; err != nil {
+		t.Fatalf("update merchant hours failed: %v", err)
+	}
+	project := models.MerchantProject{
+		MerchantID:        merchant.ID,
+		Name:              "半小时项目",
+		Duration:          30,
+		BookableOnline:    true,
+		ServiceGapMinutes: 0,
+		StartDelaySeconds: 60,
+		IsActive:          true,
+	}
+	if err := config.DB.Create(&project).Error; err != nil {
+		t.Fatalf("create project failed: %v", err)
+	}
+	if err := config.DB.Model(&models.MerchantProject{}).Where("id = ?", project.ID).Updates(map[string]interface{}{
+		"duration":            30,
+		"service_gap_minutes": 0,
+		"bookable_online":     true,
+	}).Error; err != nil {
+		t.Fatalf("normalize project booking config failed: %v", err)
+	}
+	blockStart := appointmentFixtureTime(11, 0)
+	blocker := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		AppointmentTime: &blockStart,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&blocker).Error; err != nil {
+		t.Fatalf("create blocker appointment failed: %v", err)
+	}
+
+	date := appointmentFixtureTime(10, 0).Format("2006-01-02")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/merchant/merchants/"+strconv.Itoa(int(merchant.ID))+"/available-slots?date="+date+"&project_id="+strconv.Itoa(int(project.ID)), nil)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(merchant.ID))}}
+	c.Set("auth_type", "user")
+	c.Set("user_id", user.ID)
+	GetAvailableTimeSlots(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			TimeSlots []struct {
+				Time string `json:"time"`
+			} `json:"time_slots"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal failed: %v body=%s", err, rec.Body.String())
+	}
+	if len(resp.Data.TimeSlots) < 3 {
+		t.Fatalf("want at least 3 ranked slots, got body=%s", rec.Body.String())
+	}
+	if got := resp.Data.TimeSlots[0].Time; got != appointmentFixtureTime(11, 30).Format("2006-01-02 15:04:05") {
+		t.Fatalf("want best-ranked slot 11:30 first, got %s body=%s", got, rec.Body.String())
+	}
+}
+
 func TestConfirmAppointmentAssignsTechnicianForLegacyPendingRecord(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB
