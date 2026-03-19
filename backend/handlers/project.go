@@ -31,6 +31,7 @@ func CreateMerchantProject(c *gin.Context) {
 	var input struct {
 		Name              string  `json:"name" binding:"required"`
 		Duration          int     `json:"duration" binding:"required,min=1"`
+		BookableOnline    *bool   `json:"bookable_online"`
 		ServiceGapMinutes *int    `json:"service_gap_minutes"`
 		StartDelaySeconds *int    `json:"start_delay_seconds"`
 		Price             float64 `json:"price"`
@@ -72,6 +73,10 @@ func CreateMerchantProject(c *gin.Context) {
 		}
 		serviceGapMinutes = *input.ServiceGapMinutes
 	}
+	bookableOnline := true
+	if input.BookableOnline != nil {
+		bookableOnline = *input.BookableOnline
+	}
 
 	isActive := true
 	if input.IsActive != nil {
@@ -86,6 +91,7 @@ func CreateMerchantProject(c *gin.Context) {
 		MerchantID:        merchantID,
 		Name:              name,
 		Duration:          input.Duration,
+		BookableOnline:    bookableOnline,
 		ServiceGapMinutes: serviceGapMinutes,
 		StartDelaySeconds: startDelaySeconds,
 		Price:             input.Price,
@@ -120,6 +126,7 @@ func UpdateMerchantProject(c *gin.Context) {
 	var input struct {
 		Name              *string  `json:"name"`
 		Duration          *int     `json:"duration"`
+		BookableOnline    *bool    `json:"bookable_online"`
 		ServiceGapMinutes *int     `json:"service_gap_minutes"`
 		StartDelaySeconds *int     `json:"start_delay_seconds"`
 		Price             *float64 `json:"price"`
@@ -161,6 +168,9 @@ func UpdateMerchantProject(c *gin.Context) {
 			return
 		}
 		updates["service_gap_minutes"] = *input.ServiceGapMinutes
+	}
+	if input.BookableOnline != nil {
+		updates["bookable_online"] = *input.BookableOnline
 	}
 	if input.Price != nil {
 		if *input.Price < 0 {

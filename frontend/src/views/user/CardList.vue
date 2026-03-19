@@ -326,7 +326,7 @@
             <div class="text-sm font-medium text-gray-700 mb-2">选择项目</div>
             <div v-if="!hasAppointmentProjects" class="text-gray-400 text-sm">当前卡片未设置项目，将按默认服务时长预约</div>
             <div v-else class="space-y-2">
-              <label v-for="p in selectedCard.projects" :key="p.id" class="flex items-center gap-3">
+              <label v-for="p in appointmentProjects" :key="p.id" class="flex items-center gap-3">
                 <input type="radio" name="appt_project" :value="p.id" v-model="selectedAppointmentProjectId" />
                 <div class="flex-1">
                   <div class="text-gray-800">{{ p.name }}</div>
@@ -568,8 +568,13 @@ const appointmentCardTitle = computed(() => {
 
 const appointmentModalTitle = computed(() => `预约 ${appointmentCardTitle.value}`)
 
-const selectedAppointmentProject = computed(() => {
+const appointmentProjects = computed(() => {
   const list = selectedCard.value?.projects || []
+  return Array.isArray(list) ? list.filter(p => p?.bookable_online !== false) : []
+})
+
+const selectedAppointmentProject = computed(() => {
+  const list = appointmentProjects.value || []
   return list.find(p => Number(p.id) === Number(selectedAppointmentProjectId.value)) || null
 })
 
@@ -598,7 +603,7 @@ const shouldAutoAssignTechnician = computed(() => {
 })
 
 const hasAppointmentProjects = computed(() => {
-  return Array.isArray(selectedCard.value?.projects) && selectedCard.value.projects.length > 0
+  return appointmentProjects.value.length > 0
 })
 
 const selectedAppointmentTimeText = computed(() => {
@@ -1080,7 +1085,7 @@ const openAppointmentModalFromAction = async () => {
   resetAppointmentState()
   selectedDate.value = getTomorrowDate()
   await ensureSelectedCardForAppointment()
-  const projects = selectedCard.value?.projects || []
+  const projects = appointmentProjects.value || []
   if (projects.length > 0) {
     preparingAppointmentModal.value = true
     try {

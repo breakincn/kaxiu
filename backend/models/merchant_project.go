@@ -7,6 +7,7 @@ type MerchantProject struct {
 	MerchantID        uint       `json:"merchant_id" gorm:"index;index:idx_merchant_active,priority:1;comment:商户ID"`
 	Name              string     `json:"name" gorm:"size:100;not null;comment:项目名称"`
 	Duration          int        `json:"duration" gorm:"not null;comment:服务时长（分钟）"`
+	BookableOnline    bool       `json:"bookable_online" gorm:"not null;default:true;comment:是否参与公开预约"`
 	ServiceGapMinutes int        `json:"service_gap_minutes" gorm:"not null;default:3;comment:服务间歇时间（分钟）"`
 	StartDelaySeconds int        `json:"start_delay_seconds" gorm:"not null;default:60;comment:服务开始延迟时间（秒）"`
 	Price             float64    `json:"price" gorm:"type:decimal(10,2);default:0.00;comment:项目价格（元）"`

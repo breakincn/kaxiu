@@ -119,6 +119,18 @@ type appointmentTimeSlot struct {
 	TechnicianCandidates []appointmentTechnicianCandidate `json:"technician_candidates,omitempty"`
 }
 
+type appointmentPlacementDecision struct {
+	PredictedWaitMinutes int
+	AssignedTechnicianID *uint
+	PlacementScore       int
+}
+
+type appointmentFragmentEvaluation struct {
+	CreatesFragment bool
+	Reason          string
+	PlacementScore  int
+}
+
 type availableTimeSlotsOptions struct {
 	ExcludeAppointmentID uint
 }
@@ -141,7 +153,7 @@ func loadCoreAppointmentOccupiedMinutes(tx *gorm.DB, merchantID uint) ([]int, er
 		return []int{projectBookingOccupiedMinutes(30, 3)}, nil
 	}
 	var projects []models.MerchantProject
-	if err := tx.Where("merchant_id = ? AND is_active = ?", merchantID, true).Find(&projects).Error; err != nil {
+	if err := tx.Where("merchant_id = ? AND is_active = ? AND bookable_online = ?", merchantID, true, true).Find(&projects).Error; err != nil {
 		return nil, err
 	}
 	out := make([]int, 0, len(projects))
@@ -187,6 +199,21 @@ func checkNonTechnicianAppointmentOverlap(tx *gorm.DB, merchantID uint, appointm
 	return false, nil
 }
 
+func listAppointmentBookableTechnicians(tx *gorm.DB, merchant models.Merchant) ([]models.Technician, error) {
+	if tx == nil || merchant.ID == 0 {
+		return nil, nil
+	}
+	var technicians []models.Technician
+	if err := tx.
+		Joins("JOIN service_roles sr ON sr.id = technicians.service_role_id").
+		Where("technicians.merchant_id = ? AND technicians.is_active = ? AND (sr.role_type IS NULL OR sr.role_type = '' OR sr.role_type <> ?)", merchant.ID, true, "operational").
+		Order("technicians.id asc").
+		Find(&technicians).Error; err != nil {
+		return nil, err
+	}
+	return technicians, nil
+}
+
 func loadAppointmentOccupiedRangesForFragment(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, technicianID *uint, excludeAppointmentID uint) ([]appointmentOccupiedRange, error) {
 	dayStart := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, targetDate.Location())
 	dayEnd := dayStart.Add(24 * time.Hour)
@@ -218,21 +245,22 @@ func loadAppointmentOccupiedRangesForFragment(tx *gorm.DB, merchant models.Merch
 	return ranges, nil
 }
 
-func wouldCreateAppointmentFragments(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, appointmentStart time.Time, occupiedMinutes int, technicianID *uint, excludeAppointmentID uint) (bool, string, error) {
+func evaluateAppointmentFragmentImpact(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, appointmentStart time.Time, occupiedMinutes int, technicianID *uint, excludeAppointmentID uint) (appointmentFragmentEvaluation, error) {
+	result := appointmentFragmentEvaluation{}
 	if tx == nil {
-		return false, "", nil
+		return result, nil
 	}
 	coreOccupied, err := loadCoreAppointmentOccupiedMinutes(tx, merchant.ID)
 	if err != nil {
-		return false, "", err
+		return result, err
 	}
 	occupiedRanges, err := loadAppointmentOccupiedRangesForFragment(tx, merchant, targetDate, technicianID, excludeAppointmentID)
 	if err != nil {
-		return false, "", err
+		return result, err
 	}
 	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
 	if !ok {
-		return false, "", nil
+		return result, nil
 	}
 	candidateEnd := appointmentStart.Add(time.Duration(occupiedMinutes) * time.Minute)
 	for _, it := range intervals {
@@ -258,6 +286,7 @@ func wouldCreateAppointmentFragments(tx *gorm.DB, merchant models.Merchant, targ
 		}
 		leftMinutes := int(appointmentStart.Sub(leftAnchor).Minutes())
 		rightMinutes := int(rightAnchor.Sub(candidateEnd).Minutes())
+		result.PlacementScore = leftMinutes + rightMinutes
 		if hasPrevOccupied && leftMinutes > 0 {
 			fit := false
 			for _, core := range coreOccupied {
@@ -267,7 +296,9 @@ func wouldCreateAppointmentFragments(tx *gorm.DB, merchant models.Merchant, targ
 				}
 			}
 			if !fit {
-				return true, "该时段会在前段留下不可复用的碎片时间", nil
+				result.CreatesFragment = true
+				result.Reason = "该时段会在前段留下不可复用的碎片时间"
+				return result, nil
 			}
 		}
 		if hasNextOccupied && rightMinutes > 0 {
@@ -279,75 +310,93 @@ func wouldCreateAppointmentFragments(tx *gorm.DB, merchant models.Merchant, targ
 				}
 			}
 			if !fit {
-				return true, "该时段会在后段留下不可复用的碎片时间", nil
+				result.CreatesFragment = true
+				result.Reason = "该时段会在后段留下不可复用的碎片时间"
+				return result, nil
 			}
 		}
-		return false, "", nil
+		return result, nil
 	}
-	return false, "", nil
+	return result, nil
 }
 
-func validateAppointmentPlacementRules(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, appointmentStart time.Time, occupiedMinutes int, technicianID *uint, excludeAppointmentID uint) (int, error) {
-	predictedWaitMinutes := 0
+func validateAppointmentPlacementRules(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, appointmentStart time.Time, occupiedMinutes int, technicianID *uint, excludeAppointmentID uint) (appointmentPlacementDecision, error) {
+	decision := appointmentPlacementDecision{}
 	if technicianID != nil && *technicianID > 0 {
 		availability, err := evaluateBookingTechnicianAvailability(tx, merchant, *technicianID, appointmentStart, occupiedMinutes, excludeAppointmentID)
 		if err != nil {
-			return 0, err
+			return decision, err
 		}
 		if availability.State == appointmentAvailabilityUnavailable {
-			return 0, apiErr{status: http.StatusBadRequest, msg: availability.Reason}
+			return decision, apiErr{status: http.StatusBadRequest, msg: availability.Reason}
 		}
-		predictedWaitMinutes = availability.PredictedWaitMinutes
+		fragment, err := evaluateAppointmentFragmentImpact(tx, merchant, targetDate, appointmentStart, occupiedMinutes, technicianID, excludeAppointmentID)
+		if err != nil {
+			return decision, err
+		}
+		if fragment.CreatesFragment {
+			return decision, apiErr{status: http.StatusBadRequest, msg: fragment.Reason}
+		}
+		decision.PredictedWaitMinutes = availability.PredictedWaitMinutes
+		decision.AssignedTechnicianID = technicianID
+		decision.PlacementScore = fragment.PlacementScore
+		return decision, nil
 	} else if merchant.SupportCustomerServiceMode {
-		var technicians []models.Technician
-		if err := tx.
-			Joins("JOIN service_roles sr ON sr.id = technicians.service_role_id").
-			Where("technicians.merchant_id = ? AND technicians.is_active = ? AND (sr.role_type IS NULL OR sr.role_type = '' OR sr.role_type <> ?)", merchant.ID, true, "operational").
-			Find(&technicians).Error; err != nil {
-			return 0, err
+		technicians, err := listAppointmentBookableTechnicians(tx, merchant)
+		if err != nil {
+			return decision, err
 		}
 		if len(technicians) == 0 {
-			return 0, apiErr{status: http.StatusBadRequest, msg: "当前无可预约客服"}
+			return decision, apiErr{status: http.StatusBadRequest, msg: "当前无可预约客服"}
 		}
-		hasCandidate := false
+		found := false
 		for _, tech := range technicians {
 			availability, err := evaluateBookingTechnicianAvailability(tx, merchant, tech.ID, appointmentStart, occupiedMinutes, excludeAppointmentID)
 			if err != nil {
-				return 0, err
+				return decision, err
 			}
 			if availability.State == appointmentAvailabilityUnavailable {
 				continue
 			}
-			createsFragment, _, err := wouldCreateAppointmentFragments(tx, merchant, targetDate, appointmentStart, occupiedMinutes, &tech.ID, excludeAppointmentID)
+			fragment, err := evaluateAppointmentFragmentImpact(tx, merchant, targetDate, appointmentStart, occupiedMinutes, &tech.ID, excludeAppointmentID)
 			if err != nil {
-				return 0, err
+				return decision, err
 			}
-			if createsFragment {
+			if fragment.CreatesFragment {
 				continue
 			}
-			hasCandidate = true
-			break
+			candidateScore := fragment.PlacementScore
+			if !found || candidateScore < decision.PlacementScore || (candidateScore == decision.PlacementScore && tech.ID < *decision.AssignedTechnicianID) {
+				techID := tech.ID
+				decision = appointmentPlacementDecision{
+					PredictedWaitMinutes: availability.PredictedWaitMinutes,
+					AssignedTechnicianID: &techID,
+					PlacementScore:       candidateScore,
+				}
+				found = true
+			}
 		}
-		if !hasCandidate {
-			return 0, apiErr{status: http.StatusBadRequest, msg: "当前时段无可预约客服"}
+		if !found {
+			return decision, apiErr{status: http.StatusBadRequest, msg: "当前时段无可预约客服"}
 		}
-	} else {
-		conflicted, err := checkNonTechnicianAppointmentOverlap(tx, merchant.ID, appointmentStart, occupiedMinutes, excludeAppointmentID)
-		if err != nil {
-			return 0, err
-		}
-		if conflicted {
-			return 0, apiErr{status: http.StatusBadRequest, msg: "该时间段已被占用"}
-		}
+		return decision, nil
 	}
-	createsFragment, fragmentReason, err := wouldCreateAppointmentFragments(tx, merchant, targetDate, appointmentStart, occupiedMinutes, technicianID, excludeAppointmentID)
+	conflicted, err := checkNonTechnicianAppointmentOverlap(tx, merchant.ID, appointmentStart, occupiedMinutes, excludeAppointmentID)
 	if err != nil {
-		return 0, err
+		return decision, err
 	}
-	if createsFragment {
-		return 0, apiErr{status: http.StatusBadRequest, msg: fragmentReason}
+	if conflicted {
+		return decision, apiErr{status: http.StatusBadRequest, msg: "该时间段已被占用"}
 	}
-	return predictedWaitMinutes, nil
+	fragment, err := evaluateAppointmentFragmentImpact(tx, merchant, targetDate, appointmentStart, occupiedMinutes, nil, excludeAppointmentID)
+	if err != nil {
+		return decision, err
+	}
+	if fragment.CreatesFragment {
+		return decision, apiErr{status: http.StatusBadRequest, msg: fragment.Reason}
+	}
+	decision.PlacementScore = fragment.PlacementScore
+	return decision, nil
 }
 
 func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, date string, projectID uint, loc *time.Location, opts *availableTimeSlotsOptions) (gin.H, error) {
@@ -356,7 +405,7 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 	serviceGapMinutes := 3
 	if projectID > 0 {
 		var project models.MerchantProject
-		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ?", projectID, merchant.ID, true).First(&project).Error; err != nil {
+		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ? AND bookable_online = ?", projectID, merchant.ID, true, true).First(&project).Error; err != nil {
 			return nil, apiErr{status: http.StatusBadRequest, msg: "无效的项目"}
 		}
 		serviceMinutes = project.Duration
@@ -382,11 +431,11 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 
 	var technicians []models.Technician
 	if merchant.SupportCustomerServiceMode {
-		config.DB.
-			Joins("JOIN service_roles sr ON sr.id = technicians.service_role_id").
-			Where("technicians.merchant_id = ? AND technicians.is_active = ? AND (sr.role_type IS NULL OR sr.role_type = '' OR sr.role_type <> ?)", merchantID, true, "operational").
-			Order("technicians.id desc").
-			Find(&technicians)
+		var err error
+		technicians, err = listAppointmentBookableTechnicians(config.DB, merchant)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	targetDate, _ := time.ParseInLocation("2006-01-02", date, loc)
@@ -426,16 +475,16 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 					log.Printf("evaluate booking availability failed: merchant=%d tech=%d slot=%s err=%v", merchant.ID, tech.ID, slot, err)
 					continue
 				}
-				createsFragment, fragmentReason, err := wouldCreateAppointmentFragments(config.DB, merchant, targetDate, slotTime, occupiedMinutes, &tech.ID, excludeAppointmentID)
+				fragment, err := evaluateAppointmentFragmentImpact(config.DB, merchant, targetDate, slotTime, occupiedMinutes, &tech.ID, excludeAppointmentID)
 				if err != nil {
 					log.Printf("evaluate booking fragments failed: merchant=%d tech=%d slot=%s err=%v", merchant.ID, tech.ID, slot, err)
 					continue
 				}
 				reason := availability.Reason
 				state := availability.State
-				if createsFragment {
+				if fragment.CreatesFragment {
 					state = appointmentAvailabilityUnavailable
-					reason = fragmentReason
+					reason = fragment.Reason
 				}
 				candidates = append(candidates, appointmentTechnicianCandidate{
 					TechnicianID:         tech.ID,
@@ -459,12 +508,12 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 				available = false
 			}
 			if available {
-				createsFragment, _, err := wouldCreateAppointmentFragments(config.DB, merchant, targetDate, slotTime, occupiedMinutes, nil, excludeAppointmentID)
+				fragment, err := evaluateAppointmentFragmentImpact(config.DB, merchant, targetDate, slotTime, occupiedMinutes, nil, excludeAppointmentID)
 				if err != nil {
 					log.Printf("evaluate booking fragments failed: merchant=%d slot=%s err=%v", merchant.ID, slot, err)
 					continue
 				}
-				if createsFragment {
+				if fragment.CreatesFragment {
 					available = false
 				}
 			}
@@ -1107,7 +1156,7 @@ func CreateAppointment(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
 			return
 		}
-		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ?", *input.ProjectID, input.MerchantID, true).First(&project).Error; err != nil {
+		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ? AND bookable_online = ?", *input.ProjectID, input.MerchantID, true, true).First(&project).Error; err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
 			return
 		}
@@ -1187,11 +1236,12 @@ func CreateAppointment(c *gin.Context) {
 	// 预约创建必须做事务级校验：用户手选客服时，要在落库前重新检查“未来预约占产能”规则，
 	// 避免前端时段缓存与并发提交之间出现超卖或越过最大等待上限。
 	if err := config.DB.Transaction(func(tx *gorm.DB) error {
-		predictedWaitMinutes, err := validateAppointmentPlacementRules(tx, merchant, targetDate, appointmentTime, occupiedMinutes, input.TechnicianID, 0)
+		decision, err := validateAppointmentPlacementRules(tx, merchant, targetDate, appointmentTime, occupiedMinutes, input.TechnicianID, 0)
 		if err != nil {
 			return err
 		}
-		appointment.PredictedWaitMinutes = predictedWaitMinutes
+		appointment.PredictedWaitMinutes = decision.PredictedWaitMinutes
+		appointment.TechnicianID = decision.AssignedTechnicianID
 		if err := tx.Create(&appointment).Error; err != nil {
 			return err
 		}
@@ -1208,18 +1258,26 @@ func CreateAppointment(c *gin.Context) {
 	}
 
 	log.Printf("预约创建成功: ID=%d, 状态=%s", appointment.ID, appointment.Status)
-
-	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Project").Preload("Technician").Preload("Compensations", appointmentCompensationPreload).Preload("RescheduleRequests", appointmentRescheduleRequestPreload).First(&appointment, appointment.ID)
+	if reloaded, err := loadAppointmentByID(config.DB, appointment.ID); err == nil && reloaded != nil {
+		appointment = *reloaded
+		_ = hydrateAppointmentRelations(config.DB, &appointment)
+	}
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 
 func ConfirmAppointment(c *gin.Context) {
 	id := c.Param("id")
-	var appointment models.Appointment
-	if err := config.DB.First(&appointment, id).Error; err != nil {
+	appointmentID64, err := strconv.ParseUint(id, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的预约ID"})
+		return
+	}
+	appointmentPtr, err := loadAppointmentByID(config.DB, uint(appointmentID64))
+	if err != nil || appointmentPtr == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
 		return
 	}
+	appointment := *appointmentPtr
 
 	if _, _, ok := checkMerchantAppointmentOwnership(c, appointment); !ok {
 		return
@@ -1258,21 +1316,26 @@ func ConfirmAppointment(c *gin.Context) {
 	targetDate := appointment.AppointmentTime.In(appointmentLocation())
 	confirmedAt := time.Now()
 	if err := config.DB.Transaction(func(tx *gorm.DB) error {
-		var current models.Appointment
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, appointment.ID).Error; err != nil {
+		currentPtr, err := loadAppointmentByID(tx.Clauses(clause.Locking{Strength: "UPDATE"}), appointment.ID)
+		if err != nil {
 			return err
 		}
+		if currentPtr == nil {
+			return gorm.ErrRecordNotFound
+		}
+		current := *currentPtr
 		if current.Status != "pending" {
 			return apiErr{status: http.StatusBadRequest, msg: "只能确认待处理的预约"}
 		}
-		predictedWaitMinutes, err := validateAppointmentPlacementRules(tx, merchant, targetDate, *current.AppointmentTime, occupiedMinutes, current.TechnicianID, current.ID)
+		decision, err := validateAppointmentPlacementRules(tx, merchant, targetDate, *current.AppointmentTime, occupiedMinutes, current.TechnicianID, current.ID)
 		if err != nil {
 			return err
 		}
 		return tx.Model(&current).Updates(map[string]interface{}{
 			"status":                 "confirmed",
 			"confirmed_at":           &confirmedAt,
-			"predicted_wait_minutes": predictedWaitMinutes,
+			"predicted_wait_minutes": decision.PredictedWaitMinutes,
+			"technician_id":          decision.AssignedTechnicianID,
 		}).Error
 	}); err != nil {
 		var ae apiErr
@@ -1283,10 +1346,13 @@ func ConfirmAppointment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "确认预约失败"})
 		return
 	}
-	config.DB.Preload("User").Preload("Card").Preload("Merchant").Preload("Technician").Preload("Compensations", appointmentCompensationPreload).Preload("RescheduleRequests", appointmentRescheduleRequestPreload).First(&appointment, id)
+	if reloaded, err := loadAppointmentByID(config.DB, appointment.ID); err == nil && reloaded != nil {
+		appointment = *reloaded
+		_ = hydrateAppointmentRelations(config.DB, &appointment)
+	}
 	appointment.Status = normalizeAppointmentStatus(appointment.Status)
 	// 入预约队列（内存队列）：仅 confirmed 才进入预约排队
-	if appointment.AppointmentTime != nil {
+	if appointment.AppointmentTime != nil && queue.Default != nil {
 		date := appointment.AppointmentTime.Format("2006-01-02")
 		now2 := time.Now()
 		queue.Default.Enqueue(appointment.MerchantID, date, queue.QueueTypeAppointment, appointment.ID, 1, true, now2)
@@ -1450,7 +1516,7 @@ func executeAppointmentReschedule(tx *gorm.DB, appointmentID uint, proposal mode
 	serviceGapMinutes := getAppointmentGapMinutes(current.MerchantID, current)
 	if proposal.NewProjectID != nil && *proposal.NewProjectID > 0 {
 		var project models.MerchantProject
-		if err := tx.Where("id = ? AND merchant_id = ? AND is_active = ?", *proposal.NewProjectID, current.MerchantID, true).First(&project).Error; err != nil {
+		if err := tx.Where("id = ? AND merchant_id = ? AND is_active = ? AND bookable_online = ?", *proposal.NewProjectID, current.MerchantID, true, true).First(&project).Error; err != nil {
 			return oldAppointment, newAppointment, apiErr{status: http.StatusBadRequest, msg: "无效的项目"}
 		}
 		projectID = proposal.NewProjectID
@@ -1471,11 +1537,12 @@ func executeAppointmentReschedule(tx *gorm.DB, appointmentID uint, proposal mode
 		}
 	}
 
-	predictedWaitMinutes, err := validateAppointmentPlacementRules(tx, merchant, proposal.NewAppointmentTime.In(appointmentLocation()), *proposal.NewAppointmentTime, occupiedMinutes, technicianID, current.ID)
+	decision, err := validateAppointmentPlacementRules(tx, merchant, proposal.NewAppointmentTime.In(appointmentLocation()), *proposal.NewAppointmentTime, occupiedMinutes, technicianID, current.ID)
 	if err != nil {
 		return oldAppointment, newAppointment, err
 	}
-	current.PredictedWaitMinutes = predictedWaitMinutes
+	current.PredictedWaitMinutes = decision.PredictedWaitMinutes
+	technicianID = decision.AssignedTechnicianID
 
 	if normalizeAppointmentStatus(current.Status) == "arrived" {
 		// 到店后接受改签，需要先回滚未开始服务的占用，再关闭旧预约。
@@ -1646,7 +1713,7 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 	serviceGapMinutes := getAppointmentGapMinutes(appointment.MerchantID, *appointment)
 	if input.ProjectID != nil && *input.ProjectID > 0 {
 		var project models.MerchantProject
-		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ?", *input.ProjectID, appointment.MerchantID, true).First(&project).Error; err != nil {
+		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ? AND bookable_online = ?", *input.ProjectID, appointment.MerchantID, true, true).First(&project).Error; err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
 			return
 		}
@@ -1654,7 +1721,8 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 		serviceGapMinutes = project.ServiceGapMinutes
 	}
 	occupiedMinutes := projectBookingOccupiedMinutes(serviceMinutes, serviceGapMinutes)
-	if _, err := validateAppointmentPlacementRules(config.DB, merchant, newAppointmentTime.In(appointmentLocation()), newAppointmentTime, occupiedMinutes, input.TechnicianID, appointment.ID); err != nil {
+	placementDecision, err := validateAppointmentPlacementRules(config.DB, merchant, newAppointmentTime.In(appointmentLocation()), newAppointmentTime, occupiedMinutes, input.TechnicianID, appointment.ID)
+	if err != nil {
 		var ae apiErr
 		if errors.As(err, &ae) {
 			c.JSON(ae.status, gin.H{"error": ae.msg})
@@ -1707,8 +1775,8 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 		if input.ProjectID != nil {
 			proposal.NewProjectID = input.ProjectID
 		}
-		if input.TechnicianID != nil {
-			proposal.NewTechnicianID = input.TechnicianID
+		if placementDecision.AssignedTechnicianID != nil {
+			proposal.NewTechnicianID = placementDecision.AssignedTechnicianID
 		}
 		return tx.Create(&proposal).Error
 	})

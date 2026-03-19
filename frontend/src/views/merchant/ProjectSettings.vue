@@ -77,6 +77,18 @@
                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
+
+              <label class="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-3">
+                <div>
+                  <div class="text-sm font-medium text-gray-700">参与公开预约</div>
+                  <div class="mt-1 text-xs text-gray-400">关闭后，该项目不会出现在用户预约项目和碎片计算中</div>
+                </div>
+                <input
+                  v-model="project.bookable_online"
+                  type="checkbox"
+                  class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+              </label>
             </div>
             
             <button
@@ -122,6 +134,7 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
     id: project.id ?? null,
     name: String(project.name || '').trim(),
     duration: Number(project.duration || 0),
+    bookable_online: project.bookable_online !== false,
     service_gap_minutes: Number(project.service_gap_minutes ?? 3),
     start_delay_seconds: Number(project.start_delay_seconds ?? 60)
   })),
@@ -157,6 +170,7 @@ const load = async () => {
           id: p.id,
           name: p.name,
           duration: p.duration,
+          bookable_online: p.bookable_online !== false,
           service_gap_minutes: Number(p.service_gap_minutes ?? 3),
           start_delay_seconds: Number(p.start_delay_seconds ?? 60)
         }))
@@ -172,7 +186,7 @@ const load = async () => {
 }
 
 const addProject = () => {
-  form.value.projects.push({ id: null, name: '', duration: null, service_gap_minutes: 3, start_delay_seconds: null })
+  form.value.projects.push({ id: null, name: '', duration: null, bookable_online: true, service_gap_minutes: 3, start_delay_seconds: null })
 }
 
 const removeProject = (index) => {
@@ -225,6 +239,7 @@ const save = async () => {
       const payload = {
         name: (p.name || '').trim(),
         duration: Number(p.duration || 0),
+        bookable_online: p.bookable_online !== false,
         service_gap_minutes: Number(p.service_gap_minutes ?? 3),
         start_delay_seconds: Number(p.start_delay_seconds ?? 60)
       }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"fmt"
 	"kabao/models"
 	"math"
@@ -116,13 +117,16 @@ func appointmentProtectedStatuses() []string {
 	return []string{"pending", "confirmed", "arrived", "finished", "completed"}
 }
 
-func appointmentPredictedFinishAt(start time.Time, occupiedMinutes int, merchant *models.Merchant) time.Time {
+func appointmentHardFinishAt(start time.Time, occupiedMinutes int) time.Time {
 	if occupiedMinutes <= 0 {
 		occupiedMinutes = projectBookingOccupiedMinutes(30, 3)
 	}
-	// 预测公式对前后台保持一致：项目标准时长 + 固定收尾缓冲 + 商户可配置的风险缓冲。
-	totalMinutes := occupiedMinutes + merchantAppointmentPredictionBufferMinutes(merchant)
-	return start.Add(time.Duration(totalMinutes) * time.Minute)
+	return start.Add(time.Duration(occupiedMinutes) * time.Minute)
+}
+
+func appointmentPredictedFinishAt(start time.Time, occupiedMinutes int, merchant *models.Merchant) time.Time {
+	// 预测完成时间只用于现场等待判断与风险提示，不再参与未来预约硬阻塞。
+	return appointmentHardFinishAt(start, occupiedMinutes).Add(time.Duration(merchantAppointmentPredictionBufferMinutes(merchant)) * time.Minute)
 }
 
 func appointmentDetectableWindow(appt models.Appointment, merchant *models.Merchant) (time.Time, time.Time, bool) {
@@ -170,20 +174,128 @@ func getProjectOccupiedMinutesForAppointment(tx *gorm.DB, merchantID uint, proje
 	return projectBookingOccupiedMinutes(durationMinutes, gapMinutes)
 }
 
+func scanAppointmentRow(rows *sql.Rows) (models.Appointment, error) {
+	var (
+		appt                       models.Appointment
+		projectIDRaw               interface{}
+		technicianIDRaw            interface{}
+		appointmentTimeRaw         interface{}
+		confirmedAtRaw             interface{}
+		arrivedAtRaw               interface{}
+		completedAtRaw             interface{}
+		noShowAtRaw                interface{}
+		serviceSessionIDRaw        interface{}
+		usageIDRaw                 interface{}
+		closedByIDRaw              interface{}
+		replacedByAppointmentIDRaw interface{}
+		replacesAppointmentIDRaw   interface{}
+		canceledAtRaw              interface{}
+		failedAtRaw                interface{}
+		createdAtRaw               interface{}
+	)
+	if err := rows.Scan(
+		&appt.ID,
+		&appt.CardID,
+		&appt.MerchantID,
+		&appt.UserID,
+		&projectIDRaw,
+		&technicianIDRaw,
+		&appointmentTimeRaw,
+		&appt.Status,
+		&confirmedAtRaw,
+		&arrivedAtRaw,
+		&completedAtRaw,
+		&noShowAtRaw,
+		&serviceSessionIDRaw,
+		&usageIDRaw,
+		&appt.PredictedWaitMinutes,
+		&appt.ResolutionNote,
+		&appt.ClosedReason,
+		&appt.ClosedByType,
+		&closedByIDRaw,
+		&appt.RescheduleReason,
+		&replacedByAppointmentIDRaw,
+		&replacesAppointmentIDRaw,
+		&canceledAtRaw,
+		&failedAtRaw,
+		&appt.FailedReason,
+		&createdAtRaw,
+	); err != nil {
+		return appt, err
+	}
+	if v, ok := gormValueToUint(projectIDRaw); ok {
+		appt.ProjectID = &v
+	}
+	if v, ok := gormValueToUint(technicianIDRaw); ok {
+		appt.TechnicianID = &v
+	}
+	if v, ok := parseDBTimeValue(appointmentTimeRaw); ok {
+		appt.AppointmentTime = &v
+	}
+	if v, ok := parseDBTimeValue(confirmedAtRaw); ok {
+		appt.ConfirmedAt = &v
+	}
+	if v, ok := parseDBTimeValue(arrivedAtRaw); ok {
+		appt.ArrivedAt = &v
+	}
+	if v, ok := parseDBTimeValue(completedAtRaw); ok {
+		appt.CompletedAt = &v
+	}
+	if v, ok := parseDBTimeValue(noShowAtRaw); ok {
+		appt.NoShowAt = &v
+	}
+	if v, ok := gormValueToUint(serviceSessionIDRaw); ok {
+		appt.ServiceSessionID = &v
+	}
+	if v, ok := gormValueToUint(usageIDRaw); ok {
+		appt.UsageID = &v
+	}
+	if v, ok := gormValueToUint(closedByIDRaw); ok {
+		appt.ClosedByID = &v
+	}
+	if v, ok := gormValueToUint(replacedByAppointmentIDRaw); ok {
+		appt.ReplacedByAppointmentID = &v
+	}
+	if v, ok := gormValueToUint(replacesAppointmentIDRaw); ok {
+		appt.ReplacesAppointmentID = &v
+	}
+	if v, ok := parseDBTimeValue(canceledAtRaw); ok {
+		appt.CanceledAt = &v
+	}
+	if v, ok := parseDBTimeValue(failedAtRaw); ok {
+		appt.FailedAt = &v
+	}
+	if v, ok := parseDBTimeValue(createdAtRaw); ok {
+		appt.CreatedAt = &v
+	}
+	return appt, nil
+}
+
 func loadProtectedAppointmentsForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, start, end time.Time, excludeAppointmentID uint) ([]models.Appointment, error) {
 	if tx == nil || merchantID == 0 || technicianID == 0 {
 		return nil, nil
 	}
-	var list []models.Appointment
-	q := tx.Where("merchant_id = ? AND technician_id = ? AND appointment_time IS NOT NULL AND appointment_time >= ? AND appointment_time <= ?",
-		merchantID, technicianID, start, end).
+	q := tx.Table("appointments").
+		Select("id, card_id, merchant_id, user_id, project_id, technician_id, appointment_time, status, confirmed_at, arrived_at, completed_at, no_show_at, service_session_id, usage_id, predicted_wait_minutes, resolution_note, closed_reason, closed_by_type, closed_by_id, reschedule_reason, replaced_by_appointment_id, replaces_appointment_id, canceled_at, failed_at, failed_reason, created_at").
+		Where("merchant_id = ? AND technician_id = ? AND appointment_time IS NOT NULL AND appointment_time >= ? AND appointment_time <= ?",
+			merchantID, technicianID, start, end).
 		Where("status IN ?", appointmentProtectedStatuses()).
 		Order("appointment_time asc")
 	if excludeAppointmentID > 0 {
 		q = q.Where("id <> ?", excludeAppointmentID)
 	}
-	if err := q.Find(&list).Error; err != nil {
+	rows, err := q.Rows()
+	if err != nil {
 		return nil, err
+	}
+	defer rows.Close()
+	list := make([]models.Appointment, 0)
+	for rows.Next() {
+		appt, err := scanAppointmentRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, appt)
 	}
 	return list, nil
 }
@@ -201,48 +313,23 @@ func evaluateBookingTechnicianAvailability(tx *gorm.DB, merchant models.Merchant
 		return out, err
 	}
 
-	newFinish := appointmentPredictedFinishAt(appointmentStart, projectOccupiedMinutes, &merchant)
-	maxWait := merchantAppointmentMaxWaitMinutes(&merchant)
+	newFinish := appointmentHardFinishAt(appointmentStart, projectOccupiedMinutes)
 	for _, appt := range existing {
 		if appt.AppointmentTime == nil {
 			continue
 		}
 		existingStart := *appt.AppointmentTime
-		existingFinish := appointmentPredictedFinishAt(existingStart, getAppointmentOccupiedMinutes(merchant.ID, appt), &merchant)
-
-		if existingStart.Before(appointmentStart) {
-			waitMinutes := int(math.Ceil(existingFinish.Sub(appointmentStart).Minutes()))
-			if waitMinutes > maxWait {
-				return appointmentAvailability{
-					State:                appointmentAvailabilityUnavailable,
-					PredictedWaitMinutes: waitMinutes,
-					Reason:               fmt.Sprintf("该客服前一笔预约预计会让当前预约等待 %d 分钟", waitMinutes),
-					NextAppointmentID:    &appt.ID,
-				}, nil
+		existingFinish := appointmentHardFinishAt(existingStart, getAppointmentOccupiedMinutes(merchant.ID, appt))
+		if appointmentStart.Before(existingFinish) && existingStart.Before(newFinish) {
+			reason := "该客服该时段已被其他预约占用"
+			if !existingStart.Before(appointmentStart) {
+				reason = "当前预约会与后续预约重叠"
 			}
-			if waitMinutes > out.PredictedWaitMinutes {
-				out.State = appointmentAvailabilityConditional
-				out.PredictedWaitMinutes = waitMinutes
-				out.Reason = fmt.Sprintf("该客服前一笔预约可能导致等待 %d 分钟", waitMinutes)
-				out.NextAppointmentID = &appt.ID
-			}
-			continue
-		}
-
-		waitMinutes := int(math.Ceil(newFinish.Sub(existingStart).Minutes()))
-		if waitMinutes > maxWait {
 			return appointmentAvailability{
-				State:                appointmentAvailabilityUnavailable,
-				PredictedWaitMinutes: waitMinutes,
-				Reason:               fmt.Sprintf("当前预约会挤占后续预约 %d 分钟", waitMinutes),
-				NextAppointmentID:    &appt.ID,
+				State:             appointmentAvailabilityUnavailable,
+				Reason:            reason,
+				NextAppointmentID: &appt.ID,
 			}, nil
-		}
-		if waitMinutes > out.PredictedWaitMinutes {
-			out.State = appointmentAvailabilityConditional
-			out.PredictedWaitMinutes = waitMinutes
-			out.Reason = fmt.Sprintf("当前预约会轻微挤占后续预约，预计等待 %d 分钟", waitMinutes)
-			out.NextAppointmentID = &appt.ID
 		}
 	}
 
@@ -560,98 +647,9 @@ func loadAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appointment, 
 	if !rows.Next() {
 		return nil, nil
 	}
-	var (
-		appt                       models.Appointment
-		projectIDRaw               interface{}
-		technicianIDRaw            interface{}
-		appointmentTimeRaw         interface{}
-		confirmedAtRaw             interface{}
-		arrivedAtRaw               interface{}
-		completedAtRaw             interface{}
-		noShowAtRaw                interface{}
-		serviceSessionIDRaw        interface{}
-		usageIDRaw                 interface{}
-		closedByIDRaw              interface{}
-		replacedByAppointmentIDRaw interface{}
-		replacesAppointmentIDRaw   interface{}
-		canceledAtRaw              interface{}
-		failedAtRaw                interface{}
-		createdAtRaw               interface{}
-	)
-	if err := rows.Scan(
-		&appt.ID,
-		&appt.CardID,
-		&appt.MerchantID,
-		&appt.UserID,
-		&projectIDRaw,
-		&technicianIDRaw,
-		&appointmentTimeRaw,
-		&appt.Status,
-		&confirmedAtRaw,
-		&arrivedAtRaw,
-		&completedAtRaw,
-		&noShowAtRaw,
-		&serviceSessionIDRaw,
-		&usageIDRaw,
-		&appt.PredictedWaitMinutes,
-		&appt.ResolutionNote,
-		&appt.ClosedReason,
-		&appt.ClosedByType,
-		&closedByIDRaw,
-		&appt.RescheduleReason,
-		&replacedByAppointmentIDRaw,
-		&replacesAppointmentIDRaw,
-		&canceledAtRaw,
-		&failedAtRaw,
-		&appt.FailedReason,
-		&createdAtRaw,
-	); err != nil {
+	appt, err := scanAppointmentRow(rows)
+	if err != nil {
 		return nil, err
-	}
-	if v, ok := gormValueToUint(projectIDRaw); ok {
-		appt.ProjectID = &v
-	}
-	if v, ok := gormValueToUint(technicianIDRaw); ok {
-		appt.TechnicianID = &v
-	}
-	if v, ok := parseDBTimeValue(appointmentTimeRaw); ok {
-		appt.AppointmentTime = &v
-	}
-	if v, ok := parseDBTimeValue(confirmedAtRaw); ok {
-		appt.ConfirmedAt = &v
-	}
-	if v, ok := parseDBTimeValue(arrivedAtRaw); ok {
-		appt.ArrivedAt = &v
-	}
-	if v, ok := parseDBTimeValue(completedAtRaw); ok {
-		appt.CompletedAt = &v
-	}
-	if v, ok := parseDBTimeValue(noShowAtRaw); ok {
-		appt.NoShowAt = &v
-	}
-	if v, ok := gormValueToUint(serviceSessionIDRaw); ok {
-		appt.ServiceSessionID = &v
-	}
-	if v, ok := gormValueToUint(usageIDRaw); ok {
-		appt.UsageID = &v
-	}
-	if v, ok := gormValueToUint(closedByIDRaw); ok {
-		appt.ClosedByID = &v
-	}
-	if v, ok := gormValueToUint(replacedByAppointmentIDRaw); ok {
-		appt.ReplacedByAppointmentID = &v
-	}
-	if v, ok := gormValueToUint(replacesAppointmentIDRaw); ok {
-		appt.ReplacesAppointmentID = &v
-	}
-	if v, ok := parseDBTimeValue(canceledAtRaw); ok {
-		appt.CanceledAt = &v
-	}
-	if v, ok := parseDBTimeValue(failedAtRaw); ok {
-		appt.FailedAt = &v
-	}
-	if v, ok := parseDBTimeValue(createdAtRaw); ok {
-		appt.CreatedAt = &v
 	}
 	return &appt, nil
 }

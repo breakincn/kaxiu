@@ -129,6 +129,7 @@ var defaultMigrations = []dbMigration{
 		Name:    "add_project_gap_and_appointment_slot_granularity",
 		Statements: []string{
 			"ALTER TABLE merchant_projects ADD COLUMN service_gap_minutes INT NOT NULL DEFAULT 3 COMMENT '服务间歇时间（分钟）'",
+			"ALTER TABLE merchant_projects ADD COLUMN bookable_online BOOLEAN NOT NULL DEFAULT 1 COMMENT '是否参与公开预约'",
 			"ALTER TABLE merchants ADD COLUMN appointment_slot_granularity_minutes INT NOT NULL DEFAULT 15 COMMENT '预约时段展示粒度分钟数'",
 		},
 	},

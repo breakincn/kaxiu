@@ -4,7 +4,6 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"log"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -17,13 +16,6 @@ const (
 	appointmentAssignDelay           = 10 * time.Minute
 	appointmentSchedulerBatchLimit   = 200
 )
-
-func merchantAppointmentMaxWaitMinutes(m models.Merchant) int {
-	if m.AppointmentMaxWaitMinutes > 0 {
-		return m.AppointmentMaxWaitMinutes
-	}
-	return 15
-}
 
 func merchantAppointmentPredictionBufferMinutes(m models.Merchant) int {
 	if m.AppointmentPredictionBufferMinute > 0 {
@@ -178,11 +170,11 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 	return &appt, nil
 }
 
-func predictedAppointmentFinishAt(start time.Time, durationMinutes int, merchant models.Merchant) time.Time {
+func hardReservedAppointmentFinishAt(start time.Time, durationMinutes int) time.Time {
 	if durationMinutes <= 0 {
 		durationMinutes = 33
 	}
-	return start.Add(time.Duration(durationMinutes+merchantAppointmentPredictionBufferMinutes(merchant)) * time.Minute)
+	return start.Add(time.Duration(durationMinutes) * time.Minute)
 }
 
 func evaluateSchedulerBookingAvailability(tx *gorm.DB, merchant models.Merchant, technicianID uint, start time.Time, durationMinutes int, excludeAppointmentID uint) (string, int, error) {
@@ -195,36 +187,18 @@ func evaluateSchedulerBookingAvailability(tx *gorm.DB, merchant models.Merchant,
 		return "unavailable", 0, err
 	}
 
-	state := "safe"
-	predictedWait := 0
-	newFinish := predictedAppointmentFinishAt(start, durationMinutes, merchant)
+	newFinish := hardReservedAppointmentFinishAt(start, durationMinutes)
 	for _, appt := range appointments {
 		if appt.AppointmentTime == nil {
 			continue
 		}
 		existingStart := *appt.AppointmentTime
-		existingFinish := predictedAppointmentFinishAt(existingStart, getSchedulerAppointmentDuration(tx, merchant.ID, appt.ProjectID), merchant)
-		if existingStart.Before(start) {
-			waitMinutes := int(math.Ceil(existingFinish.Sub(start).Minutes()))
-			if waitMinutes > merchantAppointmentMaxWaitMinutes(merchant) {
-				return "unavailable", waitMinutes, nil
-			}
-			if waitMinutes > predictedWait {
-				state = "conditional"
-				predictedWait = waitMinutes
-			}
-			continue
-		}
-		waitMinutes := int(math.Ceil(newFinish.Sub(existingStart).Minutes()))
-		if waitMinutes > merchantAppointmentMaxWaitMinutes(merchant) {
-			return "unavailable", waitMinutes, nil
-		}
-		if waitMinutes > predictedWait {
-			state = "conditional"
-			predictedWait = waitMinutes
+		existingFinish := hardReservedAppointmentFinishAt(existingStart, getSchedulerAppointmentDuration(tx, merchant.ID, appt.ProjectID))
+		if start.Before(existingFinish) && existingStart.Before(newFinish) {
+			return "unavailable", 0, nil
 		}
 	}
-	return state, predictedWait, nil
+	return "safe", 0, nil
 }
 
 func getSchedulerAppointmentDuration(tx *gorm.DB, merchantID uint, projectID *uint) int {
@@ -411,44 +385,46 @@ func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) err
 		}
 
 		projectDurationCache := map[uint]int{}
-		getDurationMinutes := func(ap models.Appointment) int {
+		getOccupiedMinutes := func(ap models.Appointment) int {
 			if ap.ProjectID == nil || *ap.ProjectID == 0 {
-				return 30
+				return 33
 			}
 			pid := *ap.ProjectID
 			if v, ok := projectDurationCache[pid]; ok {
 				if v > 0 {
 					return v
 				}
-				return 30
+				return 33
 			}
 			var p models.MerchantProject
 			err := tx.Where("id = ? AND merchant_id = ?", pid, ap.MerchantID).First(&p).Error
 			if err != nil {
 				projectDurationCache[pid] = 0
-				return 30
+				return 33
 			}
 			if p.Duration <= 0 {
 				projectDurationCache[pid] = 0
-				return 30
+				return 33
 			}
-			projectDurationCache[pid] = p.Duration
-			return p.Duration
+			gap := p.ServiceGapMinutes
+			if gap < 0 {
+				gap = 3
+			}
+			projectDurationCache[pid] = p.Duration + gap
+			return projectDurationCache[pid]
 		}
 
 		start := *a.AppointmentTime
-		serviceMinutes := getDurationMinutes(a)
-		end := start.Add(time.Duration(serviceMinutes) * time.Minute)
+		occupiedMinutes := getOccupiedMinutes(a)
+		end := start.Add(time.Duration(occupiedMinutes) * time.Minute)
 
 		overlaps := func(s1, e1, s2, e2 time.Time) bool {
 			return s1.Before(e2) && s2.Before(e1)
 		}
 
 		bestTechID := uint(0)
-		bestWaitMinutes := int(^uint(0) >> 1)
-		bestState := "unavailable"
 
-		// 从候选客服中选择一个满足预约保护规则的候选人：safe 优先，其次 conditional。
+		// 这里只回补历史遗留的空客服预约，规则与主链保持一致：未来预约严格 no-overlap。
 		for _, t := range techs {
 			var existing []models.Appointment
 			err := tx.
@@ -465,7 +441,7 @@ func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) err
 					continue
 				}
 				es := *e.AppointmentTime
-				eMin := getDurationMinutes(e)
+				eMin := getOccupiedMinutes(e)
 				ee := es.Add(time.Duration(eMin) * time.Minute)
 				if overlaps(start, end, es, ee) {
 					conflict = true
@@ -475,25 +451,22 @@ func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) err
 			if conflict {
 				continue
 			}
-			state, predictedWaitMinutes, err := evaluateSchedulerBookingAvailability(tx, m, t.ID, start, serviceMinutes, a.ID)
+			state, _, err := evaluateSchedulerBookingAvailability(tx, m, t.ID, start, occupiedMinutes, a.ID)
 			if err != nil {
 				return err
 			}
 			if state == "unavailable" {
 				continue
 			}
-			if bestTechID == 0 || (state == "safe" && bestState != "safe") ||
-				(state == bestState && predictedWaitMinutes < bestWaitMinutes) {
+			if bestTechID == 0 || t.ID < bestTechID {
 				bestTechID = t.ID
-				bestWaitMinutes = predictedWaitMinutes
-				bestState = state
 			}
 		}
 
 		if bestTechID > 0 {
 			updates := map[string]interface{}{
 				"technician_id":          bestTechID,
-				"predicted_wait_minutes": bestWaitMinutes,
+				"predicted_wait_minutes": 0,
 				"failed_at":              nil,
 				"failed_reason":          "",
 			}
