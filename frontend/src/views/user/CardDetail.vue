@@ -179,6 +179,7 @@
               撤销改签
             </button>
             <button
+              v-if="showCancelAppointmentAction"
               @click="cancelAppointment"
               :disabled="cancelButtonDisabled"
               class="w-full py-2.5 border-2 border-red-400 text-red-500 font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -2353,7 +2354,12 @@ const canCancelUserRescheduleRequest = computed(() => {
 const showUserRescheduleAction = computed(() => {
   if (!appointment.value) return false
   if (latestAppointmentRescheduleRequest.value) return false
-  return appointment.value.status === 'confirmed' || appointment.value.status === 'arrived'
+  return appointment.value.status === 'confirmed'
+})
+
+const showCancelAppointmentAction = computed(() => {
+  if (!appointment.value) return false
+  return appointment.value.status === 'pending' || appointment.value.status === 'confirmed' || isAppointmentFailed.value
 })
 
 const userDisplayedRescheduleSlots = computed(() => {
@@ -2823,7 +2829,7 @@ const isAppointmentFailed = computed(() => {
 const cancelButtonDisabled = computed(() => {
   if (!appointment.value) return true
   if (isAppointmentFailed.value) return true
-  return canceling.value || appointment.value.status === 'completed' || appointment.value.status === 'canceled'
+  return canceling.value || appointment.value.status === 'arrived' || appointment.value.status === 'completed' || appointment.value.status === 'canceled'
 })
 
 const cancelButtonText = computed(() => {
@@ -2988,7 +2994,7 @@ const getAppointmentStatusText = (status) => {
   const texts = {
     pending: '待确认',
     confirmed: '待到店',
-    arrived: '已到店',
+    arrived: '已到店待服务',
     completed: '已完成',
     canceled: '已取消',
     no_show: '已失约'

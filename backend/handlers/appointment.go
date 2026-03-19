@@ -799,7 +799,7 @@ func getAppointmentActor(c *gin.Context) (string, *uint) {
 
 func appointmentAllowsReschedule(status string) bool {
 	switch normalizeAppointmentStatus(status) {
-	case "pending", "confirmed", "arrived", "failed":
+	case "pending", "confirmed", "failed":
 		return true
 	default:
 		return false

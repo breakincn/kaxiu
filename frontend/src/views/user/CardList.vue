@@ -196,9 +196,10 @@
             @click="handleAppointmentAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
           >
-            查看预约
+            {{ selectedCardCanArriveNow ? '核销预约' : '查看预约' }}
           </button>
           <button
+            v-if="!selectedCardCanArriveNow"
             @click="openVerifyCodeFlowFromAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
           >
@@ -472,6 +473,8 @@ const codeExpireTime = ref('')
 const verifyQrDataUrl = ref('')
 const verifyCodeProject = ref(null)
 const hasActiveAppointment = ref(false)
+const selectedCardAppointment = ref(null)
+const selectedCardCanArriveNow = ref(false)
 const appointing = ref(false)
 const preparingAppointmentModal = ref(false)
 const loadingSlots = ref(false)
@@ -803,6 +806,8 @@ const openCardQrModal = async (card) => {
 const openActionSheet = (card) => {
   selectedCard.value = card
   hasActiveAppointment.value = false
+  selectedCardAppointment.value = null
+  selectedCardCanArriveNow.value = false
   showActionSheet.value = true
   fetchCardAppointmentStatus(card?.id)
 }
@@ -815,18 +820,24 @@ const fetchCardAppointmentStatus = async (cardId) => {
   const id = Number(cardId || 0)
   if (!id) {
     hasActiveAppointment.value = false
+    selectedCardAppointment.value = null
+    selectedCardCanArriveNow.value = false
     return
   }
 
   try {
     const res = await appointmentApi.getCardAppointment(id)
     const appointment = res?.data?.data?.appointment
+    selectedCardAppointment.value = appointment || null
+    selectedCardCanArriveNow.value = Boolean(res?.data?.data?.can_arrive_now)
     hasActiveAppointment.value = Boolean(
       appointment &&
-      ['pending', 'confirmed'].includes(String(appointment.status || '').trim())
+      ['pending', 'confirmed', 'arrived'].includes(String(appointment.status || '').trim())
     )
   } catch (_) {
     hasActiveAppointment.value = false
+    selectedCardAppointment.value = null
+    selectedCardCanArriveNow.value = false
   }
 }
 
@@ -927,6 +938,8 @@ const closeAllOverlayModals = () => {
   timeSlotError.value = ''
   availableTechnicians.value = []
   hasActiveAppointment.value = false
+  selectedCardAppointment.value = null
+  selectedCardCanArriveNow.value = false
   pressingCardId.value = null
   selectedCard.value = null
   try {
@@ -997,6 +1010,27 @@ const startVerifyStatusPoll = async () => {
   }, 1000)
 }
 
+const openAppointmentArrivalVerifyFlowFromAction = async () => {
+  closeActionSheet()
+  await ensureSelectedCardForAppointment()
+
+  const appointmentProjectId = Number(selectedCardAppointment.value?.project_id || 0)
+  const projects = selectedCard.value?.projects || []
+  const fallbackProjectId = projects.length === 1 ? Number(projects[0].id || 0) : 0
+  const projectId = appointmentProjectId > 0 ? appointmentProjectId : fallbackProjectId
+
+  generatingVerifyCode.value = true
+  try {
+    await doGenerateVerifyCode(projectId > 0 ? projectId : null)
+    showVerifyCodeModal.value = true
+    await startVerifyStatusPoll()
+  } catch (err) {
+    alert(err.response?.data?.error || '生成核销码失败')
+  } finally {
+    generatingVerifyCode.value = false
+  }
+}
+
 const openVerifyCodeFlowFromAction = async () => {
   closeActionSheet()
   if (!selectedCard.value?.id) return
@@ -1026,6 +1060,10 @@ const handleAppointmentAction = async () => {
   if (!cardId) return
 
   if (hasActiveAppointment.value) {
+    if (selectedCardCanArriveNow.value && String(selectedCardAppointment.value?.status || '').trim() === 'confirmed') {
+      await openAppointmentArrivalVerifyFlowFromAction()
+      return
+    }
     closeAllOverlayModals()
     await waitForOverlayClosePaint()
     router.push(`/user/cards/${cardId}?scrollToAppointment=1`)
