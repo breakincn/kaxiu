@@ -130,6 +130,11 @@ func promoteQueueSessionToServing(tx *gorm.DB, s *models.ServiceSession, now tim
 		return res.Error
 	}
 	if res.RowsAffected > 0 {
+		if s.SourceType == "appointment" && s.SourceID != nil {
+			if err := tx.Model(&models.Appointment{}).Where("id = ? AND actual_start_at IS NULL", *s.SourceID).Update("actual_start_at", now).Error; err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 

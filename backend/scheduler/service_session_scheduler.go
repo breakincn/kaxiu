@@ -3,6 +3,7 @@ package scheduler
 import (
 	"errors"
 	"fmt"
+	"kabao/appointmentdelay"
 	"kabao/config"
 	"kabao/models"
 	"kabao/queue"
@@ -107,6 +108,144 @@ func getStartPendingTimeoutForSession(s *models.ServiceSession) time.Duration {
 		return time.Duration(s.StartPendingTimeoutSeconds) * time.Second
 	}
 	return config.StartPendingTimeout()
+}
+
+func loadServiceSessionByID(tx *gorm.DB, sessionID uint) (*models.ServiceSession, error) {
+	if tx == nil || sessionID == 0 {
+		return nil, nil
+	}
+	rows, err := tx.Table("service_sessions").
+		Select("id, merchant_id, user_id, card_id, project_id, initial_usage_id, verify_code, session_mode, source_type, source_id, occupies_next_appointment, next_appointment_id, predicted_appointment_delay_minutes, predicted_ready_at, room_id, technician_id, last_technician_id, start_timeout_count, start_timeout_last_at, staff_select_cooldown_until, staff_select_entered_at, start_pending_timeout_seconds, status, room_select_deadline_at, room_locked_at, start_confirmed_at, start_delay_seconds, scheduled_start_at, started_at, duration_minutes, scheduled_finish_at, finished_at, auto_finish_delay_seconds, auto_idle_after_seconds, created_at, updated_at").
+		Where("id = ?", sessionID).
+		Limit(1).
+		Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+	var (
+		session                     models.ServiceSession
+		projectIDRaw                interface{}
+		sourceIDRaw                 interface{}
+		nextAppointmentIDRaw        interface{}
+		predictedReadyAtRaw         interface{}
+		roomIDRaw                   interface{}
+		technicianIDRaw             interface{}
+		lastTechnicianIDRaw         interface{}
+		startTimeoutLastAtRaw       interface{}
+		staffSelectCooldownUntilRaw interface{}
+		staffSelectEnteredAtRaw     interface{}
+		roomSelectDeadlineAtRaw     interface{}
+		roomLockedAtRaw             interface{}
+		startConfirmedAtRaw         interface{}
+		scheduledStartAtRaw         interface{}
+		startedAtRaw                interface{}
+		scheduledFinishAtRaw        interface{}
+		finishedAtRaw               interface{}
+		createdAtRaw                interface{}
+		updatedAtRaw                interface{}
+	)
+	if err := rows.Scan(
+		&session.ID,
+		&session.MerchantID,
+		&session.UserID,
+		&session.CardID,
+		&projectIDRaw,
+		&session.InitialUsageID,
+		&session.VerifyCode,
+		&session.SessionMode,
+		&session.SourceType,
+		&sourceIDRaw,
+		&session.OccupiesNextAppointment,
+		&nextAppointmentIDRaw,
+		&session.PredictedAppointmentDelayMinutes,
+		&predictedReadyAtRaw,
+		&roomIDRaw,
+		&technicianIDRaw,
+		&lastTechnicianIDRaw,
+		&session.StartTimeoutCount,
+		&startTimeoutLastAtRaw,
+		&staffSelectCooldownUntilRaw,
+		&staffSelectEnteredAtRaw,
+		&session.StartPendingTimeoutSeconds,
+		&session.Status,
+		&roomSelectDeadlineAtRaw,
+		&roomLockedAtRaw,
+		&startConfirmedAtRaw,
+		&session.StartDelaySeconds,
+		&scheduledStartAtRaw,
+		&startedAtRaw,
+		&session.DurationMinutes,
+		&scheduledFinishAtRaw,
+		&finishedAtRaw,
+		&session.AutoFinishDelaySeconds,
+		&session.AutoIdleAfterSeconds,
+		&createdAtRaw,
+		&updatedAtRaw,
+	); err != nil {
+		return nil, err
+	}
+	if v, ok := schedulerValueToUint(projectIDRaw); ok {
+		session.ProjectID = &v
+	}
+	if v, ok := schedulerValueToUint(sourceIDRaw); ok {
+		session.SourceID = &v
+	}
+	if v, ok := schedulerValueToUint(nextAppointmentIDRaw); ok {
+		session.NextAppointmentID = &v
+	}
+	if v, ok := parseSchedulerDBTimeValue(predictedReadyAtRaw); ok {
+		session.PredictedReadyAt = v
+	}
+	if v, ok := schedulerValueToUint(roomIDRaw); ok {
+		session.RoomID = &v
+	}
+	if v, ok := schedulerValueToUint(technicianIDRaw); ok {
+		session.TechnicianID = &v
+	}
+	if v, ok := schedulerValueToUint(lastTechnicianIDRaw); ok {
+		session.LastTechnicianID = &v
+	}
+	if v, ok := parseSchedulerDBTimeValue(startTimeoutLastAtRaw); ok {
+		session.StartTimeoutLastAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(staffSelectCooldownUntilRaw); ok {
+		session.StaffSelectCooldownUntil = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(staffSelectEnteredAtRaw); ok {
+		session.StaffSelectEnteredAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(roomSelectDeadlineAtRaw); ok {
+		session.RoomSelectDeadlineAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(roomLockedAtRaw); ok {
+		session.RoomLockedAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(startConfirmedAtRaw); ok {
+		session.StartConfirmedAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(scheduledStartAtRaw); ok {
+		session.ScheduledStartAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(startedAtRaw); ok {
+		session.StartedAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(scheduledFinishAtRaw); ok {
+		session.ScheduledFinishAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(finishedAtRaw); ok {
+		session.FinishedAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(createdAtRaw); ok {
+		session.CreatedAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(updatedAtRaw); ok {
+		session.UpdatedAt = v
+	}
+	return &session, nil
 }
 
 func finalizeOverdueManualServingSessions(db *gorm.DB, now time.Time) error {
@@ -777,10 +916,14 @@ func failStartPendingAndAssignNext(tx *gorm.DB, s *models.ServiceSession, mercha
 
 func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) error {
 	return db.Transaction(func(tx *gorm.DB) error {
-		var s models.ServiceSession
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&s, session.ID).Error; err != nil {
+		sPtr, err := loadServiceSessionByID(tx.Clauses(clause.Locking{Strength: "UPDATE"}), session.ID)
+		if err != nil {
 			return err
 		}
+		if sPtr == nil {
+			return gorm.ErrRecordNotFound
+		}
+		s := *sPtr
 		if queueDebugEnabledFor(s.MerchantID, s.ID, s.InitialUsageID) && strings.Contains(s.Status, "timeout_waiting") {
 			log.Printf("[queue-debug] advanceOne reload: session=%d status=%s baseStatus=%s merchant=%d usage=%d\n",
 				s.ID, s.Status, models.NormalizeSessionStatus(s.Status), s.MerchantID, s.InitialUsageID)
@@ -870,6 +1013,24 @@ func handleTimeoutFailed(tx *gorm.DB, s *models.ServiceSession, now time.Time) e
 			return err
 		}
 	}
+	if s.SourceType == "appointment" && s.SourceID != nil {
+		if err := syncAppointmentLiabilitySnapshot(tx, *s.SourceID, map[string]interface{}{
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &finishedAt,
+			"disruption_status":                  "closed",
+			"disruption_reason":                  "merchant_timeout_failed",
+			"liability_level":                    "merchant",
+			"salary_settlement_reference_status": "refund",
+		}, map[string]interface{}{
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &finishedAt,
+			"liability_level":                    "merchant",
+			"salary_settlement_reference_status": "refund",
+			"latest_reason":                      "merchant_timeout_failed",
+		}); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -877,6 +1038,20 @@ func handleTimeoutFailed(tx *gorm.DB, s *models.ServiceSession, now time.Time) e
 func handleAppointmentWaiting(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
 	if tx == nil || s == nil {
 		return nil
+	}
+	if s.SourceType == "appointment" && s.SourceID != nil {
+		if err := syncAppointmentLiabilitySnapshot(tx, *s.SourceID, map[string]interface{}{
+			"merchant_breach_pending": true,
+			"disruption_status":       "pending",
+			"disruption_reason":       "merchant_delay_pending",
+			"liability_level":         "pending_merchant",
+		}, map[string]interface{}{
+			"merchant_breach_pending": true,
+			"liability_level":         "pending_merchant",
+			"latest_reason":           "merchant_delay_pending",
+		}); err != nil {
+			return err
+		}
 	}
 	if s.TechnicianID == nil || *s.TechnicianID == 0 {
 		return tx.Model(&models.ServiceSession{}).
@@ -1271,9 +1446,15 @@ func handleDelayPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 				}
 			}
 		}
-		return tx.Model(&models.ServiceSession{}).
+		if err := tx.Model(&models.ServiceSession{}).
 			Where("id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", s.ID, models.ExpandStatusWithKnownPrefixes("delay_pending")).
-			Updates(updates).Error
+			Updates(updates).Error; err != nil {
+			return err
+		}
+		if s.SourceType == "appointment" && s.SourceID != nil {
+			return tx.Model(&models.Appointment{}).Where("id = ? AND actual_start_at IS NULL", *s.SourceID).Update("actual_start_at", now).Error
+		}
+		return nil
 	}
 	return nil
 }
@@ -1562,6 +1743,32 @@ func finalizeSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error
 	}
 	// 手动叫号模式：不自动触发，需要客服点击“开始叫号”或者扫码结单时手动触发
 	// 手动叫号的触发在 queue_status.go 的 TriggerNextCalling 接口中实现
+	if s.SourceType == "appointment" && s.SourceID != nil {
+		actualStartAt := now
+		if s.StartedAt != nil {
+			actualStartAt = *s.StartedAt
+		}
+		if err := syncAppointmentLiabilitySnapshot(tx, *s.SourceID, map[string]interface{}{
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &now,
+			"disruption_status":                  "closed",
+			"disruption_reason":                  "service_completed",
+			"liability_level":                    "none",
+			"salary_settlement_reference_status": "normal",
+			"actual_start_at":                    actualStartAt,
+		}, map[string]interface{}{
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &now,
+			"liability_level":                    "none",
+			"salary_settlement_reference_status": "normal",
+			"latest_reason":                      "service_completed",
+		}); err != nil {
+			return err
+		}
+		if err := appointmentdelay.RecordLedgerIfNeeded(tx, *s.SourceID, &s.ID, actualStartAt); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

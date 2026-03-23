@@ -44,6 +44,24 @@ func FailServiceSessionAndRefund(tx *gorm.DB, s *models.ServiceSession, merchant
 		Updates(updates).Error; err != nil {
 		return err
 	}
+	if s.SourceType == "appointment" && s.SourceID != nil {
+		if err := syncAppointmentOutcome(tx, *s.SourceID, map[string]interface{}{
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &now,
+			"disruption_status":                  "closed",
+			"disruption_reason":                  "merchant_timeout_failed",
+			"liability_level":                    "merchant",
+			"salary_settlement_reference_status": "refund",
+		}, map[string]interface{}{
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &now,
+			"liability_level":                    "merchant",
+			"salary_settlement_reference_status": "refund",
+			"latest_reason":                      "merchant_timeout_failed",
+		}); err != nil {
+			return err
+		}
+	}
 
 	return FailUsageAndRefund(tx, s.InitialUsageID, merchant, now, opts.MarkQueueDone)
 }
@@ -142,12 +160,24 @@ func CompleteUnstartedServiceSession(tx *gorm.DB, usageID uint, merchantID uint,
 		return false, err
 	}
 	if s.SourceType == "appointment" && s.SourceID != nil {
-		_ = tx.Model(&models.Appointment{}).
-			Where("id = ?", *s.SourceID).
-			Updates(map[string]interface{}{
-				"status":       "completed",
-				"completed_at": &finishedAt,
-			}).Error
+		if err := syncAppointmentOutcome(tx, *s.SourceID, map[string]interface{}{
+			"status":                             "completed",
+			"completed_at":                       &finishedAt,
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &finishedAt,
+			"disruption_status":                  "closed",
+			"disruption_reason":                  "service_completed",
+			"liability_level":                    "none",
+			"salary_settlement_reference_status": "normal",
+		}, map[string]interface{}{
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &finishedAt,
+			"liability_level":                    "none",
+			"salary_settlement_reference_status": "normal",
+			"latest_reason":                      "service_completed",
+		}); err != nil {
+			return false, err
+		}
 	}
 	return true, nil
 }

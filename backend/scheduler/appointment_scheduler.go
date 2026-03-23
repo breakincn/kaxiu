@@ -1,9 +1,11 @@
 package scheduler
 
 import (
+	"kabao/appointmentliability"
 	"kabao/config"
 	"kabao/models"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -109,6 +111,31 @@ func schedulerValueToUint(v interface{}) (uint, bool) {
 		}
 	}
 	return 0, false
+}
+
+func syncAppointmentLiabilitySnapshot(tx *gorm.DB, appointmentID uint, appointmentUpdates map[string]interface{}, settlementUpdates map[string]interface{}) error {
+	if tx == nil || appointmentID == 0 {
+		return nil
+	}
+	if len(appointmentUpdates) > 0 {
+		if err := tx.Model(&models.Appointment{}).Where("id = ?", appointmentID).Updates(appointmentUpdates).Error; err != nil {
+			return err
+		}
+	}
+	if len(settlementUpdates) == 0 {
+		return nil
+	}
+	var settlementID uint
+	if err := tx.Model(&models.Appointment{}).Where("id = ?", appointmentID).Select("appointment_settlement_id").Scan(&settlementID).Error; err != nil {
+		return err
+	}
+	if settlementID == 0 {
+		return appointmentliability.SyncLeaveDisruptionLedger(tx, appointmentID, time.Now())
+	}
+	if err := tx.Model(&models.AppointmentSettlement{}).Where("id = ?", settlementID).Updates(settlementUpdates).Error; err != nil {
+		return err
+	}
+	return appointmentliability.SyncLeaveDisruptionLedger(tx, appointmentID, time.Now())
 }
 
 func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appointment, error) {
@@ -271,7 +298,13 @@ func runAppointmentAssignOnce(db *gorm.DB) error {
 			log.Printf("assign appointment %d error: %v", appointmentID, err)
 		}
 	}
-	return runAppointmentNoShowOnce(db, now)
+	if err := runAppointmentNoShowOnce(db, now); err != nil {
+		return err
+	}
+	if err := runMerchantBreachCompensation(db, now); err != nil {
+		return err
+	}
+	return runAppointmentDelayLedgerSettlement(db, now)
 }
 
 func runAppointmentNoShowOnce(db *gorm.DB, now time.Time) error {
@@ -329,9 +362,401 @@ func runAppointmentNoShowOnce(db *gorm.DB, now time.Time) error {
 				"no_show_at": &now,
 			}).Error; err != nil {
 			log.Printf("mark appointment %d no_show error: %v", check.AppointmentID, err)
+			continue
+		}
+		if err := syncAppointmentLiabilitySnapshot(db, check.AppointmentID, map[string]interface{}{
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &now,
+			"disruption_status":                  "closed",
+			"disruption_reason":                  "user_no_show",
+			"liability_level":                    "user",
+			"salary_settlement_reference_status": "no_pay",
+		}, map[string]interface{}{
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &now,
+			"liability_level":                    "user",
+			"salary_settlement_reference_status": "no_pay",
+			"latest_reason":                      "user_no_show",
+		}); err != nil {
+			log.Printf("sync appointment %d no_show liability error: %v", check.AppointmentID, err)
 		}
 	}
 	return nil
+}
+
+func runMerchantBreachCompensation(db *gorm.DB, now time.Time) error {
+	rows, err := db.Table("appointments").
+		Select("id").
+		Where("merchant_breach_pending = ? AND breach_decision_at IS NOT NULL AND breach_decision_at <= ?", true, now).
+		Order("breach_decision_at asc, id asc").
+		Limit(appointmentSchedulerBatchLimit).
+		Rows()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var appointmentIDs []uint
+	for rows.Next() {
+		var appointmentID uint
+		if err := rows.Scan(&appointmentID); err != nil {
+			return err
+		}
+		appointmentIDs = append(appointmentIDs, appointmentID)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	for _, appointmentID := range appointmentIDs {
+		if err := settleMerchantBreachAppointment(db, appointmentID, now); err != nil {
+			log.Printf("settle merchant breach appointment %d error: %v", appointmentID, err)
+		}
+	}
+	return nil
+}
+
+func settleMerchantBreachAppointment(db *gorm.DB, appointmentID uint, now time.Time) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		appt, err := loadSchedulerAppointmentCompensationTarget(tx, appointmentID)
+		if err != nil {
+			return err
+		}
+		if appt == nil || !appt.MerchantBreachPending {
+			return nil
+		}
+		if appt.BreachDecisionAt == nil || appt.BreachDecisionAt.After(now) {
+			return nil
+		}
+
+		resultReason := ""
+		compensationType := ""
+		compensationValue := 0
+		liabilityLevel := "none"
+		salaryStatus := "normal"
+
+		switch {
+		case appt.ActualArrivedAt != nil:
+			resultReason = "merchant_breach"
+			compensationType = "merchant_breach"
+			compensationValue = 2
+			liabilityLevel = "merchant"
+			salaryStatus = "refund"
+		default:
+			formalAction, err := hasMerchantFormalMitigationRecord(tx, appt.ID)
+			if err != nil {
+				return err
+			}
+			if formalAction {
+				resultReason = "merchant_failure_offset"
+				compensationType = "merchant_failure_offset"
+				compensationValue = 1
+				liabilityLevel = "merchant"
+				salaryStatus = "refund"
+			}
+		}
+
+		if compensationType != "" && compensationValue > 0 {
+			if err := ensureAppointmentCompensation(tx, *appt, compensationType, compensationValue, now); err != nil {
+				return err
+			}
+		}
+		if resultReason == "" {
+			resultReason = "risk_released"
+		}
+		return syncAppointmentLiabilitySnapshot(tx, appt.ID, map[string]interface{}{
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &now,
+			"disruption_status":                  "closed",
+			"disruption_reason":                  resultReason,
+			"liability_level":                    liabilityLevel,
+			"salary_settlement_reference_status": salaryStatus,
+		}, map[string]interface{}{
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &now,
+			"liability_level":                    liabilityLevel,
+			"salary_settlement_reference_status": salaryStatus,
+			"latest_reason":                      resultReason,
+		})
+	})
+}
+
+func ensureAppointmentCompensation(tx *gorm.DB, appt models.Appointment, sourceType string, value int, now time.Time) error {
+	if tx == nil || appt.ID == 0 || value <= 0 {
+		return nil
+	}
+	var count int64
+	if err := tx.Model(&models.AppointmentCompensation{}).
+		Where("appointment_id = ? AND source_type = ? AND status IN ?", appt.ID, sourceType, []string{"pending", "applied"}).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	if err := tx.Model(&models.Card{}).Where("id = ?", appt.CardID).Updates(map[string]interface{}{
+		"total_times":  gorm.Expr("total_times + ?", value),
+		"remain_times": gorm.Expr("remain_times + ?", value),
+	}).Error; err != nil {
+		return err
+	}
+	comp := models.AppointmentCompensation{
+		AppointmentID: appt.ID,
+		MerchantID:    appt.MerchantID,
+		UserID:        appt.UserID,
+		CardID:        appt.CardID,
+		Type:          "extra_times",
+		Value:         value,
+		Status:        "applied",
+		Reason:        sourceType,
+		Remark:        "系统自动补偿",
+		SourceType:    sourceType,
+		CreatedByType: "system",
+		AppliedAt:     &now,
+	}
+	return tx.Create(&comp).Error
+}
+
+func hasMerchantFormalMitigationRecord(tx *gorm.DB, appointmentID uint) (bool, error) {
+	if tx == nil || appointmentID == 0 {
+		return false, nil
+	}
+	var count int64
+	if err := tx.Table("appointment_cancel_requests").
+		Where("appointment_id = ? AND proposed_by_type IN ? AND status IN ?", appointmentID, []string{"merchant", "staff"}, []string{"pending_user", "rejected", "accepted"}).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, nil
+	}
+	if err := tx.Table("appointment_reschedule_requests").
+		Where("appointment_id = ? AND proposed_by_type IN ? AND status IN ?", appointmentID, []string{"merchant", "staff"}, []string{"pending_user", "rejected", "accepted"}).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func loadSchedulerAppointmentCompensationTarget(tx *gorm.DB, appointmentID uint) (*models.Appointment, error) {
+	if tx == nil || appointmentID == 0 {
+		return nil, nil
+	}
+	rows, err := tx.Table("appointments").
+		Select("id, merchant_id, user_id, card_id, status, merchant_breach_pending, breach_decision_at, actual_arrived_at").
+		Where("id = ?", appointmentID).
+		Limit(1).
+		Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+	var (
+		appt               models.Appointment
+		breachDecisionRaw  interface{}
+		actualArrivedAtRaw interface{}
+	)
+	if err := rows.Scan(&appt.ID, &appt.MerchantID, &appt.UserID, &appt.CardID, &appt.Status, &appt.MerchantBreachPending, &breachDecisionRaw, &actualArrivedAtRaw); err != nil {
+		return nil, err
+	}
+	if v, ok := parseSchedulerDBTimeValue(breachDecisionRaw); ok {
+		appt.BreachDecisionAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(actualArrivedAtRaw); ok {
+		appt.ActualArrivedAt = v
+	}
+	return &appt, nil
+}
+
+func runAppointmentDelayLedgerSettlement(db *gorm.DB, now time.Time) error {
+	rows, err := db.Table("appointment_delay_ledgers").
+		Select("merchant_id, card_id, project_id").
+		Where("ledger_status = ? AND redeem_status = ?", "recorded", "pending").
+		Group("merchant_id, card_id, project_id").
+		Rows()
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type bucketKey struct {
+		MerchantID uint
+		CardID     uint
+		ProjectID  uint
+	}
+	var keys []bucketKey
+	for rows.Next() {
+		var merchantID, cardID, projectID uint
+		if err := rows.Scan(&merchantID, &cardID, &projectID); err != nil {
+			return err
+		}
+		keys = append(keys, bucketKey{MerchantID: merchantID, CardID: cardID, ProjectID: projectID})
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, key := range keys {
+		if err := settleDelayLedgerBucket(db, key.MerchantID, key.CardID, key.ProjectID, now); err != nil {
+			log.Printf("settle delay ledger bucket merchant=%d card=%d project=%d error: %v", key.MerchantID, key.CardID, key.ProjectID, err)
+		}
+	}
+	return nil
+}
+
+func settleDelayLedgerBucket(db *gorm.DB, merchantID, cardID, projectID uint, now time.Time) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		var project models.MerchantProject
+		if err := tx.Where("id = ? AND merchant_id = ?", projectID, merchantID).First(&project).Error; err != nil {
+			return err
+		}
+		mode := strings.TrimSpace(project.DelayCompensationMode)
+		if mode == "" {
+			mode = "minutes_bucket"
+		}
+		var card models.Card
+		if err := tx.Where("id = ? AND merchant_id = ?", cardID, merchantID).First(&card).Error; err != nil {
+			return err
+		}
+		threshold := project.Duration
+		if threshold <= 0 {
+			threshold = 1
+		}
+		if project.DelayRedeemThresholdPercent > 0 {
+			threshold = int(math.Ceil(float64(threshold*project.DelayRedeemThresholdPercent) / 100.0))
+		}
+		if threshold <= 0 {
+			threshold = 1
+		}
+
+		var ledgers []models.AppointmentDelayLedger
+		if err := tx.Where("merchant_id = ? AND card_id = ? AND project_id = ? AND ledger_status = ? AND redeem_status = ?", merchantID, cardID, projectID, "recorded", "pending").Order("id ASC").Find(&ledgers).Error; err != nil {
+			return err
+		}
+		if len(ledgers) == 0 {
+			return nil
+		}
+
+		total := 0
+		for _, ledger := range ledgers {
+			switch mode {
+			case "amount_bucket":
+				total += ledger.DelayCompensationValue
+			default:
+				total += ledger.CreditedMinutes
+			}
+		}
+		if total < threshold {
+			return nil
+		}
+
+		redeemUnits := total / threshold
+		if redeemUnits <= 0 {
+			return nil
+		}
+		redeemValue := redeemUnits
+		switch mode {
+		case "amount_bucket", "fixed_unit":
+			if project.DelayFixedUnitValue > 0 {
+				redeemValue = redeemUnits * project.DelayFixedUnitValue
+			}
+		}
+		lastLedger := ledgers[len(ledgers)-1]
+		var count int64
+		if err := tx.Model(&models.AppointmentCompensation{}).
+			Where("appointment_id = ? AND source_type = ? AND source_id = ? AND status IN ?", lastLedger.AppointmentID, "delay_bucket_redeem", lastLedger.ID, []string{"pending", "applied"}).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			compType := "extra_times"
+			compReason := "delay_bucket_redeem"
+			cardUpdates := map[string]interface{}{}
+			switch normalizeCardType(card.CardType) {
+			case "balance":
+				compType = "manual_adjustment"
+				cardUpdates["recharge_amount"] = gorm.Expr("recharge_amount + ?", redeemValue)
+			default:
+				cardUpdates["total_times"] = gorm.Expr("total_times + ?", redeemValue)
+				cardUpdates["remain_times"] = gorm.Expr("remain_times + ?", redeemValue)
+			}
+			if err := tx.Model(&models.Card{}).Where("id = ?", cardID).Updates(cardUpdates).Error; err != nil {
+				return err
+			}
+			comp := models.AppointmentCompensation{
+				AppointmentID: lastLedger.AppointmentID,
+				MerchantID:    merchantID,
+				UserID:        lastLedger.UserID,
+				CardID:        cardID,
+				Type:          compType,
+				Value:         redeemValue,
+				Status:        "applied",
+				Reason:        compReason,
+				Remark:        "拖堂补偿自动兑现",
+				SourceType:    "delay_bucket_redeem",
+				SourceID:      &lastLedger.ID,
+				CreatedByType: "system",
+				AppliedAt:     &now,
+			}
+			if err := tx.Create(&comp).Error; err != nil {
+				return err
+			}
+		}
+
+		remaining := redeemUnits * threshold
+		for _, ledger := range ledgers {
+			bucketValue := ledger.CreditedMinutes
+			bucketField := "credited_minutes"
+			if mode == "amount_bucket" {
+				bucketValue = ledger.DelayCompensationValue
+				bucketField = "delay_compensation_value"
+			}
+			consume := 0
+			if remaining > 0 {
+				consume = minInt(remaining, bucketValue)
+			}
+			updates := map[string]interface{}{}
+			switch {
+			case consume <= 0:
+			case consume >= bucketValue:
+				updates["redeem_status"] = "redeemed"
+				updates["ledger_status"] = "redeemed"
+			default:
+				updates[bucketField] = bucketValue - consume
+				updates["redeem_status"] = "pending"
+				updates["ledger_status"] = "recorded"
+			}
+			remaining -= consume
+			if len(updates) == 0 {
+				continue
+			}
+			if err := tx.Model(&models.AppointmentDelayLedger{}).Where("id = ?", ledger.ID).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func normalizeCardType(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	switch {
+	case strings.Contains(s, "balance"), strings.Contains(raw, "充值"), strings.Contains(raw, "额度"):
+		return "balance"
+	case strings.Contains(s, "lesson"), strings.Contains(raw, "课时"):
+		return "lesson"
+	default:
+		return "times"
+	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) error {

@@ -407,6 +407,15 @@ export const appointmentApi = {
   getMerchantTechnicians: (merchantId) => api.get(`/merchant/merchants/${merchantId}/technicians`),
   getUserAppointments: (userId) => api.get(`/user/users/${userId}/appointments`),
   getCardAppointment: (cardId) => api.get(`/user/cards/${cardId}/appointment`),
+  getMerchantSettlement: (id) => api.get(`/merchant/appointments/${id}/settlement`),
+  getUserSettlement: (id) => api.get(`/user/appointments/${id}/settlement`),
+  getMerchantDelayLedgers: (id) => api.get(`/merchant/appointments/${id}/delay-ledgers`),
+  getUserCardDelayLedgers: (cardId) => api.get(`/user/cards/${cardId}/delay-ledgers`),
+  getMerchantCompensationSummary: (id) => api.get(`/merchant/appointments/${id}/compensation-summary`),
+  createMerchantForceMajeureRelief: (id, data) => api.post(`/merchant/appointments/${id}/force-majeure-relief`, data),
+  createUserForceMajeureRelief: (id, data) => api.post(`/user/appointments/${id}/force-majeure-relief`, data),
+  acceptForceMajeureRelief: (requestId) => api.post(`/appointments/force-majeure-relief/${requestId}/accept`),
+  rejectForceMajeureRelief: (requestId) => api.post(`/appointments/force-majeure-relief/${requestId}/reject`),
   getAvailableTimeSlots: (merchantId, date, projectId) => {
     const params = { date }
     if (projectId) {

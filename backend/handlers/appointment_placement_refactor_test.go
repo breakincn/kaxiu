@@ -102,6 +102,22 @@ func TestCreateAppointmentAutoAssignsTechnicianAndRejectsOverlap(t *testing.T) {
 	if created.TechnicianID == nil || *created.TechnicianID != tech.ID {
 		t.Fatalf("want technician auto assigned to %d, got %+v", tech.ID, created.TechnicianID)
 	}
+	if created.AppointmentSettlementID == nil || *created.AppointmentSettlementID == 0 {
+		t.Fatalf("want appointment settlement created, got %+v", created.AppointmentSettlementID)
+	}
+	if created.SettlementStatusSnapshot != "pending" {
+		t.Fatalf("want settlement_status_snapshot pending, got %s", created.SettlementStatusSnapshot)
+	}
+	var settlement models.AppointmentSettlement
+	if err := config.DB.First(&settlement, *created.AppointmentSettlementID).Error; err != nil {
+		t.Fatalf("load appointment settlement failed: %v", err)
+	}
+	if settlement.AppointmentID != created.ID {
+		t.Fatalf("want settlement appointment_id %d, got %d", created.ID, settlement.AppointmentID)
+	}
+	if settlement.Status != "pending" {
+		t.Fatalf("want settlement status pending, got %s", settlement.Status)
+	}
 
 	body, _ = json.Marshal(gin.H{
 		"card_id":          card2.ID,

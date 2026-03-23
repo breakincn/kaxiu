@@ -300,6 +300,11 @@
                   <div class="mt-1 text-gray-500">{{ comp.reason }}</div>
                 </div>
               </div>
+              <div v-if="getLatestForceMajeureReliefRequest(appt)" class="mt-2 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 border border-gray-100">
+                <div class="font-medium">不可抗力申请：{{ getForceMajeureStatusText(getLatestForceMajeureReliefRequest(appt)?.status) }}</div>
+                <div class="mt-1">发起方：{{ getForceMajeureActorText(getLatestForceMajeureReliefRequest(appt)?.proposed_by_type) }}</div>
+                <div v-if="getLatestForceMajeureReliefRequest(appt)?.reason" class="mt-1">原因：{{ getLatestForceMajeureReliefRequest(appt)?.reason }}</div>
+              </div>
             </div>
             <span :class="getStatusBadgeClass(appt)">
               {{ getStatusText(appt) }}
@@ -307,6 +312,12 @@
           </div>
 
           <div class="flex gap-2 mt-3">
+            <button
+              @click="openAppointmentDetailModal(appt)"
+              class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
+            >
+              结算详情
+            </button>
             <template v-if="canOperateAppointment(appt)">
               <button
                 v-if="appt.status === 'pending' && !isPendingExpired(appt)"
@@ -387,6 +398,27 @@
                 class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
               >
                 补偿
+              </button>
+              <button
+                v-if="canCreateForceMajeureRelief(appt)"
+                @click="createMerchantForceMajeureRelief(appt)"
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+              >
+                不可抗力
+              </button>
+              <button
+                v-if="canAcceptForceMajeureRelief(appt)"
+                @click="acceptAppointmentForceMajeureRelief(appt)"
+                class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+              >
+                确认可抗力
+              </button>
+              <button
+                v-if="canRejectForceMajeureRelief(appt)"
+                @click="rejectAppointmentForceMajeureRelief(appt)"
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+              >
+                拒绝可抗力
               </button>
             </template>
           </div>
@@ -1356,6 +1388,71 @@
       </div>
     </div>
 
+    <div v-if="showAppointmentDetailModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click.self="closeAppointmentDetailModal">
+      <div class="bg-white w-full max-w-2xl rounded-2xl overflow-hidden">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+          <div>
+            <div class="font-medium text-gray-800">预约结算详情</div>
+            <div class="text-sm text-gray-500 mt-1">
+              {{ appointmentDetailTarget?.user?.nickname || appointmentDetailTarget?.user_id || '-' }}
+              <span class="mx-1">/</span>
+              {{ getAppointmentProjectDisplay(appointmentDetailTarget) || '默认项目' }}
+            </div>
+          </div>
+          <button class="text-gray-500" @click="closeAppointmentDetailModal">关闭</button>
+        </div>
+        <div class="p-5 max-h-[75vh] overflow-y-auto">
+          <div v-if="appointmentDetailLoading" class="py-12 text-center text-gray-400">加载中...</div>
+          <div v-else-if="appointmentDetailError" class="py-12 text-center text-red-500">{{ appointmentDetailError }}</div>
+          <div v-else class="space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+              <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <div class="text-xs text-gray-400">结算状态</div>
+                <div class="mt-1 font-medium text-gray-800">{{ getAppointmentSettlementStatusText(appointmentDetailSettlement?.settlement_status_snapshot || appointmentDetailTarget?.settlement_status_snapshot) || '待结算' }}</div>
+              </div>
+              <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <div class="text-xs text-gray-400">责任归属</div>
+                <div class="mt-1 font-medium text-gray-800">{{ getLiabilityText(appointmentDetailSettlement?.liability_level || appointmentDetailTarget?.liability_level) }}</div>
+              </div>
+            </div>
+            <div v-if="appointmentDetailSettlement?.latest_reason || appointmentDetailTarget?.disruption_reason" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-700">
+              原因：{{ getReasonText(appointmentDetailSettlement?.latest_reason || appointmentDetailTarget?.disruption_reason) }}
+            </div>
+            <div v-if="appointmentDetailSummary" class="rounded-xl border border-gray-200 bg-white px-4 py-4">
+              <div class="font-medium text-gray-800">拖堂累计</div>
+              <div class="grid grid-cols-2 gap-3 mt-3 text-sm">
+                <div class="rounded-lg bg-gray-50 px-3 py-3">
+                  <div class="text-xs text-gray-400">累计拖堂</div>
+                  <div class="mt-1 font-medium text-gray-800">{{ appointmentDetailSummary.total_delay_minutes || 0 }} 分钟</div>
+                </div>
+                <div class="rounded-lg bg-gray-50 px-3 py-3">
+                  <div class="text-xs text-gray-400">计入补偿桶</div>
+                  <div class="mt-1 font-medium text-gray-800">{{ appointmentDetailSummary.total_credited_minutes || 0 }} 分钟</div>
+                </div>
+              </div>
+            </div>
+            <div v-if="appointmentDetailDelayLedgers.length > 0" class="space-y-2">
+              <div class="font-medium text-gray-800">拖堂账本</div>
+              <div v-for="ledger in appointmentDetailDelayLedgers" :key="ledger.id" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-700">
+                <div class="font-medium text-gray-800">延迟 {{ ledger.delay_minutes }} 分钟</div>
+                <div class="mt-1">计入补偿桶 {{ ledger.credited_minutes }} 分钟</div>
+                <div v-if="ledger.delay_compensation_value > 0" class="mt-1">累计补偿值 {{ ledger.delay_compensation_value }}</div>
+                <div class="mt-1 text-gray-500">账本状态：{{ getDelayLedgerStatusText(ledger) }}</div>
+              </div>
+            </div>
+            <div v-if="appointmentDetailCompensations.length > 0" class="space-y-2">
+              <div class="font-medium text-gray-800">正式补偿记录</div>
+              <div v-for="comp in appointmentDetailCompensations" :key="comp.id" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-700">
+                <div class="font-medium text-gray-800">{{ getCompensationTypeText(comp.type) }}</div>
+                <div v-if="getCompensationValueText(comp)" class="mt-1">{{ getCompensationValueText(comp) }}</div>
+                <div v-if="comp.reason" class="mt-1 text-gray-500">{{ getReasonText(comp.reason) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 营业状态切换弹窗 -->
     <div v-if="showBusinessStatusModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showBusinessStatusModal = false">
       <div class="bg-white rounded-2xl w-11/12 max-w-sm overflow-hidden">
@@ -2205,6 +2302,14 @@ const appointmentCompensationForm = ref({
   reason: '',
   remark: ''
 })
+const showAppointmentDetailModal = ref(false)
+const appointmentDetailTarget = ref(null)
+const appointmentDetailLoading = ref(false)
+const appointmentDetailError = ref('')
+const appointmentDetailSettlement = ref(null)
+const appointmentDetailDelayLedgers = ref([])
+const appointmentDetailSummary = ref(null)
+const appointmentDetailCompensations = computed(() => appointmentDetailSummary.value?.compensations || [])
 const unassignedAppointments = computed(() => {
   if (!isTechnicianAuth()) return []
   return (appointments.value || []).filter(a => !a?.technician_id)
@@ -4229,6 +4334,12 @@ const getLatestPendingRescheduleRequest = (appt) => {
   return list.find(item => item?.status === 'pending_user' || item?.status === 'pending_merchant') || null
 }
 
+const getLatestForceMajeureReliefRequest = (appt) => {
+  const list = Array.isArray(appt?.force_majeure_relief_requests) ? appt.force_majeure_relief_requests : []
+  if (list.length === 0) return null
+  return [...list].sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0))[0]
+}
+
 const getRescheduleRequestTechnicianText = (req) => {
   const technicianId = Number(req?.new_technician_id || 0)
   if (!technicianId) return ''
@@ -4251,6 +4362,22 @@ const canCancelAppointmentRescheduleRequest = (appt) => {
   return proposer === 'merchant' || proposer === 'staff'
 }
 
+const canCreateForceMajeureRelief = (appt) => {
+  const latest = getLatestForceMajeureReliefRequest(appt)
+  if (latest && String(latest.status || '').trim() === 'pending') return false
+  const compensations = Array.isArray(appt?.compensations) ? appt.compensations : []
+  return compensations.some(item => ['merchant_breach', 'merchant_failure_offset'].includes(String(item?.source_type || item?.reason || '').trim()))
+}
+
+const canAcceptForceMajeureRelief = (appt) => {
+  const latest = getLatestForceMajeureReliefRequest(appt)
+  if (!latest || String(latest.status || '').trim() !== 'pending') return false
+  const proposer = String(latest.proposed_by_type || '').trim()
+  return proposer !== 'merchant' && proposer !== 'staff'
+}
+
+const canRejectForceMajeureRelief = (appt) => canAcceptForceMajeureRelief(appt)
+
 const shouldShowAppointmentCompensation = (appt) => {
   if (!appt) return false
   // 补偿不是常驻动作，只在门店承诺已经受损或服务异常结束后开放。
@@ -4263,6 +4390,7 @@ const shouldShowAppointmentCompensation = (appt) => {
 const getCompensationTypeText = (type) => {
   if (type === 'extra_times') return '补次数'
   if (type === 'extend_minutes') return '补时长'
+  if (type === 'manual_adjustment') return '补额度'
   if (type === 'discount_note') return '优惠减免'
   return '其他补偿'
 }
@@ -4271,8 +4399,77 @@ const getCompensationValueText = (comp) => {
   const value = Number(comp?.value || 0)
   if (comp?.type === 'extra_times' && value > 0) return `增加 ${value} 次`
   if (comp?.type === 'extend_minutes' && value > 0) return `增加 ${value} 分钟`
+  if (comp?.type === 'manual_adjustment' && value > 0) return `增加 ${value} 额度`
   if (comp?.remark) return comp.remark
   return ''
+}
+
+const getAppointmentSettlementStatusText = (status) => {
+  const value = String(status || '').trim()
+  if (!value) return ''
+  const map = {
+    pending: '待结算',
+    settled: '已结算',
+    frozen: '已冻结',
+    refunded: '已退款',
+    transferred: '已迁移',
+    offset: '已对冲'
+  }
+  return map[value] || value
+}
+
+const getLiabilityText = (level) => {
+  const value = String(level || '').trim()
+  const map = {
+    none: '无责任',
+    user: '用户责任',
+    merchant: '商户责任',
+    pending_merchant: '商户待判定',
+    merchant_exempt: '商户免责',
+    technician_chargeable: '客服承担'
+  }
+  return map[value] || (value || '待判定')
+}
+
+const getReasonText = (reason) => {
+  const value = String(reason || '').trim()
+  const map = {
+    merchant_breach: '商户违约补偿',
+    merchant_failure_offset: '恢复性对冲',
+    delay_bucket_redeem: '拖堂补偿兑现',
+    user_no_show: '用户未到店',
+    risk_released: '风险解除',
+    technician_leave: '客服请假',
+    force_majeure_relief_accepted: '不可抗力救济已生效'
+  }
+  return map[value] || value
+}
+
+const getDelayLedgerStatusText = (ledger) => {
+  const redeemStatus = String(ledger?.redeem_status || '').trim()
+  const ledgerStatus = String(ledger?.ledger_status || '').trim()
+  if (redeemStatus === 'redeemed' || ledgerStatus === 'redeemed') return '已兑现'
+  if (redeemStatus === 'skipped' || ledgerStatus === 'ignored') return '已跳过'
+  return '累计中'
+}
+
+const getForceMajeureStatusText = (status) => {
+  const value = String(status || '').trim()
+  const map = {
+    pending: '待对方确认',
+    accepted: '已确认生效',
+    rejected: '已拒绝',
+    canceled: '已撤销'
+  }
+  return map[value] || value
+}
+
+const getForceMajeureActorText = (actorType) => {
+  const value = String(actorType || '').trim()
+  if (value === 'user') return '用户'
+  if (value === 'merchant') return '商户'
+  if (value === 'staff') return '客服'
+  return value || '-'
 }
 
 const getAppointmentReassignCandidates = async (appt) => {
@@ -4498,6 +4695,85 @@ const openAppointmentCompensationModal = (appt) => {
     remark: ''
   }
   showAppointmentCompensationModal.value = true
+}
+
+const closeAppointmentDetailModal = () => {
+  showAppointmentDetailModal.value = false
+  appointmentDetailTarget.value = null
+  appointmentDetailLoading.value = false
+  appointmentDetailError.value = ''
+  appointmentDetailSettlement.value = null
+  appointmentDetailDelayLedgers.value = []
+  appointmentDetailSummary.value = null
+}
+
+const openAppointmentDetailModal = async (appt) => {
+  appointmentDetailTarget.value = appt
+  appointmentDetailLoading.value = true
+  appointmentDetailError.value = ''
+  appointmentDetailSettlement.value = null
+  appointmentDetailDelayLedgers.value = []
+  appointmentDetailSummary.value = null
+  showAppointmentDetailModal.value = true
+  try {
+    const [settlementRes, delayRes, summaryRes] = await Promise.all([
+      appointmentApi.getMerchantSettlement(appt.id),
+      appointmentApi.getMerchantDelayLedgers(appt.id),
+      appointmentApi.getMerchantCompensationSummary(appt.id)
+    ])
+    appointmentDetailSettlement.value = settlementRes.data?.data || null
+    appointmentDetailDelayLedgers.value = delayRes.data?.data || []
+    appointmentDetailSummary.value = summaryRes.data?.data || null
+  } catch (err) {
+    appointmentDetailError.value = err.response?.data?.error || '读取预约结算详情失败'
+  } finally {
+    appointmentDetailLoading.value = false
+  }
+}
+
+const createMerchantForceMajeureRelief = async (appt) => {
+  const reason = window.prompt('请输入不可抗力原因，例如：停电、突发设施故障')
+  if (reason == null) return
+  const trimmedReason = String(reason || '').trim()
+  if (!trimmedReason) {
+    alert('不可抗力原因不能为空')
+    return
+  }
+  const evidence = window.prompt('可补充举证说明（可选）') || ''
+  try {
+    await appointmentApi.createMerchantForceMajeureRelief(appt.id, {
+      reason: trimmedReason,
+      evidence_note: String(evidence || '').trim()
+    })
+    alert('不可抗力申请已提交，待用户确认')
+    await fetchAppointments()
+  } catch (err) {
+    alert(err.response?.data?.error || '提交不可抗力申请失败')
+  }
+}
+
+const acceptAppointmentForceMajeureRelief = async (appt) => {
+  const request = getLatestForceMajeureReliefRequest(appt)
+  if (!request) return
+  try {
+    await appointmentApi.acceptForceMajeureRelief(request.id)
+    alert('已确认不可抗力申请')
+    await fetchAppointments()
+  } catch (err) {
+    alert(err.response?.data?.error || '确认不可抗力申请失败')
+  }
+}
+
+const rejectAppointmentForceMajeureRelief = async (appt) => {
+  const request = getLatestForceMajeureReliefRequest(appt)
+  if (!request) return
+  try {
+    await appointmentApi.rejectForceMajeureRelief(request.id)
+    alert('已拒绝不可抗力申请')
+    await fetchAppointments()
+  } catch (err) {
+    alert(err.response?.data?.error || '拒绝不可抗力申请失败')
+  }
 }
 
 const submitAppointmentCompensation = async () => {

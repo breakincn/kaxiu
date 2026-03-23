@@ -1,6 +1,8 @@
 package sessionflow
 
 import (
+	"kabao/appointmentdelay"
+	"kabao/appointmentliability"
 	"kabao/models"
 	"kabao/queue"
 	"time"
@@ -11,6 +13,31 @@ import (
 type FinishOptions struct {
 	AllowedBaseStatuses []string
 	MarkQueueDone       bool
+}
+
+func syncAppointmentOutcome(tx *gorm.DB, appointmentID uint, appointmentUpdates map[string]interface{}, settlementUpdates map[string]interface{}) error {
+	if tx == nil || appointmentID == 0 {
+		return nil
+	}
+	if len(appointmentUpdates) > 0 {
+		if err := tx.Model(&models.Appointment{}).Where("id = ?", appointmentID).Updates(appointmentUpdates).Error; err != nil {
+			return err
+		}
+	}
+	if len(settlementUpdates) == 0 {
+		return nil
+	}
+	var settlementID uint
+	if err := tx.Model(&models.Appointment{}).Where("id = ?", appointmentID).Select("appointment_settlement_id").Scan(&settlementID).Error; err != nil {
+		return err
+	}
+	if settlementID == 0 {
+		return appointmentliability.SyncLeaveDisruptionLedger(tx, appointmentID, time.Now())
+	}
+	if err := tx.Model(&models.AppointmentSettlement{}).Where("id = ?", settlementID).Updates(settlementUpdates).Error; err != nil {
+		return err
+	}
+	return appointmentliability.SyncLeaveDisruptionLedger(tx, appointmentID, time.Now())
 }
 
 func FinishServiceSession(tx *gorm.DB, s *models.ServiceSession, merchant *models.Merchant, now time.Time, opts FinishOptions) error {
@@ -65,12 +92,32 @@ func FinishServiceSession(tx *gorm.DB, s *models.ServiceSession, merchant *model
 	}
 	if s.SourceType == "appointment" && s.SourceID != nil {
 		completedAt := finishedAt
-		_ = tx.Model(&models.Appointment{}).
-			Where("id = ?", *s.SourceID).
-			Updates(map[string]interface{}{
-				"status":       "completed",
-				"completed_at": &completedAt,
-			}).Error
+		actualStartAt := completedAt
+		if s.StartedAt != nil {
+			actualStartAt = *s.StartedAt
+		}
+		if err := syncAppointmentOutcome(tx, *s.SourceID, map[string]interface{}{
+			"status":                             "completed",
+			"completed_at":                       &completedAt,
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &completedAt,
+			"disruption_status":                  "closed",
+			"disruption_reason":                  "service_completed",
+			"liability_level":                    "none",
+			"salary_settlement_reference_status": "normal",
+			"actual_start_at":                    actualStartAt,
+		}, map[string]interface{}{
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &completedAt,
+			"liability_level":                    "none",
+			"salary_settlement_reference_status": "normal",
+			"latest_reason":                      "service_completed",
+		}); err != nil {
+			return err
+		}
+		if err := appointmentdelay.RecordLedgerIfNeeded(tx, *s.SourceID, &s.ID, actualStartAt); err != nil {
+			return err
+		}
 	}
 	return nil
 }

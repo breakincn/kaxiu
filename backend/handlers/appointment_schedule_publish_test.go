@@ -1,0 +1,894 @@
+package handlers
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"kabao/config"
+	"kabao/models"
+
+	"github.com/gin-gonic/gin"
+)
+
+func newMerchantContext(method, path string, merchantID uint) (*gin.Context, *httptest.ResponseRecorder) {
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(method, path, nil)
+	c.Set("auth_type", "merchant")
+	c.Set("merchant_id", merchantID)
+	return c, rec
+}
+
+func TestPublishNextDayScheduleCreatesPublishings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, _, tech, otherTech, _, _ := seedAppointmentPermissionFixture(t, config.DB)
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+	merchant.SupportCustomerServiceMode = true
+	if err := config.DB.Model(&models.Technician{}).Where("id IN ?", []uint{tech.ID, otherTech.ID}).Update("is_active", true).Error; err != nil {
+		t.Fatalf("activate technicians failed: %v", err)
+	}
+
+	c, rec := newMerchantContext(http.MethodPost, "/merchant/schedules/publish-next-day", merchant.ID)
+	PublishNextDaySchedule(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	loc := appointmentLocation()
+	nextDate := time.Date(time.Now().In(loc).Year(), time.Now().In(loc).Month(), time.Now().In(loc).Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	var count int64
+	if err := config.DB.Table("technician_schedule_publishings").Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status = ?", merchant.ID, nextDate, nextDate.Add(24*time.Hour), "published").Count(&count).Error; err != nil {
+		t.Fatalf("count publishings failed: %v", err)
+	}
+	if count == 0 {
+		t.Fatalf("want publishings created, got 0")
+	}
+}
+
+func TestMarkScheduleLeaveCreatesAffectedAppointmentsAndProtectedRepairSlots(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	nextDay := time.Now().In(loc).Add(24 * time.Hour)
+	publishDate := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 0, 0, 0, 0, loc)
+	startAt := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 10, 0, 0, 0, loc)
+	endAt := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 13, 0, 0, 0, loc)
+	publishing := models.TechnicianSchedulePublishing{
+		MerchantID:   merchant.ID,
+		TechnicianID: &tech.ID,
+		PublishDate:  &publishDate,
+		StartAt:      &startAt,
+		EndAt:        &endAt,
+		Status:       "published",
+	}
+	if err := config.DB.Create(&publishing).Error; err != nil {
+		t.Fatalf("create publishing failed: %v", err)
+	}
+
+	appointmentTime := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 10, 30, 0, 0, loc)
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	if err := config.DB.Model(&models.Appointment{}).Where("id = ?", appt.ID).Update("booking_root_id", appt.ID).Error; err != nil {
+		t.Fatalf("set booking_root_id failed: %v", err)
+	}
+	appt.BookingRootID = &appt.ID
+	if _, err := initializeAppointmentSettlement(config.DB, &appt, "test_seed"); err != nil {
+		t.Fatalf("initialize settlement failed: %v", err)
+	}
+
+	c, rec := newMerchantContext(http.MethodPost, "/merchant/schedules/"+strconv.Itoa(int(publishing.ID))+"/leave", merchant.ID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(publishing.ID))}}
+	MarkScheduleLeave(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	refreshed, err := loadSchedulePublishingByID(config.DB, merchant.ID, publishing.ID)
+	if err != nil {
+		t.Fatalf("reload publishing failed: %v", err)
+	}
+	if refreshed == nil {
+		t.Fatalf("publishing %d not found", publishing.ID)
+	}
+	if refreshed.Status != "leave" {
+		t.Fatalf("want leave status, got %s", refreshed.Status)
+	}
+
+	slots, err := loadProtectedRepairSlotsByPublishDate(config.DB, merchant.ID, &publishDate)
+	if err != nil {
+		t.Fatalf("query repair slots failed: %v", err)
+	}
+	filtered := make([]models.ProtectedRepairSlot, 0, len(slots))
+	for _, slot := range slots {
+		if slot.AppointmentID == appt.ID {
+			filtered = append(filtered, slot)
+		}
+	}
+	if len(filtered) != 1 {
+		t.Fatalf("want 1 protected repair slot, got %d", len(slots))
+	}
+	if filtered[0].Status != "reserved" {
+		t.Fatalf("want reserved repair slot, got %s", filtered[0].Status)
+	}
+
+	queryCtx, queryRec := newMerchantContext(http.MethodGet, "/merchant/schedules/affected-appointments?schedule_id="+strconv.Itoa(int(publishing.ID)), merchant.ID)
+	queryCtx.Request = httptest.NewRequest(http.MethodGet, "/merchant/schedules/affected-appointments?schedule_id="+strconv.Itoa(int(publishing.ID)), nil)
+	GetScheduleAffectedAppointments(queryCtx)
+	if queryRec.Code != http.StatusOK {
+		t.Fatalf("want 200 from affected appointments, got %d body=%s", queryRec.Code, queryRec.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			AffectedAppointments []models.Appointment         `json:"affected_appointments"`
+			ProtectedRepairSlots []models.ProtectedRepairSlot `json:"protected_repair_slots"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(queryRec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode affected response failed: %v", err)
+	}
+	if len(resp.Data.AffectedAppointments) != 1 {
+		t.Fatalf("want 1 affected appointment, got %d", len(resp.Data.AffectedAppointments))
+	}
+	if len(resp.Data.ProtectedRepairSlots) == 0 {
+		t.Fatalf("want protected repair slots in response")
+	}
+}
+
+func TestCreateAppointmentRescheduleRequestRejectsUserWhenAffectedByLeave(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	nextDay := time.Now().In(loc).Add(24 * time.Hour)
+	appointmentTime := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 11, 0, 0, 0, loc)
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	publishDate := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 0, 0, 0, 0, loc)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	repairSlot := models.ProtectedRepairSlot{
+		MerchantID:    merchant.ID,
+		AppointmentID: appt.ID,
+		TechnicianID:  &tech.ID,
+		PublishDate:   &publishDate,
+		StartAt:       &appointmentTime,
+		EndAt:         &reservedEnd,
+		Status:        "reserved",
+		SourceType:    "leave",
+	}
+	if err := config.DB.Create(&repairSlot).Error; err != nil {
+		t.Fatalf("create repair slot failed: %v", err)
+	}
+
+	body, _ := json.Marshal(gin.H{
+		"appointment_time": appointmentTime.Format("2006-01-02 15:04:05"),
+		"technician_id":    tech.ID,
+		"reason":           "用户想改时间",
+	})
+	c, rec := newUserJSONContext(http.MethodPost, "/user/appointments/"+strconv.Itoa(int(appt.ID))+"/reschedule-requests", user.ID, body)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	CreateAppointmentRescheduleRequest(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); body == "" || !containsText(body, "需由商户发起保护性改签") {
+		t.Fatalf("want protective reschedule rejection, got body=%s", body)
+	}
+}
+
+func TestGetTechnicianMonthlyDisruptionsReturnsCounterAndLedgerSummary(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	apptTime := time.Date(2026, 3, 24, 10, 30, 0, 0, appointmentLocation())
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &apptTime,
+		Status:          "failed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	if err := config.DB.Create(&models.TechnicianMonthlyDisruptionCounter{
+		MerchantID:           merchant.ID,
+		TechnicianID:         tech.ID,
+		MonthKey:             "2026-03",
+		LeaveDisruptionCount: 2,
+		FirstExemptUsed:      true,
+	}).Error; err != nil {
+		t.Fatalf("create counter failed: %v", err)
+	}
+	if err := config.DB.Create(&models.TechnicianDisruptionLedger{
+		AppointmentID:                   appt.ID,
+		MerchantID:                      merchant.ID,
+		TechnicianID:                    tech.ID,
+		UserID:                          user.ID,
+		MonthKey:                        "2026-03",
+		DisruptionReason:                "technician_leave",
+		LiabilityLevel:                  "technician_chargeable",
+		SalarySettlementReferenceStatus: "open",
+	}).Error; err != nil {
+		t.Fatalf("create ledger failed: %v", err)
+	}
+
+	c, rec := newMerchantContext(http.MethodGet, "/merchant/technicians/"+strconv.Itoa(int(tech.ID))+"/monthly-disruptions?month=2026-03", merchant.ID)
+	c.Request = httptest.NewRequest(http.MethodGet, "/merchant/technicians/"+strconv.Itoa(int(tech.ID))+"/monthly-disruptions?month=2026-03", nil)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(tech.ID))}}
+	GetTechnicianMonthlyDisruptions(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			Month                     string                              `json:"month"`
+			LeaveDisruptionCount      int                                 `json:"leave_disruption_count"`
+			FirstExemptUsed           bool                                `json:"first_exempt_used"`
+			MerchantExemptCount       int                                 `json:"merchant_exempt_count"`
+			TechnicianChargeableCount int                                 `json:"technician_chargeable_count"`
+			Items                     []models.TechnicianDisruptionLedger `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+	if resp.Data.Month != "2026-03" || resp.Data.LeaveDisruptionCount != 2 || !resp.Data.FirstExemptUsed {
+		t.Fatalf("want month counter returned, got %+v", resp.Data)
+	}
+	if resp.Data.TechnicianChargeableCount != 1 || resp.Data.MerchantExemptCount != 0 {
+		t.Fatalf("want liability summary returned, got %+v", resp.Data)
+	}
+	if len(resp.Data.Items) != 1 || resp.Data.Items[0].AppointmentID != appt.ID {
+		t.Fatalf("want ledger items returned, got %+v", resp.Data.Items)
+	}
+}
+
+func TestCancelAppointmentRejectsMerchantWhenAffectedByLeaveAndHasRepairCandidate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	nextDay := time.Now().In(loc).Add(24 * time.Hour)
+	publishDate := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 0, 0, 0, 0, loc)
+	startAt := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 10, 0, 0, 0, loc)
+	endAt := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 13, 0, 0, 0, loc)
+	publishing := models.TechnicianSchedulePublishing{
+		MerchantID:   merchant.ID,
+		TechnicianID: &tech.ID,
+		PublishDate:  &publishDate,
+		StartAt:      &startAt,
+		EndAt:        &endAt,
+		Status:       "published",
+	}
+	if err := config.DB.Create(&publishing).Error; err != nil {
+		t.Fatalf("create publishing failed: %v", err)
+	}
+	appointmentTime := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 10, 30, 0, 0, loc)
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	repairSlot := models.ProtectedRepairSlot{
+		MerchantID:    merchant.ID,
+		AppointmentID: appt.ID,
+		TechnicianID:  &tech.ID,
+		PublishDate:   &publishDate,
+		StartAt:       &appointmentTime,
+		EndAt:         &reservedEnd,
+		Status:        "reserved",
+		SourceType:    "leave",
+	}
+	if err := config.DB.Create(&repairSlot).Error; err != nil {
+		t.Fatalf("create repair slot failed: %v", err)
+	}
+
+	c, rec := newMerchantContext(http.MethodPut, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/cancel", merchant.ID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	CancelAppointment(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); body == "" || !containsText(body, "高质量修复方案") {
+		t.Fatalf("want high quality repair rejection, got body=%s", body)
+	}
+}
+
+func TestGetAppointmentRescheduleEligibilityRejectsUserWhenAffectedByLeave(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	nextDay := time.Now().In(loc).Add(24 * time.Hour)
+	publishDate := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 0, 0, 0, 0, loc)
+	appointmentTime := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 11, 0, 0, 0, loc)
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	repairSlot := models.ProtectedRepairSlot{
+		MerchantID:    merchant.ID,
+		AppointmentID: appt.ID,
+		TechnicianID:  &tech.ID,
+		PublishDate:   &publishDate,
+		StartAt:       &appointmentTime,
+		EndAt:         &reservedEnd,
+		Status:        "reserved",
+		SourceType:    "leave",
+	}
+	if err := config.DB.Create(&repairSlot).Error; err != nil {
+		t.Fatalf("create repair slot failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/user/appointments/"+strconv.Itoa(int(appt.ID))+"/reschedule-eligibility", nil)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	c.Set("auth_type", "user")
+	c.Set("user_id", user.ID)
+	GetAppointmentRescheduleEligibility(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); !containsText(body, "需由商户发起保护性改签") {
+		t.Fatalf("want protective eligibility message, got body=%s", body)
+	}
+}
+
+func TestGetAppointmentRescheduleSlotsAllowsMerchantRepairCandidateWhenAffectedByLeave(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	nextDay := time.Now().In(loc).Add(24 * time.Hour)
+	publishDate := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 0, 0, 0, 0, loc)
+	startAt := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 10, 0, 0, 0, loc)
+	endAt := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 13, 0, 0, 0, loc)
+	publishing := models.TechnicianSchedulePublishing{
+		MerchantID:   merchant.ID,
+		TechnicianID: &tech.ID,
+		PublishDate:  &publishDate,
+		StartAt:      &startAt,
+		EndAt:        &endAt,
+		Status:       "published",
+	}
+	if err := config.DB.Create(&publishing).Error; err != nil {
+		t.Fatalf("create publishing failed: %v", err)
+	}
+	appointmentTime := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 10, 30, 0, 0, loc)
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	repairSlot := models.ProtectedRepairSlot{
+		MerchantID:    merchant.ID,
+		AppointmentID: appt.ID,
+		TechnicianID:  &tech.ID,
+		PublishDate:   &publishDate,
+		StartAt:       &appointmentTime,
+		EndAt:         &reservedEnd,
+		Status:        "reserved",
+		SourceType:    "leave",
+	}
+	if err := config.DB.Create(&repairSlot).Error; err != nil {
+		t.Fatalf("create repair slot failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/reschedule-slots?date="+publishDate.Format("2006-01-02"), nil)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	c.Set("auth_type", "merchant")
+	c.Set("merchant_id", merchant.ID)
+	GetAppointmentRescheduleSlots(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); !containsText(body, "time_slots") {
+		t.Fatalf("want time slots payload, got body=%s", body)
+	}
+}
+
+func TestProtectiveRescheduleFlowCreatesReplacementAppointment(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	nextDay := time.Now().In(loc).Add(24 * time.Hour)
+	publishDate := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 0, 0, 0, 0, loc)
+	startAt := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 10, 0, 0, 0, loc)
+	endAt := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 13, 0, 0, 0, loc)
+	publishing := models.TechnicianSchedulePublishing{
+		MerchantID:   merchant.ID,
+		TechnicianID: &tech.ID,
+		PublishDate:  &publishDate,
+		StartAt:      &startAt,
+		EndAt:        &endAt,
+		Status:       "published",
+	}
+	if err := config.DB.Create(&publishing).Error; err != nil {
+		t.Fatalf("create publishing failed: %v", err)
+	}
+	originalTime := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 10, 0, 0, 0, loc)
+	originalReservedEnd := originalTime.Add(time.Duration(project.Duration) * time.Minute)
+	originalOccupiedEnd := originalReservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	original := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &originalTime,
+		ReservedStartAt: &originalTime,
+		ReservedEndAt:   &originalReservedEnd,
+		OccupiedEndAt:   &originalOccupiedEnd,
+		BookingRootID:   nil,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&original).Error; err != nil {
+		t.Fatalf("create original appointment failed: %v", err)
+	}
+	if err := config.DB.Model(&models.Appointment{}).Where("id = ?", original.ID).Update("booking_root_id", original.ID).Error; err != nil {
+		t.Fatalf("set booking_root_id failed: %v", err)
+	}
+	original.BookingRootID = &original.ID
+	repairSlot := models.ProtectedRepairSlot{
+		MerchantID:    merchant.ID,
+		AppointmentID: original.ID,
+		TechnicianID:  &tech.ID,
+		PublishDate:   &publishDate,
+		StartAt:       &originalTime,
+		EndAt:         &originalReservedEnd,
+		Status:        "reserved",
+		SourceType:    "leave",
+	}
+	if err := config.DB.Create(&repairSlot).Error; err != nil {
+		t.Fatalf("create repair slot failed: %v", err)
+	}
+
+	newTime := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 11, 15, 0, 0, loc)
+	body, _ := json.Marshal(gin.H{
+		"appointment_time": newTime.Format("2006-01-02 15:04:05"),
+		"technician_id":    tech.ID,
+		"reason":           "客服请假，提供保护性改签",
+	})
+	merchantCtx, merchantRec := newMerchantContext(http.MethodPost, "/merchant/appointments/"+strconv.Itoa(int(original.ID))+"/reschedule-requests", merchant.ID)
+	merchantCtx.Request = httptest.NewRequest(http.MethodPost, "/merchant/appointments/"+strconv.Itoa(int(original.ID))+"/reschedule-requests", bytes.NewReader(body))
+	merchantCtx.Request.Header.Set("Content-Type", "application/json")
+	merchantCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(original.ID))}}
+	CreateAppointmentRescheduleRequest(merchantCtx)
+	if merchantRec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", merchantRec.Code, merchantRec.Body.String())
+	}
+
+	var proposalID uint
+	if err := config.DB.Table("appointment_reschedule_requests").Select("id").Order("id desc").Limit(1).Scan(&proposalID).Error; err != nil {
+		t.Fatalf("load proposal id failed: %v", err)
+	}
+	proposalPtr, err := loadAppointmentRescheduleRequestByID(config.DB, proposalID)
+	if err != nil || proposalPtr == nil {
+		t.Fatalf("load proposal failed: %v", err)
+	}
+	proposal := *proposalPtr
+	if proposal.Status != "pending_user" {
+		t.Fatalf("want pending_user proposal, got %s", proposal.Status)
+	}
+
+	userCtx, userRec := newUserJSONContext(http.MethodPost, "/user/appointments/"+strconv.Itoa(int(original.ID))+"/reschedule-requests/"+strconv.Itoa(int(proposal.ID))+"/accept", user.ID, nil)
+	userCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(original.ID))}, {Key: "request_id", Value: strconv.Itoa(int(proposal.ID))}}
+	AcceptAppointmentRescheduleRequest(userCtx)
+	if userRec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", userRec.Code, userRec.Body.String())
+	}
+
+	updatedOriginal := mustLoadAppointmentForTest(t, original.ID)
+	if updatedOriginal.Status != "canceled" {
+		t.Fatalf("want original canceled, got %s", updatedOriginal.Status)
+	}
+	if updatedOriginal.ReplacedByAppointmentID == nil || *updatedOriginal.ReplacedByAppointmentID == 0 {
+		t.Fatalf("want original replaced_by_appointment_id set")
+	}
+	replacement := mustLoadAppointmentForTest(t, *updatedOriginal.ReplacedByAppointmentID)
+	if replacement.BookingRootID == nil || *replacement.BookingRootID != original.ID {
+		t.Fatalf("want replacement booking_root_id=%d, got %+v", original.ID, replacement.BookingRootID)
+	}
+	if replacement.ReservedStartAt == nil || !replacement.ReservedStartAt.Equal(newTime) {
+		t.Fatalf("want replacement reserved_start_at=%s, got %+v", newTime.Format(time.RFC3339), replacement.ReservedStartAt)
+	}
+	if replacement.ReservedEndAt == nil || replacement.OccupiedEndAt == nil {
+		t.Fatalf("want replacement scheduling snapshot populated")
+	}
+	if replacement.Status != "confirmed" {
+		t.Fatalf("want replacement confirmed, got %s", replacement.Status)
+	}
+}
+
+func TestCancelAppointmentRejectsMerchantWithinFiveHours(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	soon := time.Now().In(loc).Add(4 * time.Hour)
+	appointmentTime := time.Date(soon.Year(), soon.Month(), soon.Day(), soon.Hour(), 0, 0, 0, loc)
+	if !appointmentTime.After(time.Now().In(loc)) {
+		appointmentTime = appointmentTime.Add(time.Hour)
+	}
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+
+	c, rec := newMerchantContext(http.MethodPut, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/cancel", merchant.ID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	CancelAppointment(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); !containsText(body, "取消申请") {
+		t.Fatalf("want cancel-request gating message, got body=%s", body)
+	}
+}
+
+func TestAppointmentCancelRequestFlowCancelsAppointmentAfterUserAccepts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	soon := time.Now().In(loc).Add(4 * time.Hour)
+	appointmentTime := time.Date(soon.Year(), soon.Month(), soon.Day(), soon.Hour(), 0, 0, 0, loc)
+	if !appointmentTime.After(time.Now().In(loc)) {
+		appointmentTime = appointmentTime.Add(time.Hour)
+	}
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	if err := config.DB.Model(&models.Appointment{}).Where("id = ?", appt.ID).Update("booking_root_id", appt.ID).Error; err != nil {
+		t.Fatalf("set booking_root_id failed: %v", err)
+	}
+	appt.BookingRootID = &appt.ID
+	if _, err := initializeAppointmentSettlement(config.DB, &appt, "test_seed"); err != nil {
+		t.Fatalf("initialize settlement failed: %v", err)
+	}
+
+	body, _ := json.Marshal(gin.H{"reason": "门店临时无法履约"})
+	merchantCtx, merchantRec := newMerchantContext(http.MethodPost, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/cancel-requests", merchant.ID)
+	merchantCtx.Request = httptest.NewRequest(http.MethodPost, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/cancel-requests", bytes.NewReader(body))
+	merchantCtx.Request.Header.Set("Content-Type", "application/json")
+	merchantCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	CreateAppointmentCancelRequest(merchantCtx)
+	if merchantRec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", merchantRec.Code, merchantRec.Body.String())
+	}
+
+	var requestID uint
+	if err := config.DB.Table("appointment_cancel_requests").Select("id").Order("id desc").Limit(1).Scan(&requestID).Error; err != nil {
+		t.Fatalf("load cancel request id failed: %v", err)
+	}
+	requestPtr, err := loadAppointmentCancelRequestByID(config.DB, requestID)
+	if err != nil || requestPtr == nil {
+		t.Fatalf("load cancel request failed: %v", err)
+	}
+	if requestPtr.Status != "pending_user" {
+		t.Fatalf("want pending_user cancel request, got %s", requestPtr.Status)
+	}
+
+	userCtx, userRec := newUserJSONContext(http.MethodPost, "/user/appointments/"+strconv.Itoa(int(appt.ID))+"/cancel-requests/"+strconv.Itoa(int(requestID))+"/accept", user.ID, nil)
+	userCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}, {Key: "request_id", Value: strconv.Itoa(int(requestID))}}
+	AcceptAppointmentCancelRequest(userCtx)
+	if userRec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", userRec.Code, userRec.Body.String())
+	}
+
+	updated := mustLoadAppointmentForTest(t, appt.ID)
+	if updated.Status != "canceled" {
+		t.Fatalf("want appointment canceled, got %s", updated.Status)
+	}
+	reloadedReq, err := loadAppointmentCancelRequestByID(config.DB, requestID)
+	if err != nil || reloadedReq == nil {
+		t.Fatalf("reload cancel request failed: %v", err)
+	}
+	if reloadedReq.Status != "accepted" {
+		t.Fatalf("want cancel request accepted, got %s", reloadedReq.Status)
+	}
+	var settlement models.AppointmentSettlement
+	if err := config.DB.First(&settlement, *appt.AppointmentSettlementID).Error; err != nil {
+		t.Fatalf("load settlement failed: %v", err)
+	}
+	if settlement.Status != "refunded" || updated.SettlementStatusSnapshot != "refunded" {
+		t.Fatalf("want refunded settlement snapshot, got settlement=%s appointment=%s", settlement.Status, updated.SettlementStatusSnapshot)
+	}
+}
+
+func TestAppointmentCancelRequestFlowKeepsAppointmentWhenUserRejects(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	soon := time.Now().In(loc).Add(4 * time.Hour)
+	appointmentTime := time.Date(soon.Year(), soon.Month(), soon.Day(), soon.Hour(), 0, 0, 0, loc)
+	if !appointmentTime.After(time.Now().In(loc)) {
+		appointmentTime = appointmentTime.Add(time.Hour)
+	}
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+
+	body, _ := json.Marshal(gin.H{"reason": "门店临时无法履约"})
+	merchantCtx, merchantRec := newMerchantContext(http.MethodPost, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/cancel-requests", merchant.ID)
+	merchantCtx.Request = httptest.NewRequest(http.MethodPost, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/cancel-requests", bytes.NewReader(body))
+	merchantCtx.Request.Header.Set("Content-Type", "application/json")
+	merchantCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	CreateAppointmentCancelRequest(merchantCtx)
+	if merchantRec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", merchantRec.Code, merchantRec.Body.String())
+	}
+
+	var requestID uint
+	if err := config.DB.Table("appointment_cancel_requests").Select("id").Order("id desc").Limit(1).Scan(&requestID).Error; err != nil {
+		t.Fatalf("load cancel request id failed: %v", err)
+	}
+
+	rejectBody, _ := json.Marshal(gin.H{"objection_note": "我仍然按时到店"})
+	userCtx, userRec := newUserJSONContext(http.MethodPost, "/user/appointments/"+strconv.Itoa(int(appt.ID))+"/cancel-requests/"+strconv.Itoa(int(requestID))+"/reject", user.ID, rejectBody)
+	userCtx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}, {Key: "request_id", Value: strconv.Itoa(int(requestID))}}
+	RejectAppointmentCancelRequest(userCtx)
+	if userRec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", userRec.Code, userRec.Body.String())
+	}
+
+	updated := mustLoadAppointmentForTest(t, appt.ID)
+	if updated.Status != "confirmed" {
+		t.Fatalf("want appointment stay confirmed, got %s", updated.Status)
+	}
+	reloadedReq, err := loadAppointmentCancelRequestByID(config.DB, requestID)
+	if err != nil || reloadedReq == nil {
+		t.Fatalf("reload cancel request failed: %v", err)
+	}
+	if reloadedReq.Status != "rejected" {
+		t.Fatalf("want cancel request rejected, got %s", reloadedReq.Status)
+	}
+	if reloadedReq.ObjectionNote != "我仍然按时到店" {
+		t.Fatalf("want objection note persisted, got %s", reloadedReq.ObjectionNote)
+	}
+}
+
+func TestCheckInAppointmentCreatesSessionWithoutDeductingCardTimes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	startAt := time.Now().In(loc).Add(5 * time.Minute)
+	appointmentTime := time.Date(startAt.Year(), startAt.Month(), startAt.Day(), startAt.Hour(), startAt.Minute(), 0, 0, loc)
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	if err := config.DB.Model(&models.Appointment{}).Where("id = ?", appt.ID).Update("booking_root_id", appt.ID).Error; err != nil {
+		t.Fatalf("set booking_root_id failed: %v", err)
+	}
+	appt.BookingRootID = &appt.ID
+	if _, err := initializeAppointmentSettlement(config.DB, &appt, "test_seed"); err != nil {
+		t.Fatalf("initialize settlement failed: %v", err)
+	}
+
+	beforeCard := models.Card{}
+	if err := config.DB.First(&beforeCard, card1.ID).Error; err != nil {
+		t.Fatalf("load card before checkin failed: %v", err)
+	}
+
+	c, rec := newMerchantContext(http.MethodPost, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/check-in", merchant.ID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	CheckInAppointment(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	updated := mustLoadAppointmentForTest(t, appt.ID)
+	if updated.Status != "arrived" {
+		t.Fatalf("want appointment arrived, got %s", updated.Status)
+	}
+	if updated.ActualArrivedAt == nil || updated.ServiceSessionID == nil || updated.UsageID == nil {
+		t.Fatalf("want actual_arrived_at/service_session_id/usage_id filled, got %+v", updated)
+	}
+	afterCard := models.Card{}
+	if err := config.DB.First(&afterCard, card1.ID).Error; err != nil {
+		t.Fatalf("load card after checkin failed: %v", err)
+	}
+	if afterCard.RemainTimes != beforeCard.RemainTimes || afterCard.UsedTimes != beforeCard.UsedTimes {
+		t.Fatalf("want card times unchanged on appointment checkin, before=%d/%d after=%d/%d", beforeCard.RemainTimes, beforeCard.UsedTimes, afterCard.RemainTimes, afterCard.UsedTimes)
+	}
+	var usage struct {
+		Status string `gorm:"column:status"`
+	}
+	if err := config.DB.Table("usages").Select("status").Where("id = ?", *updated.UsageID).Take(&usage).Error; err != nil {
+		t.Fatalf("load usage failed: %v", err)
+	}
+	if usage.Status != "in_progress" {
+		t.Fatalf("want usage in_progress, got %s", usage.Status)
+	}
+	var session struct {
+		SourceType string `gorm:"column:source_type"`
+		SourceID   *uint  `gorm:"column:source_id"`
+	}
+	if err := config.DB.Table("service_sessions").Select("source_type, source_id").Where("id = ?", *updated.ServiceSessionID).Take(&session).Error; err != nil {
+		t.Fatalf("load service session failed: %v", err)
+	}
+	if session.SourceType != serviceSessionSourceAppointment || session.SourceID == nil || *session.SourceID != appt.ID {
+		t.Fatalf("want appointment source session, got source_type=%s source_id=%+v", session.SourceType, session.SourceID)
+	}
+}
+
+func containsText(body, want string) bool {
+	return strings.Contains(body, want)
+}

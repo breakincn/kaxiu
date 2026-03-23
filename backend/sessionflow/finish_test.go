@@ -34,7 +34,7 @@ func TestFinishServiceSessionUpdatesUsageAndMarksQueueDone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Merchant{}, &models.Usage{}, &models.ServiceSession{}); err != nil {
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Usage{}, &models.ServiceSession{}, &models.ProtectedRepairSlot{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 
@@ -103,7 +103,7 @@ func TestFinalizeUsageAndSessionCompletesUnstartedSessionAndMarksQueueDone(t *te
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Merchant{}, &models.Usage{}, &models.ServiceSession{}); err != nil {
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Usage{}, &models.ServiceSession{}, &models.ProtectedRepairSlot{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 
@@ -167,7 +167,7 @@ func TestFinalizeUsageAndSessionReturnsFalseWhenSessionMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Merchant{}, &models.Usage{}, &models.ServiceSession{}); err != nil {
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Usage{}, &models.ServiceSession{}, &models.ProtectedRepairSlot{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 
@@ -190,7 +190,7 @@ func TestFinishServiceSessionMarksLinkedAppointmentCompleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Merchant{}, &models.Appointment{}, &models.Usage{}, &models.ServiceSession{}); err != nil {
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Appointment{}, &models.AppointmentSettlement{}, &models.Usage{}, &models.ServiceSession{}, &models.ProtectedRepairSlot{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}, &models.MerchantProject{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 
@@ -209,6 +209,13 @@ func TestFinishServiceSessionMarksLinkedAppointmentCompleted(t *testing.T) {
 	}
 	if err := db.Create(&appointment).Error; err != nil {
 		t.Fatalf("create appointment failed: %v", err)
+	}
+	settlement := models.AppointmentSettlement{AppointmentID: appointment.ID, MerchantID: merchant.ID, UserID: appointment.UserID, CardID: appointment.CardID, Status: "pending", SettlementStatusSnapshot: "pending", MerchantBreachPending: true}
+	if err := db.Create(&settlement).Error; err != nil {
+		t.Fatalf("create settlement failed: %v", err)
+	}
+	if err := db.Model(&models.Appointment{}).Where("id = ?", appointment.ID).Updates(map[string]interface{}{"appointment_settlement_id": settlement.ID, "merchant_breach_pending": true}).Error; err != nil {
+		t.Fatalf("bind settlement failed: %v", err)
 	}
 	usage := models.Usage{MerchantID: merchant.ID, Status: "in_progress"}
 	if err := db.Create(&usage).Error; err != nil {
@@ -231,10 +238,13 @@ func TestFinishServiceSessionMarksLinkedAppointmentCompleted(t *testing.T) {
 	}
 
 	var got struct {
-		Status         string `gorm:"column:status"`
-		CompletedAtRaw string `gorm:"column:completed_at"`
+		Status                          string `gorm:"column:status"`
+		CompletedAtRaw                  string `gorm:"column:completed_at"`
+		MerchantBreachPending           bool   `gorm:"column:merchant_breach_pending"`
+		LiabilityLevel                  string `gorm:"column:liability_level"`
+		SalarySettlementReferenceStatus string `gorm:"column:salary_settlement_reference_status"`
 	}
-	if err := db.Table("appointments").Select("status, completed_at").Where("id = ?", appointment.ID).Scan(&got).Error; err != nil {
+	if err := db.Table("appointments").Select("status, completed_at, merchant_breach_pending, liability_level, salary_settlement_reference_status").Where("id = ?", appointment.ID).Scan(&got).Error; err != nil {
 		t.Fatalf("reload appointment failed: %v", err)
 	}
 	if got.Status != "completed" {
@@ -242,5 +252,225 @@ func TestFinishServiceSessionMarksLinkedAppointmentCompleted(t *testing.T) {
 	}
 	if got.CompletedAtRaw == "" {
 		t.Fatalf("want completed_at filled")
+	}
+	if got.MerchantBreachPending || got.LiabilityLevel != "none" || got.SalarySettlementReferenceStatus != "normal" {
+		t.Fatalf("want completed non-breach snapshot, got %+v", got)
+	}
+}
+
+func TestFinishServiceSessionCreatesDelayLedgerWhenActualStartIsLate(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:sessionflow_finish_delay_ledger_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Appointment{}, &models.AppointmentSettlement{}, &models.Usage{}, &models.ServiceSession{}, &models.ProtectedRepairSlot{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}, &models.MerchantProject{}); err != nil {
+		t.Fatalf("migrate failed: %v", err)
+	}
+
+	now := time.Date(2026, 3, 23, 12, 20, 0, 0, time.UTC)
+	merchant := models.Merchant{Name: "m-delay", Phone: "18800000039", Password: "pwd"}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	project := models.MerchantProject{MerchantID: merchant.ID, Name: "肩颈", Duration: 60, DelayToleranceMinutes: 1, DelayCompensationMode: "minutes_bucket"}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project failed: %v", err)
+	}
+	reservedStart := now.Add(-20 * time.Minute)
+	actualStart := reservedStart.Add(8 * time.Minute)
+	appointment := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          1,
+		CardID:          1,
+		ProjectID:       &project.ID,
+		Status:          "arrived",
+		ReservedStartAt: &reservedStart,
+		ActualStartAt:   &actualStart,
+	}
+	if err := db.Create(&appointment).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	settlement := models.AppointmentSettlement{AppointmentID: appointment.ID, MerchantID: merchant.ID, UserID: appointment.UserID, CardID: appointment.CardID, Status: "pending", SettlementStatusSnapshot: "pending", MerchantBreachPending: true}
+	if err := db.Create(&settlement).Error; err != nil {
+		t.Fatalf("create settlement failed: %v", err)
+	}
+	if err := db.Model(&models.Appointment{}).Where("id = ?", appointment.ID).Updates(map[string]interface{}{"appointment_settlement_id": settlement.ID, "merchant_breach_pending": true}).Error; err != nil {
+		t.Fatalf("bind settlement failed: %v", err)
+	}
+	usage := models.Usage{MerchantID: merchant.ID, Status: "in_progress"}
+	if err := db.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+	session := models.ServiceSession{
+		MerchantID:       merchant.ID,
+		InitialUsageID:   usage.ID,
+		Status:           "serving",
+		SourceType:       "appointment",
+		SourceID:         &appointment.ID,
+		StartConfirmedAt: &actualStart,
+		StartedAt:        &actualStart,
+		DurationMinutes:  60,
+	}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	if err := FinishServiceSession(db, &session, &merchant, now, FinishOptions{}); err != nil {
+		t.Fatalf("FinishServiceSession failed: %v", err)
+	}
+
+	var ledger struct {
+		DelayMinutes    int `gorm:"column:delay_minutes"`
+		CreditedMinutes int `gorm:"column:credited_minutes"`
+	}
+	if err := db.Table("appointment_delay_ledgers").Select("delay_minutes, credited_minutes").Where("appointment_id = ?", appointment.ID).Scan(&ledger).Error; err != nil {
+		t.Fatalf("load delay ledger failed: %v", err)
+	}
+	if ledger.DelayMinutes != 8 || ledger.CreditedMinutes != 8 {
+		t.Fatalf("want 8 minute delay ledger, got %+v", ledger)
+	}
+}
+
+func TestFinishServiceSessionSkipsDelayLedgerWithinTolerance(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:sessionflow_finish_delay_tolerance_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Appointment{}, &models.AppointmentSettlement{}, &models.Usage{}, &models.ServiceSession{}, &models.ProtectedRepairSlot{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}, &models.MerchantProject{}); err != nil {
+		t.Fatalf("migrate failed: %v", err)
+	}
+
+	now := time.Date(2026, 3, 23, 12, 20, 0, 0, time.UTC)
+	merchant := models.Merchant{Name: "m-delay-tolerance", Phone: "18800000040", Password: "pwd"}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	project := models.MerchantProject{MerchantID: merchant.ID, Name: "肩颈", Duration: 60, DelayToleranceMinutes: 5, DelayCompensationMode: "minutes_bucket"}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project failed: %v", err)
+	}
+	reservedStart := now.Add(-20 * time.Minute)
+	actualStart := reservedStart.Add(4 * time.Minute)
+	appointment := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          1,
+		CardID:          1,
+		ProjectID:       &project.ID,
+		Status:          "arrived",
+		ReservedStartAt: &reservedStart,
+		ActualStartAt:   &actualStart,
+	}
+	if err := db.Create(&appointment).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	settlement := models.AppointmentSettlement{AppointmentID: appointment.ID, MerchantID: merchant.ID, UserID: appointment.UserID, CardID: appointment.CardID, Status: "pending", SettlementStatusSnapshot: "pending"}
+	if err := db.Create(&settlement).Error; err != nil {
+		t.Fatalf("create settlement failed: %v", err)
+	}
+	if err := db.Model(&models.Appointment{}).Where("id = ?", appointment.ID).Update("appointment_settlement_id", settlement.ID).Error; err != nil {
+		t.Fatalf("bind settlement failed: %v", err)
+	}
+	usage := models.Usage{MerchantID: merchant.ID, Status: "in_progress"}
+	if err := db.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+	session := models.ServiceSession{
+		MerchantID:       merchant.ID,
+		InitialUsageID:   usage.ID,
+		Status:           "serving",
+		SourceType:       "appointment",
+		SourceID:         &appointment.ID,
+		StartConfirmedAt: &actualStart,
+		StartedAt:        &actualStart,
+		DurationMinutes:  60,
+	}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	if err := FinishServiceSession(db, &session, &merchant, now, FinishOptions{}); err != nil {
+		t.Fatalf("FinishServiceSession failed: %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&models.AppointmentDelayLedger{}).Where("appointment_id = ?", appointment.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count delay ledgers failed: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("want no delay ledger within tolerance, got %d", count)
+	}
+}
+
+func TestFinishServiceSessionCreatesAmountBucketDelayLedger(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:sessionflow_finish_delay_amount_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Appointment{}, &models.AppointmentSettlement{}, &models.Usage{}, &models.ServiceSession{}, &models.ProtectedRepairSlot{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}, &models.MerchantProject{}); err != nil {
+		t.Fatalf("migrate failed: %v", err)
+	}
+
+	now := time.Date(2026, 3, 23, 13, 20, 0, 0, time.UTC)
+	merchant := models.Merchant{Name: "m-delay-amount", Phone: "18800000041", Password: "pwd"}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	project := models.MerchantProject{MerchantID: merchant.ID, Name: "面部", Duration: 80, DelayToleranceMinutes: 1, DelayCompensationMode: "amount_bucket", DelayFixedUnitValue: 100}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project failed: %v", err)
+	}
+	reservedStart := now.Add(-20 * time.Minute)
+	actualStart := reservedStart.Add(10 * time.Minute)
+	appointment := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          1,
+		CardID:          1,
+		ProjectID:       &project.ID,
+		Status:          "arrived",
+		ReservedStartAt: &reservedStart,
+		ActualStartAt:   &actualStart,
+	}
+	if err := db.Create(&appointment).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	settlement := models.AppointmentSettlement{AppointmentID: appointment.ID, MerchantID: merchant.ID, UserID: appointment.UserID, CardID: appointment.CardID, Status: "pending", SettlementStatusSnapshot: "pending"}
+	if err := db.Create(&settlement).Error; err != nil {
+		t.Fatalf("create settlement failed: %v", err)
+	}
+	if err := db.Model(&models.Appointment{}).Where("id = ?", appointment.ID).Update("appointment_settlement_id", settlement.ID).Error; err != nil {
+		t.Fatalf("bind settlement failed: %v", err)
+	}
+	usage := models.Usage{MerchantID: merchant.ID, Status: "in_progress"}
+	if err := db.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+	session := models.ServiceSession{
+		MerchantID:       merchant.ID,
+		InitialUsageID:   usage.ID,
+		Status:           "serving",
+		SourceType:       "appointment",
+		SourceID:         &appointment.ID,
+		StartConfirmedAt: &actualStart,
+		StartedAt:        &actualStart,
+		DurationMinutes:  80,
+	}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	if err := FinishServiceSession(db, &session, &merchant, now, FinishOptions{}); err != nil {
+		t.Fatalf("FinishServiceSession failed: %v", err)
+	}
+
+	var ledger struct {
+		DelayMinutes           int `gorm:"column:delay_minutes"`
+		CreditedMinutes        int `gorm:"column:credited_minutes"`
+		DelayCompensationValue int `gorm:"column:delay_compensation_value"`
+	}
+	if err := db.Table("appointment_delay_ledgers").Select("delay_minutes, credited_minutes, delay_compensation_value").Where("appointment_id = ?", appointment.ID).Scan(&ledger).Error; err != nil {
+		t.Fatalf("load delay ledger failed: %v", err)
+	}
+	if ledger.DelayMinutes != 10 || ledger.CreditedMinutes != 10 || ledger.DelayCompensationValue != 13 {
+		t.Fatalf("want amount bucket ledger value ceil(100*10/80)=13, got %+v", ledger)
 	}
 }

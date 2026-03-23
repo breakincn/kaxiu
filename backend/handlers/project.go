@@ -29,15 +29,19 @@ func CreateMerchantProject(c *gin.Context) {
 	}
 
 	var input struct {
-		Name              string  `json:"name" binding:"required"`
-		Duration          int     `json:"duration" binding:"required,min=1"`
-		BookableOnline    *bool   `json:"bookable_online"`
-		ServiceGapMinutes *int    `json:"service_gap_minutes"`
-		StartDelaySeconds *int    `json:"start_delay_seconds"`
-		Price             float64 `json:"price"`
-		Description       string  `json:"description"`
-		IsActive          *bool   `json:"is_active"`
-		SortOrder         *int    `json:"sort_order"`
+		Name                        string  `json:"name" binding:"required"`
+		Duration                    int     `json:"duration" binding:"required,min=1"`
+		BookableOnline              *bool   `json:"bookable_online"`
+		ServiceGapMinutes           *int    `json:"service_gap_minutes"`
+		StartDelaySeconds           *int    `json:"start_delay_seconds"`
+		DelayToleranceMinutes       *int    `json:"delay_tolerance_minutes"`
+		DelayCompensationMode       *string `json:"delay_compensation_mode"`
+		DelayRedeemThresholdPercent *int    `json:"delay_redeem_threshold_percent"`
+		DelayFixedUnitValue         *int    `json:"delay_fixed_unit_value"`
+		Price                       float64 `json:"price"`
+		Description                 string  `json:"description"`
+		IsActive                    *bool   `json:"is_active"`
+		SortOrder                   *int    `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -73,6 +77,42 @@ func CreateMerchantProject(c *gin.Context) {
 		}
 		serviceGapMinutes = *input.ServiceGapMinutes
 	}
+	delayToleranceMinutes := 1
+	if input.DelayToleranceMinutes != nil {
+		if *input.DelayToleranceMinutes < 0 || *input.DelayToleranceMinutes > 180 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "拖堂容忍分钟数范围应为 0-180 分钟"})
+			return
+		}
+		delayToleranceMinutes = *input.DelayToleranceMinutes
+	}
+	delayCompensationMode := "minutes_bucket"
+	if input.DelayCompensationMode != nil {
+		switch strings.TrimSpace(*input.DelayCompensationMode) {
+		case "", "minutes_bucket":
+			delayCompensationMode = "minutes_bucket"
+		case "amount_bucket", "fixed_unit":
+			delayCompensationMode = strings.TrimSpace(*input.DelayCompensationMode)
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "拖堂补偿模式必须为 minutes_bucket、amount_bucket 或 fixed_unit"})
+			return
+		}
+	}
+	delayRedeemThresholdPercent := 100
+	if input.DelayRedeemThresholdPercent != nil {
+		if *input.DelayRedeemThresholdPercent < 1 || *input.DelayRedeemThresholdPercent > 1000 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "拖堂兑现阈值百分比范围应为 1-1000"})
+			return
+		}
+		delayRedeemThresholdPercent = *input.DelayRedeemThresholdPercent
+	}
+	delayFixedUnitValue := 0
+	if input.DelayFixedUnitValue != nil {
+		if *input.DelayFixedUnitValue < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "拖堂固定补偿值不能为负数"})
+			return
+		}
+		delayFixedUnitValue = *input.DelayFixedUnitValue
+	}
 	bookableOnline := true
 	if input.BookableOnline != nil {
 		bookableOnline = *input.BookableOnline
@@ -88,16 +128,20 @@ func CreateMerchantProject(c *gin.Context) {
 	}
 
 	p := models.MerchantProject{
-		MerchantID:        merchantID,
-		Name:              name,
-		Duration:          input.Duration,
-		BookableOnline:    bookableOnline,
-		ServiceGapMinutes: serviceGapMinutes,
-		StartDelaySeconds: startDelaySeconds,
-		Price:             input.Price,
-		Description:       strings.TrimSpace(input.Description),
-		IsActive:          isActive,
-		SortOrder:         sortOrder,
+		MerchantID:                  merchantID,
+		Name:                        name,
+		Duration:                    input.Duration,
+		BookableOnline:              bookableOnline,
+		ServiceGapMinutes:           serviceGapMinutes,
+		StartDelaySeconds:           startDelaySeconds,
+		DelayToleranceMinutes:       delayToleranceMinutes,
+		DelayCompensationMode:       delayCompensationMode,
+		DelayRedeemThresholdPercent: delayRedeemThresholdPercent,
+		DelayFixedUnitValue:         delayFixedUnitValue,
+		Price:                       input.Price,
+		Description:                 strings.TrimSpace(input.Description),
+		IsActive:                    isActive,
+		SortOrder:                   sortOrder,
 	}
 	if err := config.DB.Create(&p).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
@@ -124,15 +168,19 @@ func UpdateMerchantProject(c *gin.Context) {
 	}
 
 	var input struct {
-		Name              *string  `json:"name"`
-		Duration          *int     `json:"duration"`
-		BookableOnline    *bool    `json:"bookable_online"`
-		ServiceGapMinutes *int     `json:"service_gap_minutes"`
-		StartDelaySeconds *int     `json:"start_delay_seconds"`
-		Price             *float64 `json:"price"`
-		Description       *string  `json:"description"`
-		IsActive          *bool    `json:"is_active"`
-		SortOrder         *int     `json:"sort_order"`
+		Name                        *string  `json:"name"`
+		Duration                    *int     `json:"duration"`
+		BookableOnline              *bool    `json:"bookable_online"`
+		ServiceGapMinutes           *int     `json:"service_gap_minutes"`
+		StartDelaySeconds           *int     `json:"start_delay_seconds"`
+		DelayToleranceMinutes       *int     `json:"delay_tolerance_minutes"`
+		DelayCompensationMode       *string  `json:"delay_compensation_mode"`
+		DelayRedeemThresholdPercent *int     `json:"delay_redeem_threshold_percent"`
+		DelayFixedUnitValue         *int     `json:"delay_fixed_unit_value"`
+		Price                       *float64 `json:"price"`
+		Description                 *string  `json:"description"`
+		IsActive                    *bool    `json:"is_active"`
+		SortOrder                   *int     `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -168,6 +216,39 @@ func UpdateMerchantProject(c *gin.Context) {
 			return
 		}
 		updates["service_gap_minutes"] = *input.ServiceGapMinutes
+	}
+	if input.DelayToleranceMinutes != nil {
+		if *input.DelayToleranceMinutes < 0 || *input.DelayToleranceMinutes > 180 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "拖堂容忍分钟数范围应为 0-180 分钟"})
+			return
+		}
+		updates["delay_tolerance_minutes"] = *input.DelayToleranceMinutes
+	}
+	if input.DelayCompensationMode != nil {
+		mode := strings.TrimSpace(*input.DelayCompensationMode)
+		switch mode {
+		case "", "minutes_bucket":
+			updates["delay_compensation_mode"] = "minutes_bucket"
+		case "amount_bucket", "fixed_unit":
+			updates["delay_compensation_mode"] = mode
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "拖堂补偿模式必须为 minutes_bucket、amount_bucket 或 fixed_unit"})
+			return
+		}
+	}
+	if input.DelayRedeemThresholdPercent != nil {
+		if *input.DelayRedeemThresholdPercent < 1 || *input.DelayRedeemThresholdPercent > 1000 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "拖堂兑现阈值百分比范围应为 1-1000"})
+			return
+		}
+		updates["delay_redeem_threshold_percent"] = *input.DelayRedeemThresholdPercent
+	}
+	if input.DelayFixedUnitValue != nil {
+		if *input.DelayFixedUnitValue < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "拖堂固定补偿值不能为负数"})
+			return
+		}
+		updates["delay_fixed_unit_value"] = *input.DelayFixedUnitValue
 	}
 	if input.BookableOnline != nil {
 		updates["bookable_online"] = *input.BookableOnline

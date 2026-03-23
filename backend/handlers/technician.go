@@ -348,6 +348,66 @@ func GetMerchantTechnicians(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": buildMerchantTechnicianListResponse(list)})
 }
 
+func GetTechnicianMonthlyDisruptions(c *gin.Context) {
+	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.view", "merchant.appointment.manage", "merchant.cs.manage") {
+		return
+	}
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+	technicianID64, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || technicianID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的客服ID"})
+		return
+	}
+	technicianID := uint(technicianID64)
+	var technician models.Technician
+	if err := config.DB.Where("id = ? AND merchant_id = ?", technicianID, merchantID).First(&technician).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "客服不存在"})
+		return
+	}
+
+	monthKey := strings.TrimSpace(c.Query("month"))
+	if monthKey == "" {
+		monthKey = time.Now().In(time.Local).Format("2006-01")
+	}
+	if len(monthKey) != 7 || monthKey[4] != '-' {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "month 参数格式应为 YYYY-MM"})
+		return
+	}
+
+	var counter models.TechnicianMonthlyDisruptionCounter
+	if err := config.DB.Where("merchant_id = ? AND technician_id = ? AND month_key = ?", merchantID, technicianID, monthKey).First(&counter).Error; err != nil && err != gorm.ErrRecordNotFound {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取月度责任统计失败"})
+		return
+	}
+	var items []models.TechnicianDisruptionLedger
+	if err := config.DB.Where("merchant_id = ? AND technician_id = ? AND month_key = ?", merchantID, technicianID, monthKey).Order("id DESC").Find(&items).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取责任账本失败"})
+		return
+	}
+	merchantExemptCount := 0
+	technicianChargeableCount := 0
+	for _, item := range items {
+		switch strings.TrimSpace(item.LiabilityLevel) {
+		case "merchant_exempt":
+			merchantExemptCount++
+		case "technician_chargeable":
+			technicianChargeableCount++
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"technician":                  buildMerchantTechnicianResponse(technician),
+		"month":                       monthKey,
+		"leave_disruption_count":      counter.LeaveDisruptionCount,
+		"first_exempt_used":           counter.FirstExemptUsed,
+		"merchant_exempt_count":       merchantExemptCount,
+		"technician_chargeable_count": technicianChargeableCount,
+		"items":                       items,
+	}})
+}
+
 func UpdateMerchantTechnician(c *gin.Context) {
 	authType, _ := c.Get("auth_type")
 	if authType == "staff" {

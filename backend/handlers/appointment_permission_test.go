@@ -37,6 +37,15 @@ func setupAppointmentPermissionTestDB(t *testing.T) *gorm.DB {
 		&models.Technician{},
 		&models.Appointment{},
 		&models.AppointmentCompensation{},
+		&models.AppointmentSettlement{},
+		&models.AppointmentRescheduleRequest{},
+		&models.TechnicianSchedulePublishing{},
+		&models.ProtectedRepairSlot{},
+		&models.AppointmentCancelRequest{},
+		&models.ForceMajeureReliefRequest{},
+		&models.TechnicianMonthlyDisruptionCounter{},
+		&models.TechnicianDisruptionLedger{},
+		&models.AppointmentDelayLedger{},
 	); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}

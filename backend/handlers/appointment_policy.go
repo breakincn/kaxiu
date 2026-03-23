@@ -174,18 +174,40 @@ func getProjectOccupiedMinutesForAppointment(tx *gorm.DB, merchantID uint, proje
 	return projectBookingOccupiedMinutes(durationMinutes, gapMinutes)
 }
 
+func appointmentSelectColumns() string {
+	return "id, card_id, merchant_id, user_id, booking_root_id, project_id, technician_id, appointment_time, reserved_start_at, reserved_end_at, occupied_end_at, cancel_deadline_at, booking_close_deadline_at, late_arrival_min_service_minutes, appointment_settlement_id, settlement_status_snapshot, status, confirmed_at, arrived_at, actual_arrived_at, actual_start_at, completed_at, no_show_at, service_session_id, usage_id, predicted_wait_minutes, merchant_breach_pending, breach_decision_at, disruption_status, disruption_reason, merchant_cancel_reason, user_rebuttal_note, liability_level, salary_settlement_reference_status, resolution_note, closed_reason, closed_by_type, closed_by_id, reschedule_reason, replaced_by_appointment_id, replaces_appointment_id, canceled_at, failed_at, failed_reason, created_at"
+}
+
+func technicianSchedulePublishingSelectColumns() string {
+	return "id, merchant_id, technician_id, publish_date, start_at, end_at, status, published_at, created_at"
+}
+
+func protectedRepairSlotSelectColumns() string {
+	return "id, merchant_id, appointment_id, technician_id, publish_date, start_at, end_at, status, source_type, created_at"
+}
+
 func scanAppointmentRow(rows *sql.Rows) (models.Appointment, error) {
 	var (
 		appt                       models.Appointment
+		bookingRootIDRaw           interface{}
 		projectIDRaw               interface{}
 		technicianIDRaw            interface{}
 		appointmentTimeRaw         interface{}
+		reservedStartAtRaw         interface{}
+		reservedEndAtRaw           interface{}
+		occupiedEndAtRaw           interface{}
+		cancelDeadlineAtRaw        interface{}
+		bookingCloseDeadlineAtRaw  interface{}
+		appointmentSettlementIDRaw interface{}
 		confirmedAtRaw             interface{}
 		arrivedAtRaw               interface{}
+		actualArrivedAtRaw         interface{}
+		actualStartAtRaw           interface{}
 		completedAtRaw             interface{}
 		noShowAtRaw                interface{}
 		serviceSessionIDRaw        interface{}
 		usageIDRaw                 interface{}
+		breachDecisionAtRaw        interface{}
 		closedByIDRaw              interface{}
 		replacedByAppointmentIDRaw interface{}
 		replacesAppointmentIDRaw   interface{}
@@ -198,17 +220,36 @@ func scanAppointmentRow(rows *sql.Rows) (models.Appointment, error) {
 		&appt.CardID,
 		&appt.MerchantID,
 		&appt.UserID,
+		&bookingRootIDRaw,
 		&projectIDRaw,
 		&technicianIDRaw,
 		&appointmentTimeRaw,
+		&reservedStartAtRaw,
+		&reservedEndAtRaw,
+		&occupiedEndAtRaw,
+		&cancelDeadlineAtRaw,
+		&bookingCloseDeadlineAtRaw,
+		&appt.LateArrivalMinServiceMinutes,
+		&appointmentSettlementIDRaw,
+		&appt.SettlementStatusSnapshot,
 		&appt.Status,
 		&confirmedAtRaw,
 		&arrivedAtRaw,
+		&actualArrivedAtRaw,
+		&actualStartAtRaw,
 		&completedAtRaw,
 		&noShowAtRaw,
 		&serviceSessionIDRaw,
 		&usageIDRaw,
 		&appt.PredictedWaitMinutes,
+		&appt.MerchantBreachPending,
+		&breachDecisionAtRaw,
+		&appt.DisruptionStatus,
+		&appt.DisruptionReason,
+		&appt.MerchantCancelReason,
+		&appt.UserRebuttalNote,
+		&appt.LiabilityLevel,
+		&appt.SalarySettlementReferenceStatus,
 		&appt.ResolutionNote,
 		&appt.ClosedReason,
 		&appt.ClosedByType,
@@ -223,6 +264,9 @@ func scanAppointmentRow(rows *sql.Rows) (models.Appointment, error) {
 	); err != nil {
 		return appt, err
 	}
+	if v, ok := gormValueToUint(bookingRootIDRaw); ok {
+		appt.BookingRootID = &v
+	}
 	if v, ok := gormValueToUint(projectIDRaw); ok {
 		appt.ProjectID = &v
 	}
@@ -232,11 +276,35 @@ func scanAppointmentRow(rows *sql.Rows) (models.Appointment, error) {
 	if v, ok := parseDBTimeValue(appointmentTimeRaw); ok {
 		appt.AppointmentTime = &v
 	}
+	if v, ok := parseDBTimeValue(reservedStartAtRaw); ok {
+		appt.ReservedStartAt = &v
+	}
+	if v, ok := parseDBTimeValue(reservedEndAtRaw); ok {
+		appt.ReservedEndAt = &v
+	}
+	if v, ok := parseDBTimeValue(occupiedEndAtRaw); ok {
+		appt.OccupiedEndAt = &v
+	}
+	if v, ok := parseDBTimeValue(cancelDeadlineAtRaw); ok {
+		appt.CancelDeadlineAt = &v
+	}
+	if v, ok := parseDBTimeValue(bookingCloseDeadlineAtRaw); ok {
+		appt.BookingCloseDeadlineAt = &v
+	}
+	if v, ok := gormValueToUint(appointmentSettlementIDRaw); ok {
+		appt.AppointmentSettlementID = &v
+	}
 	if v, ok := parseDBTimeValue(confirmedAtRaw); ok {
 		appt.ConfirmedAt = &v
 	}
 	if v, ok := parseDBTimeValue(arrivedAtRaw); ok {
 		appt.ArrivedAt = &v
+	}
+	if v, ok := parseDBTimeValue(actualArrivedAtRaw); ok {
+		appt.ActualArrivedAt = &v
+	}
+	if v, ok := parseDBTimeValue(actualStartAtRaw); ok {
+		appt.ActualStartAt = &v
 	}
 	if v, ok := parseDBTimeValue(completedAtRaw); ok {
 		appt.CompletedAt = &v
@@ -249,6 +317,9 @@ func scanAppointmentRow(rows *sql.Rows) (models.Appointment, error) {
 	}
 	if v, ok := gormValueToUint(usageIDRaw); ok {
 		appt.UsageID = &v
+	}
+	if v, ok := parseDBTimeValue(breachDecisionAtRaw); ok {
+		appt.BreachDecisionAt = &v
 	}
 	if v, ok := gormValueToUint(closedByIDRaw); ok {
 		appt.ClosedByID = &v
@@ -271,12 +342,76 @@ func scanAppointmentRow(rows *sql.Rows) (models.Appointment, error) {
 	return appt, nil
 }
 
+func scanTechnicianSchedulePublishingRow(rows *sql.Rows) (models.TechnicianSchedulePublishing, error) {
+	var (
+		row            models.TechnicianSchedulePublishing
+		technicianRaw  interface{}
+		publishDateRaw interface{}
+		startAtRaw     interface{}
+		endAtRaw       interface{}
+		publishedAtRaw interface{}
+		createdAtRaw   interface{}
+	)
+	if err := rows.Scan(&row.ID, &row.MerchantID, &technicianRaw, &publishDateRaw, &startAtRaw, &endAtRaw, &row.Status, &publishedAtRaw, &createdAtRaw); err != nil {
+		return row, err
+	}
+	if v, ok := gormValueToUint(technicianRaw); ok {
+		row.TechnicianID = &v
+	}
+	if v, ok := parseDBTimeValue(publishDateRaw); ok {
+		row.PublishDate = &v
+	}
+	if v, ok := parseDBTimeValue(startAtRaw); ok {
+		row.StartAt = &v
+	}
+	if v, ok := parseDBTimeValue(endAtRaw); ok {
+		row.EndAt = &v
+	}
+	if v, ok := parseDBTimeValue(publishedAtRaw); ok {
+		row.PublishedAt = &v
+	}
+	if v, ok := parseDBTimeValue(createdAtRaw); ok {
+		row.CreatedAt = &v
+	}
+	return row, nil
+}
+
+func scanProtectedRepairSlotRow(rows *sql.Rows) (models.ProtectedRepairSlot, error) {
+	var (
+		row            models.ProtectedRepairSlot
+		technicianRaw  interface{}
+		publishDateRaw interface{}
+		startAtRaw     interface{}
+		endAtRaw       interface{}
+		createdAtRaw   interface{}
+	)
+	if err := rows.Scan(&row.ID, &row.MerchantID, &row.AppointmentID, &technicianRaw, &publishDateRaw, &startAtRaw, &endAtRaw, &row.Status, &row.SourceType, &createdAtRaw); err != nil {
+		return row, err
+	}
+	if v, ok := gormValueToUint(technicianRaw); ok {
+		row.TechnicianID = &v
+	}
+	if v, ok := parseDBTimeValue(publishDateRaw); ok {
+		row.PublishDate = &v
+	}
+	if v, ok := parseDBTimeValue(startAtRaw); ok {
+		row.StartAt = &v
+	}
+	if v, ok := parseDBTimeValue(endAtRaw); ok {
+		row.EndAt = &v
+	}
+	if v, ok := parseDBTimeValue(createdAtRaw); ok {
+		row.CreatedAt = &v
+	}
+	return row, nil
+}
+
 func loadProtectedAppointmentsForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, start, end time.Time, excludeAppointmentID uint) ([]models.Appointment, error) {
 	if tx == nil || merchantID == 0 || technicianID == 0 {
 		return nil, nil
 	}
 	q := tx.Table("appointments").
-		Select("id, card_id, merchant_id, user_id, project_id, technician_id, appointment_time, status, confirmed_at, arrived_at, completed_at, no_show_at, service_session_id, usage_id, predicted_wait_minutes, resolution_note, closed_reason, closed_by_type, closed_by_id, reschedule_reason, replaced_by_appointment_id, replaces_appointment_id, canceled_at, failed_at, failed_reason, created_at").
+		Select(appointmentSelectColumns()).
 		Where("merchant_id = ? AND technician_id = ? AND appointment_time IS NOT NULL AND appointment_time >= ? AND appointment_time <= ?",
 			merchantID, technicianID, start, end).
 		Where("status IN ?", appointmentProtectedStatuses()).
@@ -636,7 +771,7 @@ func loadAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appointment, 
 		return nil, nil
 	}
 	rows, err := tx.Table("appointments").
-		Select("id, card_id, merchant_id, user_id, project_id, technician_id, appointment_time, status, confirmed_at, arrived_at, completed_at, no_show_at, service_session_id, usage_id, predicted_wait_minutes, resolution_note, closed_reason, closed_by_type, closed_by_id, reschedule_reason, replaced_by_appointment_id, replaces_appointment_id, canceled_at, failed_at, failed_reason, created_at").
+		Select(appointmentSelectColumns()).
 		Where("id = ?", appointmentID).
 		Limit(1).
 		Rows()
