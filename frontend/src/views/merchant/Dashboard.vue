@@ -1480,6 +1480,98 @@
       </div>
     </div>
 
+    <div v-if="showTechnicianMonthlyDisruptionModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click.self="closeTechnicianMonthlyDisruptionModal">
+      <div class="bg-white w-full max-w-2xl rounded-2xl overflow-hidden">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+          <div>
+            <div class="font-medium text-gray-800">客服月度异常统计</div>
+            <div class="text-sm text-gray-500 mt-1">
+              {{ technicianMonthlyDisruptionTechnicianName || '-' }}
+              <span class="mx-1">/</span>
+              {{ technicianMonthlyDisruptionMonth || '-' }}
+            </div>
+          </div>
+          <button class="text-gray-500" @click="closeTechnicianMonthlyDisruptionModal">关闭</button>
+        </div>
+        <div class="p-5 max-h-[75vh] overflow-y-auto">
+          <div class="flex items-end gap-3 mb-4">
+            <div>
+              <div class="text-xs text-gray-400 mb-1">统计月份</div>
+              <input
+                v-model="technicianMonthlyDisruptionMonth"
+                type="month"
+                class="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+            <button
+              @click="reloadTechnicianMonthlyDisruptions"
+              :disabled="technicianMonthlyDisruptionLoading || !technicianMonthlyDisruptionTechnicianId"
+              class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {{ technicianMonthlyDisruptionLoading ? '加载中...' : '刷新统计' }}
+            </button>
+          </div>
+
+          <div v-if="technicianMonthlyDisruptionLoading" class="py-12 text-center text-gray-400">加载中...</div>
+          <div v-else-if="technicianMonthlyDisruptionError" class="py-12 text-center text-red-500">{{ technicianMonthlyDisruptionError }}</div>
+          <div v-else-if="technicianMonthlyDisruptionData" class="space-y-4">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <div class="text-xs text-gray-400">请假导致未履约</div>
+                <div class="mt-1 font-medium text-gray-800">{{ Number(technicianMonthlyDisruptionData.leave_disruption_count || 0) }} 次</div>
+              </div>
+              <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <div class="text-xs text-gray-400">商户免责次数</div>
+                <div class="mt-1 font-medium text-gray-800">{{ Number(technicianMonthlyDisruptionData.merchant_exempt_count || 0) }} 次</div>
+              </div>
+              <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <div class="text-xs text-gray-400">客服责任次数</div>
+                <div class="mt-1 font-medium text-gray-800">{{ Number(technicianMonthlyDisruptionData.technician_chargeable_count || 0) }} 次</div>
+              </div>
+              <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <div class="text-xs text-gray-400">首次免责</div>
+                <div class="mt-1 font-medium" :class="technicianMonthlyDisruptionData.first_exempt_used ? 'text-orange-600' : 'text-green-600'">
+                  {{ technicianMonthlyDisruptionData.first_exempt_used ? '已使用' : '未使用' }}
+                </div>
+              </div>
+            </div>
+
+            <div class="rounded-xl border border-gray-200 bg-white px-4 py-4 text-sm text-gray-700">
+              <div class="font-medium text-gray-800">统计说明</div>
+              <div class="mt-2 space-y-1 text-gray-600">
+                <div>月份：{{ technicianMonthlyDisruptionData.month || technicianMonthlyDisruptionMonth || '-' }}</div>
+                <div>账本明细数：{{ technicianMonthlyDisruptionItems.length }} 条</div>
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <div class="font-medium text-gray-800">账本明细</div>
+              <div v-if="technicianMonthlyDisruptionItems.length === 0" class="rounded-xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
+                本月暂无异常统计明细
+              </div>
+              <div v-for="(item, index) in technicianMonthlyDisruptionItems" :key="item.id || `${item.appointment_id || 'appt'}-${index}`" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-700">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <div class="font-medium text-gray-800">{{ getReasonText(item.latest_reason || item.reason || item.disruption_reason) || '异常账本' }}</div>
+                    <div v-if="item.appointment_time || item.reserved_start_at" class="mt-1 text-gray-500">预约时间：{{ formatDateTime(item.reserved_start_at || item.appointment_time) }}</div>
+                    <div v-if="item.created_at" class="mt-1 text-gray-500">记录时间：{{ formatDateTime(item.created_at) }}</div>
+                    <div v-if="item.liability_level" class="mt-1 text-gray-500">责任归属：{{ getLiabilityText(item.liability_level) }}</div>
+                    <div v-if="item.note || item.remark" class="mt-1 text-gray-500">备注：{{ item.note || item.remark }}</div>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <div v-if="item.exempt_applied !== undefined" class="text-xs" :class="item.exempt_applied ? 'text-green-600' : 'text-gray-400'">
+                      {{ item.exempt_applied ? '已免责' : '未免责' }}
+                    </div>
+                    <div v-if="item.delay_minutes" class="mt-1 text-xs text-gray-500">延迟 {{ item.delay_minutes }} 分钟</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 营业状态切换弹窗 -->
     <div v-if="showBusinessStatusModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showBusinessStatusModal = false">
       <div class="bg-white rounded-2xl w-11/12 max-w-sm overflow-hidden">
@@ -2337,6 +2429,21 @@ const appointmentDetailSettlement = ref(null)
 const appointmentDetailDelayLedgers = ref([])
 const appointmentDetailSummary = ref(null)
 const appointmentDetailCompensations = computed(() => appointmentDetailSummary.value?.compensations || [])
+const showTechnicianMonthlyDisruptionModal = ref(false)
+const technicianMonthlyDisruptionTechnicianId = ref(null)
+const technicianMonthlyDisruptionTechnicianName = ref('')
+const technicianMonthlyDisruptionMonth = ref('')
+const technicianMonthlyDisruptionLoading = ref(false)
+const technicianMonthlyDisruptionError = ref('')
+const technicianMonthlyDisruptionData = ref(null)
+const technicianMonthlyDisruptionItems = computed(() => {
+  const data = technicianMonthlyDisruptionData.value
+  if (!data) return []
+  if (Array.isArray(data.items)) return data.items
+  if (Array.isArray(data.records)) return data.records
+  if (Array.isArray(data.ledgers)) return data.ledgers
+  return []
+})
 const unassignedAppointments = computed(() => {
   if (!isTechnicianAuth()) return []
   return (appointments.value || []).filter(a => !a?.technician_id)
@@ -4781,6 +4888,16 @@ const closeAppointmentDetailModal = () => {
   appointmentDetailSummary.value = null
 }
 
+const closeTechnicianMonthlyDisruptionModal = () => {
+  showTechnicianMonthlyDisruptionModal.value = false
+  technicianMonthlyDisruptionTechnicianId.value = null
+  technicianMonthlyDisruptionTechnicianName.value = ''
+  technicianMonthlyDisruptionMonth.value = ''
+  technicianMonthlyDisruptionLoading.value = false
+  technicianMonthlyDisruptionError.value = ''
+  technicianMonthlyDisruptionData.value = null
+}
+
 const openAppointmentDetailModal = async (appt) => {
   appointmentDetailTarget.value = appt
   appointmentDetailLoading.value = true
@@ -4805,29 +4922,39 @@ const openAppointmentDetailModal = async (appt) => {
   }
 }
 
+const loadTechnicianMonthlyDisruptions = async () => {
+  if (!technicianMonthlyDisruptionTechnicianId.value || !technicianMonthlyDisruptionMonth.value) return
+  technicianMonthlyDisruptionLoading.value = true
+  technicianMonthlyDisruptionError.value = ''
+  try {
+    const res = await appointmentApi.getTechnicianMonthlyDisruptions(
+      technicianMonthlyDisruptionTechnicianId.value,
+      technicianMonthlyDisruptionMonth.value
+    )
+    technicianMonthlyDisruptionData.value = res?.data?.data || {}
+  } catch (err) {
+    technicianMonthlyDisruptionError.value = err.response?.data?.error || '读取月度异常统计失败'
+    technicianMonthlyDisruptionData.value = null
+  } finally {
+    technicianMonthlyDisruptionLoading.value = false
+  }
+}
+
+const reloadTechnicianMonthlyDisruptions = async () => {
+  await loadTechnicianMonthlyDisruptions()
+}
+
 const viewTechnicianMonthlyDisruptions = async (appt) => {
   const technicianId = Number(appt?.technician_id || 0)
   if (!technicianId) return
   const now = new Date()
-  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const month = window.prompt('请输入统计月份（YYYY-MM）', defaultMonth)
-  if (month == null) return
-  const trimmedMonth = String(month || '').trim()
-  if (!trimmedMonth) return
-  try {
-    const res = await appointmentApi.getTechnicianMonthlyDisruptions(technicianId, trimmedMonth)
-    const data = res?.data?.data || {}
-    alert([
-      `月份：${data.month || trimmedMonth}`,
-      `请假导致未履约：${Number(data.leave_disruption_count || 0)} 次`,
-      `首次免责已使用：${data.first_exempt_used ? '是' : '否'}`,
-      `商户免责次数：${Number(data.merchant_exempt_count || 0)} 次`,
-      `客服责任次数：${Number(data.technician_chargeable_count || 0)} 次`,
-      `账本明细数：${Array.isArray(data.items) ? data.items.length : 0} 条`
-    ].join('\n'))
-  } catch (err) {
-    alert(err.response?.data?.error || '读取月度异常统计失败')
-  }
+  technicianMonthlyDisruptionTechnicianId.value = technicianId
+  technicianMonthlyDisruptionTechnicianName.value = String(appt?.technician?.name || '').trim() || `客服${technicianId}`
+  technicianMonthlyDisruptionMonth.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  technicianMonthlyDisruptionData.value = null
+  technicianMonthlyDisruptionError.value = ''
+  showTechnicianMonthlyDisruptionModal.value = true
+  await loadTechnicianMonthlyDisruptions()
 }
 
 const createMerchantForceMajeureRelief = async (appt) => {
