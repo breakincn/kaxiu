@@ -453,11 +453,18 @@ export const appointmentApi = {
   cancelMerchantAppointment: (id, data) => api.put(`/merchant/appointments/${id}/cancel`, data),
   checkInAppointment: (id) => api.post(`/merchant/appointments/${id}/check-in`),
   getTechnicianMonthlyDisruptions: (id, month) => api.get(`/merchant/technicians/${id}/monthly-disruptions`, { params: { month } })
-}
+ }
 
-// ==================== Shop 模块（商户收款二维码 + 卡包直购） ====================
-export const shopApi = {
-  // 商户端：收款配置
+ export const merchantProjectApi = {
+   list: () => api.get('/merchant/projects'),
+   create: (data) => api.post('/merchant/projects', data),
+   update: (id, data) => api.put(`/merchant/projects/${id}`, data),
+   delete: (id) => api.delete(`/merchant/projects/${id}`)
+ }
+
+ // ==================== Shop 模块（商户收款二维码 + 卡包直购） ====================
+ export const shopApi = {
+   // 商户端：收款配置
   getPaymentConfig: () => api.get('/merchant/payment-config'),
   savePaymentConfig: (data) => api.post('/merchant/payment-config', data),
   uploadPaymentQRCode: (formData) => api.post('/merchant/payment-qrcode/upload', formData),
