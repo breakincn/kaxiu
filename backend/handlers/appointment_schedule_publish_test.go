@@ -650,6 +650,127 @@ func TestCancelAppointmentRejectsMerchantWithinFiveHours(t *testing.T) {
 	}
 }
 
+func TestCancelAppointmentStoresMerchantReasonAndRefundSnapshot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	later := time.Now().In(loc).Add(8 * time.Hour)
+	appointmentTime := time.Date(later.Year(), later.Month(), later.Day(), later.Hour(), 0, 0, 0, loc)
+	if !appointmentTime.After(time.Now().In(loc).Add(5 * time.Hour)) {
+		appointmentTime = appointmentTime.Add(2 * time.Hour)
+	}
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	if _, err := initializeAppointmentSettlement(config.DB, &appt, "test_seed"); err != nil {
+		t.Fatalf("initialize settlement failed: %v", err)
+	}
+
+	body, _ := json.Marshal(gin.H{"reason": "门店临时停业整备"})
+	c, rec := newMerchantContext(http.MethodPut, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/cancel", merchant.ID)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/cancel", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	CancelAppointment(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	updated := mustLoadAppointmentForTest(t, appt.ID)
+	if updated.Status != "canceled" {
+		t.Fatalf("want canceled, got %s", updated.Status)
+	}
+	if updated.MerchantCancelReason != "门店临时停业整备" {
+		t.Fatalf("want merchant cancel reason saved, got %s", updated.MerchantCancelReason)
+	}
+	if updated.SettlementStatusSnapshot != "refunded" {
+		t.Fatalf("want settlement snapshot refunded, got %s", updated.SettlementStatusSnapshot)
+	}
+	var settlement models.AppointmentSettlement
+	if err := config.DB.First(&settlement, *appt.AppointmentSettlementID).Error; err != nil {
+		t.Fatalf("load settlement failed: %v", err)
+	}
+	if settlement.Status != "refunded" || settlement.LatestReason != "merchant_direct_cancel" {
+		t.Fatalf("want refunded settlement with merchant_direct_cancel, got status=%s latest_reason=%s", settlement.Status, settlement.LatestReason)
+	}
+}
+
+func TestUpdateAppointmentUserRebuttalPersistsNoteAfterMerchantCancel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	later := time.Now().In(loc).Add(8 * time.Hour)
+	appointmentTime := time.Date(later.Year(), later.Month(), later.Day(), later.Hour(), 0, 0, 0, loc)
+	if !appointmentTime.After(time.Now().In(loc).Add(5 * time.Hour)) {
+		appointmentTime = appointmentTime.Add(2 * time.Hour)
+	}
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+
+	cancelBody, _ := json.Marshal(gin.H{"reason": "设备故障无法履约"})
+	mc, mrec := newMerchantContext(http.MethodPut, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/cancel", merchant.ID)
+	mc.Request = httptest.NewRequest(http.MethodPut, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/cancel", bytes.NewReader(cancelBody))
+	mc.Request.Header.Set("Content-Type", "application/json")
+	mc.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	CancelAppointment(mc)
+	if mrec.Code != http.StatusOK {
+		t.Fatalf("want 200 when merchant cancels, got %d body=%s", mrec.Code, mrec.Body.String())
+	}
+
+	rebuttalBody, _ := json.Marshal(gin.H{"user_rebuttal_note": "我已按时到店并接受等待"})
+	uc, urec := newUserJSONContext(http.MethodPost, "/user/appointments/"+strconv.Itoa(int(appt.ID))+"/rebuttal", user.ID, rebuttalBody)
+	uc.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	UpdateAppointmentUserRebuttal(uc)
+	if urec.Code != http.StatusOK {
+		t.Fatalf("want 200 when rebuttal saved, got %d body=%s", urec.Code, urec.Body.String())
+	}
+
+	updated := mustLoadAppointmentForTest(t, appt.ID)
+	if updated.UserRebuttalNote != "我已按时到店并接受等待" {
+		t.Fatalf("want rebuttal saved, got %s", updated.UserRebuttalNote)
+	}
+	if !containsText(updated.ResolutionNote, "用户抗辩") {
+		t.Fatalf("want resolution note appended with rebuttal, got %s", updated.ResolutionNote)
+	}
+}
+
 func TestAppointmentCancelRequestFlowCancelsAppointmentAfterUserAccepts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

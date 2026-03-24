@@ -63,6 +63,7 @@ func SetupUserRoutes(r *gin.Engine) {
 	auth.GET("/cards/:id/appointment", handlers.GetCardAppointment)
 	auth.POST("/appointments", handlers.CreateAppointment)
 	auth.PUT("/appointments/:id/cancel", handlers.CancelAppointment)
+	auth.POST("/appointments/:id/rebuttal", handlers.UpdateAppointmentUserRebuttal)
 	auth.POST("/appointments/:id/cancel-requests", handlers.CreateAppointmentCancelRequest)
 	auth.POST("/appointments/:id/cancel-requests/:request_id/accept", handlers.AcceptAppointmentCancelRequest)
 	auth.POST("/appointments/:id/cancel-requests/:request_id/reject", handlers.RejectAppointmentCancelRequest)

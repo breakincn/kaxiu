@@ -3705,6 +3705,8 @@ func CancelAppointment(c *gin.Context) {
 	}
 
 	now := time.Now().In(appointmentLocation())
+	merchantCancelReason := ""
+	actorType, actorID := getAppointmentActor(c)
 	if authType == "merchant" || authType == "staff" {
 		if start, _, ok := appointmentReservedWindow(*appointment); ok && !now.Before(start.Add(-5*time.Hour)) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "距预约开始不足5小时，商户当前只能发起取消申请"})
@@ -3726,10 +3728,43 @@ func CancelAppointment(c *gin.Context) {
 				return
 			}
 		}
+		var input struct {
+			Reason string `json:"reason" binding:"required,max=255"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		merchantCancelReason = strings.TrimSpace(input.Reason)
+		if merchantCancelReason == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "商户取消原因不能为空"})
+			return
+		}
 	}
 	if err := cancelAppointmentWithTime(appointment, now); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "取消预约失败"})
 		return
+	}
+	if merchantCancelReason != "" {
+		resolutionNote := appendAppointmentResolutionNote(appointment.ResolutionNote, "商户取消预约："+merchantCancelReason)
+		if err := config.DB.Model(&models.Appointment{}).Where("id = ?", appointment.ID).Updates(map[string]interface{}{
+			"merchant_cancel_reason": merchantCancelReason,
+			"closed_reason":          "canceled",
+			"closed_by_type":         actorType,
+			"closed_by_id":           actorID,
+			"resolution_note":        resolutionNote,
+		}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存取消原因失败"})
+			return
+		}
+		appointment.MerchantCancelReason = merchantCancelReason
+		appointment.ClosedReason = "canceled"
+		appointment.ClosedByType = actorType
+		appointment.ClosedByID = actorID
+		appointment.ResolutionNote = resolutionNote
+		if appointment.AppointmentSettlementID != nil && *appointment.AppointmentSettlementID > 0 {
+			_ = config.DB.Model(&models.AppointmentSettlement{}).Where("id = ?", *appointment.AppointmentSettlementID).Update("latest_reason", "merchant_direct_cancel").Error
+		}
 	}
 	appointment.Status = "canceled"
 	appointment.CanceledAt = &now

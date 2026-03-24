@@ -129,6 +129,11 @@
               <div class="text-2xl font-bold text-gray-800">{{ estimatedMinutes }}<span class="text-sm font-normal">分钟</span></div>
             </div>
           </div>
+          <div v-if="appointment.reserved_start_at || appointment.reserved_end_at || appointment.cancel_deadline_at" class="grid grid-cols-1 gap-2 pt-3 mt-3 border-t border-gray-100 text-sm text-gray-600">
+            <div v-if="appointment.reserved_start_at">锁定开始：{{ formatDateTime(appointment.reserved_start_at) }}</div>
+            <div v-if="appointment.reserved_end_at">锁定结束：{{ formatDateTime(appointment.reserved_end_at) }}</div>
+            <div v-if="appointment.cancel_deadline_at">最晚可直接取消：{{ formatDateTime(appointment.cancel_deadline_at) }}</div>
+          </div>
           <div
             v-if="latestAppointmentRescheduleRequest"
             class="rounded-lg px-3 py-3 text-sm border"
@@ -164,6 +169,14 @@
             </div>
             <div v-if="appointmentSettlement?.latest_reason || appointment.disruption_reason" class="text-sm text-gray-600">
               原因：{{ getReasonText(appointmentSettlement?.latest_reason || appointment.disruption_reason) }}
+            </div>
+            <div v-if="appointment.merchant_cancel_reason" class="rounded-lg bg-white px-3 py-3 border border-gray-100 text-sm text-gray-700">
+              <div class="font-medium text-gray-800">商户取消原因</div>
+              <div class="mt-1">{{ appointment.merchant_cancel_reason }}</div>
+            </div>
+            <div v-if="appointment.user_rebuttal_note" class="rounded-lg bg-white px-3 py-3 border border-gray-100 text-sm text-gray-700">
+              <div class="font-medium text-gray-800">我的抗辩</div>
+              <div class="mt-1">{{ appointment.user_rebuttal_note }}</div>
             </div>
             <div v-if="appointmentDelayLedgerItems.length > 0" class="space-y-2">
               <div class="text-sm font-medium text-gray-700">拖堂账本</div>
@@ -257,6 +270,13 @@
               class="w-full py-2.5 border-2 border-red-400 text-red-500 font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {{ cancelButtonText }}
+            </button>
+            <button
+              v-if="canSubmitUserRebuttal"
+              @click="submitUserRebuttal"
+              class="w-full py-2.5 border-2 border-orange-300 text-orange-600 font-medium rounded-lg hover:bg-orange-50 transition-colors"
+            >
+              {{ appointment?.user_rebuttal_note ? '修改抗辩意见' : '提交抗辩意见' }}
             </button>
           </div>
         </div>
@@ -2463,6 +2483,11 @@ const showCancelAppointmentAction = computed(() => {
   return appointment.value.status === 'pending' || appointment.value.status === 'confirmed' || isAppointmentFailed.value
 })
 
+const canSubmitUserRebuttal = computed(() => {
+  if (!appointment.value) return false
+  return appointment.value.status === 'canceled' && !!String(appointment.value.merchant_cancel_reason || '').trim()
+})
+
 const userDisplayedRescheduleSlots = computed(() => {
   const list = userRescheduleSlots.value || []
   if (userRescheduleTechnicianId.value) {
@@ -3094,6 +3119,12 @@ const cancelButtonDisabled = computed(() => {
 
 const cancelButtonText = computed(() => {
   if (isAppointmentFailed.value) return appointment.value?.failed_reason ? `预约失败：${appointment.value.failed_reason}` : '预约失败'
+  if (appointment.value?.cancel_deadline_at) {
+    const cancelDeadlineAt = new Date(appointment.value.cancel_deadline_at).getTime()
+    if (Number.isFinite(cancelDeadlineAt) && Date.now() > cancelDeadlineAt) {
+      return canceling.value ? '提交中...' : '发起取消申请'
+    }
+  }
   return canceling.value ? '取消中...' : '取消预约'
 })
 
@@ -3224,18 +3255,51 @@ const cancelAppointment = async () => {
   
   canceling.value = true
   try {
+    const cancelDeadlineAt = appointment.value?.cancel_deadline_at ? new Date(appointment.value.cancel_deadline_at).getTime() : NaN
+    const shouldUseCancelRequest = Number.isFinite(cancelDeadlineAt) ? Date.now() > cancelDeadlineAt : false
+    if (shouldUseCancelRequest) {
+      const reason = window.prompt('已超过直接取消时限，请填写取消申请原因')
+      if (reason == null) return
+      const trimmedReason = String(reason || '').trim()
+      if (!trimmedReason) {
+        alert('取消申请原因不能为空')
+        return
+      }
+      await appointmentApi.createUserCancelRequest(appointment.value.id, { reason: trimmedReason })
+      await fetchAppointment()
+      alert('取消申请已提交，待商户确认')
+      return
+    }
+
     await appointmentApi.cancelAppointment(appointment.value.id)
-    
     appointment.value = null
     queueBefore.value = 0
     estimatedMinutes.value = 0
     stopCountdownTimer()
-    
     alert('已取消预约')
   } catch (err) {
     alert(err.response?.data?.error || '取消预约失败')
   } finally {
     canceling.value = false
+  }
+}
+
+const submitUserRebuttal = async () => {
+  if (!appointment.value?.id) return
+  const initialValue = String(appointment.value?.user_rebuttal_note || '').trim()
+  const note = window.prompt('请输入你的抗辩意见', initialValue)
+  if (note == null) return
+  const trimmedNote = String(note || '').trim()
+  if (!trimmedNote) {
+    alert('抗辩意见不能为空')
+    return
+  }
+  try {
+    await appointmentApi.updateUserRebuttal(appointment.value.id, { user_rebuttal_note: trimmedNote })
+    await fetchAppointment()
+    alert('抗辩意见已保存')
+  } catch (err) {
+    alert(err.response?.data?.error || '保存抗辩意见失败')
   }
 }
 

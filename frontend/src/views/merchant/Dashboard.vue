@@ -328,7 +328,7 @@
               </button>
               <button
                 v-if="appt.status === 'pending' && !isPendingExpired(appt)"
-                @click="cancelAppointment(appt.id)"
+                @click="cancelAppointment(appt)"
                 class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
               >
                 取消
@@ -340,22 +340,19 @@
               >
                 未确认预约
               </button>
-              <div v-if="appt.status === 'confirmed'" class="flex-1 py-2 text-primary text-sm font-medium text-center">
-                待到店核销
-              </div>
               <button
                 v-if="appt.status === 'confirmed'"
-                @click="cancelAppointment(appt.id)"
+                @click="checkInAppointment(appt)"
+                class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+              >
+                签到建单
+              </button>
+              <button
+                v-if="appt.status === 'confirmed'"
+                @click="cancelAppointment(appt)"
                 class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
               >
                 取消
-              </button>
-              <button
-                v-if="appt.status === 'arrived'"
-                @click="keepWaitingForAppointment(appt)"
-                class="flex-1 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
-              >
-                继续等待原客服
               </button>
               <button
                 v-if="appt.status === 'arrived' && appt.service_session_id"
@@ -1415,8 +1412,38 @@
                 <div class="mt-1 font-medium text-gray-800">{{ getLiabilityText(appointmentDetailSettlement?.liability_level || appointmentDetailTarget?.liability_level) }}</div>
               </div>
             </div>
+            <div v-if="appointmentDetailTarget?.reserved_start_at || appointmentDetailTarget?.reserved_end_at || appointmentDetailTarget?.cancel_deadline_at" class="rounded-xl border border-gray-200 bg-white px-4 py-4 text-sm text-gray-700 space-y-2">
+              <div class="font-medium text-gray-800">预约规则信息</div>
+              <div v-if="appointmentDetailTarget?.reserved_start_at">锁定开始：{{ formatDateTime(appointmentDetailTarget.reserved_start_at) }}</div>
+              <div v-if="appointmentDetailTarget?.reserved_end_at">锁定结束：{{ formatDateTime(appointmentDetailTarget.reserved_end_at) }}</div>
+              <div v-if="appointmentDetailTarget?.cancel_deadline_at">最晚可直接取消：{{ formatDateTime(appointmentDetailTarget.cancel_deadline_at) }}</div>
+            </div>
             <div v-if="appointmentDetailSettlement?.latest_reason || appointmentDetailTarget?.disruption_reason" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-700">
               原因：{{ getReasonText(appointmentDetailSettlement?.latest_reason || appointmentDetailTarget?.disruption_reason) }}
+            </div>
+            <div v-if="appointmentDetailTarget?.merchant_cancel_reason || appointmentDetailTarget?.user_rebuttal_note" class="rounded-xl border border-gray-200 bg-white px-4 py-4 text-sm text-gray-700 space-y-3">
+              <div v-if="appointmentDetailTarget?.merchant_cancel_reason">
+                <div class="font-medium text-gray-800">商户取消原因</div>
+                <div class="mt-1">{{ appointmentDetailTarget.merchant_cancel_reason }}</div>
+              </div>
+              <div v-if="appointmentDetailTarget?.user_rebuttal_note">
+                <div class="font-medium text-gray-800">用户抗辩</div>
+                <div class="mt-1">{{ appointmentDetailTarget.user_rebuttal_note }}</div>
+              </div>
+            </div>
+            <div v-if="appointmentDetailTarget?.technician_id" class="rounded-xl border border-gray-200 bg-white px-4 py-4 text-sm text-gray-700">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="font-medium text-gray-800">客服月度异常统计</div>
+                  <div class="mt-1 text-gray-500">查看当前预约客服在指定月份的免责与责任账本统计</div>
+                </div>
+                <button
+                  @click="viewTechnicianMonthlyDisruptions(appointmentDetailTarget)"
+                  class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
+                >
+                  查看统计
+                </button>
+              </div>
             </div>
             <div v-if="appointmentDetailSummary" class="rounded-xl border border-gray-200 bg-white px-4 py-4">
               <div class="font-medium text-gray-800">拖堂累计</div>
@@ -3910,18 +3937,65 @@ const confirmAppointment = async (id) => {
   }
 }
 
-const cancelAppointment = async (id) => {
+const getAppointmentEffectiveStartAt = (appt) => {
+  return appt?.reserved_start_at || appt?.appointment_time || null
+}
+
+const shouldUseCancelRequest = (appt) => {
+  const startAt = getAppointmentEffectiveStartAt(appt)
+  if (!startAt) return false
+  const startMs = new Date(startAt).getTime()
+  if (!Number.isFinite(startMs)) return false
+  return Date.now() >= (startMs - 5 * 60 * 60 * 1000)
+}
+
+const cancelAppointment = async (appt) => {
+  if (!appt?.id) return
   if (!confirm('确定要取消这个预约吗？此操作不可撤销。')) {
     return
   }
-  
+
   try {
-    await appointmentApi.cancelMerchantAppointment(id)
+    if (shouldUseCancelRequest(appt)) {
+      const reason = window.prompt('距预约开始不足5小时，请填写取消申请原因')
+      if (reason == null) return
+      const trimmedReason = String(reason || '').trim()
+      if (!trimmedReason) {
+        alert('取消申请原因不能为空')
+        return
+      }
+      await appointmentApi.createMerchantCancelRequest(appt.id, { reason: trimmedReason })
+      alert('取消申请已提交，待用户确认')
+    } else {
+      const reason = window.prompt('请输入商户取消原因')
+      if (reason == null) return
+      const trimmedReason = String(reason || '').trim()
+      if (!trimmedReason) {
+        alert('商户取消原因不能为空')
+        return
+      }
+      await appointmentApi.cancelMerchantAppointment(appt.id, { reason: trimmedReason })
+      alert('预约已取消')
+    }
     fetchAppointments()
     fetchQueueStatus()
-    alert('预约已取消')
   } catch (err) {
     alert(err.response?.data?.error || '取消失败')
+  }
+}
+
+const checkInAppointment = async (appt) => {
+  if (!appt?.id) return
+  try {
+    await appointmentApi.checkInAppointment(appt.id)
+    alert('签到成功，已创建服务单')
+    await fetchAppointments()
+    await fetchQueueStatus()
+    if (appt?.service_session_id) {
+      await fetchServiceSessions()
+    }
+  } catch (err) {
+    alert(err.response?.data?.error || '签到失败')
   }
 }
 
@@ -4728,6 +4802,31 @@ const openAppointmentDetailModal = async (appt) => {
     appointmentDetailError.value = err.response?.data?.error || '读取预约结算详情失败'
   } finally {
     appointmentDetailLoading.value = false
+  }
+}
+
+const viewTechnicianMonthlyDisruptions = async (appt) => {
+  const technicianId = Number(appt?.technician_id || 0)
+  if (!technicianId) return
+  const now = new Date()
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const month = window.prompt('请输入统计月份（YYYY-MM）', defaultMonth)
+  if (month == null) return
+  const trimmedMonth = String(month || '').trim()
+  if (!trimmedMonth) return
+  try {
+    const res = await appointmentApi.getTechnicianMonthlyDisruptions(technicianId, trimmedMonth)
+    const data = res?.data?.data || {}
+    alert([
+      `月份：${data.month || trimmedMonth}`,
+      `请假导致未履约：${Number(data.leave_disruption_count || 0)} 次`,
+      `首次免责已使用：${data.first_exempt_used ? '是' : '否'}`,
+      `商户免责次数：${Number(data.merchant_exempt_count || 0)} 次`,
+      `客服责任次数：${Number(data.technician_chargeable_count || 0)} 次`,
+      `账本明细数：${Array.isArray(data.items) ? data.items.length : 0} 条`
+    ].join('\n'))
+  } catch (err) {
+    alert(err.response?.data?.error || '读取月度异常统计失败')
   }
 }
 

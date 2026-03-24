@@ -440,17 +440,19 @@ export const appointmentApi = {
   acceptUserRescheduleRequest: (appointmentId, requestId) => api.post(`/user/appointments/${appointmentId}/reschedule-requests/${requestId}/accept`),
   rejectUserRescheduleRequest: (appointmentId, requestId) => api.post(`/user/appointments/${appointmentId}/reschedule-requests/${requestId}/reject`),
   cancelUserRescheduleRequest: (appointmentId, requestId) => api.post(`/user/appointments/${appointmentId}/reschedule-requests/${requestId}/cancel`),
+  createMerchantCancelRequest: (id, data) => api.post(`/merchant/appointments/${id}/cancel-requests`, data),
+  acceptMerchantCancelRequest: (appointmentId, requestId) => api.post(`/merchant/appointments/${appointmentId}/cancel-requests/${requestId}/accept`),
+  rejectMerchantCancelRequest: (appointmentId, requestId, data) => api.post(`/merchant/appointments/${appointmentId}/cancel-requests/${requestId}/reject`, data),
+  createUserCancelRequest: (id, data) => api.post(`/user/appointments/${id}/cancel-requests`, data),
+  acceptUserCancelRequest: (appointmentId, requestId) => api.post(`/user/appointments/${appointmentId}/cancel-requests/${requestId}/accept`),
+  rejectUserCancelRequest: (appointmentId, requestId, data) => api.post(`/user/appointments/${appointmentId}/cancel-requests/${requestId}/reject`, data),
+  updateUserRebuttal: (id, data) => api.post(`/user/appointments/${id}/rebuttal`, data),
   listCompensations: (id) => api.get(`/merchant/appointments/${id}/compensations`),
   createCompensation: (id, data) => api.post(`/merchant/appointments/${id}/compensations`, data),
   cancelAppointment: (id) => api.put(`/user/appointments/${id}/cancel`),
-  cancelMerchantAppointment: (id) => api.put(`/merchant/appointments/${id}/cancel`)
-}
-
-export const merchantProjectApi = {
-  list: () => api.get('/merchant/projects'),
-  create: (data) => api.post('/merchant/projects', data),
-  update: (id, data) => api.put(`/merchant/projects/${id}`, data),
-  delete: (id) => api.delete(`/merchant/projects/${id}`)
+  cancelMerchantAppointment: (id, data) => api.put(`/merchant/appointments/${id}/cancel`, data),
+  checkInAppointment: (id) => api.post(`/merchant/appointments/${id}/check-in`),
+  getTechnicianMonthlyDisruptions: (id, month) => api.get(`/merchant/technicians/${id}/monthly-disruptions`, { params: { month } })
 }
 
 // ==================== Shop 模块（商户收款二维码 + 卡包直购） ====================
