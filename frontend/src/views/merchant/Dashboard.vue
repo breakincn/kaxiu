@@ -1302,6 +1302,7 @@
         </div>
         <div class="mt-3">
           <div class="text-sm text-gray-600 mb-1">可选时间</div>
+          <div v-if="appointmentRescheduleComparisonHint" class="mb-2 text-xs text-gray-500">{{ appointmentRescheduleComparisonHint }}</div>
           <div v-if="appointmentRescheduleLoading" class="text-sm text-gray-400 py-3">加载中...</div>
           <div v-else-if="appointmentRescheduleSlots.length === 0" class="text-sm text-gray-400 py-3">该日期暂无可改签时间</div>
           <div v-else class="flex flex-wrap gap-2">
@@ -1311,9 +1312,16 @@
               type="button"
               @click="selectAppointmentRescheduleSlot(slot)"
               :class="selectedAppointmentRescheduleTime === slot.time ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
-              class="px-3 py-2 rounded-lg border text-sm"
+              class="px-3 py-2 rounded-lg border text-sm text-left"
             >
-              {{ slot.label || slot.time.slice(11, 16) }}
+              <div>{{ slot.label || slot.time.slice(11, 16) }}</div>
+              <div
+                v-if="slot.comparison_label"
+                class="mt-1 text-[11px]"
+                :class="selectedAppointmentRescheduleTime === slot.time ? 'text-white/80' : getRescheduleSlotComparisonClass(slot.comparison_kind)"
+              >
+                {{ slot.comparison_label }}
+              </div>
             </button>
           </div>
         </div>
@@ -1417,6 +1425,11 @@
               <div v-if="appointmentDetailTarget?.reserved_start_at">锁定开始：{{ formatDateTime(appointmentDetailTarget.reserved_start_at) }}</div>
               <div v-if="appointmentDetailTarget?.reserved_end_at">锁定结束：{{ formatDateTime(appointmentDetailTarget.reserved_end_at) }}</div>
               <div v-if="appointmentDetailTarget?.cancel_deadline_at">最晚可直接取消：{{ formatDateTime(appointmentDetailTarget.cancel_deadline_at) }}</div>
+              <div class="pt-2 border-t border-gray-100 text-xs text-gray-500 space-y-1">
+                <div>执行口径：当前按 `balanced` 规则执行。</div>
+                <div>取消截止口径：默认按预约前一日 16:00 作为直接取消截止时间，超过后应走取消申请。</div>
+                <div>晚间补开口径：默认按预约前一日 18:00 判断次日晚间资源补开与调度。</div>
+              </div>
             </div>
             <div v-if="appointmentDetailSettlement?.latest_reason || appointmentDetailTarget?.disruption_reason" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-700">
               原因：{{ getReasonText(appointmentDetailSettlement?.latest_reason || appointmentDetailTarget?.disruption_reason) }}
@@ -2379,6 +2392,17 @@ const appointmentRescheduleDateHint = computed(() => {
   }
   if (eligibility.rule_mode === 'today_or_tomorrow') {
     return '当前规则允许改签到今天或明天'
+  }
+  return ''
+})
+const appointmentRescheduleComparisonHint = computed(() => {
+  const eligibility = appointmentRescheduleEligibility.value
+  if (!eligibility?.allowed) return ''
+  if (eligibility.rule_mode === 'today_or_tomorrow') {
+    return '当前阶段展示更优于当前和不劣于当前的时段，默认已按更优优先排序。'
+  }
+  if (eligibility.rule_mode === 'tomorrow_only') {
+    return '当前阶段只展示更优于当前排布的时段。'
   }
   return ''
 })
@@ -4731,6 +4755,12 @@ const buildAppointmentMinuteKey = (value) => {
     return `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}`
   }
   return normalized.slice(0, 16)
+}
+
+const getRescheduleSlotComparisonClass = (kind) => {
+  if (kind === 'better') return 'text-green-600'
+  if (kind === 'not_worse') return 'text-orange-500'
+  return 'text-gray-400'
 }
 
 const fetchAppointmentRescheduleSlots = async () => {

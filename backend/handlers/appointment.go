@@ -238,6 +238,9 @@ type appointmentTimeSlot struct {
 	UserName             string                           `json:"user_name,omitempty"`
 	TechnicianIDs        []uint                           `json:"technician_ids,omitempty"`
 	TechnicianCandidates []appointmentTechnicianCandidate `json:"technician_candidates,omitempty"`
+	PlacementScoreValue  int                              `json:"placement_score,omitempty"`
+	ComparisonKind       string                           `json:"comparison_kind,omitempty"`
+	ComparisonLabel      string                           `json:"comparison_label,omitempty"`
 }
 
 type appointmentPlacementDecision struct {
@@ -711,6 +714,7 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 					UserName:             userName,
 					TechnicianIDs:        availableTechIDs,
 					TechnicianCandidates: candidates,
+					PlacementScoreValue:  placementScore,
 				},
 				PlacementScore: placementScore,
 				SlotTime:       slotTime,
@@ -754,6 +758,50 @@ func appointmentCancelRequestPreload(db *gorm.DB) *gorm.DB {
 
 func appointmentForceMajeureReliefRequestPreload(db *gorm.DB) *gorm.DB {
 	return db.Order("id DESC")
+}
+
+func computeAppointmentCurrentPlacementScore(tx *gorm.DB, merchant models.Merchant, appt models.Appointment) (int, error) {
+	if tx == nil || appt.AppointmentTime == nil {
+		return 0, nil
+	}
+	occupiedMinutes := getAppointmentOccupiedMinutes(appt.MerchantID, appt)
+	decision, err := validateAppointmentPlacementRules(tx, merchant, appt.AppointmentTime.In(appointmentLocation()), *appt.AppointmentTime, occupiedMinutes, appt.TechnicianID, appt.ID)
+	if err != nil {
+		return 0, err
+	}
+	return decision.PlacementScore, nil
+}
+
+func compareAppointmentPlacementScore(currentScore, targetScore int) (string, string) {
+	switch {
+	case targetScore < currentScore:
+		return "better", "更优于当前"
+	case targetScore == currentScore:
+		return "not_worse", "不劣于当前"
+	default:
+		return "worse", ""
+	}
+}
+
+func filterAppointmentRescheduleSlotsByComparison(slots []appointmentTimeSlot, eligibility appointmentRescheduleEligibility, currentScore int) []appointmentTimeSlot {
+	if len(slots) == 0 {
+		return slots
+	}
+	betterOnly := eligibility.RuleMode != appointmentRescheduleTodayOrTomorrow
+	filtered := make([]appointmentTimeSlot, 0, len(slots))
+	for _, slot := range slots {
+		kind, label := compareAppointmentPlacementScore(currentScore, slot.PlacementScoreValue)
+		slot.ComparisonKind = kind
+		slot.ComparisonLabel = label
+		if kind == "worse" {
+			continue
+		}
+		if betterOnly && kind != "better" {
+			continue
+		}
+		filtered = append(filtered, slot)
+	}
+	return filtered
 }
 
 func hydrateAppointmentRelations(tx *gorm.DB, appt *models.Appointment) error {
@@ -2479,6 +2527,16 @@ func GetAppointmentRescheduleSlots(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取可改签时间失败"})
 		return
+	}
+	if !repairEval.AffectedByLeave {
+		currentScore, err := computeAppointmentCurrentPlacementScore(config.DB, merchant, *appointment)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "计算当前改签基准失败"})
+			return
+		}
+		if slots, ok := payload["time_slots"].([]appointmentTimeSlot); ok {
+			payload["time_slots"] = filterAppointmentRescheduleSlotsByComparison(slots, eligibility, currentScore)
+		}
 	}
 	payload["eligibility"] = eligibility
 	c.JSON(http.StatusOK, gin.H{"data": payload})

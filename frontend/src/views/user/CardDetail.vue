@@ -146,6 +146,18 @@
             <div v-if="latestAppointmentRescheduleTechnicianText" class="mt-1">改签客服：{{ latestAppointmentRescheduleTechnicianText }}</div>
             <div v-if="latestAppointmentRescheduleRequest.reason" class="mt-1">原因：{{ latestAppointmentRescheduleRequest.reason }}</div>
           </div>
+          <div
+            v-if="latestAppointmentCancelRequest"
+            class="rounded-lg px-3 py-3 text-sm border"
+            :class="isUserCancelConfirmationPending ? 'bg-red-50 text-red-700 border-red-100' : 'bg-gray-50 text-gray-700 border-gray-200'"
+          >
+            <div class="font-medium">
+              {{ isUserCancelConfirmationPending ? '商户发起了取消申请，请确认' : '取消申请记录' }}
+            </div>
+            <div v-if="latestAppointmentCancelRequest.reason" class="mt-1">取消原因：{{ latestAppointmentCancelRequest.reason }}</div>
+            <div v-if="latestAppointmentCancelRequest.objection_note" class="mt-1">抗辩说明：{{ latestAppointmentCancelRequest.objection_note }}</div>
+            <div v-if="latestAppointmentCancelRequest.created_at" class="mt-1">申请时间：{{ formatDateTime(latestAppointmentCancelRequest.created_at) }}</div>
+          </div>
           <div v-if="appointmentSettlement || appointmentDelayLedgerItems.length > 0 || (appointment.compensations || []).length > 0" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 space-y-3">
             <div class="flex items-center justify-between">
               <div class="text-sm font-medium text-gray-800">结算与补偿</div>
@@ -270,6 +282,20 @@
               class="w-full py-2.5 border-2 border-red-400 text-red-500 font-medium rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {{ cancelButtonText }}
+            </button>
+            <button
+              v-if="isUserCancelConfirmationPending"
+              @click="acceptUserCancelRequest"
+              class="w-full py-2.5 bg-red-500 text-white font-medium rounded-lg hover:bg-red-600 transition-colors"
+            >
+              同意取消
+            </button>
+            <button
+              v-if="isUserCancelConfirmationPending"
+              @click="rejectUserCancelRequest"
+              class="w-full py-2.5 border-2 border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              拒绝取消
             </button>
             <button
               v-if="canSubmitUserRebuttal"
@@ -532,6 +558,7 @@
             <div v-if="userRescheduleDateHint" class="text-xs text-gray-400 mt-2">{{ userRescheduleDateHint }}</div>
           </div>
           <div class="px-5 py-4">
+            <div v-if="userRescheduleComparisonHint" class="text-xs text-gray-500 mb-3">{{ userRescheduleComparisonHint }}</div>
             <div v-if="userRescheduleLoading" class="text-center py-8 text-gray-400">加载中...</div>
             <div v-else-if="userRescheduleError" class="text-center py-8 text-gray-400">{{ userRescheduleError }}</div>
             <div v-else-if="userRescheduleSlots.length === 0" class="text-center py-8 text-gray-400">暂无可改签时间段</div>
@@ -545,9 +572,16 @@
                   'bg-primary text-white': userRescheduleTime === slot.time,
                   'bg-white border-2 border-gray-200 text-gray-700 hover:border-primary': userRescheduleTime !== slot.time
                 }"
-                class="py-3 px-4 rounded-lg font-medium transition-all"
+                class="py-3 px-4 rounded-lg font-medium transition-all text-left"
               >
                 <div>{{ formatTime(slot.time) }}</div>
+                <div
+                  v-if="slot.comparison_label"
+                  class="text-[11px] mt-1"
+                  :class="userRescheduleTime === slot.time ? 'text-white/80' : getUserRescheduleSlotComparisonClass(slot.comparison_kind)"
+                >
+                  {{ slot.comparison_label }}
+                </div>
               </button>
             </div>
           </div>
@@ -2459,6 +2493,11 @@ const latestAppointmentRescheduleRequest = computed(() => {
   return list.find(item => item?.status === 'pending_user' || item?.status === 'pending_merchant') || null
 })
 
+const latestAppointmentCancelRequest = computed(() => {
+  const list = Array.isArray(appointment.value?.cancel_requests) ? appointment.value.cancel_requests : []
+  return [...list].reverse().find(item => item?.status === 'pending_user' || item?.status === 'accepted' || item?.status === 'rejected') || null
+})
+
 const latestAppointmentRescheduleTechnicianText = computed(() => {
   const technician = latestAppointmentRescheduleRequest.value?.new_technician
   if (!technician) return ''
@@ -2468,6 +2507,7 @@ const latestAppointmentRescheduleTechnicianText = computed(() => {
 })
 
 const isUserRescheduleConfirmationPending = computed(() => latestAppointmentRescheduleRequest.value?.status === 'pending_user')
+const isUserCancelConfirmationPending = computed(() => latestAppointmentCancelRequest.value?.status === 'pending_user')
 const canCancelUserRescheduleRequest = computed(() => {
   return String(latestAppointmentRescheduleRequest.value?.proposed_by_type || '').trim() === 'user'
 })
@@ -2480,6 +2520,7 @@ const showUserRescheduleAction = computed(() => {
 
 const showCancelAppointmentAction = computed(() => {
   if (!appointment.value) return false
+  if (isUserCancelConfirmationPending.value) return false
   return appointment.value.status === 'pending' || appointment.value.status === 'confirmed' || isAppointmentFailed.value
 })
 
@@ -2532,6 +2573,17 @@ const userRescheduleDateHint = computed(() => {
   }
   if (eligibility.rule_mode === 'today_or_tomorrow') {
     return '当前规则允许改签到今天或明天'
+  }
+  return ''
+})
+const userRescheduleComparisonHint = computed(() => {
+  const eligibility = userRescheduleEligibility.value
+  if (!eligibility?.allowed) return ''
+  if (eligibility.rule_mode === 'today_or_tomorrow') {
+    return '当前阶段展示更优于当前和不劣于当前的时段，系统会优先推荐更优时段。'
+  }
+  if (eligibility.rule_mode === 'tomorrow_only') {
+    return '当前阶段只展示更优于当前排布的时段。'
   }
   return ''
 })
@@ -3089,6 +3141,37 @@ const rejectUserRescheduleRequest = async () => {
   }
 }
 
+const acceptUserCancelRequest = async () => {
+  const req = latestAppointmentCancelRequest.value
+  if (!appointment.value || !req) return
+  try {
+    await appointmentApi.acceptUserCancelRequest(appointment.value.id, req.id)
+    await fetchAppointment()
+    alert('你已同意该取消申请，预约已取消')
+  } catch (err) {
+    alert(err.response?.data?.error || '确认取消失败')
+  }
+}
+
+const rejectUserCancelRequest = async () => {
+  const req = latestAppointmentCancelRequest.value
+  if (!appointment.value || !req) return
+  const note = window.prompt('请输入拒绝取消的说明', String(appointment.value?.user_rebuttal_note || '').trim())
+  if (note == null) return
+  const trimmedNote = String(note || '').trim()
+  if (!trimmedNote) {
+    alert('拒绝说明不能为空')
+    return
+  }
+  try {
+    await appointmentApi.rejectUserCancelRequest(appointment.value.id, req.id, { objection_note: trimmedNote })
+    await fetchAppointment()
+    alert('你已拒绝该取消申请')
+  } catch (err) {
+    alert(err.response?.data?.error || '拒绝取消失败')
+  }
+}
+
 const cancelUserRescheduleRequest = async () => {
   const req = latestAppointmentRescheduleRequest.value
   if (!appointment.value || !req) return
@@ -3244,6 +3327,12 @@ const formatTime = (timeStr) => {
   const hours = date.getHours().toString().padStart(2, '0')
   const minutes = date.getMinutes().toString().padStart(2, '0')
   return `${hours}:${minutes}`
+}
+
+const getUserRescheduleSlotComparisonClass = (kind) => {
+  if (kind === 'better') return 'text-green-600'
+  if (kind === 'not_worse') return 'text-orange-500'
+  return 'text-gray-400'
 }
 
 const cancelAppointment = async () => {

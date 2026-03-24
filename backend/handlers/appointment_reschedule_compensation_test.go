@@ -43,6 +43,39 @@ func newUserJSONContext(method, path string, userID uint, body []byte) (*gin.Con
 	return c, rec
 }
 
+func TestFilterAppointmentRescheduleSlotsByComparison(t *testing.T) {
+	slots := []appointmentTimeSlot{
+		{Time: "2026-03-25 10:00:00", PlacementScoreValue: 100},
+		{Time: "2026-03-25 10:30:00", PlacementScoreValue: 120},
+		{Time: "2026-03-25 11:00:00", PlacementScoreValue: 140},
+	}
+
+	stageA := filterAppointmentRescheduleSlotsByComparison(slots, appointmentRescheduleEligibility{
+		Allowed:  true,
+		RuleMode: appointmentRescheduleTodayOrTomorrow,
+	}, 120)
+	if len(stageA) != 2 {
+		t.Fatalf("stage A should keep better and not_worse slots, got %d", len(stageA))
+	}
+	if stageA[0].ComparisonKind != "better" || stageA[0].ComparisonLabel != "更优于当前" {
+		t.Fatalf("stage A first slot comparison mismatch: %+v", stageA[0])
+	}
+	if stageA[1].ComparisonKind != "not_worse" || stageA[1].ComparisonLabel != "不劣于当前" {
+		t.Fatalf("stage A second slot comparison mismatch: %+v", stageA[1])
+	}
+
+	stageBC := filterAppointmentRescheduleSlotsByComparison(slots, appointmentRescheduleEligibility{
+		Allowed:  true,
+		RuleMode: appointmentRescheduleTomorrowOnly,
+	}, 120)
+	if len(stageBC) != 1 {
+		t.Fatalf("stage B/C should keep only better slots, got %d", len(stageBC))
+	}
+	if stageBC[0].ComparisonKind != "better" || stageBC[0].Time != "2026-03-25 10:00:00" {
+		t.Fatalf("stage B/C slot mismatch: %+v", stageBC[0])
+	}
+}
+
 func TestMerchantRescheduleRequestNeedsUserAcceptance(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB
