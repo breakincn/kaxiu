@@ -127,6 +127,19 @@
                 <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
               </div>
             </div>
+
+            <div>
+              <label class="text-sm font-medium text-gray-700 mb-2 block">系统优化性改签推荐</label>
+              <p class="text-xs text-gray-500 mb-2">默认关闭。开启后，用户侧仅展示推荐时段与推荐原因，不会自动替用户改签。</p>
+              <label class="flex items-center gap-3 px-3 py-3 border border-gray-200 rounded-lg">
+                <input
+                  v-model="form.appointment_reschedule_recommendation_enabled"
+                  type="checkbox"
+                  class="h-4 w-4"
+                />
+                <span class="text-sm text-gray-700">启用推荐卡片</span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -171,7 +184,8 @@ const form = ref({
   appointment_prediction_buffer_minutes: 5,
   appointment_slot_granularity_minutes: 15,
   appointment_reschedule_same_or_next_day_threshold_minutes: 180,
-  appointment_reschedule_next_day_only_threshold_minutes: 90
+  appointment_reschedule_next_day_only_threshold_minutes: 90,
+  appointment_reschedule_recommendation_enabled: false
 })
 
 // 保存按钮与其他设置页保持一致，只有表单发生实际变化时才允许提交。
@@ -182,7 +196,8 @@ const buildSnapshot = () => JSON.stringify({
   appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes ?? 0),
   appointment_slot_granularity_minutes: Number(form.value.appointment_slot_granularity_minutes ?? 0),
   appointment_reschedule_same_or_next_day_threshold_minutes: Number(form.value.appointment_reschedule_same_or_next_day_threshold_minutes ?? 0),
-  appointment_reschedule_next_day_only_threshold_minutes: Number(form.value.appointment_reschedule_next_day_only_threshold_minutes ?? 0)
+  appointment_reschedule_next_day_only_threshold_minutes: Number(form.value.appointment_reschedule_next_day_only_threshold_minutes ?? 0),
+  appointment_reschedule_recommendation_enabled: !!form.value.appointment_reschedule_recommendation_enabled
 })
 
 const isDirty = computed(() => buildSnapshot() !== initialSnapshot.value)
@@ -217,7 +232,8 @@ const load = async () => {
       appointment_prediction_buffer_minutes: Number(m.appointment_prediction_buffer_minutes ?? 5),
       appointment_slot_granularity_minutes: Number(m.appointment_slot_granularity_minutes ?? 15),
       appointment_reschedule_same_or_next_day_threshold_minutes: Number(m.appointment_reschedule_same_or_next_day_threshold_minutes ?? 180),
-      appointment_reschedule_next_day_only_threshold_minutes: Number(m.appointment_reschedule_next_day_only_threshold_minutes ?? 90)
+      appointment_reschedule_next_day_only_threshold_minutes: Number(m.appointment_reschedule_next_day_only_threshold_minutes ?? 90),
+      appointment_reschedule_recommendation_enabled: !!m.appointment_reschedule_recommendation_enabled
     }
     initialSnapshot.value = buildSnapshot()
   } catch (e) {
@@ -238,7 +254,8 @@ const save = async () => {
       appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes || 0),
       appointment_slot_granularity_minutes: Number(form.value.appointment_slot_granularity_minutes || 0),
       appointment_reschedule_same_or_next_day_threshold_minutes: Number(form.value.appointment_reschedule_same_or_next_day_threshold_minutes || 0),
-      appointment_reschedule_next_day_only_threshold_minutes: Number(form.value.appointment_reschedule_next_day_only_threshold_minutes || 0)
+      appointment_reschedule_next_day_only_threshold_minutes: Number(form.value.appointment_reschedule_next_day_only_threshold_minutes || 0),
+      appointment_reschedule_recommendation_enabled: !!form.value.appointment_reschedule_recommendation_enabled
     })
     alert('保存成功')
     await load()

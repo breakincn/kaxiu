@@ -138,6 +138,31 @@ func loadSchedulePublishingByID(tx *gorm.DB, merchantID, scheduleID uint) (*mode
 	return &row, nil
 }
 
+func loadLeaveSchedulePublishingByTechnicianAndDate(tx *gorm.DB, merchantID, technicianID uint, targetDate time.Time) (*models.TechnicianSchedulePublishing, error) {
+	if tx == nil || merchantID == 0 || technicianID == 0 {
+		return nil, nil
+	}
+	dateOnly := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, targetDate.Location())
+	rows, err := tx.Table("technician_schedule_publishings").
+		Select(technicianSchedulePublishingSelectColumns()).
+		Where("merchant_id = ? AND technician_id = ? AND publish_date >= ? AND publish_date < ? AND status = ?", merchantID, technicianID, dateOnly, dateOnly.Add(24*time.Hour), "leave").
+		Order("start_at asc, id asc").
+		Limit(1).
+		Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+	row, err := scanTechnicianSchedulePublishingRow(rows)
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
 func loadProtectedRepairSlotsByPublishDate(tx *gorm.DB, merchantID uint, publishDate *time.Time) ([]models.ProtectedRepairSlot, error) {
 	if tx == nil || merchantID == 0 {
 		return nil, nil
@@ -241,6 +266,7 @@ type appointmentTimeSlot struct {
 	PlacementScoreValue  int                              `json:"placement_score,omitempty"`
 	ComparisonKind       string                           `json:"comparison_kind,omitempty"`
 	ComparisonLabel      string                           `json:"comparison_label,omitempty"`
+	RecommendationReason string                           `json:"recommendation_reason,omitempty"`
 }
 
 type appointmentPlacementDecision struct {
@@ -800,6 +826,19 @@ func filterAppointmentRescheduleSlotsByComparison(slots []appointmentTimeSlot, e
 			continue
 		}
 		filtered = append(filtered, slot)
+	}
+	return filtered
+}
+
+func buildAppointmentRecommendationSlots(slots []appointmentTimeSlot, eligibility appointmentRescheduleEligibility, currentScore int) []appointmentTimeSlot {
+	filtered := filterAppointmentRescheduleSlotsByComparison(slots, eligibility, currentScore)
+	for i := range filtered {
+		switch filtered[i].ComparisonKind {
+		case "better":
+			filtered[i].RecommendationReason = "该时段排布优于当前预约，适合优先推荐改签"
+		case "not_worse":
+			filtered[i].RecommendationReason = "该时段排布不劣于当前预约，可作为备选推荐"
+		}
 	}
 	return filtered
 }
@@ -2542,6 +2581,100 @@ func GetAppointmentRescheduleSlots(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": payload})
 }
 
+func GetAppointmentRescheduleRecommendations(c *gin.Context) {
+	appointment, authType, err := loadRescheduleTargetAppointment(c)
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) && ae.status > 0 {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+		}
+		return
+	}
+	if authType != "user" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "当前仅支持用户查看推荐时段"})
+		return
+	}
+	merchant, eligibility, err := getAppointmentRescheduleEligibilityData(config.DB, *appointment)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取改签资格失败"})
+		return
+	}
+	if !merchant.AppointmentRescheduleRecommendationEnabled {
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{
+			"enabled":         false,
+			"reason":          "系统优化性改签推荐未开启",
+			"eligibility":     eligibility,
+			"recommendations": []appointmentTimeSlot{},
+		}})
+		return
+	}
+	repairEval, err := evaluateAppointmentRepairOptions(config.DB, merchant, *appointment)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取异常修复信息失败"})
+		return
+	}
+	if repairEval.AffectedByLeave {
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{
+			"enabled":         true,
+			"reason":          "当前处于异常修复模式，系统优化性改签推荐已自动降级",
+			"eligibility":     eligibility,
+			"recommendations": []appointmentTimeSlot{},
+		}})
+		return
+	}
+	if !eligibility.Allowed {
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{
+			"enabled":         true,
+			"reason":          eligibility.Reason,
+			"eligibility":     eligibility,
+			"recommendations": []appointmentTimeSlot{},
+		}})
+		return
+	}
+	loc := appointmentLocation()
+	date := strings.TrimSpace(c.Query("date"))
+	if date == "" {
+		date = eligibility.DefaultDate
+	}
+	if !appointmentDateAllowed(date, eligibility.AllowedDates) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "目标日期不在允许的推荐范围内"})
+		return
+	}
+	if _, err := time.ParseInLocation("2006-01-02", date, loc); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
+		return
+	}
+	projectID := uint(0)
+	if appointment.ProjectID != nil {
+		projectID = *appointment.ProjectID
+	}
+	payload, err := buildAvailableTimeSlotsPayload(merchant, merchant.ID, date, projectID, loc, &availableTimeSlotsOptions{ExcludeAppointmentID: appointment.ID})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取推荐时段失败"})
+		return
+	}
+	currentScore, err := computeAppointmentCurrentPlacementScore(config.DB, merchant, *appointment)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "计算当前改签基准失败"})
+		return
+	}
+	recommendations := []appointmentTimeSlot{}
+	if slots, ok := payload["time_slots"].([]appointmentTimeSlot); ok {
+		recommendations = buildAppointmentRecommendationSlots(slots, eligibility, currentScore)
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"enabled":         true,
+		"reason":          "",
+		"eligibility":     eligibility,
+		"recommendations": recommendations,
+	}})
+}
+
 func CreateAppointmentRescheduleRequest(c *gin.Context) {
 	appointment, authType, err := loadRescheduleTargetAppointment(c)
 	if err != nil {
@@ -4070,6 +4203,62 @@ func GetScheduleAffectedAppointments(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"schedule": publishing, "affected_appointments": affected, "protected_repair_slots": repairSlots}})
+}
+
+func GetAppointmentRepairOverview(c *gin.Context) {
+	appointmentID64, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || appointmentID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的预约ID"})
+		return
+	}
+	appointment, err := loadAppointmentByID(config.DB, uint(appointmentID64))
+	if err != nil || appointment == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
+		return
+	}
+	if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+		return
+	}
+	if appointment.AppointmentTime == nil || appointment.TechnicianID == nil || *appointment.TechnicianID == 0 {
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{
+			"schedule":               nil,
+			"affected_appointments":  []models.Appointment{},
+			"protected_repair_slots": []models.ProtectedRepairSlot{},
+			"reason":                 "当前预约未绑定客服排班，请假异常修复详情不可用",
+		}})
+		return
+	}
+	publishDate := appointment.AppointmentTime.In(appointmentLocation())
+	target, err := loadLeaveSchedulePublishingByTechnicianAndDate(config.DB, appointment.MerchantID, *appointment.TechnicianID, publishDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取排班失败"})
+		return
+	}
+	if target == nil {
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{
+			"schedule":               nil,
+			"affected_appointments":  []models.Appointment{},
+			"protected_repair_slots": []models.ProtectedRepairSlot{},
+			"reason":                 "当前预约未命中已确认请假的排班发布记录",
+		}})
+		return
+	}
+	affected, err := loadAffectedAppointmentsForPublishing(config.DB, *target)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取受影响预约失败"})
+		return
+	}
+	repairSlots, err := loadProtectedRepairSlotsByPublishDate(config.DB, appointment.MerchantID, target.PublishDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取保护修复槽失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"schedule":               target,
+		"affected_appointments":  affected,
+		"protected_repair_slots": repairSlots,
+		"reason":                 "",
+	}})
 }
 
 func GetQueueStatus(c *gin.Context) {

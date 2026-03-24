@@ -207,6 +207,13 @@ var defaultMigrations = []dbMigration{
 			"CREATE TABLE IF NOT EXISTS appointment_delay_ledgers (\n  id bigint unsigned NOT NULL AUTO_INCREMENT,\n  appointment_id bigint unsigned NOT NULL,\n  booking_root_id bigint unsigned NULL DEFAULT NULL,\n  merchant_id bigint unsigned NOT NULL,\n  user_id bigint unsigned NOT NULL,\n  card_id bigint unsigned NOT NULL,\n  project_id bigint unsigned NULL DEFAULT NULL,\n  service_session_id bigint unsigned NULL DEFAULT NULL,\n  technician_id bigint unsigned NULL DEFAULT NULL,\n  scheduled_start_at datetime(3) NULL DEFAULT NULL,\n  actual_start_at datetime(3) NULL DEFAULT NULL,\n  delay_minutes int NOT NULL DEFAULT 0,\n  credited_minutes int NOT NULL DEFAULT 0,\n  service_duration_minutes int NOT NULL DEFAULT 0,\n  unit_compensation_value int NOT NULL DEFAULT 0,\n  delay_compensation_value int NOT NULL DEFAULT 0,\n  ledger_status varchar(20) NOT NULL DEFAULT 'recorded' COMMENT '账本状态（recorded/redeemed/ignored）',\n  redeem_status varchar(20) NOT NULL DEFAULT 'pending' COMMENT '兑现状态（pending/redeemed/skipped）',\n  created_at datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),\n  updated_at datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),\n  PRIMARY KEY (id),\n  UNIQUE KEY uk_adl_appointment_id (appointment_id),\n  KEY idx_adl_booking_root_id (booking_root_id),\n  KEY idx_adl_merchant_id (merchant_id),\n  KEY idx_adl_user_id (user_id),\n  KEY idx_adl_card_id (card_id),\n  KEY idx_adl_project_id (project_id),\n  KEY idx_adl_service_session_id (service_session_id),\n  KEY idx_adl_technician_id (technician_id),\n  KEY idx_adl_ledger_status (ledger_status),\n  KEY idx_adl_redeem_status (redeem_status)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='预约拖堂补偿账本'",
 		},
 	},
+	{
+		Version: "2026032401",
+		Name:    "add_appointment_reschedule_recommendation_toggle",
+		Statements: []string{
+			"ALTER TABLE merchants ADD COLUMN appointment_reschedule_recommendation_enabled BOOLEAN NOT NULL DEFAULT 0 COMMENT '是否启用系统优化性改签推荐'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

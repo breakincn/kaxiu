@@ -158,6 +158,22 @@
             <div v-if="latestAppointmentCancelRequest.objection_note" class="mt-1">抗辩说明：{{ latestAppointmentCancelRequest.objection_note }}</div>
             <div v-if="latestAppointmentCancelRequest.created_at" class="mt-1">申请时间：{{ formatDateTime(latestAppointmentCancelRequest.created_at) }}</div>
           </div>
+          <div v-if="appointmentRescheduleRecommendationVisible" class="rounded-xl border border-blue-200 bg-blue-50 px-4 py-4 space-y-3">
+            <div class="flex items-center justify-between">
+              <div class="text-sm font-medium text-blue-900">系统优化性改签推荐</div>
+              <div class="text-xs text-blue-500">仅推荐，不自动改签</div>
+            </div>
+            <div v-if="appointmentRescheduleRecommendationReason" class="text-sm text-blue-700">
+              {{ appointmentRescheduleRecommendationReason }}
+            </div>
+            <div v-if="appointmentRescheduleRecommendations.length > 0" class="grid grid-cols-2 gap-3">
+              <div v-for="slot in appointmentRescheduleRecommendations" :key="slot.time" class="rounded-lg bg-white px-3 py-3 border border-blue-100 text-sm text-gray-700">
+                <div class="font-medium text-gray-800">{{ formatDateTime(slot.time) }}</div>
+                <div v-if="slot.comparison_label" class="mt-1 text-blue-600">{{ slot.comparison_label }}</div>
+                <div v-if="slot.recommendation_reason" class="mt-1 text-xs text-gray-500">{{ slot.recommendation_reason }}</div>
+              </div>
+            </div>
+          </div>
           <div v-if="appointmentSettlement || appointmentDelayLedgerItems.length > 0 || (appointment.compensations || []).length > 0" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 space-y-3">
             <div class="flex items-center justify-between">
               <div class="text-sm font-medium text-gray-800">结算与补偿</div>
@@ -2487,6 +2503,9 @@ const userRescheduleReason = ref('')
 const userRescheduleTechnicians = ref([])
 const userRescheduleTechnicianId = ref(null)
 const userRescheduleEligibility = ref(null)
+const appointmentRescheduleRecommendationEnabled = ref(false)
+const appointmentRescheduleRecommendationReason = ref('')
+const appointmentRescheduleRecommendations = ref([])
 
 const latestAppointmentRescheduleRequest = computed(() => {
   const list = Array.isArray(appointment.value?.reschedule_requests) ? appointment.value.reschedule_requests : []
@@ -2586,6 +2605,9 @@ const userRescheduleComparisonHint = computed(() => {
     return '当前阶段只展示更优于当前排布的时段。'
   }
   return ''
+})
+const appointmentRescheduleRecommendationVisible = computed(() => {
+  return appointmentRescheduleRecommendationEnabled.value
 })
 
 const userDisplayedRescheduleTechnicians = computed(() => {
@@ -2835,6 +2857,9 @@ const fetchAppointment = async () => {
     appointment.value = null
     appointmentSettlement.value = null
     appointmentDelayLedgers.value = []
+    appointmentRescheduleRecommendationEnabled.value = false
+    appointmentRescheduleRecommendationReason.value = ''
+    appointmentRescheduleRecommendations.value = []
     queueBefore.value = 0
     estimatedMinutes.value = 0
     canArriveNow.value = false
@@ -2860,6 +2885,20 @@ const loadAppointmentSettlementAndDelay = async () => {
   ])
   appointmentSettlement.value = settlementRes.status === 'fulfilled' ? (settlementRes.value.data?.data || null) : null
   appointmentDelayLedgers.value = delayRes.status === 'fulfilled' ? (delayRes.value.data?.data || []) : []
+  const date = userRescheduleEligibility.value?.default_date || ''
+  const recommendationRes = await Promise.allSettled([
+    appointmentApi.getUserRescheduleRecommendations(appointmentId, date || undefined)
+  ])
+  if (recommendationRes[0].status === 'fulfilled') {
+    const data = recommendationRes[0].value.data?.data || {}
+    appointmentRescheduleRecommendationEnabled.value = !!data.enabled
+    appointmentRescheduleRecommendationReason.value = String(data.reason || '').trim()
+    appointmentRescheduleRecommendations.value = Array.isArray(data.recommendations) ? data.recommendations : []
+  } else {
+    appointmentRescheduleRecommendationEnabled.value = false
+    appointmentRescheduleRecommendationReason.value = ''
+    appointmentRescheduleRecommendations.value = []
+  }
 }
 
 const getAppointmentSettlementStatusText = (status) => {
@@ -3069,6 +3108,15 @@ const openUserRescheduleModal = async () => {
     showUserRescheduleModal.value = true
     if (userRescheduleEligibility.value?.allowed && userRescheduleDate.value) {
       await loadUserRescheduleSlots(userRescheduleDate.value)
+    }
+    if (appointment.value?.id) {
+      try {
+        const recRes = await appointmentApi.getUserRescheduleRecommendations(appointment.value.id, userRescheduleDate.value || undefined)
+        const data = recRes.data?.data || {}
+        appointmentRescheduleRecommendationEnabled.value = !!data.enabled
+        appointmentRescheduleRecommendationReason.value = String(data.reason || '').trim()
+        appointmentRescheduleRecommendations.value = Array.isArray(data.recommendations) ? data.recommendations : []
+      } catch (_) {}
     }
   } catch (err) {
     alert(err.response?.data?.error || '获取改签资格失败')

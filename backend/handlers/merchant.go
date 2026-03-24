@@ -323,6 +323,7 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		AppointmentSlotGranularityMinutes                  *int    `json:"appointment_slot_granularity_minutes"`
 		AppointmentRescheduleSameOrNextDayThresholdMinutes *int    `json:"appointment_reschedule_same_or_next_day_threshold_minutes"`
 		AppointmentRescheduleNextDayOnlyThresholdMinutes   *int    `json:"appointment_reschedule_next_day_only_threshold_minutes"`
+		AppointmentRescheduleRecommendationEnabled         *bool   `json:"appointment_reschedule_recommendation_enabled"`
 		HandCardPrefix                                     *string `json:"hand_card_prefix"`
 		HandCardStartNo                                    *int    `json:"hand_card_start_no"`
 		HandCardEndNo                                      *int    `json:"hand_card_end_no"`
@@ -586,6 +587,9 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 			return
 		}
 		updates["appointment_reschedule_next_day_only_threshold_minutes"] = *input.AppointmentRescheduleNextDayOnlyThresholdMinutes
+	}
+	if input.AppointmentRescheduleRecommendationEnabled != nil {
+		updates["appointment_reschedule_recommendation_enabled"] = *input.AppointmentRescheduleRecommendationEnabled
 	}
 	if input.HandCardPrefix != nil {
 		updates["hand_card_prefix"] = strings.TrimSpace(*input.HandCardPrefix)

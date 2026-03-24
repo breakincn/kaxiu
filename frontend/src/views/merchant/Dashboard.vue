@@ -1450,12 +1450,20 @@
                   <div class="font-medium text-gray-800">客服月度异常统计</div>
                   <div class="mt-1 text-gray-500">查看当前预约客服在指定月份的免责与责任账本统计</div>
                 </div>
-                <button
-                  @click="viewTechnicianMonthlyDisruptions(appointmentDetailTarget)"
-                  class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
-                >
-                  查看统计
-                </button>
+                <div class="flex items-center gap-2">
+                  <button
+                    @click="viewTechnicianMonthlyDisruptions(appointmentDetailTarget)"
+                    class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
+                  >
+                    查看统计
+                  </button>
+                  <button
+                    @click="viewAppointmentRepairOverview(appointmentDetailTarget)"
+                    class="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm"
+                  >
+                    异常修复
+                  </button>
+                </div>
               </div>
             </div>
             <div v-if="appointmentDetailSummary" class="rounded-xl border border-gray-200 bg-white px-4 py-4">
@@ -1486,6 +1494,60 @@
                 <div class="font-medium text-gray-800">{{ getCompensationTypeText(comp.type) }}</div>
                 <div v-if="getCompensationValueText(comp)" class="mt-1">{{ getCompensationValueText(comp) }}</div>
                 <div v-if="comp.reason" class="mt-1 text-gray-500">{{ getReasonText(comp.reason) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showAppointmentRepairOverviewModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click.self="closeAppointmentRepairOverviewModal">
+      <div class="bg-white w-full max-w-3xl rounded-2xl overflow-hidden">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+          <div>
+            <div class="font-medium text-gray-800">请假异常修复详情</div>
+            <div class="text-sm text-gray-500 mt-1">{{ appointmentRepairOverviewScheduleLabel || '当前预约关联排班' }}</div>
+          </div>
+          <button class="text-gray-500" @click="closeAppointmentRepairOverviewModal">关闭</button>
+        </div>
+        <div class="p-5 max-h-[75vh] overflow-y-auto">
+          <div v-if="appointmentRepairOverviewLoading" class="py-12 text-center text-gray-400">加载中...</div>
+          <div v-else-if="appointmentRepairOverviewError" class="py-12 text-center text-red-500">{{ appointmentRepairOverviewError }}</div>
+          <div v-else class="space-y-4">
+            <div v-if="appointmentRepairOverviewReason" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-700">
+              {{ appointmentRepairOverviewReason }}
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <div class="text-xs text-gray-400">受影响预约</div>
+                <div class="mt-1 font-medium text-gray-800">{{ appointmentRepairAffectedAppointments.length }} 笔</div>
+              </div>
+              <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <div class="text-xs text-gray-400">保护修复槽</div>
+                <div class="mt-1 font-medium text-gray-800">{{ appointmentRepairProtectedSlots.length }} 个</div>
+              </div>
+            </div>
+            <div>
+              <div class="font-medium text-gray-800 mb-2">受影响预约</div>
+              <div v-if="appointmentRepairAffectedAppointments.length === 0" class="rounded-xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
+                当前无受影响预约
+              </div>
+              <div v-for="appt in appointmentRepairAffectedAppointments" :key="appt.id" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-700 mb-2">
+                <div class="font-medium text-gray-800">{{ appt.user?.nickname || appt.user_id || `用户${appt.user_id || ''}` }}</div>
+                <div class="mt-1 text-gray-500">预约时间：{{ formatDateTime(appt.appointment_time) }}</div>
+                <div class="mt-1 text-gray-500">状态：{{ getAppointmentStatusText(appt.status) }}</div>
+                <div v-if="appt.disruption_reason" class="mt-1 text-gray-500">原因：{{ getReasonText(appt.disruption_reason) }}</div>
+              </div>
+            </div>
+            <div>
+              <div class="font-medium text-gray-800 mb-2">保护修复槽</div>
+              <div v-if="appointmentRepairProtectedSlots.length === 0" class="rounded-xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
+                当前无保护修复槽
+              </div>
+              <div v-for="slot in appointmentRepairProtectedSlots" :key="slot.id" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-700 mb-2">
+                <div class="font-medium text-gray-800">{{ formatDateTime(slot.slot_start_at) }} - {{ formatDateTime(slot.slot_end_at) }}</div>
+                <div v-if="slot.appointment_id" class="mt-1 text-gray-500">关联预约：#{{ slot.appointment_id }}</div>
+                <div v-if="slot.status" class="mt-1 text-gray-500">状态：{{ slot.status }}</div>
               </div>
             </div>
           </div>
@@ -2460,6 +2522,22 @@ const technicianMonthlyDisruptionMonth = ref('')
 const technicianMonthlyDisruptionLoading = ref(false)
 const technicianMonthlyDisruptionError = ref('')
 const technicianMonthlyDisruptionData = ref(null)
+const showAppointmentRepairOverviewModal = ref(false)
+const appointmentRepairOverviewLoading = ref(false)
+const appointmentRepairOverviewError = ref('')
+const appointmentRepairOverviewReason = ref('')
+const appointmentRepairOverviewSchedule = ref(null)
+const appointmentRepairAffectedAppointments = ref([])
+const appointmentRepairProtectedSlots = ref([])
+const appointmentRepairOverviewScheduleLabel = computed(() => {
+  const schedule = appointmentRepairOverviewSchedule.value
+  if (!schedule?.publish_date && !schedule?.start_at) return ''
+  const parts = []
+  if (schedule.publish_date) parts.push(formatDate(schedule.publish_date))
+  if (schedule.start_at) parts.push(formatDateTime(schedule.start_at))
+  if (schedule.end_at) parts.push(`至 ${formatDateTime(schedule.end_at)}`)
+  return parts.join(' ')
+})
 const technicianMonthlyDisruptionItems = computed(() => {
   const data = technicianMonthlyDisruptionData.value
   if (!data) return []
@@ -4928,6 +5006,16 @@ const closeTechnicianMonthlyDisruptionModal = () => {
   technicianMonthlyDisruptionData.value = null
 }
 
+const closeAppointmentRepairOverviewModal = () => {
+  showAppointmentRepairOverviewModal.value = false
+  appointmentRepairOverviewLoading.value = false
+  appointmentRepairOverviewError.value = ''
+  appointmentRepairOverviewReason.value = ''
+  appointmentRepairOverviewSchedule.value = null
+  appointmentRepairAffectedAppointments.value = []
+  appointmentRepairProtectedSlots.value = []
+}
+
 const openAppointmentDetailModal = async (appt) => {
   appointmentDetailTarget.value = appt
   appointmentDetailLoading.value = true
@@ -4985,6 +5073,29 @@ const viewTechnicianMonthlyDisruptions = async (appt) => {
   technicianMonthlyDisruptionError.value = ''
   showTechnicianMonthlyDisruptionModal.value = true
   await loadTechnicianMonthlyDisruptions()
+}
+
+const viewAppointmentRepairOverview = async (appt) => {
+  if (!appt?.id) return
+  showAppointmentRepairOverviewModal.value = true
+  appointmentRepairOverviewLoading.value = true
+  appointmentRepairOverviewError.value = ''
+  appointmentRepairOverviewReason.value = ''
+  appointmentRepairOverviewSchedule.value = null
+  appointmentRepairAffectedAppointments.value = []
+  appointmentRepairProtectedSlots.value = []
+  try {
+    const res = await appointmentApi.getMerchantAppointmentRepairOverview(appt.id)
+    const data = res?.data?.data || {}
+    appointmentRepairOverviewSchedule.value = data.schedule || null
+    appointmentRepairOverviewReason.value = String(data.reason || '').trim()
+    appointmentRepairAffectedAppointments.value = Array.isArray(data.affected_appointments) ? data.affected_appointments : []
+    appointmentRepairProtectedSlots.value = Array.isArray(data.protected_repair_slots) ? data.protected_repair_slots : []
+  } catch (err) {
+    appointmentRepairOverviewError.value = err.response?.data?.error || '读取异常修复详情失败'
+  } finally {
+    appointmentRepairOverviewLoading.value = false
+  }
 }
 
 const createMerchantForceMajeureRelief = async (appt) => {

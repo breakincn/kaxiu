@@ -53,6 +53,7 @@ type Merchant struct {
 	AppointmentSlotGranularityMinutes                  int    `json:"appointment_slot_granularity_minutes" gorm:"default:15;comment:预约时段展示粒度分钟数"`
 	AppointmentRescheduleSameOrNextDayThresholdMinutes int    `json:"appointment_reschedule_same_or_next_day_threshold_minutes" gorm:"default:180;comment:昨天预约可改签到今天或明天的剩余分钟阈值"`
 	AppointmentRescheduleNextDayOnlyThresholdMinutes   int    `json:"appointment_reschedule_next_day_only_threshold_minutes" gorm:"default:90;comment:昨天预约仅可改签到明天的剩余分钟阈值"`
+	AppointmentRescheduleRecommendationEnabled         bool   `json:"appointment_reschedule_recommendation_enabled" gorm:"default:false;comment:是否启用系统优化性改签推荐"`
 	TechnicianAlias                                    string `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
 	StartTerm                                          string `json:"start_term" gorm:"size:20;default:'';comment:开始服务显示名词（可为空）"`
 	FinishTerm                                         string `json:"finish_term" gorm:"size:20;default:'';comment:结束服务显示名词（可为空）"`

@@ -358,7 +358,8 @@ export const attendanceApi = {
   checkOut: (data) => api.post('/merchant/technician/checkout', data),
   updateStatus: (data) => api.put('/merchant/technician/status', data),
   listAvailableTechnicians: () => api.get('/merchant/technicians/available'),
-  getCurrentStatus: () => api.get('/merchant/technician/attendance')
+  getCurrentStatus: () => api.get('/merchant/technician/attendance'),
+  getScheduleAffectedAppointments: (scheduleId) => api.get('/merchant/schedules/affected-appointments', { params: { schedule_id: scheduleId } })
 }
 
 export const queueApi = {
@@ -436,6 +437,7 @@ export const appointmentApi = {
   cancelMerchantRescheduleRequest: (appointmentId, requestId) => api.post(`/merchant/appointments/${appointmentId}/reschedule-requests/${requestId}/cancel`),
   getUserRescheduleEligibility: (id) => api.get(`/user/appointments/${id}/reschedule-eligibility`),
   getUserRescheduleSlots: (id, date) => api.get(`/user/appointments/${id}/reschedule-slots`, { params: { date } }),
+  getUserRescheduleRecommendations: (id, date) => api.get(`/user/appointments/${id}/reschedule-recommendations`, { params: { date } }),
   createUserRescheduleRequest: (id, data) => api.post(`/user/appointments/${id}/reschedule-requests`, data),
   acceptUserRescheduleRequest: (appointmentId, requestId) => api.post(`/user/appointments/${appointmentId}/reschedule-requests/${requestId}/accept`),
   rejectUserRescheduleRequest: (appointmentId, requestId) => api.post(`/user/appointments/${appointmentId}/reschedule-requests/${requestId}/reject`),
@@ -452,8 +454,9 @@ export const appointmentApi = {
   cancelAppointment: (id) => api.put(`/user/appointments/${id}/cancel`),
   cancelMerchantAppointment: (id, data) => api.put(`/merchant/appointments/${id}/cancel`, data),
   checkInAppointment: (id) => api.post(`/merchant/appointments/${id}/check-in`),
-  getTechnicianMonthlyDisruptions: (id, month) => api.get(`/merchant/technicians/${id}/monthly-disruptions`, { params: { month } })
- }
+  getTechnicianMonthlyDisruptions: (id, month) => api.get(`/merchant/technicians/${id}/monthly-disruptions`, { params: { month } }),
+  getMerchantAppointmentRepairOverview: (id) => api.get(`/merchant/appointments/${id}/repair-overview`)
+}
 
  export const merchantProjectApi = {
    list: () => api.get('/merchant/projects'),

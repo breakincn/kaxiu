@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -243,8 +244,11 @@ func TestCancelAppointmentWithViewPermissionOnlyAllowsOwnAppointment(t *testing.
 
 	own := createAppointmentRecord(t, config.DB, merchant.ID, user.ID, &tech.ID, "pending")
 	other := createAppointmentRecord(t, config.DB, merchant.ID, user.ID, &otherTech.ID, "pending")
+	body, _ := json.Marshal(gin.H{"reason": "门店调度调整"})
 
 	c, rec := newStaffContext(http.MethodPut, "/merchant/appointments/"+strconv.Itoa(int(own.ID))+"/cancel", merchant.ID, tech.ID, role.ID)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/appointments/"+strconv.Itoa(int(own.ID))+"/cancel", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
 	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(own.ID))}}
 	CancelAppointment(c)
 	if rec.Code != http.StatusOK {
@@ -252,6 +256,8 @@ func TestCancelAppointmentWithViewPermissionOnlyAllowsOwnAppointment(t *testing.
 	}
 
 	c, rec = newStaffContext(http.MethodPut, "/merchant/appointments/"+strconv.Itoa(int(other.ID))+"/cancel", merchant.ID, tech.ID, role.ID)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/appointments/"+strconv.Itoa(int(other.ID))+"/cancel", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
 	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(other.ID))}}
 	CancelAppointment(c)
 	if rec.Code != http.StatusForbidden {
