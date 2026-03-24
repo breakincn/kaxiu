@@ -55,6 +55,13 @@ func TestPublishNextDayScheduleCreatesPublishings(t *testing.T) {
 	if count == 0 {
 		t.Fatalf("want publishings created, got 0")
 	}
+
+	queryCtx, queryRec := newMerchantContext(http.MethodGet, "/merchant/schedules/publishings?date="+nextDate.Format("2006-01-02"), merchant.ID)
+	queryCtx.Request = httptest.NewRequest(http.MethodGet, "/merchant/schedules/publishings?date="+nextDate.Format("2006-01-02"), nil)
+	ListSchedulePublishings(queryCtx)
+	if queryRec.Code != http.StatusOK {
+		t.Fatalf("want 200 from schedule publishings, got %d body=%s", queryRec.Code, queryRec.Body.String())
+	}
 }
 
 func TestMarkScheduleLeaveCreatesAffectedAppointmentsAndProtectedRepairSlots(t *testing.T) {
@@ -151,8 +158,21 @@ func TestMarkScheduleLeaveCreatesAffectedAppointmentsAndProtectedRepairSlots(t *
 
 	var resp struct {
 		Data struct {
-			AffectedAppointments []models.Appointment         `json:"affected_appointments"`
-			ProtectedRepairSlots []models.ProtectedRepairSlot `json:"protected_repair_slots"`
+			AffectedAppointments       []models.Appointment         `json:"affected_appointments"`
+			ProtectedRepairSlots       []models.ProtectedRepairSlot `json:"protected_repair_slots"`
+			AffectedAppointmentRepairs []struct {
+				Appointment struct {
+					ID uint `json:"id"`
+				} `json:"appointment"`
+				AffectedByLeave         bool   `json:"affected_by_leave"`
+				HasHighQualityCandidate bool   `json:"has_high_quality_candidate"`
+				Decision                string `json:"decision"`
+				Reason                  string `json:"reason"`
+				CandidateTime           string `json:"candidate_time"`
+				Recommendations         []struct {
+					Time string `json:"time"`
+				} `json:"recommendations"`
+			} `json:"affected_appointment_repairs"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(queryRec.Body.Bytes(), &resp); err != nil {
@@ -163,6 +183,15 @@ func TestMarkScheduleLeaveCreatesAffectedAppointmentsAndProtectedRepairSlots(t *
 	}
 	if len(resp.Data.ProtectedRepairSlots) == 0 {
 		t.Fatalf("want protected repair slots in response")
+	}
+	if len(resp.Data.AffectedAppointmentRepairs) != 1 {
+		t.Fatalf("want 1 repair inspection, got %d", len(resp.Data.AffectedAppointmentRepairs))
+	}
+	if !resp.Data.AffectedAppointmentRepairs[0].AffectedByLeave {
+		t.Fatalf("want affected_by_leave=true")
+	}
+	if resp.Data.AffectedAppointmentRepairs[0].Decision == "" || resp.Data.AffectedAppointmentRepairs[0].Reason == "" {
+		t.Fatalf("want structured repair decision in response")
 	}
 }
 

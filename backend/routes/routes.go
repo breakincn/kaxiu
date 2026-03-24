@@ -164,6 +164,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.GET("/merchants/:id/appointments", handlers.GetMerchantAppointments)
 	auth.GET("/merchants/:id/technicians", handlers.GetTechniciansByMerchantID)
 	auth.GET("/merchants/:id/available-slots", handlers.GetAvailableTimeSlots)
+	auth.GET("/schedules/publishings", handlers.ListSchedulePublishings)
 	auth.POST("/schedules/publish-next-day", handlers.PublishNextDaySchedule)
 	auth.POST("/schedules/:id/leave", handlers.MarkScheduleLeave)
 	auth.GET("/schedules/affected-appointments", handlers.GetScheduleAffectedAppointments)

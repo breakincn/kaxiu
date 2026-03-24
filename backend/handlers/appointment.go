@@ -115,6 +115,31 @@ func loadPublishedSchedulePublishings(tx *gorm.DB, merchantID uint, targetDate t
 	return out, nil
 }
 
+func loadSchedulePublishingsByDate(tx *gorm.DB, merchantID uint, targetDate time.Time) ([]models.TechnicianSchedulePublishing, error) {
+	if tx == nil || merchantID == 0 {
+		return nil, nil
+	}
+	dateOnly := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, targetDate.Location())
+	rows, err := tx.Table("technician_schedule_publishings").
+		Select(technicianSchedulePublishingSelectColumns()).
+		Where("merchant_id = ? AND publish_date >= ? AND publish_date < ?", merchantID, dateOnly, dateOnly.Add(24*time.Hour)).
+		Order("start_at asc, id asc").
+		Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]models.TechnicianSchedulePublishing, 0)
+	for rows.Next() {
+		row, err := scanTechnicianSchedulePublishingRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
+
 func loadSchedulePublishingByID(tx *gorm.DB, merchantID, scheduleID uint) (*models.TechnicianSchedulePublishing, error) {
 	if tx == nil || merchantID == 0 || scheduleID == 0 {
 		return nil, nil
@@ -2222,6 +2247,17 @@ type appointmentRepairEvaluation struct {
 	CandidateTechnicianID   *uint
 }
 
+type appointmentRepairInspection struct {
+	Appointment             models.Appointment    `json:"appointment"`
+	AffectedByLeave         bool                  `json:"affected_by_leave"`
+	HasHighQualityCandidate bool                  `json:"has_high_quality_candidate"`
+	Decision                string                `json:"decision"`
+	Reason                  string                `json:"reason"`
+	CandidateTime           string                `json:"candidate_time,omitempty"`
+	CandidateTechnicianID   *uint                 `json:"candidate_technician_id,omitempty"`
+	Recommendations         []appointmentTimeSlot `json:"recommendations"`
+}
+
 func buildAppointmentSchedulingSnapshot(appointmentTime time.Time, serviceMinutes, serviceGapMinutes int, loc *time.Location) (time.Time, time.Time, time.Time, time.Time, int) {
 	if loc == nil {
 		loc = appointmentTime.Location()
@@ -2302,6 +2338,82 @@ func evaluateAppointmentRepairOptions(tx *gorm.DB, merchant models.Merchant, app
 		}
 	}
 	return out, nil
+}
+
+func buildAppointmentRepairInspection(tx *gorm.DB, merchant models.Merchant, appt models.Appointment) (appointmentRepairInspection, error) {
+	item := appointmentRepairInspection{
+		Appointment:     appt,
+		Recommendations: []appointmentTimeSlot{},
+	}
+	if err := hydrateAppointmentRelations(tx, &item.Appointment); err != nil {
+		return item, err
+	}
+	eval, err := evaluateAppointmentRepairOptions(tx, merchant, appt)
+	if err != nil {
+		return item, err
+	}
+	item.AffectedByLeave = eval.AffectedByLeave
+	item.HasHighQualityCandidate = eval.HasHighQualityCandidate
+	if !eval.AffectedByLeave {
+		item.Decision = "not_affected"
+		item.Reason = "当前预约未命中请假异常修复范围"
+		return item, nil
+	}
+	if eval.CandidateTime != nil {
+		item.CandidateTime = eval.CandidateTime.In(appointmentLocation()).Format("2006-01-02 15:04:05")
+	}
+	item.CandidateTechnicianID = eval.CandidateTechnicianID
+	if !eval.HasHighQualityCandidate || appt.AppointmentTime == nil {
+		item.Decision = "cancel_only"
+		item.Reason = "当前无高质量修复方案，请转取消/补偿分流"
+		return item, nil
+	}
+	item.Decision = "repairable"
+	item.Reason = "存在高质量修复方案，可优先发起保护性改签"
+
+	projectID := uint(0)
+	if appt.ProjectID != nil {
+		projectID = *appt.ProjectID
+	}
+	date := appt.AppointmentTime.In(appointmentLocation()).Format("2006-01-02")
+	payload, err := buildAvailableTimeSlotsPayload(merchant, merchant.ID, date, projectID, appointmentLocation(), &availableTimeSlotsOptions{ExcludeAppointmentID: appt.ID})
+	if err != nil {
+		return item, err
+	}
+	currentScore, err := computeAppointmentCurrentPlacementScore(tx, merchant, appt)
+	if err != nil {
+		return item, err
+	}
+	if slots, ok := payload["time_slots"].([]appointmentTimeSlot); ok {
+		recommendations := buildAppointmentRecommendationSlots(slots, appointmentRescheduleEligibility{
+			Allowed:  true,
+			RuleMode: appointmentRescheduleTodayOrTomorrow,
+		}, currentScore)
+		if len(recommendations) > 3 {
+			recommendations = recommendations[:3]
+		}
+		item.Recommendations = recommendations
+	}
+	return item, nil
+}
+
+func buildAppointmentRepairInspections(tx *gorm.DB, merchantID uint, appts []models.Appointment) ([]appointmentRepairInspection, error) {
+	if tx == nil || merchantID == 0 || len(appts) == 0 {
+		return []appointmentRepairInspection{}, nil
+	}
+	var merchant models.Merchant
+	if err := tx.First(&merchant, merchantID).Error; err != nil {
+		return nil, err
+	}
+	items := make([]appointmentRepairInspection, 0, len(appts))
+	for _, appt := range appts {
+		item, err := buildAppointmentRepairInspection(tx, merchant, appt)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
 }
 
 func executeAppointmentReschedule(tx *gorm.DB, appointmentID uint, proposal models.AppointmentRescheduleRequest, actorType string, actorID *uint, now time.Time) (models.Appointment, models.Appointment, error) {
@@ -4140,6 +4252,7 @@ func MarkScheduleLeave(c *gin.Context) {
 		return
 	}
 	var affected []models.Appointment
+	var inspections []appointmentRepairInspection
 	err = config.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.TechnicianSchedulePublishing{}).Where("id = ? AND merchant_id = ?", publishing.ID, merchantID).Update("status", "leave").Error; err != nil {
 			return err
@@ -4161,13 +4274,55 @@ func MarkScheduleLeave(c *gin.Context) {
 				return err
 			}
 		}
+		repairItems, err := buildAppointmentRepairInspections(tx, merchantID, affected)
+		if err != nil {
+			return err
+		}
+		inspections = repairItems
 		return nil
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "排班请假标记失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"schedule": publishing, "affected_appointments": affected}})
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"schedule":                     publishing,
+		"affected_appointments":        affected,
+		"affected_appointment_repairs": inspections,
+	}})
+}
+
+func ListSchedulePublishings(c *gin.Context) {
+	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.view", "merchant.appointment.manage", "merchant.service.manage", "merchant.cs.manage") {
+		return
+	}
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+	loc := appointmentLocation()
+	targetDate := strings.TrimSpace(c.Query("date"))
+	var date time.Time
+	var err error
+	if targetDate == "" {
+		now := time.Now().In(loc)
+		date = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	} else {
+		date, err = time.ParseInLocation("2006-01-02", targetDate, loc)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
+			return
+		}
+	}
+	rows, err := loadSchedulePublishingsByDate(config.DB, merchantID, date)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取排班发布列表失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"date":        date.Format("2006-01-02"),
+		"publishings": rows,
+	}})
 }
 
 func GetScheduleAffectedAppointments(c *gin.Context) {
@@ -4202,7 +4357,17 @@ func GetScheduleAffectedAppointments(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取保护修复槽失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"schedule": publishing, "affected_appointments": affected, "protected_repair_slots": repairSlots}})
+	inspections, err := buildAppointmentRepairInspections(config.DB, merchantID, affected)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取异常修复判定结果失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"schedule":                     publishing,
+		"affected_appointments":        affected,
+		"protected_repair_slots":       repairSlots,
+		"affected_appointment_repairs": inspections,
+	}})
 }
 
 func GetAppointmentRepairOverview(c *gin.Context) {
@@ -4221,10 +4386,11 @@ func GetAppointmentRepairOverview(c *gin.Context) {
 	}
 	if appointment.AppointmentTime == nil || appointment.TechnicianID == nil || *appointment.TechnicianID == 0 {
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{
-			"schedule":               nil,
-			"affected_appointments":  []models.Appointment{},
-			"protected_repair_slots": []models.ProtectedRepairSlot{},
-			"reason":                 "当前预约未绑定客服排班，请假异常修复详情不可用",
+			"schedule":                     nil,
+			"affected_appointments":        []models.Appointment{},
+			"protected_repair_slots":       []models.ProtectedRepairSlot{},
+			"affected_appointment_repairs": []appointmentRepairInspection{},
+			"reason":                       "当前预约未绑定客服排班，请假异常修复详情不可用",
 		}})
 		return
 	}
@@ -4236,10 +4402,11 @@ func GetAppointmentRepairOverview(c *gin.Context) {
 	}
 	if target == nil {
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{
-			"schedule":               nil,
-			"affected_appointments":  []models.Appointment{},
-			"protected_repair_slots": []models.ProtectedRepairSlot{},
-			"reason":                 "当前预约未命中已确认请假的排班发布记录",
+			"schedule":                     nil,
+			"affected_appointments":        []models.Appointment{},
+			"protected_repair_slots":       []models.ProtectedRepairSlot{},
+			"affected_appointment_repairs": []appointmentRepairInspection{},
+			"reason":                       "当前预约未命中已确认请假的排班发布记录",
 		}})
 		return
 	}
@@ -4253,11 +4420,17 @@ func GetAppointmentRepairOverview(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取保护修复槽失败"})
 		return
 	}
+	inspections, err := buildAppointmentRepairInspections(config.DB, appointment.MerchantID, affected)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取异常修复判定结果失败"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
-		"schedule":               target,
-		"affected_appointments":  affected,
-		"protected_repair_slots": repairSlots,
-		"reason":                 "",
+		"schedule":                     target,
+		"affected_appointments":        affected,
+		"protected_repair_slots":       repairSlots,
+		"affected_appointment_repairs": inspections,
+		"reason":                       "",
 	}})
 }
 

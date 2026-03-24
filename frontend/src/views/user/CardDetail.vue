@@ -3383,10 +3383,35 @@ const getUserRescheduleSlotComparisonClass = (kind) => {
   return 'text-gray-400'
 }
 
+const maybeRedirectToUserRescheduleBeforeCancel = async () => {
+  if (!appointment.value?.id) return false
+  try {
+    const [eligibilityRes, recommendationRes] = await Promise.allSettled([
+      appointmentApi.getUserRescheduleEligibility(appointment.value.id),
+      appointmentApi.getUserRescheduleRecommendations(appointment.value.id, userRescheduleDate.value || undefined)
+    ])
+    const eligibility = eligibilityRes.status === 'fulfilled' ? (eligibilityRes.value.data?.data || null) : null
+    const recommendationData = recommendationRes.status === 'fulfilled' ? (recommendationRes.value.data?.data || {}) : {}
+    const recommendations = Array.isArray(recommendationData.recommendations) ? recommendationData.recommendations : []
+    if (!eligibility?.allowed && recommendations.length === 0) {
+      return false
+    }
+    const message = recommendations.length > 0
+      ? `系统当前已给出 ${recommendations.length} 个可参考改签时段。是否先查看改签建议，再决定是否取消？`
+      : '当前预约仍可改签。是否先查看改签时段，再决定是否取消？'
+    if (!window.confirm(message)) return false
+    await openUserRescheduleModal()
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
 const cancelAppointment = async () => {
   if (canceling.value) return
 
   if (isAppointmentFailed.value) return
+  if (await maybeRedirectToUserRescheduleBeforeCancel()) return
   
   if (!confirm('确定要取消预约吗？')) return
   
