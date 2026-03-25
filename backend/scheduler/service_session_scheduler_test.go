@@ -20,7 +20,7 @@ func setupSchedulerTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Merchant{}, &models.Technician{}, &models.Card{}, &models.Usage{}, &models.ServiceSession{}, &models.TechnicianAttendance{}, &models.Appointment{}, &models.AppointmentSettlement{}, &models.ProtectedRepairSlot{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}, &models.MerchantProject{}); err != nil {
+	if err := db.AutoMigrate(&models.Merchant{}, &models.Technician{}, &models.Card{}, &models.Usage{}, &models.ServiceSession{}, &models.TechnicianAttendance{}, &models.Appointment{}, &models.AppointmentSettlement{}, &models.ProtectedRepairSlot{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}, &models.MerchantProject{}, &models.SystemConfig{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 	return db

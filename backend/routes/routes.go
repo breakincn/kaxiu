@@ -117,6 +117,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.PUT("/business-status", middleware.RequirePermission("merchant.business_status.manage"), handlers.ToggleMerchantBusinessStatus)
 	auth.GET("/permissions", handlers.GetMyPermissions)
 	auth.GET("/config", handlers.GetConfig)
+	auth.GET("/system/scheduler-health", handlers.GetMerchantSchedulerHealth)
 	// 搜索用户
 	auth.GET("/users/search", middleware.RequireAnyPermission("merchant.card.issue", "merchant.card.verify"), handlers.MerchantSearchUsers)
 
@@ -299,6 +300,7 @@ func SetupAdminRoutes(r *gin.Engine) {
 	admin.DELETE("/service-roles/:id", handlers.AdminDeleteServiceRole)
 	admin.GET("/system/config", handlers.AdminGetSystemConfig)
 	admin.PUT("/system/config", handlers.AdminUpdateSystemConfig)
+	admin.GET("/system/scheduler-health", handlers.GetAdminSchedulerHealth)
 	admin.GET("/permissions", handlers.AdminListPermissions)
 	admin.POST("/permissions", handlers.AdminCreatePermission)
 	admin.PUT("/permissions/:id", handlers.AdminUpdatePermission)

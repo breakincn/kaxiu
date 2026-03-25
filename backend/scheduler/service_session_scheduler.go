@@ -788,11 +788,13 @@ func StartServiceSessionScheduler() {
 	go func() {
 		ticker := time.NewTicker(schedulerTickInterval)
 		defer ticker.Stop()
+		recordSchedulerTick(schedulerNameServiceSession, time.Now())
 
 		for range ticker.C {
 			if config.DB == nil {
 				continue
 			}
+			recordSchedulerTick(schedulerNameServiceSession, time.Now())
 			if err := runOnce(config.DB); err != nil {
 				log.Printf("service session scheduler error: %v", err)
 			}

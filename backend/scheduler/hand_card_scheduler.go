@@ -13,8 +13,8 @@ import (
 
 const (
 	handCardSchedulerTickInterval = 5 * time.Second
-	handCardLockWindow           = 8 * time.Minute
-	handCardSchedulerBatchLimit  = 200
+	handCardLockWindow            = 8 * time.Minute
+	handCardSchedulerBatchLimit   = 200
 )
 
 // StartHandCardScheduler 手牌锁卡调度器：
@@ -25,10 +25,12 @@ func StartHandCardScheduler() {
 	go func() {
 		ticker := time.NewTicker(handCardSchedulerTickInterval)
 		defer ticker.Stop()
+		recordSchedulerTick(schedulerNameHandCard, time.Now())
 		for range ticker.C {
 			if config.DB == nil {
 				continue
 			}
+			recordSchedulerTick(schedulerNameHandCard, time.Now())
 			if err := runHandCardLockOnce(config.DB); err != nil {
 				log.Printf("hand card scheduler error: %v", err)
 			}
@@ -37,10 +39,10 @@ func StartHandCardScheduler() {
 }
 
 type handCardLockCandidate struct {
-	CardID         uint      `gorm:"column:card_id"`
-	MerchantID     uint      `gorm:"column:merchant_id"`
-	FirstAssigned  time.Time `gorm:"column:first_assigned"`
-	UnreturnedCount int64    `gorm:"column:unreturned_count"`
+	CardID          uint      `gorm:"column:card_id"`
+	MerchantID      uint      `gorm:"column:merchant_id"`
+	FirstAssigned   time.Time `gorm:"column:first_assigned"`
+	UnreturnedCount int64     `gorm:"column:unreturned_count"`
 }
 
 func runHandCardLockOnce(db *gorm.DB) error {

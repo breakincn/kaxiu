@@ -441,11 +441,13 @@ func StartAppointmentScheduler() {
 	go func() {
 		ticker := time.NewTicker(appointmentSchedulerTickInterval)
 		defer ticker.Stop()
+		recordSchedulerTick(schedulerNameAppointment, time.Now())
 
 		for range ticker.C {
 			if config.DB == nil {
 				continue
 			}
+			recordSchedulerTick(schedulerNameAppointment, time.Now())
 			if err := runAppointmentAssignOnce(config.DB); err != nil {
 				log.Printf("appointment scheduler error: %v", err)
 			}

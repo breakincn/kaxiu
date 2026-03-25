@@ -149,6 +149,53 @@
       </button>
     </div>
 
+    <div class="px-4 pb-3">
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="font-medium text-gray-800">调度器健康状态</div>
+            <div class="text-sm text-gray-500 mt-1">用于检查服务会话、预约、手牌锁卡调度器是否持续产生 tick。</div>
+          </div>
+          <div
+            class="px-2.5 py-1 rounded-full text-xs font-medium"
+            :class="schedulerHealthBadgeClass"
+          >
+            {{ schedulerHealthBadgeText }}
+          </div>
+        </div>
+        <div v-if="schedulerHealthError" class="mt-3 text-sm text-red-500">{{ schedulerHealthError }}</div>
+        <div v-else-if="!schedulerHealthLoaded" class="mt-3 text-sm text-gray-400">读取调度器状态中...</div>
+        <div v-else class="mt-3 space-y-2">
+          <div class="text-xs text-gray-400">
+            {{ schedulerHealthSummary }}
+          </div>
+          <div
+            v-for="item in schedulerHealthItems"
+            :key="item.key"
+            class="rounded-lg border px-3 py-3"
+            :class="getSchedulerItemRowClass(item.status)"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="text-sm font-medium text-gray-800">{{ item.label }}</div>
+                <div class="text-xs text-gray-500 mt-1">{{ item.message }}</div>
+              </div>
+              <div class="text-xs font-medium" :class="getSchedulerItemTextClass(item.status)">
+                {{ getSchedulerItemStatusText(item.status) }}
+              </div>
+            </div>
+            <div class="mt-2 text-xs text-gray-500">
+              最近 tick：{{ formatSchedulerTickAt(item.last_tick_at) }}
+              <span v-if="item.last_tick_age_sec > 0"> · {{ formatSchedulerAge(item.last_tick_age_sec) }}</span>
+            </div>
+            <div class="mt-1 text-xs text-gray-400">
+              来源：{{ item.source_service || '-' }}<span v-if="item.source_pid"> / PID {{ item.source_pid }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="px-4 pt-1 pb-3">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-start justify-between gap-3">
@@ -1910,6 +1957,10 @@ const prevTopScanBodyStyle = {
 const merchantId = ref(null)
 const merchant = ref({})
 const isQueueModeView = computed(() => isQueueModeMerchant(merchant.value))
+const schedulerHealth = ref(null)
+const schedulerHealthError = ref('')
+const schedulerHealthLoaded = ref(false)
+let schedulerHealthTimer = null
 
 const getMerchantPendingStartLabel = (options = {}) => getPendingStartLabel(merchant.value, options)
 const getMerchantAutoFinishLabel = () => getAutoFinishLabel(merchant.value)
@@ -1945,6 +1996,30 @@ const visibleStatsCount = computed(() => {
   if (showAppointmentSummaryCard.value) count++
   if (canVerify.value) count++
   return count
+})
+
+const schedulerHealthItems = computed(() => Array.isArray(schedulerHealth.value?.items) ? schedulerHealth.value.items : [])
+
+const schedulerHealthBadgeText = computed(() => {
+  const status = String(schedulerHealth.value?.overall_status || '').trim()
+  if (!status) return '未读取'
+  if (status === 'healthy') return '正常'
+  if (status === 'degraded') return '异常'
+  return '未知'
+})
+
+const schedulerHealthBadgeClass = computed(() => {
+  const status = String(schedulerHealth.value?.overall_status || '').trim()
+  if (status === 'healthy') return 'bg-green-50 text-green-700'
+  if (status === 'degraded') return 'bg-red-50 text-red-600'
+  return 'bg-gray-100 text-gray-500'
+})
+
+const schedulerHealthSummary = computed(() => {
+  const generatedAt = schedulerHealth.value?.generated_at ? formatDateTime(schedulerHealth.value.generated_at) : '-'
+  const threshold = Number(schedulerHealth.value?.stale_threshold_minutes || 0)
+  const message = String(schedulerHealth.value?.overall_message || '').trim() || '未读取调度器状态'
+  return `最近检查：${generatedAt} · 阈值：${threshold || '-'} 分钟 · ${message}`
 })
 
 // Tab 显示控制
@@ -3896,6 +3971,71 @@ const getUsageCountColorClass = (usage) => {
   return 'text-blue-600'
 }
 
+const getSchedulerItemStatusText = (status) => {
+  if (status === 'healthy') return '正常'
+  if (status === 'stale') return '超时'
+  if (status === 'missing') return '未上报'
+  if (status === 'error') return '异常'
+  return '未知'
+}
+
+const getSchedulerItemRowClass = (status) => {
+  if (status === 'healthy') return 'border-green-100 bg-green-50/40'
+  if (status === 'stale' || status === 'error') return 'border-red-100 bg-red-50/40'
+  return 'border-gray-200 bg-gray-50/60'
+}
+
+const getSchedulerItemTextClass = (status) => {
+  if (status === 'healthy') return 'text-green-700'
+  if (status === 'stale' || status === 'error') return 'text-red-600'
+  return 'text-gray-500'
+}
+
+const formatSchedulerTickAt = (value) => {
+  if (!value) return '未上报'
+  return formatDateTime(value)
+}
+
+const formatSchedulerAge = (seconds) => {
+  const total = Number(seconds || 0)
+  if (!Number.isFinite(total) || total <= 0) return '刚刚'
+  const mins = Math.floor(total / 60)
+  const secs = total % 60
+  if (mins > 0) return `${mins}分${secs}秒前`
+  return `${secs}秒前`
+}
+
+const fetchSchedulerHealth = async (silent = false) => {
+  if (!silent) {
+    schedulerHealthError.value = ''
+  }
+  try {
+    const res = await merchantApi.getSchedulerHealth({})
+    schedulerHealth.value = res.data?.data || null
+    schedulerHealthLoaded.value = true
+    schedulerHealthError.value = ''
+  } catch (err) {
+    if (!silent) {
+      schedulerHealthError.value = err.response?.data?.error || '读取调度器健康状态失败'
+    }
+    schedulerHealthLoaded.value = true
+  }
+}
+
+const startSchedulerHealthTimer = () => {
+  if (schedulerHealthTimer) return
+  schedulerHealthTimer = setInterval(() => {
+    if (!merchantId.value) return
+    fetchSchedulerHealth(true)
+  }, 30000)
+}
+
+const stopSchedulerHealthTimer = () => {
+  if (!schedulerHealthTimer) return
+  clearInterval(schedulerHealthTimer)
+  schedulerHealthTimer = null
+}
+
 const fetchMerchant = async () => {
   try {
     const res = await merchantApi.getMerchant(merchantId.value)
@@ -5787,6 +5927,8 @@ onMounted(async () => {
   console.log('Valid merchantId:', parsedMerchantId, 'loading data...')
   merchantId.value = parsedMerchantId
   await fetchMerchant()
+  await fetchSchedulerHealth()
+  startSchedulerHealthTimer()
   console.log('Merchant loaded:', merchant.value)
   const tomorrow = new Date()
   tomorrow.setDate(tomorrow.getDate() + 1)
@@ -6185,6 +6327,7 @@ onBeforeRouteLeave(() => {
 onUnmounted(() => {
   stopCountdownTimer()
   stopServiceSessionTimer()
+  stopSchedulerHealthTimer()
   stopContinueCallBlockedTimer()
   clearCountdownBoundaryState()
   serviceTabRefreshQueued.value = false
@@ -6199,6 +6342,7 @@ onUnmounted(() => {
 onActivated(() => {
   if (!merchantId.value) return
   fetchMerchant()
+  fetchSchedulerHealth(true)
   
   // 根据当前Tab刷新对应数据
   if (currentTab.value === 'verify') {
