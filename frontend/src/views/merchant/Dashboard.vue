@@ -112,11 +112,7 @@
     </div>
 
     <!-- 数据统计卡片 -->
-    <div v-if="visibleStatsCount > 0" class="px-4 pt-3 pb-3 grid gap-3" :class="{
-      'grid-cols-1': visibleStatsCount === 1,
-      'grid-cols-2': visibleStatsCount === 2,
-      'grid-cols-3': visibleStatsCount === 3
-    }">
+    <div v-if="visibleStatsCount > 0" class="px-4 pt-3 pb-3 grid gap-3" :class="visibleStatsGridClass">
       <button
         v-if="canDirectSaleManage && merchant.support_direct_sale && pendingDirectPurchases > 0"
         type="button"
@@ -136,6 +132,16 @@
         <div class="text-gray-600 text-sm mb-1">待确认预约</div>
         <div class="text-3xl font-bold" :class="appointmentSummaryCount > 0 ? 'text-orange-500' : 'text-gray-400'">{{ appointmentSummaryCount }}</div>
         <div class="text-gray-500 text-sm">人</div>
+      </button>
+      <button
+        v-if="showExceptionSummaryCard"
+        type="button"
+        class="bg-white rounded-xl p-4 text-left border border-red-100"
+        @click="selectTab('exception')"
+      >
+        <div class="text-gray-600 text-sm mb-1">待处理异常</div>
+        <div class="text-3xl font-bold" :class="exceptionSummaryCount > 0 ? 'text-red-500' : 'text-gray-400'">{{ exceptionSummaryCount }}</div>
+        <div class="text-gray-500 text-sm">单</div>
       </button>
       <button
         v-if="canVerify && todayVerifyCount > 0"
@@ -200,8 +206,8 @@
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-start justify-between gap-3">
           <div>
-            <div class="font-medium text-gray-800">排班发布与异常修复</div>
-            <div class="text-sm text-gray-500 mt-1">发布次日排班、标记请假，并查看受影响预约与保护性改签建议。</div>
+            <div class="font-medium text-gray-800">排班管理</div>
+            <div class="text-sm text-gray-500 mt-1">发布次日排班、标记请假，并查看受影响预约与排班影响处置建议。</div>
           </div>
           <button
             @click="publishNextDaySchedules"
@@ -287,6 +293,18 @@
         预约
       </button>
       <button
+        v-if="showExceptionTab"
+        @click="selectTab('exception')"
+        :class="[
+          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          currentTab === 'exception'
+            ? 'border-primary text-primary'
+            : 'border-transparent text-gray-500'
+        ]"
+      >
+        异常中心
+      </button>
+      <button
         v-if="showFinishTab"
         @click="selectTab('finish')"
         :class="[
@@ -355,10 +373,19 @@
       <Table :embedded="true" />
     </div>
 
-    <!-- 预约 -->
-    <div v-if="currentTab === 'appointment' && showAppointmentTab" class="px-4 py-4 space-y-4">
-      <div v-if="appointmentGroups.length > 0" class="space-y-4">
-        <div v-for="group in appointmentGroups" :key="group.key" class="space-y-4">
+    <!-- 预约 / 异常中心 -->
+    <div
+      v-if="((currentTab === 'appointment' && showAppointmentTab) || (currentTab === 'exception' && showExceptionTab))"
+      class="px-4 py-4 space-y-4"
+    >
+      <div
+        v-if="currentTab === 'exception'"
+        class="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700"
+      >
+        集中处理超时待处理、异常结案、履约争议、脏数据收口、补偿处理，以及改签/改派异常。
+      </div>
+      <div v-if="appointmentPanelGroups.length > 0" class="space-y-4">
+        <div v-for="group in appointmentPanelGroups" :key="group.key" class="space-y-4">
           <div v-if="group.title" class="px-1 text-sm font-medium text-gray-500">{{ group.title }}</div>
           <div v-for="appt in group.items" :key="appt.id" class="bg-white rounded-xl p-4 shadow-sm">
           <div class="flex justify-between items-start">
@@ -548,7 +575,7 @@
         </div>
       </div>
       <div v-else class="text-center py-12 text-gray-400">
-        暂无预约
+        {{ appointmentPanelEmptyText }}
       </div>
     </div>
 
@@ -1992,10 +2019,18 @@ const canTableView = computed(() => hasMerchantPermission('merchant.table.view')
 // 统计卡片显示个数
 const visibleStatsCount = computed(() => {
   let count = 0
-  if (canDirectSaleManage.value && merchant.value.support_direct_sale) count++
+  if (canDirectSaleManage.value && merchant.value.support_direct_sale && pendingDirectPurchases.value > 0) count++
   if (showAppointmentSummaryCard.value) count++
-  if (canVerify.value) count++
+  if (showExceptionSummaryCard.value) count++
+  if (canVerify.value && todayVerifyCount.value > 0) count++
   return count
+})
+
+const visibleStatsGridClass = computed(() => {
+  if (visibleStatsCount.value >= 4) return 'grid-cols-2'
+  if (visibleStatsCount.value === 3) return 'grid-cols-3'
+  if (visibleStatsCount.value === 2) return 'grid-cols-2'
+  return 'grid-cols-1'
 })
 
 const schedulerHealthItems = computed(() => Array.isArray(schedulerHealth.value?.items) ? schedulerHealth.value.items : [])
@@ -2039,6 +2074,14 @@ const showAppointmentTab = computed(() => {
 
 const showAppointmentSummaryCard = computed(() => {
   return showAppointmentTab.value && appointmentSummaryCount.value > 0
+})
+
+const showExceptionTab = computed(() => {
+  return showAppointmentTab.value
+})
+
+const showExceptionSummaryCard = computed(() => {
+  return showExceptionTab.value && exceptionSummaryCount.value > 0
 })
 
 const showFinishTab = computed(() => {
@@ -2450,6 +2493,9 @@ const getDefaultTab = () => {
   if (showAppointmentTab.value) {
     return 'appointment'
   }
+  if (showExceptionTab.value) {
+    return 'exception'
+  }
   if (showVerifyTab.value) {
     return 'verify'
   } else if (showFinishTab.value) {
@@ -2469,6 +2515,7 @@ const getDefaultTab = () => {
 
 const getFirstVisibleTab = () => {
   if (showAppointmentTab.value) return 'appointment'
+  if (showExceptionTab.value) return 'exception'
   if (showVerifyTab.value) return 'verify'
   if (showFinishTab.value) return 'finish'
   if (showNoticeTab.value) return 'notice'
@@ -2736,46 +2783,103 @@ const assignedAppointments = computed(() => {
   if (!currentTechnicianId) return []
   return (appointments.value || []).filter(a => Number(a?.technician_id) === Number(currentTechnicianId))
 })
-const appointmentGroups = computed(() => {
+const buildExceptionGroups = (items, scopeKey = '', scopeTitle = '') => {
+  const source = Array.isArray(items) ? items : []
+  const groups = []
+  const consumed = new Set()
+
+  const pushGroup = (key, title, predicate) => {
+    const bucket = []
+    for (const appt of source) {
+      const id = Number(appt?.id || 0)
+      if (id > 0 && consumed.has(id)) continue
+      if (!predicate(appt)) continue
+      bucket.push(appt)
+      if (id > 0) consumed.add(id)
+    }
+    if (bucket.length === 0) return
+    groups.push({
+      key: scopeKey ? `${scopeKey}-${key}` : key,
+      title: scopeTitle ? `${scopeTitle} / ${title}` : title,
+      items: bucket
+    })
+  }
+
+  pushGroup('data-cleanup', '脏数据收口', appt => isAppointmentDataCleanup(appt))
+  pushGroup('timeout', '超时待处理', appt => isHistoricalArrivedAppointment(appt))
+  pushGroup('reschedule', '改签/改派异常', appt => hasAppointmentRescheduleIssue(appt))
+  pushGroup('dispute', '履约争议', appt => hasAppointmentDisputeIssue(appt))
+  pushGroup('compensation', '补偿处理', appt => needsAppointmentCompensationFollowUp(appt))
+  pushGroup('settled', '已结案', appt => isAppointmentSettled(appt))
+  pushGroup('other', '其他异常', () => true)
+
+  return groups
+}
+
+const appointmentFlowGroups = computed(() => {
   const list = appointments.value || []
   if (!isTechnicianAuth()) {
-    const exceptions = list.filter(a => isCrossDayUnfinishedAppointment(a))
-    const active = list.filter(a => !isCrossDayUnfinishedAppointment(a) && !['completed', 'no_show', 'failed'].includes(a?.status))
-    const settled = list.filter(a => ['completed', 'no_show', 'failed'].includes(a?.status))
+    const normalAppointments = list.filter(a => !isExceptionAppointment(a))
+    const active = normalAppointments.filter(a => !isAppointmentSettled(a))
+    const settled = normalAppointments.filter(a => isAppointmentSettled(a))
     const groups = []
-    if (active.length > 0) groups.push({ key: 'active', title: '进行中', items: active })
-    if (exceptions.length > 0) groups.push({ key: 'exceptions', title: '异常待结案', items: exceptions })
+    if (active.length > 0) groups.push({ key: 'active', title: '待服务', items: active })
     if (settled.length > 0) groups.push({ key: 'settled', title: '已结束', items: settled })
     return groups
   }
 
+  const unassigned = unassignedAppointments.value.filter(a => !isExceptionAppointment(a))
+  const mine = assignedAppointments.value.filter(a => !isExceptionAppointment(a))
+  const myActive = mine.filter(a => !isAppointmentSettled(a))
+  const mySettled = mine.filter(a => isAppointmentSettled(a))
   const groups = []
-  const myExceptions = assignedAppointments.value.filter(a => isCrossDayUnfinishedAppointment(a))
-  const myActive = assignedAppointments.value.filter(a => !isCrossDayUnfinishedAppointment(a) && !['completed', 'no_show', 'failed'].includes(a?.status))
-  const mySettled = assignedAppointments.value.filter(a => ['completed', 'no_show', 'failed'].includes(a?.status))
-  if (unassignedAppointments.value.length > 0) {
-    groups.push({ key: 'unassigned', title: '待分配', items: unassignedAppointments.value })
+  if (unassigned.length > 0) {
+    groups.push({ key: 'unassigned', title: '待分配', items: unassigned })
   }
   if (myActive.length > 0) {
     groups.push({
       key: 'assigned',
-      title: unassignedAppointments.value.length > 0 ? '我的预约' : '',
+      title: unassigned.length > 0 ? '我的预约' : '',
       items: myActive
     })
-  }
-  if (myExceptions.length > 0) {
-    groups.push({ key: 'assigned-exceptions', title: '异常待结案', items: myExceptions })
   }
   if (mySettled.length > 0) {
     groups.push({ key: 'assigned-settled', title: '已结束', items: mySettled })
   }
   return groups
 })
+
+const exceptionGroups = computed(() => {
+  if (!isTechnicianAuth()) {
+    return buildExceptionGroups((appointments.value || []).filter(a => isExceptionAppointment(a)))
+  }
+
+  const groups = []
+  const unassigned = unassignedAppointments.value.filter(a => isExceptionAppointment(a))
+  const mine = assignedAppointments.value.filter(a => isExceptionAppointment(a))
+  groups.push(...buildExceptionGroups(unassigned, 'unassigned', '待分配异常'))
+  groups.push(...buildExceptionGroups(mine, 'assigned', '我的异常'))
+  return groups
+})
+
+const appointmentPanelGroups = computed(() => {
+  return currentTab.value === 'exception' ? exceptionGroups.value : appointmentFlowGroups.value
+})
+
+const appointmentPanelEmptyText = computed(() => {
+  return currentTab.value === 'exception' ? '暂无异常单' : '暂无预约'
+})
+
+const exceptionSummaryCount = computed(() => {
+  if (!showExceptionTab.value) return 0
+  return (appointments.value || []).filter(a => isExceptionAppointment(a) && !isAppointmentSettled(a)).length
+})
+
 const appointmentSummaryCount = computed(() => {
   if (!showAppointmentTab.value) return 0
   // 统计卡文案是“待确认预约”，这里只统计真正仍待商户确认的 pending，
   // 已 confirmed / arrived 的预约应继续留在列表里，但不应再占用顶部待确认数字。
-  return (appointments.value || []).filter(a => a?.status === 'pending').length
+  return (appointments.value || []).filter(a => !isExceptionAppointment(a) && a?.status === 'pending').length
 })
 const todayUsages = ref([])
 const todayStartUsages = ref([])
@@ -4877,6 +4981,26 @@ const getAppointmentDisplayWaitMessage = (appt) => String(appt?.display_wait_mes
 
 const isCrossDayUnfinishedAppointment = (appt) => getAppointmentDisplayWaitState(appt) === 'cross_day_unfinished'
 
+const getAppointmentNormalizedStatus = (appt) => {
+  const value = String(appt?.status || '').trim()
+  return value === 'finished' ? 'completed' : value
+}
+
+const isAppointmentSettled = (appt) => {
+  return ['completed', 'failed', 'no_show', 'canceled'].includes(getAppointmentNormalizedStatus(appt))
+}
+
+const getAppointmentDisruptionReason = (appt) => String(appt?.disruption_reason || '').trim()
+
+const getAppointmentLiabilityLevel = (appt) => String(appt?.liability_level || '').trim()
+
+const isAppointmentDataCleanup = (appt) => getAppointmentDisruptionReason(appt) === 'appointment_state_inconsistent'
+
+const hasAppointmentLiabilityIssue = (appt) => {
+  const value = getAppointmentLiabilityLevel(appt)
+  return !!value && value !== 'none'
+}
+
 const getAppointmentTimeMs = (appt) => {
   const raw = appt?.appointment_time
   if (!raw) return null
@@ -4898,6 +5022,48 @@ const isHistoricalArrivedAppointment = (appt) => {
   const appointmentTimeMs = getAppointmentTimeMs(appt)
   if (appointmentTimeMs === null) return false
   return !isSameCalendarDay(appointmentTimeMs, currentTime.value)
+}
+
+const hasAppointmentCompensationRecords = (appt) => {
+  return Array.isArray(appt?.compensations) && appt.compensations.length > 0
+}
+
+const hasAppointmentRescheduleIssue = (appt) => {
+  return !!getLatestPendingRescheduleRequest(appt)
+}
+
+const hasAppointmentForceMajeureIssue = (appt) => {
+  return !!getLatestForceMajeureReliefRequest(appt)
+}
+
+const hasAppointmentDisruptionFlag = (appt) => {
+  return !!getAppointmentDisruptionReason(appt) || hasAppointmentLiabilityIssue(appt)
+}
+
+const hasAppointmentDisputeIssue = (appt) => {
+  if (!appt) return false
+  if (hasAppointmentForceMajeureIssue(appt)) return true
+  if (hasAppointmentLiabilityIssue(appt) || hasAppointmentDisruptionFlag(appt)) {
+    return !isHistoricalArrivedAppointment(appt)
+  }
+  return false
+}
+
+const needsAppointmentCompensationFollowUp = (appt) => {
+  if (!appt || isAppointmentSettled(appt)) return false
+  if (hasAppointmentCompensationRecords(appt)) return true
+  return hasAppointmentDisruptionFlag(appt) && shouldShowAppointmentCompensation(appt)
+}
+
+const isExceptionAppointment = (appt) => {
+  if (!appt) return false
+  if (isHistoricalArrivedAppointment(appt)) return true
+  if (isAppointmentDataCleanup(appt)) return true
+  if (hasAppointmentRescheduleIssue(appt)) return true
+  if (hasAppointmentForceMajeureIssue(appt)) return true
+  if (hasAppointmentCompensationRecords(appt)) return true
+  if (hasAppointmentDisruptionFlag(appt)) return true
+  return false
 }
 
 const canOperateAppointment = (appt) => {
@@ -5768,14 +5934,14 @@ watch(currentTab, (tab) => {
   if (tab !== 'service') {
     stopServiceSessionTimer()
   }
-  // 倒计时：appointment/verify/service 需要每秒刷新 currentTime
-  if (tab === 'appointment' || tab === 'verify' || tab === 'service') {
+  // 倒计时：appointment/exception/verify/service 需要每秒刷新 currentTime
+  if (tab === 'appointment' || tab === 'exception' || tab === 'verify' || tab === 'service') {
     startCountdownTimer()
   } else {
     stopCountdownTimer()
   }
 
-  if (tab === 'appointment') {
+  if (tab === 'appointment' || tab === 'exception') {
     clearCountdownBoundaryState()
     fetchAppointments()
     return
@@ -5874,7 +6040,7 @@ onMounted(async () => {
   // 尝试从 localStorage 恢复上次选择的 tab
   try {
     const savedTab = localStorage.getItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY)
-    if (savedTab && ['queue', 'verify', 'appointment', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(savedTab)) {
+    if (savedTab && ['queue', 'verify', 'appointment', 'exception', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(savedTab)) {
       const normalizedSavedTab = savedTab === 'queue' ? 'appointment' : (savedTab === 'start' ? 'service' : savedTab)
       selectTab(normalizedSavedTab)
       console.log('从 localStorage 恢复 tab:', normalizedSavedTab)
@@ -5894,7 +6060,7 @@ onMounted(async () => {
   
   // 检查查询参数，自动切换到指定Tab（优先级高于 localStorage）
   const tabParam = route.query.tab
-  if (tabParam && ['queue', 'verify', 'appointment', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(tabParam)) {
+  if (tabParam && ['queue', 'verify', 'appointment', 'exception', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(tabParam)) {
     selectTab(tabParam === 'queue' ? 'appointment' : (tabParam === 'start' ? 'service' : tabParam))
   }
 
@@ -5944,10 +6110,11 @@ onMounted(async () => {
   if (!tabParam) {
     // 如果已经从 localStorage 恢复了 tab，并且该 tab 有权限显示，则保持不变
     const restoredTab = currentTab.value
-      if (restoredTab && ['verify', 'appointment', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(restoredTab)) {
+      if (restoredTab && ['verify', 'appointment', 'exception', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(restoredTab)) {
         // 检查恢复的 tab 是否有权限显示
       const canShowRestoredTab = 
         (restoredTab === 'appointment' && showAppointmentTab.value) ||
+        (restoredTab === 'exception' && showExceptionTab.value) ||
         (restoredTab === 'verify' && showVerifyTab.value) ||
         (restoredTab === 'finish' && showFinishTab.value) ||
         (restoredTab === 'notice' && showNoticeTab.value) ||
@@ -5984,6 +6151,7 @@ onMounted(async () => {
       const tabVisibleMap = {
       verify: showVerifyTab.value,
       appointment: showAppointmentTab.value,
+      exception: showExceptionTab.value,
       finish: showFinishTab.value,
       notice: showNoticeTab.value,
       cards: showCardsTab.value,
@@ -6009,7 +6177,7 @@ onMounted(async () => {
   await fetchQueueCallingStatus()
   
   // 根据最终的 currentTab 加载对应的数据
-  if (currentTab.value === 'appointment') {
+  if (currentTab.value === 'appointment' || currentTab.value === 'exception') {
     fetchAppointments()
     startCountdownTimer()
   } else if (currentTab.value === 'verify') {
