@@ -11,10 +11,12 @@ func TestDecorateAppointmentDisplayMarksCrossDayUnfinished(t *testing.T) {
 	appointmentTime := time.Date(2026, 3, 19, 10, 45, 0, 0, loc)
 	now := time.Date(2026, 3, 25, 9, 0, 0, 0, loc)
 	sessionID := uint(12)
+	arrivedAt := time.Date(2026, 3, 19, 10, 37, 0, 0, loc)
 
 	appt := models.Appointment{
 		Status:               "arrived",
 		AppointmentTime:      &appointmentTime,
+		ArrivedAt:            &arrivedAt,
 		ServiceSessionID:     &sessionID,
 		PredictedWaitMinutes: 46,
 	}
@@ -29,6 +31,9 @@ func TestDecorateAppointmentDisplayMarksCrossDayUnfinished(t *testing.T) {
 	}
 	if appt.DisplayWaitMessage == "" {
 		t.Fatalf("want non-empty display_wait_message")
+	}
+	if appt.DisruptionReason != "service_unclosed_cross_day" {
+		t.Fatalf("want disruption_reason=service_unclosed_cross_day, got %q", appt.DisruptionReason)
 	}
 }
 

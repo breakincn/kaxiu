@@ -4,6 +4,7 @@ import (
 	"kabao/appointmentliability"
 	"kabao/config"
 	"kabao/models"
+	"kabao/sessionflow"
 	"log"
 	"math"
 	"strconv"
@@ -143,7 +144,7 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 		return nil, nil
 	}
 	rows, err := tx.Table("appointments").
-		Select("id, card_id, merchant_id, user_id, project_id, technician_id, appointment_time, status, predicted_wait_minutes, failed_at, failed_reason, created_at").
+		Select("id, card_id, merchant_id, user_id, booking_root_id, project_id, technician_id, appointment_time, status, predicted_wait_minutes, arrived_at, actual_arrived_at, actual_start_at, usage_id, service_session_id, appointment_settlement_id, settlement_status_snapshot, resolution_note, failed_at, failed_reason, created_at").
 		Where("id = ?", appointmentID).
 		Limit(1).
 		Rows()
@@ -156,28 +157,47 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 	}
 
 	var (
-		appt               models.Appointment
-		projectIDRaw       interface{}
-		technicianIDRaw    interface{}
-		appointmentTimeRaw interface{}
-		failedAtRaw        interface{}
-		createdAtRaw       interface{}
+		appt                       models.Appointment
+		bookingRootIDRaw           interface{}
+		projectIDRaw               interface{}
+		technicianIDRaw            interface{}
+		appointmentTimeRaw         interface{}
+		arrivedAtRaw               interface{}
+		actualArrivedAtRaw         interface{}
+		actualStartAtRaw           interface{}
+		usageIDRaw                 interface{}
+		serviceSessionIDRaw        interface{}
+		appointmentSettlementIDRaw interface{}
+		failedAtRaw                interface{}
+		createdAtRaw               interface{}
 	)
 	if err := rows.Scan(
 		&appt.ID,
 		&appt.CardID,
 		&appt.MerchantID,
 		&appt.UserID,
+		&bookingRootIDRaw,
 		&projectIDRaw,
 		&technicianIDRaw,
 		&appointmentTimeRaw,
 		&appt.Status,
 		&appt.PredictedWaitMinutes,
+		&arrivedAtRaw,
+		&actualArrivedAtRaw,
+		&actualStartAtRaw,
+		&usageIDRaw,
+		&serviceSessionIDRaw,
+		&appointmentSettlementIDRaw,
+		&appt.SettlementStatusSnapshot,
+		&appt.ResolutionNote,
 		&failedAtRaw,
 		&appt.FailedReason,
 		&createdAtRaw,
 	); err != nil {
 		return nil, err
+	}
+	if v, ok := schedulerValueToUint(bookingRootIDRaw); ok {
+		appt.BookingRootID = &v
 	}
 	if v, ok := schedulerValueToUint(projectIDRaw); ok {
 		appt.ProjectID = &v
@@ -188,6 +208,24 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 	if v, ok := parseSchedulerDBTimeValue(appointmentTimeRaw); ok {
 		appt.AppointmentTime = v
 	}
+	if v, ok := parseSchedulerDBTimeValue(arrivedAtRaw); ok {
+		appt.ArrivedAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(actualArrivedAtRaw); ok {
+		appt.ActualArrivedAt = v
+	}
+	if v, ok := parseSchedulerDBTimeValue(actualStartAtRaw); ok {
+		appt.ActualStartAt = v
+	}
+	if v, ok := schedulerValueToUint(usageIDRaw); ok {
+		appt.UsageID = &v
+	}
+	if v, ok := schedulerValueToUint(serviceSessionIDRaw); ok {
+		appt.ServiceSessionID = &v
+	}
+	if v, ok := schedulerValueToUint(appointmentSettlementIDRaw); ok {
+		appt.AppointmentSettlementID = &v
+	}
 	if v, ok := parseSchedulerDBTimeValue(failedAtRaw); ok {
 		appt.FailedAt = v
 	}
@@ -195,6 +233,158 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 		appt.CreatedAt = v
 	}
 	return &appt, nil
+}
+
+func sameSchedulerCalendarDay(left, right time.Time) bool {
+	return left.Year() == right.Year() && left.Month() == right.Month() && left.Day() == right.Day()
+}
+
+func schedulerAppointmentHasArrivalEvidence(appt *models.Appointment) bool {
+	if appt == nil {
+		return false
+	}
+	if appt.ActualArrivedAt != nil || appt.ArrivedAt != nil {
+		return true
+	}
+	if appt.UsageID != nil && *appt.UsageID > 0 {
+		return true
+	}
+	if appt.ServiceSessionID != nil && *appt.ServiceSessionID > 0 {
+		return true
+	}
+	return false
+}
+
+func schedulerAppointmentIsCrossDayUnstarted(appt *models.Appointment, now time.Time) bool {
+	if appt == nil || appt.AppointmentTime == nil {
+		return false
+	}
+	if strings.TrimSpace(appt.Status) != "arrived" || appt.ActualStartAt != nil {
+		return false
+	}
+	return !sameSchedulerCalendarDay(appt.AppointmentTime.In(time.Local), now.In(time.Local))
+}
+
+func appendSchedulerResolutionNote(left, right string) string {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if left == "" {
+		return right
+	}
+	if right == "" {
+		return left
+	}
+	return left + "\n" + right
+}
+
+func ensureSchedulerAppointmentSettlement(tx *gorm.DB, appt *models.Appointment, latestReason string) error {
+	if tx == nil || appt == nil || appt.ID == 0 {
+		return nil
+	}
+	if appt.AppointmentSettlementID != nil && *appt.AppointmentSettlementID > 0 {
+		return nil
+	}
+	settlement := models.AppointmentSettlement{
+		AppointmentID:            appt.ID,
+		BookingRootID:            appt.BookingRootID,
+		MerchantID:               appt.MerchantID,
+		UserID:                   appt.UserID,
+		CardID:                   appt.CardID,
+		ProjectID:                appt.ProjectID,
+		Status:                   "pending",
+		AssetMode:                "deduct",
+		SettlementStatusSnapshot: "pending",
+		LatestReason:             strings.TrimSpace(latestReason),
+	}
+	if err := tx.Create(&settlement).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&models.Appointment{}).Where("id = ?", appt.ID).Updates(map[string]interface{}{
+		"appointment_settlement_id":  settlement.ID,
+		"settlement_status_snapshot": settlement.SettlementStatusSnapshot,
+	}).Error; err != nil {
+		return err
+	}
+	appt.AppointmentSettlementID = &settlement.ID
+	appt.SettlementStatusSnapshot = settlement.SettlementStatusSnapshot
+	return nil
+}
+
+func closeCrossDayUnfinishedAppointment(tx *gorm.DB, s *models.ServiceSession, appt *models.Appointment, merchant *models.Merchant, now time.Time) error {
+	if tx == nil || s == nil || appt == nil || merchant == nil {
+		return nil
+	}
+	if err := ensureSchedulerAppointmentSettlement(tx, appt, "service_unclosed_cross_day"); err != nil {
+		return err
+	}
+
+	usageID := s.InitialUsageID
+	if usageID == 0 && appt.UsageID != nil {
+		usageID = *appt.UsageID
+	}
+	if usageID > 0 {
+		if err := sessionflow.FailUsageAndRefund(tx, usageID, merchant, now, false); err != nil {
+			return err
+		}
+	}
+
+	var actualArrivedAt *time.Time
+	if appt.ActualArrivedAt != nil {
+		tm := *appt.ActualArrivedAt
+		actualArrivedAt = &tm
+	} else if appt.ArrivedAt != nil {
+		tm := *appt.ArrivedAt
+		actualArrivedAt = &tm
+	}
+
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_selecting", "room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending"})).
+		Updates(map[string]interface{}{
+			"status":                              models.ApplyStatusPrefix(s.Status, "canceled"),
+			"finished_at":                         &now,
+			"technician_id":                       nil,
+			"room_id":                             nil,
+			"room_locked_at":                      nil,
+			"room_select_deadline_at":             nil,
+			"start_confirmed_at":                  nil,
+			"scheduled_start_at":                  nil,
+			"started_at":                          nil,
+			"scheduled_finish_at":                 nil,
+			"predicted_ready_at":                  nil,
+			"predicted_appointment_delay_minutes": 0,
+		}).Error; err != nil {
+		return err
+	}
+
+	resolutionNote := appendSchedulerResolutionNote(appt.ResolutionNote, "系统自动结案：跨日未开始服务")
+	appointmentUpdates := map[string]interface{}{
+		"status":                             "failed",
+		"failed_at":                          &now,
+		"failed_reason":                      "service_unclosed_cross_day",
+		"merchant_breach_pending":            false,
+		"breach_decision_at":                 &now,
+		"disruption_status":                  "closed",
+		"disruption_reason":                  "service_unclosed_cross_day",
+		"liability_level":                    "merchant",
+		"salary_settlement_reference_status": "refund",
+		"closed_reason":                      "auto_exception_closed",
+		"closed_by_type":                     "system",
+		"settlement_status_snapshot":         "pending",
+		"resolution_note":                    resolutionNote,
+	}
+	if actualArrivedAt != nil {
+		appointmentUpdates["actual_arrived_at"] = actualArrivedAt
+	}
+	settlementUpdates := map[string]interface{}{
+		"status":                             "pending",
+		"settlement_status_snapshot":         "pending",
+		"merchant_breach_pending":            false,
+		"breach_decision_at":                 &now,
+		"liability_level":                    "merchant",
+		"salary_settlement_reference_status": "refund",
+		"latest_reason":                      "service_unclosed_cross_day",
+	}
+	return syncAppointmentLiabilitySnapshot(tx, appt.ID, appointmentUpdates, settlementUpdates)
 }
 
 func hardReservedAppointmentFinishAt(start time.Time, durationMinutes int) time.Time {

@@ -1040,6 +1040,19 @@ func handleAppointmentWaiting(tx *gorm.DB, s *models.ServiceSession, now time.Ti
 		return nil
 	}
 	if s.SourceType == "appointment" && s.SourceID != nil {
+		appt, err := loadSchedulerAppointmentByID(tx, *s.SourceID)
+		if err != nil {
+			return err
+		}
+		if schedulerAppointmentIsCrossDayUnstarted(appt, now) && schedulerAppointmentHasArrivalEvidence(appt) {
+			var merchant models.Merchant
+			if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
+				return err
+			}
+			return closeCrossDayUnfinishedAppointment(tx, s, appt, &merchant, now)
+		}
+	}
+	if s.SourceType == "appointment" && s.SourceID != nil {
 		if err := syncAppointmentLiabilitySnapshot(tx, *s.SourceID, map[string]interface{}{
 			"merchant_breach_pending": true,
 			"disruption_status":       "pending",

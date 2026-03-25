@@ -87,6 +87,22 @@ func appointmentIsCrossDayUnfinished(appt *models.Appointment, now time.Time) bo
 	return !sameCalendarDay(appt.AppointmentTime.In(loc), now.In(loc))
 }
 
+func appointmentHasArrivalEvidence(appt *models.Appointment) bool {
+	if appt == nil {
+		return false
+	}
+	if appt.ActualArrivedAt != nil || appt.ArrivedAt != nil {
+		return true
+	}
+	if appt.UsageID != nil && *appt.UsageID > 0 {
+		return true
+	}
+	if appt.ServiceSessionID != nil && *appt.ServiceSessionID > 0 {
+		return true
+	}
+	return false
+}
+
 func decorateAppointmentDisplay(appt *models.Appointment, now time.Time) {
 	if appt == nil {
 		return
@@ -108,14 +124,14 @@ func decorateAppointmentDisplay(appt *models.Appointment, now time.Time) {
 
 	if appointmentIsCrossDayUnfinished(appt, now) {
 		appt.DisplayWaitState = appointmentDisplayWaitStateCrossDayUnclosed
-		if appt.ActualArrivedAt != nil {
+		if appointmentHasArrivalEvidence(appt) {
 			if strings.TrimSpace(appt.LiabilityLevel) == "" {
 				appt.LiabilityLevel = "merchant"
 			}
 			if strings.TrimSpace(appt.DisruptionReason) == "" {
 				appt.DisruptionReason = "service_unclosed_cross_day"
 			}
-			appt.DisplayWaitMessage = "客户已到店，但预约当日未开始服务且未完成系统收敛，当前按商户履约异常处理。请直接补偿或异常结案"
+			appt.DisplayWaitMessage = "该预约已过原预约日，客户已有到店记录，但服务未开始且系统未自动结案，当前按商户履约异常处理"
 			return
 		}
 		if strings.TrimSpace(appt.LiabilityLevel) == "" {
@@ -124,7 +140,7 @@ func decorateAppointmentDisplay(appt *models.Appointment, now time.Time) {
 		if strings.TrimSpace(appt.DisruptionReason) == "" {
 			appt.DisruptionReason = "appointment_state_inconsistent"
 		}
-		appt.DisplayWaitMessage = "该预约状态与履约事实不一致，当前按历史异常数据处理。请核对现场记录后直接异常结案"
+		appt.DisplayWaitMessage = "该预约已过原预约日，但缺少有效到店或开单记录，当前状态与履约事实不一致，请核对现场记录后异常结案"
 		return
 	}
 

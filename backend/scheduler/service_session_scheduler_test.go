@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"database/sql"
 	"testing"
 	"time"
 
@@ -308,6 +309,179 @@ func TestAdvanceOne_AppointmentWaitingWithoutTechnicianFallsBackToStaffSelecting
 	}
 	if !gotAppointment.MerchantBreachPending || gotAppointment.LiabilityLevel != "pending_merchant" {
 		t.Fatalf("want merchant breach pending kept after fallback, got %+v", gotAppointment)
+	}
+}
+
+func TestAdvanceOne_AppointmentWaitingCrossDayUnfinishedAutoCloses(t *testing.T) {
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	db := setupSchedulerTestDB(t)
+	config.DB = db
+
+	loc := time.Local
+	now := time.Date(2026, 3, 25, 9, 0, 0, 0, loc)
+	appointmentTime := time.Date(2026, 3, 19, 10, 45, 0, 0, loc)
+	arrivedAt := time.Date(2026, 3, 19, 10, 37, 29, 0, loc)
+
+	merchant := models.Merchant{
+		Name:                       "m-cross-day-close",
+		Phone:                      "18800000144",
+		Password:                   "pwd",
+		SupportCustomerService:     true,
+		SupportCustomerServiceMode: true,
+	}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	technician := models.Technician{MerchantID: merchant.ID, Name: "tech-cross-day", Phone: "18800000145"}
+	if err := db.Create(&technician).Error; err != nil {
+		t.Fatalf("create technician failed: %v", err)
+	}
+	card := models.Card{MerchantID: merchant.ID, UserID: 1, CardNo: "00013", CardType: "test", TotalTimes: 10, RemainTimes: 8, UsedTimes: 2}
+	if err := db.Create(&card).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+	projectID := uint(1)
+	usage := models.Usage{CardID: card.ID, MerchantID: merchant.ID, ProjectID: &projectID, UsedTimes: 1, Status: "in_progress", UsedAt: &arrivedAt}
+	if err := db.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+	appointment := models.Appointment{
+		MerchantID:           merchant.ID,
+		UserID:               card.UserID,
+		CardID:               card.ID,
+		Status:               "arrived",
+		AppointmentTime:      &appointmentTime,
+		ArrivedAt:            &arrivedAt,
+		UsageID:              &usage.ID,
+		PredictedWaitMinutes: 46,
+	}
+	if err := db.Create(&appointment).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	session := models.ServiceSession{
+		MerchantID:                       merchant.ID,
+		UserID:                           card.UserID,
+		CardID:                           card.ID,
+		ProjectID:                        usage.ProjectID,
+		InitialUsageID:                   usage.ID,
+		SessionMode:                      models.SessionModeCustomerService,
+		SourceType:                       "appointment",
+		SourceID:                         &appointment.ID,
+		TechnicianID:                     &technician.ID,
+		LastTechnicianID:                 &technician.ID,
+		Status:                           "cs_appointment_waiting",
+		PredictedAppointmentDelayMinutes: 46,
+		CreatedAt:                        &arrivedAt,
+		UpdatedAt:                        &arrivedAt,
+	}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+	if err := db.Model(&models.Appointment{}).Where("id = ?", appointment.ID).Updates(map[string]interface{}{
+		"service_session_id": session.ID,
+	}).Error; err != nil {
+		t.Fatalf("bind session failed: %v", err)
+	}
+
+	if err := advanceOne(db, &session, now); err != nil {
+		t.Fatalf("advanceOne failed: %v", err)
+	}
+
+	var gotSession struct {
+		Status                           string
+		TechnicianID                     *uint
+		FinishedAt                       sql.NullString
+		PredictedAppointmentDelayMinutes int
+	}
+	if err := db.Table("service_sessions").Select("status", "technician_id", "finished_at", "predicted_appointment_delay_minutes").Where("id = ?", session.ID).Scan(&gotSession).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if gotSession.Status != "cs_canceled" {
+		t.Fatalf("want cs_canceled, got %s", gotSession.Status)
+	}
+	if gotSession.TechnicianID != nil {
+		t.Fatalf("want technician cleared, got %v", *gotSession.TechnicianID)
+	}
+	if !gotSession.FinishedAt.Valid || gotSession.FinishedAt.String == "" {
+		t.Fatalf("want session finished_at filled")
+	}
+	if gotSession.PredictedAppointmentDelayMinutes != 0 {
+		t.Fatalf("want predicted delay reset to 0, got %d", gotSession.PredictedAppointmentDelayMinutes)
+	}
+
+	var gotUsage struct {
+		Status     string
+		FinishedAt sql.NullString
+	}
+	if err := db.Table("usages").Select("status", "finished_at").Where("id = ?", usage.ID).Scan(&gotUsage).Error; err != nil {
+		t.Fatalf("reload usage failed: %v", err)
+	}
+	if gotUsage.Status != "failed" {
+		t.Fatalf("want usage failed, got %s", gotUsage.Status)
+	}
+	if !gotUsage.FinishedAt.Valid || gotUsage.FinishedAt.String == "" {
+		t.Fatalf("want usage finished_at filled")
+	}
+
+	var gotCard struct {
+		RemainTimes int64
+		UsedTimes   int64
+	}
+	if err := db.Table("cards").Select("remain_times", "used_times").Where("id = ?", card.ID).Scan(&gotCard).Error; err != nil {
+		t.Fatalf("reload card failed: %v", err)
+	}
+	if gotCard.RemainTimes != 9 || gotCard.UsedTimes != 1 {
+		t.Fatalf("want refunded card counters, got %+v", gotCard)
+	}
+
+	var gotAppointment struct {
+		Status                          string
+		FailedReason                    string
+		LiabilityLevel                  string
+		DisruptionReason                string
+		SalarySettlementReferenceStatus string
+		ActualArrivedAt                 sql.NullString
+		AppointmentSettlementID         *uint
+		SettlementStatusSnapshot        string
+	}
+	if err := db.Table("appointments").Select("status", "failed_reason", "liability_level", "disruption_reason", "salary_settlement_reference_status", "actual_arrived_at", "appointment_settlement_id", "settlement_status_snapshot").Where("id = ?", appointment.ID).Scan(&gotAppointment).Error; err != nil {
+		t.Fatalf("reload appointment failed: %v", err)
+	}
+	if gotAppointment.Status != "failed" || gotAppointment.FailedReason != "service_unclosed_cross_day" {
+		t.Fatalf("want appointment failed with cross_day reason, got %+v", gotAppointment)
+	}
+	if gotAppointment.LiabilityLevel != "merchant" || gotAppointment.DisruptionReason != "service_unclosed_cross_day" {
+		t.Fatalf("want merchant liability snapshot, got %+v", gotAppointment)
+	}
+	if gotAppointment.SalarySettlementReferenceStatus != "refund" {
+		t.Fatalf("want salary settlement refund, got %s", gotAppointment.SalarySettlementReferenceStatus)
+	}
+	if !gotAppointment.ActualArrivedAt.Valid || gotAppointment.ActualArrivedAt.String == "" {
+		t.Fatalf("want actual_arrived_at backfilled")
+	}
+	if gotAppointment.AppointmentSettlementID == nil || *gotAppointment.AppointmentSettlementID == 0 {
+		t.Fatalf("want appointment settlement created, got %+v", gotAppointment.AppointmentSettlementID)
+	}
+	if gotAppointment.SettlementStatusSnapshot != "pending" {
+		t.Fatalf("want settlement snapshot pending, got %s", gotAppointment.SettlementStatusSnapshot)
+	}
+
+	var gotSettlement struct {
+		Status                          string
+		LiabilityLevel                  string
+		LatestReason                    string
+		SalarySettlementReferenceStatus string
+	}
+	if err := db.Table("appointment_settlements").Select("status", "liability_level", "latest_reason", "salary_settlement_reference_status").Where("appointment_id = ?", appointment.ID).Scan(&gotSettlement).Error; err != nil {
+		t.Fatalf("reload settlement failed: %v", err)
+	}
+	if gotSettlement.Status != "pending" || gotSettlement.LiabilityLevel != "merchant" || gotSettlement.LatestReason != "service_unclosed_cross_day" {
+		t.Fatalf("want pending merchant settlement, got %+v", gotSettlement)
+	}
+	if gotSettlement.SalarySettlementReferenceStatus != "refund" {
+		t.Fatalf("want settlement salary reference refund, got %s", gotSettlement.SalarySettlementReferenceStatus)
 	}
 }
 

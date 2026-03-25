@@ -2231,34 +2231,42 @@ func CloseAppointmentException(c *gin.Context) {
 				return err
 			}
 		}
+		if _, err := initializeAppointmentSettlement(tx, &current, "service_unclosed_cross_day"); err != nil {
+			return err
+		}
 
 		resolutionNote := appendAppointmentResolutionNote(current.ResolutionNote, "跨日未闭环异常结案："+reason)
 		updates := map[string]interface{}{
-			"status":                     "failed",
-			"failed_at":                  &now,
-			"failed_reason":              "service_unclosed_cross_day",
-			"disruption_status":          "closed",
-			"disruption_reason":          "service_unclosed_cross_day",
-			"liability_level":            "merchant",
-			"merchant_breach_pending":    false,
-			"breach_decision_at":         &now,
-			"closed_reason":              "exception_closed",
-			"closed_by_type":             actorType,
-			"closed_by_id":               actorID,
-			"resolution_note":            resolutionNote,
-			"settlement_status_snapshot": "pending",
+			"status":                             "failed",
+			"failed_at":                          &now,
+			"failed_reason":                      "service_unclosed_cross_day",
+			"disruption_status":                  "closed",
+			"disruption_reason":                  "service_unclosed_cross_day",
+			"liability_level":                    "merchant",
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &now,
+			"salary_settlement_reference_status": "refund",
+			"closed_reason":                      "exception_closed",
+			"closed_by_type":                     actorType,
+			"closed_by_id":                       actorID,
+			"resolution_note":                    resolutionNote,
+			"settlement_status_snapshot":         "pending",
+		}
+		if current.ActualArrivedAt == nil && current.ArrivedAt != nil {
+			updates["actual_arrived_at"] = current.ArrivedAt
 		}
 		if err := tx.Model(&models.Appointment{}).Where("id = ? AND status = ?", current.ID, current.Status).Updates(updates).Error; err != nil {
 			return err
 		}
 		if current.AppointmentSettlementID != nil && *current.AppointmentSettlementID > 0 {
 			if err := tx.Model(&models.AppointmentSettlement{}).Where("id = ?", *current.AppointmentSettlementID).Updates(map[string]interface{}{
-				"status":                     "pending",
-				"settlement_status_snapshot": "pending",
-				"merchant_breach_pending":    false,
-				"breach_decision_at":         &now,
-				"liability_level":            "merchant",
-				"latest_reason":              "service_unclosed_cross_day",
+				"status":                             "pending",
+				"settlement_status_snapshot":         "pending",
+				"merchant_breach_pending":            false,
+				"breach_decision_at":                 &now,
+				"liability_level":                    "merchant",
+				"salary_settlement_reference_status": "refund",
+				"latest_reason":                      "service_unclosed_cross_day",
 			}).Error; err != nil {
 				return err
 			}
@@ -2269,11 +2277,15 @@ func CloseAppointmentException(c *gin.Context) {
 		current.DisruptionStatus = "closed"
 		current.DisruptionReason = "service_unclosed_cross_day"
 		current.LiabilityLevel = "merchant"
+		current.SalarySettlementReferenceStatus = "refund"
 		current.ClosedReason = "exception_closed"
 		current.ClosedByType = actorType
 		current.ClosedByID = actorID
 		current.ResolutionNote = resolutionNote
 		current.SettlementStatusSnapshot = "pending"
+		if current.ActualArrivedAt == nil && current.ArrivedAt != nil {
+			current.ActualArrivedAt = current.ArrivedAt
+		}
 		appointment = &current
 		return nil
 	})
