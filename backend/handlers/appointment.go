@@ -1490,6 +1490,76 @@ func autoCloseCrossDayUnfinishedAppointment(tx *gorm.DB, appt *models.Appointmen
 	return nil
 }
 
+type CrossDayUnfinishedAppointmentRepairResult struct {
+	AppointmentID uint   `json:"appointment_id"`
+	Status        string `json:"status"`
+	Reason        string `json:"reason"`
+}
+
+func RepairCrossDayUnfinishedAppointments(db *gorm.DB, now time.Time, limit int, dryRun bool, resolutionReason string) ([]CrossDayUnfinishedAppointmentRepairResult, error) {
+	if db == nil {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	if strings.TrimSpace(resolutionReason) == "" {
+		resolutionReason = "系统批量巡检自动结案：跨日未开始服务"
+	}
+
+	loc := appointmentLocation()
+	cutoff := now.In(loc).Truncate(24 * time.Hour)
+	var candidateIDs []uint
+	if err := db.Model(&models.Appointment{}).
+		Select("id").
+		Where("status = ? AND appointment_time IS NOT NULL AND appointment_time < ? AND actual_start_at IS NULL", "arrived", cutoff).
+		Where("(actual_arrived_at IS NOT NULL OR arrived_at IS NOT NULL OR usage_id IS NOT NULL OR service_session_id IS NOT NULL)").
+		Order("appointment_time ASC").
+		Limit(limit).
+		Find(&candidateIDs).Error; err != nil {
+		return nil, err
+	}
+
+	results := make([]CrossDayUnfinishedAppointmentRepairResult, 0, len(candidateIDs))
+	for _, appointmentID := range candidateIDs {
+		apptPtr, err := loadAppointmentByID(db, appointmentID)
+		if err != nil {
+			return results, err
+		}
+		if apptPtr == nil {
+			continue
+		}
+		appt := *apptPtr
+		if !appointmentIsCrossDayUnfinished(&appt, now) || !appointmentHasArrivalEvidence(&appt) {
+			continue
+		}
+		if dryRun {
+			results = append(results, CrossDayUnfinishedAppointmentRepairResult{
+				AppointmentID: appt.ID,
+				Status:        "dry_run",
+				Reason:        "eligible_for_auto_close",
+			})
+			continue
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			return autoCloseCrossDayUnfinishedAppointment(tx, &appt, now, "system", nil, resolutionReason)
+		}); err != nil {
+			results = append(results, CrossDayUnfinishedAppointmentRepairResult{
+				AppointmentID: appt.ID,
+				Status:        "error",
+				Reason:        err.Error(),
+			})
+			continue
+		}
+		results = append(results, CrossDayUnfinishedAppointmentRepairResult{
+			AppointmentID: appt.ID,
+			Status:        "closed",
+			Reason:        "service_unclosed_cross_day",
+		})
+	}
+	return results, nil
+}
+
 func normalizeAppointmentForRead(appt *models.Appointment, now time.Time) error {
 	if appt == nil {
 		return nil
