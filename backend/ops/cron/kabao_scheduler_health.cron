@@ -1,0 +1,8 @@
+SHELL=/bin/zsh
+PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+
+# Every 2 minutes: run scheduler health check and notify enterprise WeCom on failure
+*/2 * * * * cd /Users/will/Projects/Go/kabao/backend && GOCACHE=/tmp/kabao-go-build-cache go run ./cmd/check_scheduler_health --stale-minutes=3 >> /tmp/kabao_scheduler_health.log 2>&1 || /Users/will/Projects/Go/kabao/backend/scripts/alert_scheduler_health.sh wecom >> /tmp/kabao_scheduler_health_alert.log 2>&1
+
+# Alternative Feishu version
+# */2 * * * * cd /Users/will/Projects/Go/kabao/backend && GOCACHE=/tmp/kabao-go-build-cache go run ./cmd/check_scheduler_health --stale-minutes=3 >> /tmp/kabao_scheduler_health.log 2>&1 || /Users/will/Projects/Go/kabao/backend/scripts/alert_scheduler_health.sh feishu >> /tmp/kabao_scheduler_health_alert.log 2>&1
