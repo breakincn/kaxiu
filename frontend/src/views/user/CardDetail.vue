@@ -614,9 +614,6 @@
                 class="py-2 px-3 rounded-lg font-medium transition-all text-sm"
               >
                 <div>{{ t.name }}</div>
-                <div v-if="t.availability_state === 'conditional'" class="text-[11px] opacity-80 mt-1">
-                  预计等待 {{ t.predicted_wait_minutes || 0 }} 分钟
-                </div>
               </button>
             </div>
             <div v-if="selectedUserRescheduleTechnicianText" class="mt-2 rounded-lg bg-primary-light text-primary border border-primary/10 px-3 py-2 text-sm">

@@ -1028,14 +1028,171 @@ func TestCheckInAppointmentCreatesSessionWithoutDeductingCardTimes(t *testing.T)
 		t.Fatalf("want usage in_progress, got %s", usage.Status)
 	}
 	var session struct {
+		Status     string `gorm:"column:status"`
 		SourceType string `gorm:"column:source_type"`
 		SourceID   *uint  `gorm:"column:source_id"`
 	}
-	if err := config.DB.Table("service_sessions").Select("source_type, source_id").Where("id = ?", *updated.ServiceSessionID).Take(&session).Error; err != nil {
+	if err := config.DB.Table("service_sessions").Select("status, source_type, source_id").Where("id = ?", *updated.ServiceSessionID).Take(&session).Error; err != nil {
 		t.Fatalf("load service session failed: %v", err)
 	}
 	if session.SourceType != serviceSessionSourceAppointment || session.SourceID == nil || *session.SourceID != appt.ID {
 		t.Fatalf("want appointment source session, got source_type=%s source_id=%+v", session.SourceType, session.SourceID)
+	}
+	if models.NormalizeSessionStatus(session.Status) != "start_pending" {
+		t.Fatalf("want appointment check-in enter execution path, got %s", session.Status)
+	}
+}
+
+func TestCheckInAppointmentKeepsExecutionPathAndMarksDelayPendingWhenTechnicianBusy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, card2 := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	now := time.Now().In(loc)
+	appointmentTime := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 0, 0, loc).Add(5 * time.Minute)
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	if err := config.DB.Model(&models.Appointment{}).Where("id = ?", appt.ID).Update("booking_root_id", appt.ID).Error; err != nil {
+		t.Fatalf("set booking_root_id failed: %v", err)
+	}
+	appt.BookingRootID = &appt.ID
+	if _, err := initializeAppointmentSettlement(config.DB, &appt, "test_seed"); err != nil {
+		t.Fatalf("initialize settlement failed: %v", err)
+	}
+
+	blockerUsedAt := now.Add(-10 * time.Minute)
+	blockerUsage := models.Usage{
+		CardID:             card2.ID,
+		MerchantID:         merchant.ID,
+		ProjectID:          &project.ID,
+		UsedTimes:          1,
+		UsedAt:             &blockerUsedAt,
+		VerifyCode:         "BLOCKER-CHECKIN",
+		VerifyCodeExpireAt: now.Add(30 * time.Minute).Unix(),
+		Status:             "in_progress",
+	}
+	if err := config.DB.Create(&blockerUsage).Error; err != nil {
+		t.Fatalf("create blocker usage failed: %v", err)
+	}
+	predictedReadyAt := now.Add(22 * time.Minute)
+	blockerSession := models.ServiceSession{
+		MerchantID:                       merchant.ID,
+		UserID:                           user.ID,
+		CardID:                           card2.ID,
+		ProjectID:                        &project.ID,
+		InitialUsageID:                   blockerUsage.ID,
+		VerifyCode:                       blockerUsage.VerifyCode,
+		SessionMode:                      models.ResolveSessionMode(&merchant),
+		SourceType:                       serviceSessionSourceWalkIn,
+		Status:                           models.WithCSPrefix("serving"),
+		TechnicianID:                     &tech.ID,
+		LastTechnicianID:                 &tech.ID,
+		DurationMinutes:                  project.Duration,
+		PredictedReadyAt:                 &predictedReadyAt,
+		ScheduledFinishAt:                &predictedReadyAt,
+		PredictedAppointmentDelayMinutes: 0,
+	}
+	if err := config.DB.Create(&blockerSession).Error; err != nil {
+		t.Fatalf("create blocker session failed: %v", err)
+	}
+
+	c, rec := newMerchantContext(http.MethodPost, "/merchant/appointments/"+strconv.Itoa(int(appt.ID))+"/check-in", merchant.ID)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(appt.ID))}}
+	CheckInAppointment(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			PredictedWaitMinutes int    `json:"predicted_wait_minutes"`
+			SessionWaitState     string `json:"session_wait_state"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode check-in response failed: %v", err)
+	}
+	if resp.Data.PredictedWaitMinutes <= 0 {
+		t.Fatalf("want positive predicted delay in response, got %+v", resp.Data)
+	}
+	if resp.Data.SessionWaitState != "start_pending" {
+		t.Fatalf("want execution-path session_wait_state, got %+v", resp.Data)
+	}
+
+	updated := mustLoadAppointmentForTest(t, appt.ID)
+	if updated.Status != "arrived" {
+		t.Fatalf("want appointment arrived, got %s", updated.Status)
+	}
+	if updated.PredictedWaitMinutes <= 0 {
+		t.Fatalf("want appointment predicted delay persisted, got %+v", updated)
+	}
+	if !updated.MerchantBreachPending {
+		t.Fatalf("want merchant_breach_pending=true, got %+v", updated)
+	}
+	if updated.LiabilityLevel != "pending_merchant" {
+		t.Fatalf("want pending_merchant liability, got %+v", updated)
+	}
+
+	var session struct {
+		Status                           string `gorm:"column:status"`
+		PredictedAppointmentDelayMinutes int    `gorm:"column:predicted_appointment_delay_minutes"`
+	}
+	if err := config.DB.Table("service_sessions").
+		Select("status, predicted_appointment_delay_minutes").
+		Where("id = ?", *updated.ServiceSessionID).
+		Take(&session).Error; err != nil {
+		t.Fatalf("load created service session failed: %v", err)
+	}
+	var predictedReadyAtText string
+	if err := config.DB.Table("service_sessions").
+		Select("predicted_ready_at").
+		Where("id = ?", *updated.ServiceSessionID).
+		Scan(&predictedReadyAtText).Error; err != nil {
+		t.Fatalf("load predicted_ready_at failed: %v", err)
+	}
+	if models.NormalizeSessionStatus(session.Status) != "start_pending" {
+		t.Fatalf("want start_pending instead of appointment_waiting, got %+v", session)
+	}
+	if session.PredictedAppointmentDelayMinutes <= 0 || strings.TrimSpace(predictedReadyAtText) == "" {
+		t.Fatalf("want predicted delay persisted on service session, got %+v predicted_ready_at=%q", session, predictedReadyAtText)
+	}
+
+	var settlement struct {
+		Status                   string `gorm:"column:status"`
+		LatestReason             string `gorm:"column:latest_reason"`
+		LiabilityLevel           string `gorm:"column:liability_level"`
+		MerchantBreachPending    bool   `gorm:"column:merchant_breach_pending"`
+		SettlementStatusSnapshot string `gorm:"column:settlement_status_snapshot"`
+	}
+	if err := config.DB.Table("appointment_settlements").
+		Select("status, latest_reason, liability_level, merchant_breach_pending, settlement_status_snapshot").
+		Where("id = ?", *updated.AppointmentSettlementID).
+		Take(&settlement).Error; err != nil {
+		t.Fatalf("load appointment settlement failed: %v", err)
+	}
+	if settlement.Status != "pending" || settlement.LatestReason != "merchant_delay_pending" {
+		t.Fatalf("want settlement pending merchant_delay_pending, got %+v", settlement)
+	}
+	if !settlement.MerchantBreachPending || settlement.LiabilityLevel != "pending_merchant" {
+		t.Fatalf("want pending merchant liability on settlement, got %+v", settlement)
 	}
 }
 

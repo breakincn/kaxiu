@@ -163,6 +163,51 @@ func TestEvaluateBookingTechnicianAvailabilityUsesStrictHardNoOverlap(t *testing
 	}
 }
 
+func TestEvaluateWalkInTechnicianAvailabilityRejectsReservationConflictImmediately(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	appointmentTime := appointmentFixtureTime(11, 0)
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+
+	walkInStart := appointmentTime.Add(-30 * time.Minute)
+	availability, err := evaluateWalkInTechnicianAvailability(config.DB, merchant, tech.ID, walkInStart, projectBookingOccupiedMinutes(project.Duration, project.ServiceGapMinutes))
+	if err != nil {
+		t.Fatalf("evaluate walk-in availability failed: %v", err)
+	}
+	if availability.State != appointmentAvailabilityUnavailable {
+		t.Fatalf("want unavailable, got %+v", availability)
+	}
+	if availability.DecisionMode != "strict_reservation_lock" {
+		t.Fatalf("want strict_reservation_lock, got %+v", availability)
+	}
+	if availability.NextAppointmentID == nil || *availability.NextAppointmentID != appt.ID {
+		t.Fatalf("want next appointment %d, got %+v", appt.ID, availability.NextAppointmentID)
+	}
+	if availability.PredictedWaitMinutes <= 0 {
+		t.Fatalf("want positive reserved delay, got %+v", availability)
+	}
+}
+
 func TestAvailableSlotsAndCreateRejectNonBookableProject(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

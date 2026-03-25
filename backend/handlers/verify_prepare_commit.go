@@ -301,11 +301,24 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 			Updates(map[string]interface{}{
 				"status":                 appointmentStatus,
 				"arrived_at":             &arrivedAt,
+				"actual_arrived_at":      &arrivedAt,
 				"usage_id":               usage.ID,
 				"service_session_id":     session.ID,
 				"predicted_wait_minutes": session.PredictedAppointmentDelayMinutes,
 			}).Error; err != nil {
 			return result, err
+		}
+		if session.PredictedAppointmentDelayMinutes > 0 {
+			loaded, err := loadAppointmentByID(tx, *session.SourceID)
+			if err != nil {
+				return result, err
+			}
+			if loaded == nil {
+				return result, gorm.ErrRecordNotFound
+			}
+			if err := markAppointmentDelayPending(tx, loaded); err != nil {
+				return result, err
+			}
 		}
 		result.AppointmentStatus = appointmentStatus
 		result.PredictedWaitMinutes = session.PredictedAppointmentDelayMinutes

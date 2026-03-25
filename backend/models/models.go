@@ -237,7 +237,7 @@ type Appointment struct {
 	NoShowAt                        *time.Time `json:"no_show_at" gorm:"type:datetime(3);comment:失约时间"`
 	ServiceSessionID                *uint      `json:"service_session_id" gorm:"index;comment:关联服务会话ID"`
 	UsageID                         *uint      `json:"usage_id" gorm:"index;comment:关联核销记录ID"`
-	PredictedWaitMinutes            int        `json:"predicted_wait_minutes" gorm:"default:0;comment:预约预计等待分钟数（风险预约/到店等待时回写）"`
+	PredictedWaitMinutes            int        `json:"predicted_wait_minutes" gorm:"default:0;comment:预约预计延迟分钟数（风险预约/到店延迟时回写）"`
 	DisplayWaitState                string     `json:"display_wait_state" gorm:"-"`
 	DisplayWaitMessage              string     `json:"display_wait_message" gorm:"-"`
 	CurrentEstimatedWaitMinutes     int        `json:"current_estimated_wait_minutes" gorm:"-"`
@@ -347,9 +347,9 @@ type AppointmentProtectionBlock struct {
 	TechnicianID                 uint       `json:"technician_id" gorm:"index;comment:被保护预约绑定的客服ID"`
 	WalkInServiceSessionID       *uint      `json:"walk_in_service_session_id" gorm:"index;comment:被拒绝分配的现场服务会话ID"`
 	BlockedReason                string     `json:"blocked_reason" gorm:"size:255;default:'';comment:拒派原因说明"`
-	PredictedReservedWaitMinutes int        `json:"predicted_reserved_wait_minutes" gorm:"default:0;comment:若继续派单将导致预约等待的预计分钟数"`
+	PredictedReservedWaitMinutes int        `json:"predicted_reserved_wait_minutes" gorm:"default:0;comment:若继续派单将占用预约锁定时段的预计分钟数"`
 	AlternativeWaitMinutes       int        `json:"alternative_wait_minutes" gorm:"default:0;comment:改派其他客服的预计等待分钟数"`
-	DecisionMode                 string     `json:"decision_mode" gorm:"size:50;default:'';comment:拒派决策模式（max_wait_protection/alternative_preferred）"`
+	DecisionMode                 string     `json:"decision_mode" gorm:"size:50;default:'';comment:拒派决策模式（strict_reservation_lock 等）"`
 	BlockedAt                    *time.Time `json:"blocked_at" gorm:"type:datetime(3);comment:拒派发生时间"`
 	CreatedAt                    *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 }

@@ -1313,6 +1313,44 @@ func updateAppointmentSettlementSnapshot(tx *gorm.DB, appt *models.Appointment, 
 	return nil
 }
 
+func markAppointmentDelayPending(tx *gorm.DB, appt *models.Appointment) error {
+	if tx == nil || appt == nil || appt.ID == 0 {
+		return nil
+	}
+	if _, err := initializeAppointmentSettlement(tx, appt, "merchant_delay_pending"); err != nil {
+		return err
+	}
+	appointmentUpdates := map[string]interface{}{
+		"merchant_breach_pending":    true,
+		"disruption_status":          "pending",
+		"disruption_reason":          "merchant_delay_pending",
+		"liability_level":            "pending_merchant",
+		"settlement_status_snapshot": "pending",
+	}
+	if err := tx.Model(&models.Appointment{}).Where("id = ?", appt.ID).Updates(appointmentUpdates).Error; err != nil {
+		return err
+	}
+	appt.MerchantBreachPending = true
+	appt.DisruptionStatus = "pending"
+	appt.DisruptionReason = "merchant_delay_pending"
+	appt.LiabilityLevel = "pending_merchant"
+	appt.SettlementStatusSnapshot = "pending"
+
+	if appt.AppointmentSettlementID != nil && *appt.AppointmentSettlementID > 0 {
+		settlementUpdates := map[string]interface{}{
+			"status":                     "pending",
+			"settlement_status_snapshot": "pending",
+			"merchant_breach_pending":    true,
+			"liability_level":            "pending_merchant",
+			"latest_reason":              "merchant_delay_pending",
+		}
+		if err := tx.Model(&models.AppointmentSettlement{}).Where("id = ?", *appt.AppointmentSettlementID).Updates(settlementUpdates).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func transferAppointmentSettlement(tx *gorm.DB, oldAppt *models.Appointment, newAppt *models.Appointment, latestReason string) error {
 	if tx == nil || oldAppt == nil || newAppt == nil || oldAppt.ID == 0 || newAppt.ID == 0 {
 		return nil
@@ -2245,6 +2283,17 @@ func CheckInAppointment(c *gin.Context) {
 				"predicted_wait_minutes": session.PredictedAppointmentDelayMinutes,
 			}).Error; err != nil {
 			return err
+		}
+		currentAppt.Status = "arrived"
+		currentAppt.ArrivedAt = &actualArrivedAt
+		currentAppt.ActualArrivedAt = &actualArrivedAt
+		currentAppt.UsageID = &usage.ID
+		currentAppt.ServiceSessionID = &session.ID
+		currentAppt.PredictedWaitMinutes = session.PredictedAppointmentDelayMinutes
+		if session.PredictedAppointmentDelayMinutes > 0 {
+			if err := markAppointmentDelayPending(tx, currentAppt); err != nil {
+				return err
+			}
 		}
 		result = verifyCommitResult{
 			Merchant:             merchant,

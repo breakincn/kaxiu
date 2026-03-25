@@ -69,21 +69,11 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 
 	if merchant.SupportCustomerServiceMode && source.Appointment != nil && source.Appointment.TechnicianID != nil && *source.Appointment.TechnicianID > 0 {
 		techID := *source.Appointment.TechnicianID
-		occupiedMinutes := projectBookingOccupiedMinutes(durationMinutes, 3)
-		if verifyCode.ProjectID != nil {
-			_, gapMinutes := resolveProjectBookingConfig(tx, merchant.ID, verifyCode.ProjectID, durationMinutes, 3)
-			occupiedMinutes = projectBookingOccupiedMinutes(durationMinutes, gapMinutes)
-		}
-		availability, err := evaluateWalkInTechnicianAvailability(tx, merchant, techID, now, occupiedMinutes)
+		delayMinutes, readyAt, err := estimateAppointmentArrivalDelay(tx, merchant, techID, now)
 		if err != nil {
 			return models.ServiceSession{}, "", false, err
 		}
-		// 预约客户到店后，若原预约客服仍被前序服务占用，则进入预约履约等待状态，
-		// 避免掉入普通现场流转并被后续现场单继续挤占。
-		if availability.State != appointmentAvailabilitySafe && availability.PredictedWaitMinutes > 0 {
-			status = models.WithCSPrefix("appointment_waiting")
-			nextStep = ""
-		} else if merchant.SupportRoom {
+		if merchant.SupportRoom {
 			status = models.WithCSPrefix("room_selecting")
 			nextStep = "room_select"
 		} else {
@@ -92,7 +82,8 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		}
 		session.TechnicianID = &techID
 		session.LastTechnicianID = &techID
-		predictedAppointmentDelayMinutes = availability.PredictedWaitMinutes
+		predictedAppointmentDelayMinutes = delayMinutes
+		predictedReadyAt = readyAt
 	}
 
 	session = models.ServiceSession{
@@ -117,18 +108,6 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		AutoIdleAfterSeconds:             180,
 		PredictedReadyAt:                 predictedReadyAt,
 		PredictedAppointmentDelayMinutes: predictedAppointmentDelayMinutes,
-	}
-	if source.Appointment != nil {
-		if status == models.WithCSPrefix("appointment_waiting") {
-			occupiedMinutes := projectBookingOccupiedMinutes(durationMinutes, 3)
-			if verifyCode.ProjectID != nil {
-				_, gapMinutes := resolveProjectBookingConfig(tx, merchant.ID, verifyCode.ProjectID, durationMinutes, 3)
-				occupiedMinutes = projectBookingOccupiedMinutes(durationMinutes, gapMinutes)
-			}
-			readyAt := appointmentPredictedFinishAt(now, occupiedMinutes, &merchant)
-			session.PredictedReadyAt = &readyAt
-			session.PredictedAppointmentDelayMinutes = predictedAppointmentDelayMinutes
-		}
 	}
 	if err := tx.Create(&session).Error; err != nil {
 		return models.ServiceSession{}, "", false, err

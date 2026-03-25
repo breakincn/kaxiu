@@ -13,11 +13,11 @@ type ServiceSession struct {
 	SessionMode    string `json:"session_mode" gorm:"column:session_mode;size:20;default:'';comment:会话模式"`
 	SourceType     string `json:"source_type" gorm:"column:source_type;size:20;default:'walk_in';comment:会话来源（walk_in/appointment）"`
 	SourceID       *uint  `json:"source_id" gorm:"column:source_id;index;comment:来源业务ID（如appointment_id）"`
-	// 预约冲突标记：压预约派单时，需要把“当前现场单占用了下一预约”的风险显式写入会话，便于后续调度优先处理。
-	OccupiesNextAppointment          bool       `json:"occupies_next_appointment" gorm:"column:occupies_next_appointment;default:false;comment:是否占用了下一预约的预计时段"`
-	NextAppointmentID                *uint      `json:"next_appointment_id" gorm:"column:next_appointment_id;index;comment:受影响的下一预约ID"`
-	PredictedAppointmentDelayMinutes int        `json:"predicted_appointment_delay_minutes" gorm:"column:predicted_appointment_delay_minutes;default:0;comment:压预约派单预计会造成的预约等待分钟数"`
-	PredictedReadyAt                 *time.Time `json:"predicted_ready_at" gorm:"column:predicted_ready_at;type:datetime(3);comment:预计可开始服务时间（预约优先等待使用）"`
+	// 预约保护审计字段保留给现场拒派和历史兼容会话使用。
+	OccupiesNextAppointment          bool       `json:"occupies_next_appointment" gorm:"column:occupies_next_appointment;default:false;comment:是否命中过预约保护冲突"`
+	NextAppointmentID                *uint      `json:"next_appointment_id" gorm:"column:next_appointment_id;index;comment:受保护的下一预约ID"`
+	PredictedAppointmentDelayMinutes int        `json:"predicted_appointment_delay_minutes" gorm:"column:predicted_appointment_delay_minutes;default:0;comment:预约到店后检测到的预计延迟分钟数"`
+	PredictedReadyAt                 *time.Time `json:"predicted_ready_at" gorm:"column:predicted_ready_at;type:datetime(3);comment:预计可开始服务时间（用于延迟提示和兼容等待会话）"`
 	RoomID                           *uint      `json:"room_id" gorm:"index;comment:房间ID"`
 	TechnicianID                     *uint      `json:"technician_id" gorm:"index;comment:工作人员ID"`
 	LastTechnicianID                 *uint      `json:"last_technician_id" gorm:"column:last_technician_id;index;comment:最后一次队列分配的工作人员ID（用于过号等待等保留展示）"`
@@ -28,7 +28,7 @@ type ServiceSession struct {
 	StartPendingTimeoutSeconds       int        `json:"start_pending_timeout_seconds" gorm:"column:start_pending_timeout_seconds;default:0;comment:待开始服务超时秒数（0表示使用系统默认）"`
 	StartPendingRemainingSeconds     int        `json:"start_pending_remaining_seconds" gorm:"-"`
 
-	Status string `json:"status" gorm:"size:30;default:created;comment:状态（created-已创建，room_selecting-选房中，room_locked-房间已锁定，staff_selecting-选人中，appointment_waiting-预约优先等待，start_pending-待开始服务/待上号，delay_pending-延迟中，serving-服务中，auto_finishing-待自动结束，finished-已完成，canceled-已取消）"`
+	Status string `json:"status" gorm:"size:30;default:created;comment:状态（created-已创建，room_selecting-选房中，room_locked-房间已锁定，staff_selecting-选人中，appointment_waiting-预约异常兼容等待，start_pending-待开始服务/待上号，delay_pending-延迟中，serving-服务中，auto_finishing-待自动结束，finished-已完成，canceled-已取消）"`
 
 	RoomSelectDeadlineAt *time.Time `json:"room_select_deadline_at" gorm:"type:datetime(3);comment:选房截止时间"`
 	RoomLockedAt         *time.Time `json:"room_locked_at" gorm:"type:datetime(3);comment:房间锁定时间"`

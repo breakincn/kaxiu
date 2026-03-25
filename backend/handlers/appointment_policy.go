@@ -13,17 +13,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const (
-	appointmentCleanupBufferMinutes = 3
-	appointmentReservedWeight       = 2.5
-	appointmentWalkInWeight         = 1.0
-)
-
 type appointmentAvailabilityState string
 
 const (
 	appointmentAvailabilitySafe        appointmentAvailabilityState = "safe"
-	appointmentAvailabilityConditional appointmentAvailabilityState = "conditional"
 	appointmentAvailabilityUnavailable appointmentAvailabilityState = "unavailable"
 )
 
@@ -146,7 +139,7 @@ func decorateAppointmentDisplay(appt *models.Appointment, now time.Time) {
 
 	if appt.PredictedWaitMinutes > 0 {
 		appt.DisplayWaitState = appointmentDisplayWaitStateActiveWaiting
-		appt.DisplayWaitMessage = fmt.Sprintf("原预约客服暂未释放，当前预计等待 %d 分钟，系统已保留预约优先顺序", appt.PredictedWaitMinutes)
+		appt.DisplayWaitMessage = fmt.Sprintf("原预约客服暂未释放，当前预计等待 %d 分钟，系统已记录本次预约延迟并按履约异常持续跟进", appt.PredictedWaitMinutes)
 		appt.CurrentEstimatedWaitMinutes = appt.PredictedWaitMinutes
 		return
 	}
@@ -244,7 +237,8 @@ func canArriveForAppointment(appt models.Appointment, merchant *models.Merchant,
 }
 
 func appointmentActiveConflictStatuses() []string {
-	// appointment_waiting 必须视为活跃占用，避免预约履约等待中的会话被新的现场单继续挤占。
+	// appointment_waiting 已降级为历史兼容状态，但仍需视为活跃占用，
+	// 避免遗留会话被新的现场单继续挤占。
 	return models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 }
 
@@ -589,15 +583,12 @@ func earliestAlternativeTechnicianWaitMinutes(tx *gorm.DB, merchant models.Merch
 			}
 			continue
 		}
-		var sess models.ServiceSession
-		err := tx.Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchant.ID, att.TechnicianID, appointmentActiveConflictStatuses()).
-			Order("COALESCE(predicted_ready_at, scheduled_finish_at, updated_at) asc").
-			First(&sess).Error
+		sess, err := loadEarliestTechnicianConflictSession(tx, merchant.ID, att.TechnicianID, appointmentActiveConflictStatuses())
 		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				continue
-			}
 			return 0, false, err
+		}
+		if sess == nil {
+			continue
 		}
 		var readyAt time.Time
 		switch {
@@ -648,29 +639,87 @@ func evaluateWalkInTechnicianAvailability(tx *gorm.DB, merchant models.Merchant,
 	}
 	out.NextAppointmentID = &next.ID
 	out.PredictedWaitMinutes = delayReserved
-	if delayReserved > merchantAppointmentMaxWaitMinutes(&merchant) {
-		out.State = appointmentAvailabilityUnavailable
-		out.Reason = fmt.Sprintf("该现场单会让后续预约等待 %d 分钟，超过上限", delayReserved)
-		out.DecisionMode = "max_wait_protection"
-		return out, nil
-	}
-
-	altWait, hasAlt, err := earliestAlternativeTechnicianWaitMinutes(tx, merchant, technicianID, walkInStart)
-	if err != nil {
-		return out, err
-	}
-	if hasAlt && float64(altWait)*appointmentWalkInWeight < float64(delayReserved)*appointmentReservedWeight {
-		out.State = appointmentAvailabilityUnavailable
-		out.Reason = fmt.Sprintf("等待其他客服约 %d 分钟比压后预约更优", altWait)
-		out.AlternativeWaitMinutes = altWait
-		out.DecisionMode = "alternative_preferred"
-		return out, nil
-	}
 	if delayReserved > 0 {
-		out.State = appointmentAvailabilityConditional
-		out.Reason = fmt.Sprintf("将影响 %s 的预约，预计等待 %d 分钟", next.AppointmentTime.Format("15:04"), delayReserved)
+		out.State = appointmentAvailabilityUnavailable
+		out.Reason = fmt.Sprintf("该现场单会占用 %s 的预约时段，当前不可分配", next.AppointmentTime.Format("15:04"))
+		out.DecisionMode = "strict_reservation_lock"
+		altWait, hasAlt, err := earliestAlternativeTechnicianWaitMinutes(tx, merchant, technicianID, walkInStart)
+		if err != nil {
+			return out, err
+		}
+		if hasAlt {
+			out.AlternativeWaitMinutes = altWait
+		}
 	}
 	return out, nil
+}
+
+func estimateAppointmentArrivalDelay(tx *gorm.DB, merchant models.Merchant, technicianID uint, now time.Time) (int, *time.Time, error) {
+	if tx == nil || technicianID == 0 {
+		return 0, nil, nil
+	}
+
+	blocker, err := loadEarliestTechnicianConflictSession(
+		tx,
+		merchant.ID,
+		technicianID,
+		models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"}),
+	)
+	if err != nil {
+		return 0, nil, err
+	}
+	if blocker == nil {
+		return 0, nil, nil
+	}
+
+	var readyAt time.Time
+	switch {
+	case blocker.PredictedReadyAt != nil:
+		readyAt = *blocker.PredictedReadyAt
+	case blocker.ScheduledFinishAt != nil:
+		readyAt = blocker.ScheduledFinishAt.Add(time.Duration(merchantAppointmentPredictionBufferMinutes(&merchant)) * time.Minute)
+	default:
+		return 0, nil, nil
+	}
+	delayMinutes := int(math.Ceil(readyAt.Sub(now).Minutes()))
+	if delayMinutes <= 0 {
+		return 0, nil, nil
+	}
+	return delayMinutes, &readyAt, nil
+}
+
+func loadEarliestTechnicianConflictSession(tx *gorm.DB, merchantID, technicianID uint, statuses []string) (*models.ServiceSession, error) {
+	if tx == nil || merchantID == 0 || technicianID == 0 || len(statuses) == 0 {
+		return nil, nil
+	}
+	rows, err := tx.Table("service_sessions").
+		Select("id, predicted_ready_at, scheduled_finish_at").
+		Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchantID, technicianID, statuses).
+		Order("COALESCE(predicted_ready_at, scheduled_finish_at, updated_at) asc, id asc").
+		Limit(1).
+		Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+	var (
+		session              models.ServiceSession
+		predictedReadyAtRaw  interface{}
+		scheduledFinishAtRaw interface{}
+	)
+	if err := rows.Scan(&session.ID, &predictedReadyAtRaw, &scheduledFinishAtRaw); err != nil {
+		return nil, err
+	}
+	if v, ok := parseDBTimeValue(predictedReadyAtRaw); ok {
+		session.PredictedReadyAt = &v
+	}
+	if v, ok := parseDBTimeValue(scheduledFinishAtRaw); ok {
+		session.ScheduledFinishAt = &v
+	}
+	return &session, nil
 }
 
 func hasAppointmentProtectionBlock(tx *gorm.DB, appointmentID uint) (bool, error) {
@@ -703,7 +752,7 @@ func recordAppointmentProtectionBlock(tx *gorm.DB, merchantID uint, appointmentI
 		BlockedAt:                    &blockedAt,
 	}
 	if row.DecisionMode == "" {
-		row.DecisionMode = "max_wait_protection"
+		row.DecisionMode = "strict_reservation_lock"
 	}
 	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
 }

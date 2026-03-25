@@ -18,7 +18,7 @@ import (
 func setupAppointmentLifecycleTestDB(t *testing.T) {
 	t.Helper()
 	config.DB = setupAppointmentPermissionTestDB(t)
-	if err := config.DB.AutoMigrate(&models.Card{}, &models.VerifyCode{}, &models.Usage{}, &models.ServiceSession{}, &models.AppointmentCompensation{}, &models.AppointmentSettlement{}, &models.AppointmentRescheduleRequest{}, &models.AppointmentProtectionBlock{}, &models.ForceMajeureReliefRequest{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}); err != nil {
+	if err := config.DB.AutoMigrate(&models.Card{}, &models.VerifyCode{}, &models.Usage{}, &models.ServiceSession{}, &models.TechnicianAttendance{}, &models.AppointmentCompensation{}, &models.AppointmentSettlement{}, &models.AppointmentRescheduleRequest{}, &models.AppointmentProtectionBlock{}, &models.ForceMajeureReliefRequest{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}); err != nil {
 		t.Fatalf("migrate extra tables failed: %v", err)
 	}
 }
@@ -956,7 +956,7 @@ func TestComputeAppointmentRescheduleEligibilityBlockedAfterProtectionConsumed(t
 		BlockedReason:                "为保护预约，拒绝将现场客户派给该客服",
 		PredictedReservedWaitMinutes: 20,
 		AlternativeWaitMinutes:       10,
-		DecisionMode:                 "alternative_preferred",
+		DecisionMode:                 "strict_reservation_lock",
 	}
 	blockedAt := time.Date(2026, 3, 18, 10, 0, 0, 0, loc)
 	block.BlockedAt = &blockedAt

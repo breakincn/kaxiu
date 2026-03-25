@@ -2652,9 +2652,7 @@ const selectedAppointmentRescheduleCandidates = computed(() => {
     label: (() => {
       const technician = byId.get(Number(item.technician_id || 0))
       const name = String(technician?.name || '').trim() || `客服${item.technician_id}`
-      return item.availability_state === 'conditional'
-        ? `${name}（预计等${item.predicted_wait_minutes || 0}分）`
-        : name
+      return name
     })()
   })).filter(item => !currentTechnicianId || item.technician_id !== currentTechnicianId)
 })
@@ -4560,7 +4558,7 @@ const verifyCard = async () => {
     const data = res?.data?.data || {}
     const extraMessages = []
     if (data.appointment_status === 'arrived') {
-      if (data.session_wait_state === 'appointment_waiting' && Number(data.predicted_wait_minutes || 0) > 0) {
+      if (Number(data.predicted_wait_minutes || 0) > 0) {
         extraMessages.push(`预约客户已到店，预计等待 ${data.predicted_wait_minutes} 分钟`)
       } else {
         extraMessages.push('预约客户已到店，已进入服务闭环')
@@ -6242,7 +6240,7 @@ const getSessionStatusText = (status) => {
     room_selecting: '选房中',
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
-    appointment_waiting: '预约优先等待',
+    appointment_waiting: '预约异常等待',
     start_pending: getMerchantPendingStartLabel(),
     delay_pending: getMerchantPendingStartLabel({ queueMode: true }),
     timeout_waiting: '过号等待',
