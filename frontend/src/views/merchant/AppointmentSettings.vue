@@ -53,21 +53,6 @@
             </div>
 
             <div>
-              <label class="text-sm font-medium text-gray-700 mb-2 block">预约最大等待</label>
-              <p class="text-xs text-gray-500 mb-2">系统允许预约客户因前序服务而产生的最大等待时间</p>
-              <div class="relative">
-                <input
-                  v-model.number="form.appointment_max_wait_minutes"
-                  type="number"
-                  min="0"
-                  max="180"
-                  class="w-full px-3 py-2 pr-14 border border-gray-200 rounded-lg focus:outline-none focus:border-primary text-sm"
-                />
-                <span class="absolute inset-y-0 right-4 flex items-center text-sm text-gray-500">分钟</span>
-              </div>
-            </div>
-
-            <div>
               <label class="text-sm font-medium text-gray-700 mb-2 block">预约预测缓冲</label>
               <p class="text-xs text-gray-500 mb-2">用于估算服务可能延长的风险缓冲</p>
               <div class="relative">
@@ -151,7 +136,7 @@
             <span class="font-medium text-gray-800">参数说明</span>
           </div>
           <p class="text-sm leading-6 text-gray-500">
-            这些参数会同时影响预约页可选客服、客服模式现场派单、改签可用时段和预约到店等待判断。
+            这些参数会同时影响预约页可选客服、客服模式现场派单、改签可用时段和预约延迟风险判断。
           </p>
         </div>
 
@@ -180,7 +165,6 @@ const initialSnapshot = ref('')
 const form = ref({
   appointment_reserve_buffer_minutes: 10,
   appointment_grace_window_minutes: 15,
-  appointment_max_wait_minutes: 15,
   appointment_prediction_buffer_minutes: 5,
   appointment_slot_granularity_minutes: 15,
   appointment_reschedule_same_or_next_day_threshold_minutes: 180,
@@ -192,7 +176,6 @@ const form = ref({
 const buildSnapshot = () => JSON.stringify({
   appointment_reserve_buffer_minutes: Number(form.value.appointment_reserve_buffer_minutes ?? 0),
   appointment_grace_window_minutes: Number(form.value.appointment_grace_window_minutes ?? 0),
-  appointment_max_wait_minutes: Number(form.value.appointment_max_wait_minutes ?? 0),
   appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes ?? 0),
   appointment_slot_granularity_minutes: Number(form.value.appointment_slot_granularity_minutes ?? 0),
   appointment_reschedule_same_or_next_day_threshold_minutes: Number(form.value.appointment_reschedule_same_or_next_day_threshold_minutes ?? 0),
@@ -228,7 +211,6 @@ const load = async () => {
     form.value = {
       appointment_reserve_buffer_minutes: Number(m.appointment_reserve_buffer_minutes ?? 10),
       appointment_grace_window_minutes: Number(m.appointment_grace_window_minutes ?? 15),
-      appointment_max_wait_minutes: Number(m.appointment_max_wait_minutes ?? 15),
       appointment_prediction_buffer_minutes: Number(m.appointment_prediction_buffer_minutes ?? 5),
       appointment_slot_granularity_minutes: Number(m.appointment_slot_granularity_minutes ?? 15),
       appointment_reschedule_same_or_next_day_threshold_minutes: Number(m.appointment_reschedule_same_or_next_day_threshold_minutes ?? 180),
@@ -250,7 +232,6 @@ const save = async () => {
     await merchantApi.updateCurrentMerchantServices({
       appointment_reserve_buffer_minutes: Number(form.value.appointment_reserve_buffer_minutes || 0),
       appointment_grace_window_minutes: Number(form.value.appointment_grace_window_minutes || 0),
-      appointment_max_wait_minutes: Number(form.value.appointment_max_wait_minutes || 0),
       appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes || 0),
       appointment_slot_granularity_minutes: Number(form.value.appointment_slot_granularity_minutes || 0),
       appointment_reschedule_same_or_next_day_threshold_minutes: Number(form.value.appointment_reschedule_same_or_next_day_threshold_minutes || 0),

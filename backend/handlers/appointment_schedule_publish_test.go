@@ -1123,14 +1123,14 @@ func TestCheckInAppointmentKeepsExecutionPathAndMarksDelayPendingWhenTechnicianB
 
 	var resp struct {
 		Data struct {
-			PredictedWaitMinutes int    `json:"predicted_wait_minutes"`
-			SessionWaitState     string `json:"session_wait_state"`
+			PredictedDelayMinutes int    `json:"predicted_delay_minutes"`
+			SessionWaitState      string `json:"session_wait_state"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode check-in response failed: %v", err)
 	}
-	if resp.Data.PredictedWaitMinutes <= 0 {
+	if resp.Data.PredictedDelayMinutes <= 0 {
 		t.Fatalf("want positive predicted delay in response, got %+v", resp.Data)
 	}
 	if resp.Data.SessionWaitState != "start_pending" {

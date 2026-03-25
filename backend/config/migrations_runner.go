@@ -73,7 +73,7 @@ var defaultMigrations = []dbMigration{
 		Statements: []string{
 			"ALTER TABLE merchants ADD COLUMN appointment_reserve_buffer_minutes INT NOT NULL DEFAULT 10 COMMENT '预约前保留缓冲分钟数'",
 			"ALTER TABLE merchants ADD COLUMN appointment_grace_window_minutes INT NOT NULL DEFAULT 15 COMMENT '预约后到店宽限分钟数'",
-			"ALTER TABLE merchants ADD COLUMN appointment_max_wait_minutes INT NOT NULL DEFAULT 15 COMMENT '预约客户最大可承诺等待分钟数'",
+			"ALTER TABLE merchants ADD COLUMN appointment_max_wait_minutes INT NOT NULL DEFAULT 15 COMMENT '历史预约最大等待配置（已弃用）'",
 			"ALTER TABLE merchants ADD COLUMN appointment_prediction_buffer_minutes INT NOT NULL DEFAULT 5 COMMENT '预约保护预测缓冲分钟数'",
 			"ALTER TABLE appointments ADD COLUMN confirmed_at datetime(3) NULL DEFAULT NULL COMMENT '确认时间'",
 			"ALTER TABLE appointments ADD COLUMN arrived_at datetime(3) NULL DEFAULT NULL COMMENT '到店核销时间'",

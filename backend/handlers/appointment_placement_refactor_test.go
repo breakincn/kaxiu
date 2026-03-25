@@ -24,11 +24,9 @@ func seedAppointmentPlacementFixture(t *testing.T, customerServiceMode bool) (mo
 	t.Helper()
 	merchant, user, tech, otherTech, _, _ := seedAppointmentPermissionFixture(t, config.DB)
 	merchant.SupportCustomerServiceMode = customerServiceMode
-	merchant.AppointmentMaxWaitMinutes = 30
 	merchant.AppointmentPredictionBufferMinute = 10
 	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Updates(map[string]interface{}{
 		"support_customer_service_mode":         customerServiceMode,
-		"appointment_max_wait_minutes":          30,
 		"appointment_prediction_buffer_minutes": 10,
 	}).Error; err != nil {
 		t.Fatalf("update merchant failed: %v", err)

@@ -318,7 +318,6 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		QueueTimeoutWaitingSeconds                         *int    `json:"queue_timeout_waiting_seconds"`
 		AppointmentReserveBufferMinutes                    *int    `json:"appointment_reserve_buffer_minutes"`
 		AppointmentGraceWindowMinutes                      *int    `json:"appointment_grace_window_minutes"`
-		AppointmentMaxWaitMinutes                          *int    `json:"appointment_max_wait_minutes"`
 		AppointmentPredictionBufferMinute                  *int    `json:"appointment_prediction_buffer_minutes"`
 		AppointmentSlotGranularityMinutes                  *int    `json:"appointment_slot_granularity_minutes"`
 		AppointmentRescheduleSameOrNextDayThresholdMinutes *int    `json:"appointment_reschedule_same_or_next_day_threshold_minutes"`
@@ -552,13 +551,6 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 			return
 		}
 		updates["appointment_grace_window_minutes"] = *input.AppointmentGraceWindowMinutes
-	}
-	if input.AppointmentMaxWaitMinutes != nil {
-		if *input.AppointmentMaxWaitMinutes < 0 || *input.AppointmentMaxWaitMinutes > 180 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "预约最大等待范围应为 0-180 分钟"})
-			return
-		}
-		updates["appointment_max_wait_minutes"] = *input.AppointmentMaxWaitMinutes
 	}
 	if input.AppointmentPredictionBufferMinute != nil {
 		if *input.AppointmentPredictionBufferMinute < 0 || *input.AppointmentPredictionBufferMinute > 60 {

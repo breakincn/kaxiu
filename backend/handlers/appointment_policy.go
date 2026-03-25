@@ -30,7 +30,7 @@ const (
 
 type appointmentAvailability struct {
 	State                  appointmentAvailabilityState `json:"availability_state"`
-	PredictedWaitMinutes   int                          `json:"predicted_wait_minutes"`
+	PredictedWaitMinutes   int                          `json:"predicted_delay_minutes"`
 	Reason                 string                       `json:"availability_reason"`
 	NextAppointmentID      *uint                        `json:"next_appointment_id,omitempty"`
 	AlternativeWaitMinutes int                          `json:"alternative_wait_minutes,omitempty"`
@@ -160,13 +160,6 @@ func merchantAppointmentReserveBufferMinutes(m *models.Merchant) int {
 func merchantAppointmentGraceWindowMinutes(m *models.Merchant) int {
 	if m != nil && m.AppointmentGraceWindowMinutes > 0 {
 		return m.AppointmentGraceWindowMinutes
-	}
-	return 15
-}
-
-func merchantAppointmentMaxWaitMinutes(m *models.Merchant) int {
-	if m != nil && m.AppointmentMaxWaitMinutes > 0 {
-		return m.AppointmentMaxWaitMinutes
 	}
 	return 15
 }

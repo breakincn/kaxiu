@@ -48,7 +48,7 @@ type Merchant struct {
 	// 预约保护参数：confirmed 预约会占用未来产能，客服模式现场派单/预约选人都复用这些阈值。
 	AppointmentReserveBufferMinutes                    int    `json:"appointment_reserve_buffer_minutes" gorm:"default:10;comment:预约前保留缓冲分钟数"`
 	AppointmentGraceWindowMinutes                      int    `json:"appointment_grace_window_minutes" gorm:"default:15;comment:预约后到店宽限分钟数"`
-	AppointmentMaxWaitMinutes                          int    `json:"appointment_max_wait_minutes" gorm:"default:15;comment:预约客户最大可承诺等待分钟数"`
+	AppointmentMaxWaitMinutes                          int    `json:"-" gorm:"default:15;comment:历史预约最大等待配置（已弃用）"`
 	AppointmentPredictionBufferMinute                  int    `json:"appointment_prediction_buffer_minutes" gorm:"column:appointment_prediction_buffer_minutes;default:5;comment:预约保护预测缓冲分钟数"`
 	AppointmentSlotGranularityMinutes                  int    `json:"appointment_slot_granularity_minutes" gorm:"default:15;comment:预约时段展示粒度分钟数"`
 	AppointmentRescheduleSameOrNextDayThresholdMinutes int    `json:"appointment_reschedule_same_or_next_day_threshold_minutes" gorm:"default:180;comment:昨天预约可改签到今天或明天的剩余分钟阈值"`
@@ -237,10 +237,10 @@ type Appointment struct {
 	NoShowAt                        *time.Time `json:"no_show_at" gorm:"type:datetime(3);comment:失约时间"`
 	ServiceSessionID                *uint      `json:"service_session_id" gorm:"index;comment:关联服务会话ID"`
 	UsageID                         *uint      `json:"usage_id" gorm:"index;comment:关联核销记录ID"`
-	PredictedWaitMinutes            int        `json:"predicted_wait_minutes" gorm:"default:0;comment:预约预计延迟分钟数（风险预约/到店延迟时回写）"`
+	PredictedWaitMinutes            int        `json:"predicted_delay_minutes" gorm:"default:0;comment:预约预计延迟分钟数（风险预约/到店延迟时回写）"`
 	DisplayWaitState                string     `json:"display_wait_state" gorm:"-"`
 	DisplayWaitMessage              string     `json:"display_wait_message" gorm:"-"`
-	CurrentEstimatedWaitMinutes     int        `json:"current_estimated_wait_minutes" gorm:"-"`
+	CurrentEstimatedWaitMinutes     int        `json:"current_estimated_delay_minutes" gorm:"-"`
 	MerchantBreachPending           bool       `json:"merchant_breach_pending" gorm:"default:false;comment:是否处于商户违约待判定风险标记"`
 	BreachDecisionAt                *time.Time `json:"breach_decision_at" gorm:"type:datetime(3);comment:违约最终判定时间"`
 	DisruptionStatus                string     `json:"disruption_status" gorm:"size:30;default:'';comment:异常闭环状态快照"`

@@ -120,7 +120,6 @@ const form = ref({
   support_hand_card: false,
   appointment_reserve_buffer_minutes: 10,
   appointment_grace_window_minutes: 15,
-  appointment_max_wait_minutes: 15,
   appointment_prediction_buffer_minutes: 5
 })
 
@@ -136,7 +135,6 @@ const normalizeForm = (value) => JSON.stringify({
   support_hand_card: !!value.support_hand_card,
   appointment_reserve_buffer_minutes: Number(value.appointment_reserve_buffer_minutes ?? 10),
   appointment_grace_window_minutes: Number(value.appointment_grace_window_minutes ?? 15),
-  appointment_max_wait_minutes: Number(value.appointment_max_wait_minutes ?? 15),
   appointment_prediction_buffer_minutes: Number(value.appointment_prediction_buffer_minutes ?? 5)
 })
 
@@ -152,7 +150,6 @@ const createFormState = (value = {}) => ({
   support_hand_card: !!value.support_hand_card,
   appointment_reserve_buffer_minutes: Number(value.appointment_reserve_buffer_minutes ?? 10),
   appointment_grace_window_minutes: Number(value.appointment_grace_window_minutes ?? 15),
-  appointment_max_wait_minutes: Number(value.appointment_max_wait_minutes ?? 15),
   appointment_prediction_buffer_minutes: Number(value.appointment_prediction_buffer_minutes ?? 5)
 })
 
@@ -264,7 +261,6 @@ const save = async () => {
       support_hand_card: form.value.support_hand_card,
       appointment_reserve_buffer_minutes: Number(form.value.appointment_reserve_buffer_minutes || 0),
       appointment_grace_window_minutes: Number(form.value.appointment_grace_window_minutes || 0),
-      appointment_max_wait_minutes: Number(form.value.appointment_max_wait_minutes || 0),
       appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes || 0)
     })
     alert('保存成功')

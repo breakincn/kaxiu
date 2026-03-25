@@ -277,7 +277,7 @@ func appointmentPlacementScore(leftMinutes, rightMinutes int) int {
 type appointmentTechnicianCandidate struct {
 	TechnicianID         uint   `json:"technician_id"`
 	AvailabilityState    string `json:"availability_state"`
-	PredictedWaitMinutes int    `json:"predicted_wait_minutes"`
+	PredictedWaitMinutes int    `json:"predicted_delay_minutes"`
 	AvailabilityReason   string `json:"availability_reason,omitempty"`
 }
 
@@ -1873,13 +1873,13 @@ func GetCardAppointment(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"appointment":                    appointment,
-			"service_session_id":             appointment.ServiceSessionID,
-			"predicted_wait_minutes":         appointment.PredictedWaitMinutes,
-			"display_wait_state":             appointment.DisplayWaitState,
-			"display_wait_message":           appointment.DisplayWaitMessage,
-			"current_estimated_wait_minutes": appointment.CurrentEstimatedWaitMinutes,
-			"can_arrive_now":                 canArriveForAppointment(appointment, &merchant, now),
+			"appointment":                     appointment,
+			"service_session_id":              appointment.ServiceSessionID,
+			"predicted_delay_minutes":         appointment.PredictedWaitMinutes,
+			"display_wait_state":              appointment.DisplayWaitState,
+			"display_wait_message":            appointment.DisplayWaitMessage,
+			"current_estimated_delay_minutes": appointment.CurrentEstimatedWaitMinutes,
+			"can_arrive_now":                  canArriveForAppointment(appointment, &merchant, now),
 		},
 	})
 }
@@ -2161,10 +2161,10 @@ func ConfirmAppointment(c *gin.Context) {
 			return err
 		}
 		return tx.Model(&current).Updates(map[string]interface{}{
-			"status":                 "confirmed",
-			"confirmed_at":           &confirmedAt,
-			"predicted_wait_minutes": decision.PredictedWaitMinutes,
-			"technician_id":          decision.AssignedTechnicianID,
+			"status":                  "confirmed",
+			"confirmed_at":            &confirmedAt,
+			"predicted_delay_minutes": decision.PredictedWaitMinutes,
+			"technician_id":           decision.AssignedTechnicianID,
 		}).Error
 	}); err != nil {
 		var ae apiErr
@@ -2329,16 +2329,16 @@ func CheckInAppointment(c *gin.Context) {
 	}
 	enqueueVerifyUsageIfNeeded(result.Merchant, result.Card, result.UsageID, result.ShouldEnqueueOnsite)
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
-		"appointment_id":         appointment.ID,
-		"checkin_type":           "appointment_checkin",
-		"actual_arrived_at":      result.UsedAt.Format("2006-01-02 15:04:05"),
-		"service_session_id":     result.SessionID,
-		"usage_id":               result.UsageID,
-		"appointment_status":     result.AppointmentStatus,
-		"predicted_wait_minutes": result.PredictedWaitMinutes,
-		"session_wait_state":     result.SessionWaitState,
-		"bound_technician_id":    result.BoundTechnicianID,
-		"skip_asset_deduction":   true,
+		"appointment_id":          appointment.ID,
+		"checkin_type":            "appointment_checkin",
+		"actual_arrived_at":       result.UsedAt.Format("2006-01-02 15:04:05"),
+		"service_session_id":      result.SessionID,
+		"usage_id":                result.UsageID,
+		"appointment_status":      result.AppointmentStatus,
+		"predicted_delay_minutes": result.PredictedWaitMinutes,
+		"session_wait_state":      result.SessionWaitState,
+		"bound_technician_id":     result.BoundTechnicianID,
+		"skip_asset_deduction":    true,
 	}})
 }
 

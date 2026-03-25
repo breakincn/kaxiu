@@ -4558,8 +4558,8 @@ const verifyCard = async () => {
     const data = res?.data?.data || {}
     const extraMessages = []
     if (data.appointment_status === 'arrived') {
-      if (Number(data.predicted_wait_minutes || 0) > 0) {
-        extraMessages.push(`预约客户已到店，预计等待 ${data.predicted_wait_minutes} 分钟`)
+      if (Number(data.predicted_delay_minutes || 0) > 0) {
+        extraMessages.push(`预约客户已到店，预计延迟 ${data.predicted_delay_minutes} 分钟`)
       } else {
         extraMessages.push('预约客户已到店，已进入服务闭环')
       }
@@ -5108,7 +5108,7 @@ const shouldShowAppointmentCompensation = (appt) => {
   if (!appt) return false
   // 补偿不是常驻动作，只在门店承诺已经受损或服务异常结束后开放。
   if (appt.status === 'arrived') {
-    return Number(appt?.predicted_wait_minutes || 0) > 0 || !!appt?.service_session_id
+    return Number(appt?.predicted_delay_minutes || 0) > 0 || !!appt?.service_session_id
   }
   return appt.status === 'completed' || appt.status === 'failed'
 }

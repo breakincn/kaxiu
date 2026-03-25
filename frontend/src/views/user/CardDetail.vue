@@ -119,9 +119,9 @@
               </div>
             </div>
           </div>
-          <div v-if="appointmentWaitMetricVisible" class="pt-3 mt-3 border-t border-gray-100">
-            <div class="text-gray-400 text-xs">{{ appointmentWaitLabel }}</div>
-            <div class="text-2xl font-bold text-gray-800">{{ appointmentWaitMinutes }}<span class="text-sm font-normal">分钟</span></div>
+          <div v-if="appointmentDelayMetricVisible" class="pt-3 mt-3 border-t border-gray-100">
+            <div class="text-gray-400 text-xs">{{ appointmentDelayLabel }}</div>
+            <div class="text-2xl font-bold text-gray-800">{{ appointmentDelayMinutes }}<span class="text-sm font-normal">分钟</span></div>
           </div>
           <div
             v-if="appointmentWaitingHint"
@@ -733,7 +733,7 @@ const getAppointmentDisplayWaitState = (appt) => String(appt?.display_wait_state
 
 const getAppointmentDisplayWaitMessage = (appt) => String(appt?.display_wait_message || '').trim()
 
-const getAppointmentCurrentEstimatedWaitMinutes = (appt) => Number(appt?.current_estimated_wait_minutes || appt?.predicted_wait_minutes || 0)
+const getAppointmentCurrentEstimatedDelayMinutes = (appt) => Number(appt?.current_estimated_delay_minutes || appt?.predicted_delay_minutes || 0)
 
 const getAppointmentTimeMs = (appt) => {
   const raw = appt?.appointment_time
@@ -783,20 +783,20 @@ const latestForceMajeureReliefRequest = computed(() => {
   if (list.length === 0) return null
   return [...list].sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0))[0]
 })
-const appointmentWaitMinutes = computed(() => {
+const appointmentDelayMinutes = computed(() => {
   const appt = appointment.value
   if (!appt) return 0
   if (isHistoricalArrivedAppointment(appt)) return 0
-  return getAppointmentCurrentEstimatedWaitMinutes(appt)
+  return getAppointmentCurrentEstimatedDelayMinutes(appt)
 })
-const appointmentWaitMetricVisible = computed(() => appointmentWaitMinutes.value > 0)
-const appointmentWaitLabel = computed(() => {
+const appointmentDelayMetricVisible = computed(() => appointmentDelayMinutes.value > 0)
+const appointmentDelayLabel = computed(() => {
   const appt = appointment.value
-  if (!appt) return '预计等待'
+  if (!appt) return '预计延迟'
   const state = getAppointmentDisplayWaitState(appt)
-  if (state === 'risk_pending') return '到店后可能等待'
-  if (appt.status === 'arrived') return '当前预计等待'
-  return '预计等待'
+  if (state === 'risk_pending') return '到店后可能延迟'
+  if (appt.status === 'arrived') return '当前预计延迟'
+  return '预计延迟'
 })
 const appointmentWaitingHint = computed(() => {
   const appt = appointment.value
@@ -2675,7 +2675,7 @@ const userDisplayedRescheduleTechnicians = computed(() => {
       .map(t => ({
         ...t,
         availability_state: byId.get(Number(t.id))?.availability_state || 'safe',
-        predicted_wait_minutes: byId.get(Number(t.id))?.predicted_wait_minutes || 0
+        predicted_delay_minutes: byId.get(Number(t.id))?.predicted_delay_minutes || 0
       }))
   }
   return list
@@ -2683,7 +2683,7 @@ const userDisplayedRescheduleTechnicians = computed(() => {
       const technicianId = Number(t?.id || 0)
       return !currentTechnicianId || technicianId !== currentTechnicianId
     })
-    .map(t => ({ ...t, availability_state: 'safe', predicted_wait_minutes: 0 }))
+    .map(t => ({ ...t, availability_state: 'safe', predicted_delay_minutes: 0 }))
 })
 
 const visibleUsages = computed(() => {
