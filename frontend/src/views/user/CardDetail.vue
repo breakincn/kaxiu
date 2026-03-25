@@ -122,12 +122,19 @@
           <div class="grid grid-cols-2 gap-4 pt-3 mt-3 border-t border-gray-100">
             <div>
               <div class="text-gray-400 text-xs">前面排队</div>
-              <div class="text-2xl font-bold text-gray-800">{{ queueBefore }}<span class="text-sm font-normal">人</span></div>
+              <div class="text-2xl font-bold text-gray-800">{{ activeAppointmentQueueBefore }}<span class="text-sm font-normal">人</span></div>
             </div>
             <div>
-              <div class="text-gray-400 text-xs">预计等待</div>
-              <div class="text-2xl font-bold text-gray-800">{{ estimatedMinutes }}<span class="text-sm font-normal">分钟</span></div>
+              <div class="text-gray-400 text-xs">{{ activeAppointmentWaitLabel }}</div>
+              <div class="text-2xl font-bold text-gray-800">{{ activeAppointmentWaitMinutes }}<span class="text-sm font-normal">分钟</span></div>
             </div>
+          </div>
+          <div
+            v-if="appointmentWaitingHint"
+            class="rounded-lg px-3 py-3 text-sm border"
+            :class="isHistoricalArrivedAppointment(appointment) ? 'bg-red-50 text-red-700 border-red-100' : 'bg-amber-50 text-amber-700 border-amber-100'"
+          >
+            {{ appointmentWaitingHint }}
           </div>
           <div v-if="appointment.reserved_start_at || appointment.reserved_end_at || appointment.cancel_deadline_at" class="grid grid-cols-1 gap-2 pt-3 mt-3 border-t border-gray-100 text-sm text-gray-600">
             <div v-if="appointment.reserved_start_at">锁定开始：{{ formatDateTime(appointment.reserved_start_at) }}</div>
@@ -733,6 +740,28 @@ const usageRecordsCollapsed = ref(false)
 const visibleUsageCount = ref(10)
 let countdownTimer = null
 
+const getAppointmentTimeMs = (appt) => {
+  const raw = appt?.appointment_time
+  if (!raw) return null
+  const ts = new Date(raw).getTime()
+  return Number.isFinite(ts) ? ts : null
+}
+
+const isSameCalendarDay = (leftMs, rightMs) => {
+  const left = new Date(leftMs)
+  const right = new Date(rightMs)
+  return left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+}
+
+const isHistoricalArrivedAppointment = (appt) => {
+  if (!appt || appt.status !== 'arrived' || appt.actual_start_at) return false
+  const appointmentTimeMs = getAppointmentTimeMs(appt)
+  if (appointmentTimeMs === null) return false
+  return !isSameCalendarDay(appointmentTimeMs, Date.now())
+}
+
 
 const verifyCode = ref('')
 const codeExpireTime = ref('')
@@ -757,6 +786,38 @@ const latestForceMajeureReliefRequest = computed(() => {
   const list = Array.isArray(appointment.value?.force_majeure_relief_requests) ? appointment.value.force_majeure_relief_requests : []
   if (list.length === 0) return null
   return [...list].sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0))[0]
+})
+const activeAppointmentQueueBefore = computed(() => {
+  if (isHistoricalArrivedAppointment(appointment.value)) return 0
+  return Number(queueBefore.value || 0)
+})
+const activeAppointmentWaitMinutes = computed(() => {
+  if (appointment.value?.status === 'arrived') {
+    if (isHistoricalArrivedAppointment(appointment.value)) return 0
+    return Number(appointment.value?.predicted_wait_minutes || 0)
+  }
+  return Number(estimatedMinutes.value || 0)
+})
+const activeAppointmentWaitLabel = computed(() => {
+  if (appointment.value?.status === 'arrived') {
+    return isHistoricalArrivedAppointment(appointment.value) ? '异常等待' : '当前预计等待'
+  }
+  return '预计等待'
+})
+const appointmentWaitingHint = computed(() => {
+  const appt = appointment.value
+  if (!appt || appt.status !== 'arrived') return ''
+  if (isHistoricalArrivedAppointment(appt)) {
+    return '该预约已超过原预约日期，当前仍未完成服务闭环，请联系商户改派、改签或做异常结案处理。'
+  }
+  const predictedWait = Number(appt?.predicted_wait_minutes || 0)
+  if (predictedWait > 0) {
+    return `原预约客服暂未释放，当前预计等待 ${predictedWait} 分钟，系统已保留预约优先顺序。`
+  }
+  if (appt?.service_session_id) {
+    return '您已到店，服务会话已绑定到本次预约。'
+  }
+  return ''
 })
 const canCreateForceMajeureRelief = computed(() => {
   const latest = latestForceMajeureReliefRequest.value
@@ -3466,6 +3527,9 @@ const submitUserRebuttal = async () => {
 }
 
 const getAppointmentStatusClass = (status) => {
+  if (status === 'arrived' && isHistoricalArrivedAppointment(appointment.value)) {
+    return 'text-red-600'
+  }
   const classes = {
     pending: 'text-primary',
     confirmed: 'text-primary',
@@ -3477,6 +3541,9 @@ const getAppointmentStatusClass = (status) => {
 }
 
 const getAppointmentStatusText = (status) => {
+  if (status === 'arrived' && isHistoricalArrivedAppointment(appointment.value)) {
+    return '超时待处理'
+  }
   const texts = {
     pending: '待确认',
     confirmed: '待到店',

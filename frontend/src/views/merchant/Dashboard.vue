@@ -331,7 +331,7 @@
               <div
                 v-if="getAppointmentRiskHint(appt)"
                 class="mt-2 rounded-lg px-3 py-2 text-sm"
-                :class="appt.status === 'arrived' ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-primary-light text-primary border border-primary/10'"
+                :class="getAppointmentRiskHintClass(appt)"
               >
                 {{ getAppointmentRiskHint(appt) }}
               </div>
@@ -4576,6 +4576,10 @@ const getStatusBadgeClass = (appt) => {
     return 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500'
   }
 
+  if (isHistoricalArrivedAppointment(appt)) {
+    return 'px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-700'
+  }
+
   const classes = {
     pending: 'px-2 py-1 rounded text-xs font-medium bg-primary-light text-primary',
     confirmed: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700',
@@ -4601,6 +4605,10 @@ const getStatusText = (appt) => {
 
   if (appt.status === 'confirmed' && isWriteOffExpired(appt)) {
     return '已过服务时间'
+  }
+
+  if (isHistoricalArrivedAppointment(appt)) {
+    return '超时待处理'
   }
 
   const texts = {
@@ -4703,6 +4711,28 @@ const getAppointmentCardNoDisplay = (appt) => {
   return String(appt?.card?.card_no || '').trim()
 }
 
+const getAppointmentTimeMs = (appt) => {
+  const raw = appt?.appointment_time
+  if (!raw) return null
+  const ts = new Date(raw).getTime()
+  return Number.isFinite(ts) ? ts : null
+}
+
+const isSameCalendarDay = (leftMs, rightMs) => {
+  const left = new Date(leftMs)
+  const right = new Date(rightMs)
+  return left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+}
+
+const isHistoricalArrivedAppointment = (appt) => {
+  if (!appt || appt.status !== 'arrived' || appt.actual_start_at) return false
+  const appointmentTimeMs = getAppointmentTimeMs(appt)
+  if (appointmentTimeMs === null) return false
+  return !isSameCalendarDay(appointmentTimeMs, currentTime.value)
+}
+
 const canOperateAppointment = (appt) => {
   if (canAppointmentManage.value && getMerchantActiveAuth() === 'merchant') {
     return true
@@ -4721,13 +4751,26 @@ const getAppointmentRiskHint = (appt) => {
   if (appt?.status === 'confirmed' && predictedWait > 0) {
     return `该预约属于风险可约，若前序服务压单，预计到店等待 ${predictedWait} 分钟`
   }
+  if (isHistoricalArrivedAppointment(appt)) {
+    return '该预约已超过原预约日期，当前仍未完成服务闭环，请优先改派、改签或异常结案'
+  }
   if (appt?.status === 'arrived' && predictedWait > 0) {
-    return `前序服务未结束，预计还需等待 ${predictedWait} 分钟，系统已按预约优先等待处理`
+    return `原预约客服暂未释放，当前预计等待 ${predictedWait} 分钟，系统已保留预约优先顺序`
   }
   if (appt?.status === 'arrived' && appt?.service_session_id) {
     return '客户已到店，服务会话已绑定到本次预约'
   }
   return ''
+}
+
+const getAppointmentRiskHintClass = (appt) => {
+  if (isHistoricalArrivedAppointment(appt)) {
+    return 'bg-red-50 text-red-700 border border-red-100'
+  }
+  if (appt?.status === 'arrived') {
+    return 'bg-amber-50 text-amber-700 border border-amber-100'
+  }
+  return 'bg-primary-light text-primary border border-primary/10'
 }
 
 const shouldShowAppointmentReschedule = (appt) => {
