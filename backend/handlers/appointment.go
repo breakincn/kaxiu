@@ -1561,8 +1561,10 @@ func GetMerchantAppointments(c *gin.Context) {
 	}
 
 	query.Order("appointment_time ASC").Find(&appointments)
+	now := time.Now().In(appointmentLocation())
 	for i := range appointments {
 		appointments[i].Status = normalizeAppointmentStatus(appointments[i].Status)
+		decorateAppointmentDisplay(&appointments[i], now)
 	}
 	c.JSON(http.StatusOK, gin.H{"data": appointments})
 }
@@ -1580,8 +1582,10 @@ func GetUserAppointments(c *gin.Context) {
 	}
 	var appointments []models.Appointment
 	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).Preload("RescheduleRequests", appointmentRescheduleRequestPreload).Preload("CancelRequests", appointmentCancelRequestPreload).Preload("ForceMajeureReliefRequests", appointmentForceMajeureReliefRequestPreload).Where("user_id = ?", authUserID).Order("appointment_time DESC").Find(&appointments)
+	now := time.Now().In(appointmentLocation())
 	for i := range appointments {
 		appointments[i].Status = normalizeAppointmentStatus(appointments[i].Status)
+		decorateAppointmentDisplay(&appointments[i], now)
 	}
 	c.JSON(http.StatusOK, gin.H{"data": appointments})
 }
@@ -1644,6 +1648,7 @@ func GetCardAppointment(c *gin.Context) {
 		}})
 		return
 	}
+	decorateAppointmentDisplay(&appointment, now.In(appointmentLocation()))
 
 	// 计算预约队列排队信息（内存队列）
 	queueBefore := int64(0)
@@ -1665,12 +1670,15 @@ func GetCardAppointment(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"appointment":            appointment,
-			"queue_before":           queueBefore,
-			"estimated_minutes":      int(queueBefore) * 30,
-			"service_session_id":     appointment.ServiceSessionID,
-			"predicted_wait_minutes": appointment.PredictedWaitMinutes,
-			"can_arrive_now":         canArriveForAppointment(appointment, &merchant, now),
+			"appointment":                    appointment,
+			"queue_before":                   queueBefore,
+			"estimated_minutes":              int(queueBefore) * 30,
+			"service_session_id":             appointment.ServiceSessionID,
+			"predicted_wait_minutes":         appointment.PredictedWaitMinutes,
+			"display_wait_state":             appointment.DisplayWaitState,
+			"display_wait_message":           appointment.DisplayWaitMessage,
+			"current_estimated_wait_minutes": appointment.CurrentEstimatedWaitMinutes,
+			"can_arrive_now":                 canArriveForAppointment(appointment, &merchant, now),
 		},
 	})
 }

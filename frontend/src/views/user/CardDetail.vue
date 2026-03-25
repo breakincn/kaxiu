@@ -740,6 +740,12 @@ const usageRecordsCollapsed = ref(false)
 const visibleUsageCount = ref(10)
 let countdownTimer = null
 
+const getAppointmentDisplayWaitState = (appt) => String(appt?.display_wait_state || '').trim()
+
+const getAppointmentDisplayWaitMessage = (appt) => String(appt?.display_wait_message || '').trim()
+
+const getAppointmentCurrentEstimatedWaitMinutes = (appt) => Number(appt?.current_estimated_wait_minutes || appt?.predicted_wait_minutes || 0)
+
 const getAppointmentTimeMs = (appt) => {
   const raw = appt?.appointment_time
   if (!raw) return null
@@ -756,6 +762,7 @@ const isSameCalendarDay = (leftMs, rightMs) => {
 }
 
 const isHistoricalArrivedAppointment = (appt) => {
+  if (getAppointmentDisplayWaitState(appt) === 'cross_day_unfinished') return true
   if (!appt || appt.status !== 'arrived' || appt.actual_start_at) return false
   const appointmentTimeMs = getAppointmentTimeMs(appt)
   if (appointmentTimeMs === null) return false
@@ -794,7 +801,7 @@ const activeAppointmentQueueBefore = computed(() => {
 const activeAppointmentWaitMinutes = computed(() => {
   if (appointment.value?.status === 'arrived') {
     if (isHistoricalArrivedAppointment(appointment.value)) return 0
-    return Number(appointment.value?.predicted_wait_minutes || 0)
+    return getAppointmentCurrentEstimatedWaitMinutes(appointment.value)
   }
   return Number(estimatedMinutes.value || 0)
 })
@@ -807,15 +814,9 @@ const activeAppointmentWaitLabel = computed(() => {
 const appointmentWaitingHint = computed(() => {
   const appt = appointment.value
   if (!appt || appt.status !== 'arrived') return ''
-  if (isHistoricalArrivedAppointment(appt)) {
-    return '该预约已超过原预约日期，当前仍未完成服务闭环，请联系商户改派、改签或做异常结案处理。'
-  }
-  const predictedWait = Number(appt?.predicted_wait_minutes || 0)
-  if (predictedWait > 0) {
-    return `原预约客服暂未释放，当前预计等待 ${predictedWait} 分钟，系统已保留预约优先顺序。`
-  }
-  if (appt?.service_session_id) {
-    return '您已到店，服务会话已绑定到本次预约。'
+  const displayMessage = getAppointmentDisplayWaitMessage(appt)
+  if (displayMessage) {
+    return displayMessage
   }
   return ''
 })

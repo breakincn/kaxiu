@@ -238,6 +238,9 @@ type Appointment struct {
 	ServiceSessionID                *uint      `json:"service_session_id" gorm:"index;comment:关联服务会话ID"`
 	UsageID                         *uint      `json:"usage_id" gorm:"index;comment:关联核销记录ID"`
 	PredictedWaitMinutes            int        `json:"predicted_wait_minutes" gorm:"default:0;comment:预约预计等待分钟数（风险预约/到店等待时回写）"`
+	DisplayWaitState                string     `json:"display_wait_state" gorm:"-"`
+	DisplayWaitMessage              string     `json:"display_wait_message" gorm:"-"`
+	CurrentEstimatedWaitMinutes     int        `json:"current_estimated_wait_minutes" gorm:"-"`
 	MerchantBreachPending           bool       `json:"merchant_breach_pending" gorm:"default:false;comment:是否处于商户违约待判定风险标记"`
 	BreachDecisionAt                *time.Time `json:"breach_decision_at" gorm:"type:datetime(3);comment:违约最终判定时间"`
 	DisruptionStatus                string     `json:"disruption_status" gorm:"size:30;default:'';comment:异常闭环状态快照"`

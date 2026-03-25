@@ -27,6 +27,14 @@ const (
 	appointmentAvailabilityUnavailable appointmentAvailabilityState = "unavailable"
 )
 
+const (
+	appointmentDisplayWaitStateNone             = ""
+	appointmentDisplayWaitStateRiskPending      = "risk_pending"
+	appointmentDisplayWaitStateActiveWaiting    = "active_waiting"
+	appointmentDisplayWaitStateCrossDayUnclosed = "cross_day_unfinished"
+	appointmentDisplayWaitStateArrivedBound     = "arrived_bound"
+)
+
 type appointmentAvailability struct {
 	State                  appointmentAvailabilityState `json:"availability_state"`
 	PredictedWaitMinutes   int                          `json:"predicted_wait_minutes"`
@@ -61,6 +69,53 @@ func normalizeAppointmentStatus(status string) string {
 		return "completed"
 	default:
 		return strings.TrimSpace(status)
+	}
+}
+
+func sameCalendarDay(left, right time.Time) bool {
+	return left.Year() == right.Year() && left.Month() == right.Month() && left.Day() == right.Day()
+}
+
+func decorateAppointmentDisplay(appt *models.Appointment, now time.Time) {
+	if appt == nil {
+		return
+	}
+	appt.DisplayWaitState = appointmentDisplayWaitStateNone
+	appt.DisplayWaitMessage = ""
+	appt.CurrentEstimatedWaitMinutes = 0
+
+	status := normalizeAppointmentStatus(appt.Status)
+	if status == "confirmed" && appt.PredictedWaitMinutes > 0 {
+		appt.DisplayWaitState = appointmentDisplayWaitStateRiskPending
+		appt.DisplayWaitMessage = fmt.Sprintf("该预约属于风险可约，若前序服务压单，预计到店等待 %d 分钟", appt.PredictedWaitMinutes)
+		appt.CurrentEstimatedWaitMinutes = appt.PredictedWaitMinutes
+		return
+	}
+	if status != "arrived" {
+		return
+	}
+
+	loc := appointmentLocation()
+	nowLocal := now.In(loc)
+	if appt.ActualStartAt == nil && appt.AppointmentTime != nil {
+		appointmentTime := appt.AppointmentTime.In(loc)
+		if !sameCalendarDay(appointmentTime, nowLocal) {
+			appt.DisplayWaitState = appointmentDisplayWaitStateCrossDayUnclosed
+			appt.DisplayWaitMessage = "该预约已超过原预约日期，当前仍未完成服务闭环，请优先改派、改签或异常结案"
+			return
+		}
+	}
+
+	if appt.PredictedWaitMinutes > 0 {
+		appt.DisplayWaitState = appointmentDisplayWaitStateActiveWaiting
+		appt.DisplayWaitMessage = fmt.Sprintf("原预约客服暂未释放，当前预计等待 %d 分钟，系统已保留预约优先顺序", appt.PredictedWaitMinutes)
+		appt.CurrentEstimatedWaitMinutes = appt.PredictedWaitMinutes
+		return
+	}
+
+	if appt.ServiceSessionID != nil && *appt.ServiceSessionID > 0 {
+		appt.DisplayWaitState = appointmentDisplayWaitStateArrivedBound
+		appt.DisplayWaitMessage = "客户已到店，服务会话已绑定到本次预约"
 	}
 }
 
