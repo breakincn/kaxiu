@@ -121,7 +121,7 @@ func enrichUsagesWithQueue(usages *[]models.Usage) {
 		return
 	}
 
-	// 仅填充当天现场叫号队列信息（预约走预约队列，不在使用记录里展示现场叫号）
+	// 仅填充当天现场叫号队列信息；预约履约不再维护独立排队号。
 	now := time.Now()
 	today := now.Format("2006-01-02")
 

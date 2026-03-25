@@ -795,7 +795,7 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		if err := models.ValidateSessionModeForEntry(&s, &m); err != nil {
 			return apiErr{status: http.StatusBadRequest, msg: err.Error()}
 		}
-		// appointment_waiting 允许先换客服，再由调度器接手推进选房/待开始，避免房间约束把预约冲突卡死。
+		// appointment_waiting 允许先换客服，再由调度器接手推进选房/待开始，避免预约履约等待卡死。
 		if m.SupportRoom && s.RoomID == nil && baseStatus != "appointment_waiting" {
 			return apiErr{status: http.StatusBadRequest, msg: "请先选择房间"}
 		}

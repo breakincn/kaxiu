@@ -244,7 +244,7 @@ func canArriveForAppointment(appt models.Appointment, merchant *models.Merchant,
 }
 
 func appointmentActiveConflictStatuses() []string {
-	// appointment_waiting 必须视为活跃占用，避免预约优先等待中的会话被新的普通单再次插入。
+	// appointment_waiting 必须视为活跃占用，避免预约履约等待中的会话被新的现场单继续挤占。
 	return models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 }
 

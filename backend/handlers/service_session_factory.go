@@ -78,8 +78,8 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		if err != nil {
 			return models.ServiceSession{}, "", false, err
 		}
-		// 预约客户到店后，若原预约客服仍被前序服务占用，则直接进入预约优先等待状态，
-		// 避免掉入普通现场流转并被后续现场单再次插队。
+		// 预约客户到店后，若原预约客服仍被前序服务占用，则进入预约履约等待状态，
+		// 避免掉入普通现场流转并被后续现场单继续挤占。
 		if availability.State != appointmentAvailabilitySafe && availability.PredictedWaitMinutes > 0 {
 			status = models.WithCSPrefix("appointment_waiting")
 			nextStep = ""

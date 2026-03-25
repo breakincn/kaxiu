@@ -2934,7 +2934,7 @@ watch(
     const tabParam = route.query.tab
     showErrorModalWithMessage(String(v))
     // 清除URL中的错误参数，避免重复显示；保留 tab
-    router.replace({ path: '/merchant', query: { tab: tabParam === 'queue' ? 'appointment' : (tabParam || 'appointment') } })
+    router.replace({ path: '/merchant', query: { tab: tabParam || 'appointment' } })
   }
 )
 
@@ -5993,8 +5993,8 @@ onMounted(async () => {
   // 尝试从 localStorage 恢复上次选择的 tab
   try {
     const savedTab = localStorage.getItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY)
-    if (savedTab && ['queue', 'verify', 'appointment', 'exception', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(savedTab)) {
-      const normalizedSavedTab = savedTab === 'queue' ? 'appointment' : (savedTab === 'start' ? 'service' : savedTab)
+    if (savedTab && ['verify', 'appointment', 'exception', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(savedTab)) {
+      const normalizedSavedTab = savedTab === 'start' ? 'service' : savedTab
       selectTab(normalizedSavedTab)
       console.log('从 localStorage 恢复 tab:', normalizedSavedTab)
     }
@@ -6013,8 +6013,8 @@ onMounted(async () => {
   
   // 检查查询参数，自动切换到指定Tab（优先级高于 localStorage）
   const tabParam = route.query.tab
-  if (tabParam && ['queue', 'verify', 'appointment', 'exception', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(tabParam)) {
-    selectTab(tabParam === 'queue' ? 'appointment' : (tabParam === 'start' ? 'service' : tabParam))
+  if (tabParam && ['verify', 'appointment', 'exception', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(tabParam)) {
+    selectTab(tabParam === 'start' ? 'service' : tabParam)
   }
 
   // 检查错误参数，显示错误弹窗
@@ -6022,7 +6022,7 @@ onMounted(async () => {
   if (errorParam) {
     showErrorModalWithMessage(String(errorParam))
     // 清除URL中的错误参数，避免刷新时重复显示
-    router.replace({ path: '/merchant', query: { tab: tabParam === 'queue' ? 'appointment' : (tabParam || 'appointment') } })
+    router.replace({ path: '/merchant', query: { tab: tabParam || 'appointment' } })
   }
 
   const userCodeParam = route.query.user_code
