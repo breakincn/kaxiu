@@ -98,8 +98,8 @@
                 {{ appointment.technician ? ((appointment.technician.service_role?.name || '客服') + '：' + appointment.technician.name) : '待分配' }}
               </span>
             </div>
-            <span :class="getAppointmentStatusClass(appointment.status)">
-              {{ getAppointmentStatusText(appointment.status) }}
+            <span :class="getAppointmentStatusClass(appointment)">
+              {{ getAppointmentStatusText(appointment) }}
             </span>
           </div>
           <div class="flex justify-between items-center">
@@ -3015,6 +3015,20 @@ const getReasonText = (reason) => {
   return map[value] || value
 }
 
+const getAppointmentFailureReasonText = (appt) => {
+  const raw = String(appt?.failed_reason || appt?.disruption_reason || '').trim()
+  if (!raw) return ''
+  return getReasonText(raw)
+}
+
+const getAppointmentFailureLabel = (appt) => {
+  const reason = String(appt?.failed_reason || appt?.disruption_reason || '').trim()
+  if (reason === 'service_unclosed_cross_day' || reason === 'appointment_state_inconsistent') {
+    return '异常结案'
+  }
+  return '预约失败'
+}
+
 const getDelayLedgerStatusText = (ledger) => {
   const redeemStatus = String(ledger?.redeem_status || '').trim()
   const ledgerStatus = String(ledger?.ledger_status || '').trim()
@@ -3313,7 +3327,11 @@ const cancelButtonDisabled = computed(() => {
 })
 
 const cancelButtonText = computed(() => {
-  if (isAppointmentFailed.value) return appointment.value?.failed_reason ? `预约失败：${appointment.value.failed_reason}` : '预约失败'
+  if (isAppointmentFailed.value) {
+    const label = getAppointmentFailureLabel(appointment.value)
+    const reason = getAppointmentFailureReasonText(appointment.value)
+    return reason ? `${label}：${reason}` : label
+  }
   if (appointment.value?.cancel_deadline_at) {
     const cancelDeadlineAt = new Date(appointment.value.cancel_deadline_at).getTime()
     if (Number.isFinite(cancelDeadlineAt) && Date.now() > cancelDeadlineAt) {
@@ -3529,8 +3547,12 @@ const submitUserRebuttal = async () => {
   }
 }
 
-const getAppointmentStatusClass = (status) => {
-  if (status === 'arrived' && isHistoricalArrivedAppointment(appointment.value)) {
+const getAppointmentStatusClass = (appt) => {
+  const status = String(appt?.status || '').trim()
+  if (status === 'arrived' && isHistoricalArrivedAppointment(appt)) {
+    return 'text-red-600'
+  }
+  if (status === 'failed') {
     return 'text-red-600'
   }
   const classes = {
@@ -3543,9 +3565,13 @@ const getAppointmentStatusClass = (status) => {
   return classes[status] || 'text-gray-500'
 }
 
-const getAppointmentStatusText = (status) => {
-  if (status === 'arrived' && isHistoricalArrivedAppointment(appointment.value)) {
+const getAppointmentStatusText = (appt) => {
+  const status = String(appt?.status || '').trim()
+  if (status === 'arrived' && isHistoricalArrivedAppointment(appt)) {
     return '超时待处理'
+  }
+  if (status === 'failed') {
+    return getAppointmentFailureLabel(appt)
   }
   const texts = {
     pending: '待确认',
