@@ -431,6 +431,7 @@ export const appointmentApi = {
   confirmAppointment: (id) => api.put(`/merchant/appointments/${id}/confirm`),
   finishAppointment: (id) => api.put(`/merchant/appointments/${id}/finish`),
   updateResolution: (id, data) => api.put(`/merchant/appointments/${id}/resolution`, data),
+  closeMerchantAppointmentException: (id, data) => api.post(`/merchant/appointments/${id}/exception-close`, data),
   reschedule: (id, data) => api.post(`/merchant/appointments/${id}/reschedule`, data),
   getMerchantRescheduleEligibility: (id) => api.get(`/merchant/appointments/${id}/reschedule-eligibility`),
   getMerchantRescheduleSlots: (id, date) => api.get(`/merchant/appointments/${id}/reschedule-slots`, { params: { date } }),

@@ -76,6 +76,17 @@ func sameCalendarDay(left, right time.Time) bool {
 	return left.Year() == right.Year() && left.Month() == right.Month() && left.Day() == right.Day()
 }
 
+func appointmentIsCrossDayUnfinished(appt *models.Appointment, now time.Time) bool {
+	if appt == nil {
+		return false
+	}
+	if normalizeAppointmentStatus(appt.Status) != "arrived" || appt.ActualStartAt != nil || appt.AppointmentTime == nil {
+		return false
+	}
+	loc := appointmentLocation()
+	return !sameCalendarDay(appt.AppointmentTime.In(loc), now.In(loc))
+}
+
 func decorateAppointmentDisplay(appt *models.Appointment, now time.Time) {
 	if appt == nil {
 		return
@@ -95,15 +106,26 @@ func decorateAppointmentDisplay(appt *models.Appointment, now time.Time) {
 		return
 	}
 
-	loc := appointmentLocation()
-	nowLocal := now.In(loc)
-	if appt.ActualStartAt == nil && appt.AppointmentTime != nil {
-		appointmentTime := appt.AppointmentTime.In(loc)
-		if !sameCalendarDay(appointmentTime, nowLocal) {
-			appt.DisplayWaitState = appointmentDisplayWaitStateCrossDayUnclosed
-			appt.DisplayWaitMessage = "该预约已超过原预约日期，当前仍未完成服务闭环，请优先改派、改签或异常结案"
+	if appointmentIsCrossDayUnfinished(appt, now) {
+		appt.DisplayWaitState = appointmentDisplayWaitStateCrossDayUnclosed
+		if appt.ActualArrivedAt != nil {
+			if strings.TrimSpace(appt.LiabilityLevel) == "" {
+				appt.LiabilityLevel = "merchant"
+			}
+			if strings.TrimSpace(appt.DisruptionReason) == "" {
+				appt.DisruptionReason = "service_unclosed_cross_day"
+			}
+			appt.DisplayWaitMessage = "客户已到店，但预约当日未开始服务且未完成系统收敛，当前按商户履约异常处理。请直接补偿或异常结案"
 			return
 		}
+		if strings.TrimSpace(appt.LiabilityLevel) == "" {
+			appt.LiabilityLevel = "pending_merchant"
+		}
+		if strings.TrimSpace(appt.DisruptionReason) == "" {
+			appt.DisruptionReason = "appointment_state_inconsistent"
+		}
+		appt.DisplayWaitMessage = "该预约状态与履约事实不一致，当前按历史异常数据处理。请核对现场记录后直接异常结案"
+		return
 	}
 
 	if appt.PredictedWaitMinutes > 0 {

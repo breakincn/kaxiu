@@ -3005,6 +3005,8 @@ const getReasonText = (reason) => {
     merchant_breach: '商户违约补偿',
     merchant_failure_offset: '恢复性对冲',
     delay_bucket_redeem: '拖堂补偿兑现',
+    service_unclosed_cross_day: '客户已到店但未开始服务，且跨日未完成结案',
+    appointment_state_inconsistent: '预约状态与履约事实不一致',
     user_no_show: '用户未到店',
     risk_released: '风险解除',
     technician_leave: '客服请假',

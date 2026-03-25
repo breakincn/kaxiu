@@ -1613,7 +1613,8 @@ func GetCardAppointment(c *gin.Context) {
 	var appointment models.Appointment
 	err := config.DB.Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).Preload("RescheduleRequests", appointmentRescheduleRequestPreload).Preload("CancelRequests", appointmentCancelRequestPreload).Preload("ForceMajeureReliefRequests", appointmentForceMajeureReliefRequestPreload).
 		Where("card_id = ? AND merchant_id = ? AND user_id = ? AND status IN ('pending', 'confirmed', 'arrived', 'failed')", card.ID, card.MerchantID, card.UserID).
-		Order("appointment_time ASC").
+		Order("CASE WHEN status IN ('pending','confirmed','arrived') THEN 0 ELSE 1 END ASC").
+		Order("appointment_time DESC").
 		First(&appointment).Error
 
 	if err != nil {
@@ -2173,6 +2174,124 @@ func UpdateAppointmentResolution(c *gin.Context) {
 	}
 	appointment.ResolutionNote = note
 	appointment.Status = normalizeAppointmentStatus(appointment.Status)
+	c.JSON(http.StatusOK, gin.H{"data": appointment})
+}
+
+func CloseAppointmentException(c *gin.Context) {
+	id := c.Param("id")
+	appointmentID64, err := strconv.ParseUint(strings.TrimSpace(id), 10, 64)
+	if err != nil || appointmentID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的预约ID"})
+		return
+	}
+	appointment, err := loadAppointmentByID(config.DB, uint(appointmentID64))
+	if err != nil || appointment == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
+		return
+	}
+	if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+		return
+	}
+
+	var input struct {
+		Reason string `json:"reason" binding:"required,max=255"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "异常结案说明不能为空"})
+		return
+	}
+
+	now := time.Now().In(appointmentLocation())
+	if !appointmentIsCrossDayUnfinished(appointment, now) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前预约不属于跨日未闭环异常，不能直接异常结案"})
+		return
+	}
+
+	actorType, actorID := getAppointmentActor(c)
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		currentPtr, err := loadAppointmentByID(tx.Clauses(clause.Locking{Strength: "UPDATE"}), appointment.ID)
+		if err != nil {
+			return err
+		}
+		if currentPtr == nil {
+			return gorm.ErrRecordNotFound
+		}
+		current := *currentPtr
+		if !appointmentIsCrossDayUnfinished(&current, now) {
+			return apiErr{status: http.StatusBadRequest, msg: "当前预约不属于跨日未闭环异常，不能直接异常结案"}
+		}
+
+		if current.UsageID != nil && current.ServiceSessionID != nil {
+			if err := cancelUnstartedAppointmentArrival(tx, &current, now); err != nil {
+				return err
+			}
+		}
+
+		resolutionNote := appendAppointmentResolutionNote(current.ResolutionNote, "跨日未闭环异常结案："+reason)
+		updates := map[string]interface{}{
+			"status":                     "failed",
+			"failed_at":                  &now,
+			"failed_reason":              "service_unclosed_cross_day",
+			"disruption_status":          "closed",
+			"disruption_reason":          "service_unclosed_cross_day",
+			"liability_level":            "merchant",
+			"merchant_breach_pending":    false,
+			"breach_decision_at":         &now,
+			"closed_reason":              "exception_closed",
+			"closed_by_type":             actorType,
+			"closed_by_id":               actorID,
+			"resolution_note":            resolutionNote,
+			"settlement_status_snapshot": "pending",
+		}
+		if err := tx.Model(&models.Appointment{}).Where("id = ? AND status = ?", current.ID, current.Status).Updates(updates).Error; err != nil {
+			return err
+		}
+		if current.AppointmentSettlementID != nil && *current.AppointmentSettlementID > 0 {
+			if err := tx.Model(&models.AppointmentSettlement{}).Where("id = ?", *current.AppointmentSettlementID).Updates(map[string]interface{}{
+				"status":                     "pending",
+				"settlement_status_snapshot": "pending",
+				"merchant_breach_pending":    false,
+				"breach_decision_at":         &now,
+				"liability_level":            "merchant",
+				"latest_reason":              "service_unclosed_cross_day",
+			}).Error; err != nil {
+				return err
+			}
+		}
+		current.Status = "failed"
+		current.FailedAt = &now
+		current.FailedReason = "service_unclosed_cross_day"
+		current.DisruptionStatus = "closed"
+		current.DisruptionReason = "service_unclosed_cross_day"
+		current.LiabilityLevel = "merchant"
+		current.ClosedReason = "exception_closed"
+		current.ClosedByType = actorType
+		current.ClosedByID = actorID
+		current.ResolutionNote = resolutionNote
+		current.SettlementStatusSnapshot = "pending"
+		appointment = &current
+		return nil
+	})
+	if err != nil {
+		var ae apiErr
+		if errors.As(err, &ae) {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "异常结案失败"})
+		return
+	}
+	appointment.Status = normalizeAppointmentStatus(appointment.Status)
+	decorateAppointmentDisplay(appointment, now)
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 

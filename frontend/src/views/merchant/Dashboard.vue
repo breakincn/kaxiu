@@ -336,6 +336,13 @@
                 {{ getAppointmentRiskHint(appt) }}
               </div>
               <div
+                v-if="isCrossDayUnfinishedAppointment(appt)"
+                class="mt-2 rounded-lg px-3 py-2 text-sm bg-red-50 text-red-700 border border-red-100 space-y-1"
+              >
+                <div>责任归属：{{ getLiabilityText(appt.liability_level) }}</div>
+                <div>异常原因：{{ getReasonText(appt.disruption_reason) }}</div>
+              </div>
+              <div
                 v-if="getLatestPendingRescheduleRequest(appt)"
                 class="mt-2 rounded-lg px-3 py-2 text-sm border"
                 :class="isMerchantConfirmationPending(appt) ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-blue-50 text-blue-700 border-blue-100'"
@@ -419,7 +426,7 @@
                 取消
               </button>
               <button
-                v-if="appt.status === 'arrived' && appt.service_session_id"
+                v-if="appt.status === 'arrived' && appt.service_session_id && !isCrossDayUnfinishedAppointment(appt)"
                 @click="reassignAppointmentService(appt)"
                 class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
               >
@@ -452,6 +459,13 @@
                 class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
               >
                 发起改签
+              </button>
+              <button
+                v-if="isCrossDayUnfinishedAppointment(appt)"
+                @click="closeAppointmentException(appt)"
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+              >
+                异常结案
               </button>
               <button
                 v-if="shouldShowAppointmentCompensation(appt)"
@@ -2650,16 +2664,19 @@ const assignedAppointments = computed(() => {
 const appointmentGroups = computed(() => {
   const list = appointments.value || []
   if (!isTechnicianAuth()) {
-    const active = list.filter(a => !['completed', 'no_show', 'failed'].includes(a?.status))
+    const exceptions = list.filter(a => isCrossDayUnfinishedAppointment(a))
+    const active = list.filter(a => !isCrossDayUnfinishedAppointment(a) && !['completed', 'no_show', 'failed'].includes(a?.status))
     const settled = list.filter(a => ['completed', 'no_show', 'failed'].includes(a?.status))
     const groups = []
     if (active.length > 0) groups.push({ key: 'active', title: '进行中', items: active })
+    if (exceptions.length > 0) groups.push({ key: 'exceptions', title: '异常待结案', items: exceptions })
     if (settled.length > 0) groups.push({ key: 'settled', title: '已结束', items: settled })
     return groups
   }
 
   const groups = []
-  const myActive = assignedAppointments.value.filter(a => !['completed', 'no_show', 'failed'].includes(a?.status))
+  const myExceptions = assignedAppointments.value.filter(a => isCrossDayUnfinishedAppointment(a))
+  const myActive = assignedAppointments.value.filter(a => !isCrossDayUnfinishedAppointment(a) && !['completed', 'no_show', 'failed'].includes(a?.status))
   const mySettled = assignedAppointments.value.filter(a => ['completed', 'no_show', 'failed'].includes(a?.status))
   if (unassignedAppointments.value.length > 0) {
     groups.push({ key: 'unassigned', title: '待分配', items: unassignedAppointments.value })
@@ -2670,6 +2687,9 @@ const appointmentGroups = computed(() => {
       title: unassignedAppointments.value.length > 0 ? '我的预约' : '',
       items: myActive
     })
+  }
+  if (myExceptions.length > 0) {
+    groups.push({ key: 'assigned-exceptions', title: '异常待结案', items: myExceptions })
   }
   if (mySettled.length > 0) {
     groups.push({ key: 'assigned-settled', title: '已结束', items: mySettled })
@@ -4715,6 +4735,8 @@ const getAppointmentDisplayWaitState = (appt) => String(appt?.display_wait_state
 
 const getAppointmentDisplayWaitMessage = (appt) => String(appt?.display_wait_message || '').trim()
 
+const isCrossDayUnfinishedAppointment = (appt) => getAppointmentDisplayWaitState(appt) === 'cross_day_unfinished'
+
 const getAppointmentTimeMs = (appt) => {
   const raw = appt?.appointment_time
   if (!raw) return null
@@ -4731,7 +4753,7 @@ const isSameCalendarDay = (leftMs, rightMs) => {
 }
 
 const isHistoricalArrivedAppointment = (appt) => {
-  if (getAppointmentDisplayWaitState(appt) === 'cross_day_unfinished') return true
+  if (isCrossDayUnfinishedAppointment(appt)) return true
   if (!appt || appt.status !== 'arrived' || appt.actual_start_at) return false
   const appointmentTimeMs = getAppointmentTimeMs(appt)
   if (appointmentTimeMs === null) return false
@@ -4771,6 +4793,7 @@ const getAppointmentRiskHintClass = (appt) => {
 
 const shouldShowAppointmentReschedule = (appt) => {
   if (!appt) return false
+  if (isCrossDayUnfinishedAppointment(appt)) return false
   // 改签是重新安排预约，只有“还没彻底结束”的预约才允许改到新时间。
   return (appt.status === 'confirmed' || appt.status === 'arrived') && !getLatestPendingRescheduleRequest(appt)
 }
@@ -4883,6 +4906,8 @@ const getReasonText = (reason) => {
     merchant_breach: '商户违约补偿',
     merchant_failure_offset: '恢复性对冲',
     delay_bucket_redeem: '拖堂补偿兑现',
+    service_unclosed_cross_day: '客户已到店但未开始服务，且跨日未完成结案',
+    appointment_state_inconsistent: '预约状态与履约事实不一致',
     user_no_show: '用户未到店',
     risk_released: '风险解除',
     technician_leave: '客服请假',
@@ -4963,6 +4988,24 @@ const reassignAppointmentService = async (appt) => {
     await fetchServiceSessions()
   } catch (err) {
     alert(err.response?.data?.error || '改派失败')
+  }
+}
+
+const closeAppointmentException = async (appt) => {
+  if (!isCrossDayUnfinishedAppointment(appt)) {
+    alert('当前预约不属于跨日未闭环异常')
+    return
+  }
+  const reason = window.prompt('请输入异常结案说明，例如：客户已到店但当日未开始服务，按商户履约异常结案')
+  const trimmedReason = String(reason || '').trim()
+  if (!trimmedReason) return
+  try {
+    await appointmentApi.closeMerchantAppointmentException(appt.id, { reason: trimmedReason })
+    alert('已完成异常结案，预约已转入已结束')
+    await fetchAppointments()
+    await fetchServiceSessions()
+  } catch (err) {
+    alert(err.response?.data?.error || '异常结案失败')
   }
 }
 

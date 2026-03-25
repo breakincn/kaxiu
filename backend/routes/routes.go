@@ -177,6 +177,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.POST("/appointments/:id/cancel-requests/:request_id/accept", handlers.AcceptAppointmentCancelRequest)
 	auth.POST("/appointments/:id/cancel-requests/:request_id/reject", handlers.RejectAppointmentCancelRequest)
 	auth.PUT("/appointments/:id/resolution", middleware.RequirePermission("merchant.appointment.manage"), handlers.UpdateAppointmentResolution)
+	auth.POST("/appointments/:id/exception-close", middleware.RequirePermission("merchant.appointment.manage"), handlers.CloseAppointmentException)
 	auth.POST("/appointments/:id/reschedule", handlers.RescheduleAppointment)
 	auth.POST("/appointments/:id/reschedule-requests", handlers.CreateAppointmentRescheduleRequest)
 	auth.POST("/appointments/:id/reschedule-requests/:request_id/accept", handlers.AcceptAppointmentRescheduleRequest)
