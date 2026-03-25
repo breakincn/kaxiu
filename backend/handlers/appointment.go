@@ -1402,6 +1402,110 @@ func cancelUnstartedAppointmentArrival(tx *gorm.DB, appt *models.Appointment, no
 	return nil
 }
 
+func autoCloseCrossDayUnfinishedAppointment(tx *gorm.DB, appt *models.Appointment, now time.Time, actorType string, actorID *uint, resolutionReason string) error {
+	if tx == nil || appt == nil || appt.ID == 0 {
+		return nil
+	}
+	if !appointmentIsCrossDayUnfinished(appt, now) || !appointmentHasArrivalEvidence(appt) {
+		return nil
+	}
+
+	currentPtr, err := loadAppointmentByID(tx.Clauses(clause.Locking{Strength: "UPDATE"}), appt.ID)
+	if err != nil {
+		return err
+	}
+	if currentPtr == nil {
+		return gorm.ErrRecordNotFound
+	}
+	current := *currentPtr
+	if !appointmentIsCrossDayUnfinished(&current, now) || !appointmentHasArrivalEvidence(&current) {
+		*appt = current
+		return nil
+	}
+
+	if current.UsageID != nil && current.ServiceSessionID != nil {
+		if err := cancelUnstartedAppointmentArrival(tx, &current, now); err != nil {
+			return err
+		}
+	}
+	if _, err := initializeAppointmentSettlement(tx, &current, "service_unclosed_cross_day"); err != nil {
+		return err
+	}
+
+	resolutionNote := appendAppointmentResolutionNote(current.ResolutionNote, resolutionReason)
+	updates := map[string]interface{}{
+		"status":                             "failed",
+		"failed_at":                          &now,
+		"failed_reason":                      "service_unclosed_cross_day",
+		"disruption_status":                  "closed",
+		"disruption_reason":                  "service_unclosed_cross_day",
+		"liability_level":                    "merchant",
+		"merchant_breach_pending":            false,
+		"breach_decision_at":                 &now,
+		"salary_settlement_reference_status": "refund",
+		"closed_reason":                      "auto_exception_closed",
+		"closed_by_type":                     actorType,
+		"closed_by_id":                       actorID,
+		"resolution_note":                    resolutionNote,
+		"settlement_status_snapshot":         "pending",
+	}
+	if current.ActualArrivedAt == nil && current.ArrivedAt != nil {
+		updates["actual_arrived_at"] = current.ArrivedAt
+	}
+	if err := tx.Model(&models.Appointment{}).Where("id = ? AND status = ?", current.ID, current.Status).Updates(updates).Error; err != nil {
+		return err
+	}
+	if current.AppointmentSettlementID != nil && *current.AppointmentSettlementID > 0 {
+		if err := tx.Model(&models.AppointmentSettlement{}).Where("id = ?", *current.AppointmentSettlementID).Updates(map[string]interface{}{
+			"status":                             "pending",
+			"settlement_status_snapshot":         "pending",
+			"merchant_breach_pending":            false,
+			"breach_decision_at":                 &now,
+			"liability_level":                    "merchant",
+			"salary_settlement_reference_status": "refund",
+			"latest_reason":                      "service_unclosed_cross_day",
+		}).Error; err != nil {
+			return err
+		}
+	}
+
+	current.Status = "failed"
+	current.FailedAt = &now
+	current.FailedReason = "service_unclosed_cross_day"
+	current.DisruptionStatus = "closed"
+	current.DisruptionReason = "service_unclosed_cross_day"
+	current.LiabilityLevel = "merchant"
+	current.MerchantBreachPending = false
+	current.BreachDecisionAt = &now
+	current.SalarySettlementReferenceStatus = "refund"
+	current.ClosedReason = "auto_exception_closed"
+	current.ClosedByType = actorType
+	current.ClosedByID = actorID
+	current.ResolutionNote = resolutionNote
+	current.SettlementStatusSnapshot = "pending"
+	if current.ActualArrivedAt == nil && current.ArrivedAt != nil {
+		current.ActualArrivedAt = current.ArrivedAt
+	}
+	*appt = current
+	return nil
+}
+
+func normalizeAppointmentForRead(appt *models.Appointment, now time.Time) error {
+	if appt == nil {
+		return nil
+	}
+	appt.Status = normalizeAppointmentStatus(appt.Status)
+	if appointmentIsCrossDayUnfinished(appt, now) && appointmentHasArrivalEvidence(appt) {
+		if err := config.DB.Transaction(func(tx *gorm.DB) error {
+			return autoCloseCrossDayUnfinishedAppointment(tx, appt, now, "system", nil, "系统自动结案：读取时发现跨日未开始服务")
+		}); err != nil {
+			return err
+		}
+	}
+	appt.Status = normalizeAppointmentStatus(appt.Status)
+	return nil
+}
+
 func compensationDisplayText(t string, value int, remark string) string {
 	switch t {
 	case "extra_times":
@@ -1563,7 +1667,10 @@ func GetMerchantAppointments(c *gin.Context) {
 	query.Order("appointment_time ASC").Find(&appointments)
 	now := time.Now().In(appointmentLocation())
 	for i := range appointments {
-		appointments[i].Status = normalizeAppointmentStatus(appointments[i].Status)
+		if err := normalizeAppointmentForRead(&appointments[i], now); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "自动收口跨日异常预约失败"})
+			return
+		}
 		decorateAppointmentDisplay(&appointments[i], now)
 	}
 	c.JSON(http.StatusOK, gin.H{"data": appointments})
@@ -1584,7 +1691,10 @@ func GetUserAppointments(c *gin.Context) {
 	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).Preload("RescheduleRequests", appointmentRescheduleRequestPreload).Preload("CancelRequests", appointmentCancelRequestPreload).Preload("ForceMajeureReliefRequests", appointmentForceMajeureReliefRequestPreload).Where("user_id = ?", authUserID).Order("appointment_time DESC").Find(&appointments)
 	now := time.Now().In(appointmentLocation())
 	for i := range appointments {
-		appointments[i].Status = normalizeAppointmentStatus(appointments[i].Status)
+		if err := normalizeAppointmentForRead(&appointments[i], now); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "自动收口跨日异常预约失败"})
+			return
+		}
 		decorateAppointmentDisplay(&appointments[i], now)
 	}
 	c.JSON(http.StatusOK, gin.H{"data": appointments})
@@ -1632,7 +1742,6 @@ func GetCardAppointment(c *gin.Context) {
 	}
 
 	log.Printf("找到预约: ID=%d, 状态=%s, 时间=%v", appointment.ID, appointment.Status, appointment.AppointmentTime)
-	appointment.Status = normalizeAppointmentStatus(appointment.Status)
 
 	now := time.Now()
 	autoCanceled, autoCancelErr := autoCancelAppointmentIfOverdue(&appointment, now)
@@ -1647,6 +1756,11 @@ func GetCardAppointment(c *gin.Context) {
 			"queue_before":      0,
 			"estimated_minutes": 0,
 		}})
+		return
+	}
+	if err := normalizeAppointmentForRead(&appointment, now.In(appointmentLocation())); err != nil {
+		log.Printf("自动收口跨日异常预约失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "自动收口跨日异常预约失败"})
 		return
 	}
 	decorateAppointmentDisplay(&appointment, now.In(appointmentLocation()))
@@ -2226,65 +2340,8 @@ func CloseAppointmentException(c *gin.Context) {
 			return apiErr{status: http.StatusBadRequest, msg: "当前预约不属于跨日未闭环异常，不能直接异常结案"}
 		}
 
-		if current.UsageID != nil && current.ServiceSessionID != nil {
-			if err := cancelUnstartedAppointmentArrival(tx, &current, now); err != nil {
-				return err
-			}
-		}
-		if _, err := initializeAppointmentSettlement(tx, &current, "service_unclosed_cross_day"); err != nil {
+		if err := autoCloseCrossDayUnfinishedAppointment(tx, &current, now, actorType, actorID, "跨日未闭环异常结案："+reason); err != nil {
 			return err
-		}
-
-		resolutionNote := appendAppointmentResolutionNote(current.ResolutionNote, "跨日未闭环异常结案："+reason)
-		updates := map[string]interface{}{
-			"status":                             "failed",
-			"failed_at":                          &now,
-			"failed_reason":                      "service_unclosed_cross_day",
-			"disruption_status":                  "closed",
-			"disruption_reason":                  "service_unclosed_cross_day",
-			"liability_level":                    "merchant",
-			"merchant_breach_pending":            false,
-			"breach_decision_at":                 &now,
-			"salary_settlement_reference_status": "refund",
-			"closed_reason":                      "exception_closed",
-			"closed_by_type":                     actorType,
-			"closed_by_id":                       actorID,
-			"resolution_note":                    resolutionNote,
-			"settlement_status_snapshot":         "pending",
-		}
-		if current.ActualArrivedAt == nil && current.ArrivedAt != nil {
-			updates["actual_arrived_at"] = current.ArrivedAt
-		}
-		if err := tx.Model(&models.Appointment{}).Where("id = ? AND status = ?", current.ID, current.Status).Updates(updates).Error; err != nil {
-			return err
-		}
-		if current.AppointmentSettlementID != nil && *current.AppointmentSettlementID > 0 {
-			if err := tx.Model(&models.AppointmentSettlement{}).Where("id = ?", *current.AppointmentSettlementID).Updates(map[string]interface{}{
-				"status":                             "pending",
-				"settlement_status_snapshot":         "pending",
-				"merchant_breach_pending":            false,
-				"breach_decision_at":                 &now,
-				"liability_level":                    "merchant",
-				"salary_settlement_reference_status": "refund",
-				"latest_reason":                      "service_unclosed_cross_day",
-			}).Error; err != nil {
-				return err
-			}
-		}
-		current.Status = "failed"
-		current.FailedAt = &now
-		current.FailedReason = "service_unclosed_cross_day"
-		current.DisruptionStatus = "closed"
-		current.DisruptionReason = "service_unclosed_cross_day"
-		current.LiabilityLevel = "merchant"
-		current.SalarySettlementReferenceStatus = "refund"
-		current.ClosedReason = "exception_closed"
-		current.ClosedByType = actorType
-		current.ClosedByID = actorID
-		current.ResolutionNote = resolutionNote
-		current.SettlementStatusSnapshot = "pending"
-		if current.ActualArrivedAt == nil && current.ArrivedAt != nil {
-			current.ActualArrivedAt = current.ArrivedAt
 		}
 		appointment = &current
 		return nil
