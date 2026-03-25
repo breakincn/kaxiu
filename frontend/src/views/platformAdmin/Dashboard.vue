@@ -9,6 +9,47 @@
     </header>
 
     <div class="px-4 py-4 space-y-4">
+      <div class="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="text-gray-800 font-medium">系统调度器健康状态</div>
+            <div class="mt-2 text-sm text-gray-500">用于检查服务会话、预约、手牌锁卡调度器是否持续产生 tick，仅在平台端展示。</div>
+          </div>
+          <div class="px-2.5 py-1 rounded-full text-xs font-medium" :class="schedulerHealthBadgeClass">
+            {{ schedulerHealthBadgeText }}
+          </div>
+        </div>
+
+        <div v-if="schedulerHealthError" class="mt-3 text-sm text-red-500">{{ schedulerHealthError }}</div>
+        <div v-else-if="!schedulerHealthLoaded" class="mt-3 text-sm text-gray-400">读取调度器状态中...</div>
+        <div v-else class="mt-3 space-y-2">
+          <div class="text-xs text-gray-400">{{ schedulerHealthSummary }}</div>
+          <div
+            v-for="item in schedulerHealthItems"
+            :key="item.key"
+            class="rounded-lg border px-3 py-3"
+            :class="getSchedulerItemRowClass(item.status)"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="text-sm font-medium text-gray-800">{{ item.label }}</div>
+                <div class="text-xs text-gray-500 mt-1">{{ item.message }}</div>
+              </div>
+              <div class="text-xs font-medium" :class="getSchedulerItemTextClass(item.status)">
+                {{ getSchedulerItemStatusText(item.status) }}
+              </div>
+            </div>
+            <div class="mt-2 text-xs text-gray-500">
+              最近 tick：{{ formatSchedulerTickAt(item.last_tick_at) }}
+              <span v-if="item.last_tick_age_sec > 0"> · {{ formatSchedulerAge(item.last_tick_age_sec) }}</span>
+            </div>
+            <div class="mt-1 text-xs text-gray-400">
+              来源：{{ item.source_service || '-' }}<span v-if="item.source_pid"> / PID {{ item.source_pid }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="bg-white rounded-xl shadow-sm p-4">
         <div class="flex items-center justify-between">
           <div class="text-gray-800 font-medium">运营角色（ServiceRole）</div>
@@ -189,7 +230,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { platformAdminApi } from '../../api'
 
@@ -215,6 +256,34 @@ const operationalRoles = ref([])
 const showProfessionalBasePermModal = ref(false)
 const professionalBasePermItems = ref([])
 const loadingProfessionalBasePerms = ref(false)
+const schedulerHealth = ref(null)
+const schedulerHealthError = ref('')
+const schedulerHealthLoaded = ref(false)
+let schedulerHealthTimer = null
+
+const schedulerHealthItems = computed(() => Array.isArray(schedulerHealth.value?.items) ? schedulerHealth.value.items : [])
+
+const schedulerHealthBadgeText = computed(() => {
+  const status = String(schedulerHealth.value?.overall_status || '').trim()
+  if (!status) return '未读取'
+  if (status === 'healthy') return '正常'
+  if (status === 'degraded') return '异常'
+  return '未知'
+})
+
+const schedulerHealthBadgeClass = computed(() => {
+  const status = String(schedulerHealth.value?.overall_status || '').trim()
+  if (status === 'healthy') return 'bg-green-50 text-green-700'
+  if (status === 'degraded') return 'bg-red-50 text-red-600'
+  return 'bg-gray-100 text-gray-500'
+})
+
+const schedulerHealthSummary = computed(() => {
+  const generatedAt = schedulerHealth.value?.generated_at ? formatDateTime(schedulerHealth.value.generated_at) : '-'
+  const threshold = Number(schedulerHealth.value?.stale_threshold_minutes || 0)
+  const message = String(schedulerHealth.value?.overall_message || '').trim() || '未读取调度器状态'
+  return `最近检查：${generatedAt} · 阈值：${threshold || '-'} 分钟 · ${message}`
+})
 
 const logout = () => {
   localStorage.removeItem('platformAdminToken')
@@ -228,6 +297,84 @@ const ensureToken = () => {
     return false
   }
   return true
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  const year = String(date.getFullYear()).slice(-2)
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+const formatSchedulerTickAt = (value) => {
+  if (!value) return '暂无'
+  return formatDateTime(value)
+}
+
+const formatSchedulerAge = (seconds) => {
+  const total = Number(seconds || 0)
+  if (!Number.isFinite(total) || total <= 0) return '刚刚'
+  const mins = Math.floor(total / 60)
+  const secs = total % 60
+  if (mins > 0) return `${mins}分${secs}秒前`
+  return `${secs}秒前`
+}
+
+const getSchedulerItemStatusText = (status) => {
+  const value = String(status || '').trim()
+  if (value === 'healthy') return '正常'
+  if (value === 'stale') return '超时'
+  if (value === 'missing') return '缺失'
+  return value || '未知'
+}
+
+const getSchedulerItemRowClass = (status) => {
+  const value = String(status || '').trim()
+  if (value === 'healthy') return 'border-green-100 bg-green-50/40'
+  if (value === 'stale' || value === 'missing') return 'border-red-100 bg-red-50/40'
+  return 'border-gray-100 bg-gray-50'
+}
+
+const getSchedulerItemTextClass = (status) => {
+  const value = String(status || '').trim()
+  if (value === 'healthy') return 'text-green-600'
+  if (value === 'stale' || value === 'missing') return 'text-red-600'
+  return 'text-gray-500'
+}
+
+const fetchSchedulerHealth = async (silent = false) => {
+  if (!silent) {
+    schedulerHealthError.value = ''
+  }
+  try {
+    const res = await platformAdminApi.getSchedulerHealth({})
+    schedulerHealth.value = res.data?.data || null
+    schedulerHealthLoaded.value = true
+    schedulerHealthError.value = ''
+  } catch (e) {
+    if (!silent) {
+      schedulerHealthError.value = e.response?.data?.error || '读取调度器健康状态失败'
+    }
+    schedulerHealthLoaded.value = true
+  }
+}
+
+const startSchedulerHealthTimer = () => {
+  if (schedulerHealthTimer) return
+  schedulerHealthTimer = setInterval(() => {
+    fetchSchedulerHealth(true)
+  }, 30000)
+}
+
+const stopSchedulerHealthTimer = () => {
+  if (!schedulerHealthTimer) return
+  clearInterval(schedulerHealthTimer)
+  schedulerHealthTimer = null
 }
 
 const loadRoles = async () => {
@@ -399,7 +546,8 @@ const saveRolePerms = async () => {
 onMounted(async () => {
   if (!ensureToken()) return
   try {
-    await Promise.all([loadRoles(), loadPerms()])
+    await Promise.all([loadRoles(), loadPerms(), fetchSchedulerHealth()])
+    startSchedulerHealthTimer()
   } catch (e) {
     const msg = e.response?.data?.error || ''
     if (msg === '无权限' || msg === '平台管理员未配置') {
@@ -407,5 +555,9 @@ onMounted(async () => {
       return
     }
   }
+})
+
+onUnmounted(() => {
+  stopSchedulerHealthTimer()
 })
 </script>

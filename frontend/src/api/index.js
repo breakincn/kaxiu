@@ -209,7 +209,8 @@ export const platformAdminApi = {
   setRolePermissions: (roleId, data) => api.post(`/admin/service-roles/${roleId}/permissions`, data),
 
   getProfessionalBasePermissions: () => api.get('/admin/professional-base-permissions'),
-  setProfessionalBasePermissions: (data) => api.post('/admin/professional-base-permissions', data)
+  setProfessionalBasePermissions: (data) => api.post('/admin/professional-base-permissions', data),
+  getSchedulerHealth: (params) => api.get('/admin/system/scheduler-health', { params })
 }
 
 export const userApi = {

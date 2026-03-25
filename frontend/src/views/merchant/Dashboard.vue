@@ -155,53 +155,6 @@
       </button>
     </div>
 
-    <div class="px-4 pb-3">
-      <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <div class="font-medium text-gray-800">调度器健康状态</div>
-            <div class="text-sm text-gray-500 mt-1">用于检查服务会话、预约、手牌锁卡调度器是否持续产生 tick。</div>
-          </div>
-          <div
-            class="px-2.5 py-1 rounded-full text-xs font-medium"
-            :class="schedulerHealthBadgeClass"
-          >
-            {{ schedulerHealthBadgeText }}
-          </div>
-        </div>
-        <div v-if="schedulerHealthError" class="mt-3 text-sm text-red-500">{{ schedulerHealthError }}</div>
-        <div v-else-if="!schedulerHealthLoaded" class="mt-3 text-sm text-gray-400">读取调度器状态中...</div>
-        <div v-else class="mt-3 space-y-2">
-          <div class="text-xs text-gray-400">
-            {{ schedulerHealthSummary }}
-          </div>
-          <div
-            v-for="item in schedulerHealthItems"
-            :key="item.key"
-            class="rounded-lg border px-3 py-3"
-            :class="getSchedulerItemRowClass(item.status)"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <div class="text-sm font-medium text-gray-800">{{ item.label }}</div>
-                <div class="text-xs text-gray-500 mt-1">{{ item.message }}</div>
-              </div>
-              <div class="text-xs font-medium" :class="getSchedulerItemTextClass(item.status)">
-                {{ getSchedulerItemStatusText(item.status) }}
-              </div>
-            </div>
-            <div class="mt-2 text-xs text-gray-500">
-              最近 tick：{{ formatSchedulerTickAt(item.last_tick_at) }}
-              <span v-if="item.last_tick_age_sec > 0"> · {{ formatSchedulerAge(item.last_tick_age_sec) }}</span>
-            </div>
-            <div class="mt-1 text-xs text-gray-400">
-              来源：{{ item.source_service || '-' }}<span v-if="item.source_pid"> / PID {{ item.source_pid }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="px-4 pt-1 pb-3">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-start justify-between gap-3">
@@ -6093,8 +6046,6 @@ onMounted(async () => {
   console.log('Valid merchantId:', parsedMerchantId, 'loading data...')
   merchantId.value = parsedMerchantId
   await fetchMerchant()
-  await fetchSchedulerHealth()
-  startSchedulerHealthTimer()
   console.log('Merchant loaded:', merchant.value)
   const tomorrow = new Date()
   tomorrow.setDate(tomorrow.getDate() + 1)
@@ -6495,7 +6446,6 @@ onBeforeRouteLeave(() => {
 onUnmounted(() => {
   stopCountdownTimer()
   stopServiceSessionTimer()
-  stopSchedulerHealthTimer()
   stopContinueCallBlockedTimer()
   clearCountdownBoundaryState()
   serviceTabRefreshQueued.value = false
@@ -6510,7 +6460,6 @@ onUnmounted(() => {
 onActivated(() => {
   if (!merchantId.value) return
   fetchMerchant()
-  fetchSchedulerHealth(true)
   
   // 根据当前Tab刷新对应数据
   if (currentTab.value === 'verify') {
