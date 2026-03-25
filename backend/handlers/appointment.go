@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"kabao/config"
 	"kabao/models"
-	"kabao/queue"
 	"log"
 	"net/http"
 	"sort"
@@ -1804,9 +1803,7 @@ func GetCardAppointment(c *gin.Context) {
 			log.Printf("未找到预约: user_id=%d, merchant_id=%d", card.UserID, card.MerchantID)
 		}
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{
-			"appointment":       nil,
-			"queue_before":      0,
-			"estimated_minutes": 0,
+			"appointment": nil,
 		}})
 		return
 	}
@@ -1822,9 +1819,7 @@ func GetCardAppointment(c *gin.Context) {
 	}
 	if autoCanceled {
 		c.JSON(http.StatusOK, gin.H{"data": gin.H{
-			"appointment":       nil,
-			"queue_before":      0,
-			"estimated_minutes": 0,
+			"appointment": nil,
 		}})
 		return
 	}
@@ -1835,29 +1830,12 @@ func GetCardAppointment(c *gin.Context) {
 	}
 	decorateAppointmentDisplay(&appointment, now.In(appointmentLocation()))
 
-	// 计算预约队列排队信息（内存队列）
-	queueBefore := int64(0)
-	if appointment.AppointmentTime != nil {
-		date := appointment.AppointmentTime.Format("2006-01-02")
-		snap := queue.Default.Snapshot(card.MerchantID, date, queue.QueueTypeAppointment)
-		if snap.ByID != nil {
-			if tk, ok := snap.ByID[appointment.ID]; ok {
-				queueBefore = int64(tk.No - 1)
-				if queueBefore < 0 {
-					queueBefore = 0
-				}
-			}
-		}
-	}
-
 	var merchant models.Merchant
 	config.DB.First(&merchant, card.MerchantID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"appointment":                    appointment,
-			"queue_before":                   queueBefore,
-			"estimated_minutes":              int(queueBefore) * 30,
 			"service_session_id":             appointment.ServiceSessionID,
 			"predicted_wait_minutes":         appointment.PredictedWaitMinutes,
 			"display_wait_state":             appointment.DisplayWaitState,
@@ -2164,12 +2142,6 @@ func ConfirmAppointment(c *gin.Context) {
 		_ = hydrateAppointmentRelations(config.DB, &appointment)
 	}
 	appointment.Status = normalizeAppointmentStatus(appointment.Status)
-	// 入预约队列（内存队列）：仅 confirmed 才进入预约排队
-	if appointment.AppointmentTime != nil && queue.Default != nil {
-		date := appointment.AppointmentTime.Format("2006-01-02")
-		now2 := time.Now()
-		queue.Default.Enqueue(appointment.MerchantID, date, queue.QueueTypeAppointment, appointment.ID, 1, true, now2)
-	}
 	c.JSON(http.StatusOK, gin.H{"data": appointment})
 }
 

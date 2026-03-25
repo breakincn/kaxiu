@@ -87,7 +87,7 @@
           <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
-          <span class="font-medium text-gray-800">预约排队</span>
+          <span class="font-medium text-gray-800">预约状态</span>
         </div>
 
         <div class="space-y-3">
@@ -119,15 +119,9 @@
               </div>
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-4 pt-3 mt-3 border-t border-gray-100">
-            <div>
-              <div class="text-gray-400 text-xs">前面排队</div>
-              <div class="text-2xl font-bold text-gray-800">{{ activeAppointmentQueueBefore }}<span class="text-sm font-normal">人</span></div>
-            </div>
-            <div>
-              <div class="text-gray-400 text-xs">{{ activeAppointmentWaitLabel }}</div>
-              <div class="text-2xl font-bold text-gray-800">{{ activeAppointmentWaitMinutes }}<span class="text-sm font-normal">分钟</span></div>
-            </div>
+          <div v-if="appointmentWaitMetricVisible" class="pt-3 mt-3 border-t border-gray-100">
+            <div class="text-gray-400 text-xs">{{ appointmentWaitLabel }}</div>
+            <div class="text-2xl font-bold text-gray-800">{{ appointmentWaitMinutes }}<span class="text-sm font-normal">分钟</span></div>
           </div>
           <div
             v-if="appointmentWaitingHint"
@@ -261,7 +255,7 @@
               </button>
             </div>
           </div>
-          <p class="text-xs text-gray-400">* 排队进度由商户服务确认后即时更新</p>
+          <p class="text-xs text-gray-400">* 预约履约状态会随商户服务推进及时更新</p>
           <div class="space-y-2 mt-3">
             <button
               v-if="showAppointmentArrivalVerifyButton"
@@ -732,8 +726,6 @@ const notices = ref([])
 const appointment = ref(null)
 const appointmentSettlement = ref(null)
 const appointmentDelayLedgers = ref([])
-const queueBefore = ref(0)
-const estimatedMinutes = ref(0)
 const canArriveNow = ref(false)
 const countdown = ref(0)
 const usageRecordsCollapsed = ref(false)
@@ -794,21 +786,19 @@ const latestForceMajeureReliefRequest = computed(() => {
   if (list.length === 0) return null
   return [...list].sort((a, b) => Number(b?.id || 0) - Number(a?.id || 0))[0]
 })
-const activeAppointmentQueueBefore = computed(() => {
-  if (isHistoricalArrivedAppointment(appointment.value)) return 0
-  return Number(queueBefore.value || 0)
+const appointmentWaitMinutes = computed(() => {
+  const appt = appointment.value
+  if (!appt) return 0
+  if (isHistoricalArrivedAppointment(appt)) return 0
+  return getAppointmentCurrentEstimatedWaitMinutes(appt)
 })
-const activeAppointmentWaitMinutes = computed(() => {
-  if (appointment.value?.status === 'arrived') {
-    if (isHistoricalArrivedAppointment(appointment.value)) return 0
-    return getAppointmentCurrentEstimatedWaitMinutes(appointment.value)
-  }
-  return Number(estimatedMinutes.value || 0)
-})
-const activeAppointmentWaitLabel = computed(() => {
-  if (appointment.value?.status === 'arrived') {
-    return isHistoricalArrivedAppointment(appointment.value) ? '异常等待' : '当前预计等待'
-  }
+const appointmentWaitMetricVisible = computed(() => appointmentWaitMinutes.value > 0)
+const appointmentWaitLabel = computed(() => {
+  const appt = appointment.value
+  if (!appt) return '预计等待'
+  const state = getAppointmentDisplayWaitState(appt)
+  if (state === 'risk_pending') return '到店后可能等待'
+  if (appt.status === 'arrived') return '当前预计等待'
   return '预计等待'
 })
 const appointmentWaitingHint = computed(() => {
@@ -2902,8 +2892,6 @@ const fetchAppointment = async () => {
 
     if (data?.appointment) {
       appointment.value = data.appointment
-      queueBefore.value = data.queue_before || 0
-      estimatedMinutes.value = data.estimated_minutes || 0
       canArriveNow.value = Boolean(data.can_arrive_now)
       await loadAppointmentSettlementAndDelay()
       console.log('预约信息已设置:', appointment.value)
@@ -2922,8 +2910,6 @@ const fetchAppointment = async () => {
     appointmentRescheduleRecommendationEnabled.value = false
     appointmentRescheduleRecommendationReason.value = ''
     appointmentRescheduleRecommendations.value = []
-    queueBefore.value = 0
-    estimatedMinutes.value = 0
     canArriveNow.value = false
     stopCountdownTimer()
   } catch (err) {
@@ -3517,8 +3503,6 @@ const cancelAppointment = async () => {
 
     await appointmentApi.cancelAppointment(appointment.value.id)
     appointment.value = null
-    queueBefore.value = 0
-    estimatedMinutes.value = 0
     stopCountdownTimer()
     alert('已取消预约')
   } catch (err) {

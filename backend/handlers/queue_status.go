@@ -1054,8 +1054,9 @@ func EnqueueOnsiteUsages(c *gin.Context) {
 	}
 
 	qt := queue.QueueTypeOnsite
-	if input.QueueType == string(queue.QueueTypeAppointment) {
-		qt = queue.QueueTypeAppointment
+	if queueType := strings.TrimSpace(input.QueueType); queueType != "" && queueType != string(queue.QueueTypeOnsite) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持现场队列"})
+		return
 	}
 
 	now := time.Now()
@@ -1090,7 +1091,7 @@ func EnqueueOnsiteUsages(c *gin.Context) {
 		tk, created := queue.Default.Enqueue(merchantID, date, qt, uid, startNo, autoCallFirst, now)
 		createdMap[uid] = created
 		if os.Getenv("KABAO_QUEUE_DEBUG") == "1" {
-			log.Printf("[queue-debug] compensate enqueue onsite: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchantID, date, uid, created, tk.No, tk.CalledAt)
+			log.Printf("[queue-debug] compensate enqueue: merchant=%d date=%s usage_id=%d created=%v queue_no=%d called_at=%v\n", merchantID, date, uid, created, tk.No, tk.CalledAt)
 		}
 		_ = tk
 	}

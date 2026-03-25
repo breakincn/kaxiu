@@ -138,7 +138,7 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `technician_attendances` COMMENT = '工作人员签到与可服务状态表'")
 	DB.Exec("ALTER TABLE `service_sessions` COMMENT = '服务会话表'")
 	DB.Exec("ALTER TABLE `notices` COMMENT = '商户通知表'")
-	DB.Exec("ALTER TABLE `appointments` COMMENT = '用户预约排队表'")
+	DB.Exec("ALTER TABLE `appointments` COMMENT = '用户预约表'")
 	DB.Exec("ALTER TABLE `verify_codes` COMMENT = '核销码表'")
 	DB.Exec("ALTER TABLE `sms_codes` COMMENT = '短信验证码表'")
 	DB.Exec("ALTER TABLE `invite_codes` COMMENT = '邀请码表'")

@@ -17,8 +17,7 @@ type Store interface {
 type QueueType string
 
 const (
-	QueueTypeOnsite      QueueType = "onsite"
-	QueueTypeAppointment QueueType = "appointment"
+	QueueTypeOnsite QueueType = "onsite"
 )
 
 type Ticket struct {

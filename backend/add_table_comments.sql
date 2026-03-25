@@ -83,14 +83,14 @@ ALTER TABLE `notices` MODIFY COLUMN `is_pinned` TINYINT(1) DEFAULT 0 COMMENT '�
 ALTER TABLE `notices` MODIFY COLUMN `created_at` VARCHAR(255) DEFAULT NULL COMMENT '创建时间';
 
 -- =============================================
--- 6. appointments 表（预约表）⭐ 用户预约排队核心表
+-- 6. appointments 表（预约表）
 -- =============================================
-ALTER TABLE `appointments` COMMENT = '用户预约排队表';
+ALTER TABLE `appointments` COMMENT = '用户预约表';
 ALTER TABLE `appointments` MODIFY COLUMN `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '预约ID';
 ALTER TABLE `appointments` MODIFY COLUMN `merchant_id` INT UNSIGNED DEFAULT NULL COMMENT '商户ID（外键关联merchants表）';
 ALTER TABLE `appointments` MODIFY COLUMN `user_id` INT UNSIGNED DEFAULT NULL COMMENT '用户ID（外键关联users表）';
 ALTER TABLE `appointments` MODIFY COLUMN `appointment_time` VARCHAR(255) DEFAULT NULL COMMENT '预约时间';
-ALTER TABLE `appointments` MODIFY COLUMN `status` VARCHAR(20) DEFAULT 'pending' COMMENT '预约状态（pending-待确认，confirmed-已确认/排队中，finished-已完成，canceled-已取消）';
+ALTER TABLE `appointments` MODIFY COLUMN `status` VARCHAR(20) DEFAULT 'pending' COMMENT '预约状态（pending-待确认，confirmed-已确认，finished-已完成，canceled-已取消）';
 ALTER TABLE `appointments` MODIFY COLUMN `created_at` VARCHAR(255) DEFAULT NULL COMMENT '创建时间';
 
 -- =============================================

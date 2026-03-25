@@ -278,7 +278,7 @@ func (Appointment) TableName() string {
 }
 
 func (Appointment) TableComment() string {
-	return "用户预约排队表"
+	return "用户预约表"
 }
 
 type AppointmentCompensation struct {

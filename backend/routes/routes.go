@@ -58,7 +58,7 @@ func SetupUserRoutes(r *gin.Engine) {
 	auth.POST("/service-sessions/:id/technician", handlers.UserChooseServiceSessionTechnician)
 	auth.POST("/service-sessions/:id/extend", handlers.ExtendServiceSessionUser)
 
-	// 用户预约/排队
+	// 用户预约/履约
 	auth.GET("/users/:id/appointments", handlers.GetUserAppointments)
 	auth.GET("/cards/:id/appointment", handlers.GetCardAppointment)
 	auth.POST("/appointments", handlers.CreateAppointment)
