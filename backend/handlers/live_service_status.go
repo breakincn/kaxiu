@@ -128,6 +128,14 @@ func GetMerchantLiveServiceStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": out})
 }
 
+func BuildMerchantLiveServiceStatusSnapshot(merchantID uint, now time.Time) (liveServiceStatusResponse, error) {
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		return liveServiceStatusResponse{}, err
+	}
+	return buildMerchantLiveServiceStatus(&merchant, now)
+}
+
 func buildMerchantLiveServiceStatus(merchant *models.Merchant, now time.Time) (liveServiceStatusResponse, error) {
 	out := liveServiceStatusResponse{
 		GeneratedAt: now,
