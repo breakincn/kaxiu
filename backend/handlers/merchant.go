@@ -387,7 +387,6 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 				"room_selecting",
 				"room_locked",
 				"staff_selecting",
-				"appointment_waiting",
 				"start_pending",
 				"delay_pending",
 				"timeout_waiting",

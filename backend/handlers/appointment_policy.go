@@ -230,9 +230,7 @@ func canArriveForAppointment(appt models.Appointment, merchant *models.Merchant,
 }
 
 func appointmentActiveConflictStatuses() []string {
-	// appointment_waiting 已降级为历史兼容状态，但仍需视为活跃占用，
-	// 避免遗留会话被新的现场单继续挤占。
-	return models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})
+	return models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 }
 
 func getProjectDurationForAppointment(tx *gorm.DB, merchantID uint, projectID *uint) int {
@@ -255,7 +253,7 @@ func getProjectOccupiedMinutesForAppointment(tx *gorm.DB, merchantID uint, proje
 }
 
 func appointmentSelectColumns() string {
-	return "id, card_id, merchant_id, user_id, booking_root_id, project_id, technician_id, appointment_time, reserved_start_at, reserved_end_at, occupied_end_at, cancel_deadline_at, booking_close_deadline_at, late_arrival_min_service_minutes, appointment_settlement_id, settlement_status_snapshot, status, confirmed_at, arrived_at, actual_arrived_at, actual_start_at, completed_at, no_show_at, service_session_id, usage_id, predicted_wait_minutes, merchant_breach_pending, breach_decision_at, disruption_status, disruption_reason, merchant_cancel_reason, user_rebuttal_note, liability_level, salary_settlement_reference_status, resolution_note, closed_reason, closed_by_type, closed_by_id, reschedule_reason, replaced_by_appointment_id, replaces_appointment_id, canceled_at, failed_at, failed_reason, created_at"
+	return "id, card_id, merchant_id, user_id, booking_root_id, project_id, technician_id, appointment_time, reserved_start_at, reserved_end_at, occupied_end_at, cancel_deadline_at, booking_close_deadline_at, late_arrival_min_service_minutes, appointment_settlement_id, settlement_status_snapshot, status, confirmed_at, arrived_at, actual_arrived_at, actual_start_at, completed_at, no_show_at, service_session_id, usage_id, predicted_delay_minutes, merchant_breach_pending, breach_decision_at, disruption_status, disruption_reason, merchant_cancel_reason, user_rebuttal_note, liability_level, salary_settlement_reference_status, resolution_note, closed_reason, closed_by_type, closed_by_id, reschedule_reason, replaced_by_appointment_id, replaces_appointment_id, canceled_at, failed_at, failed_reason, created_at"
 }
 
 func technicianSchedulePublishingSelectColumns() string {

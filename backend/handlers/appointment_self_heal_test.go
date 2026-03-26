@@ -54,7 +54,7 @@ func TestNormalizeAppointmentForReadAutoClosesCrossDayUnfinished(t *testing.T) {
 		SourceID:         &appt.ID,
 		TechnicianID:     &tech.ID,
 		LastTechnicianID: &tech.ID,
-		Status:           "cs_appointment_waiting",
+		Status:           "cs_start_pending",
 		CreatedAt:        &arrivedAt,
 		UpdatedAt:        &arrivedAt,
 	}

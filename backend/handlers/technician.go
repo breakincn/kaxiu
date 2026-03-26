@@ -505,7 +505,7 @@ func DeleteMerchantTechnician(c *gin.Context) {
 
 	targetID := uint(id64)
 	activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{
-		"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing", "timeout_waiting",
+		"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing", "timeout_waiting",
 	})
 	var activeCount int64
 	if err := config.DB.Model(&models.ServiceSession{}).

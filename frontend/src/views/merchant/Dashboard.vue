@@ -6240,7 +6240,6 @@ const getSessionStatusText = (status) => {
     room_selecting: '选房中',
     room_locked: '房间已锁定',
     staff_selecting: '选人中',
-    appointment_waiting: '预约异常等待',
     start_pending: getMerchantPendingStartLabel(),
     delay_pending: getMerchantPendingStartLabel({ queueMode: true }),
     timeout_waiting: '过号等待',

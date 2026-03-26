@@ -225,7 +225,7 @@ func UserListAvailableRooms(c *gin.Context) {
 	for i := range rooms {
 		r := rooms[i]
 		var cnt int64
-		activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})
+		activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 		config.DB.Model(&models.ServiceSession{}).
 			Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, r.ID, activeStatuses).
 			Count(&cnt)
@@ -290,7 +290,7 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 		}
 
 		var cnt int64
-		activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})
+		activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 		if err := tx.Model(&models.ServiceSession{}).
 			Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, room.ID, activeStatuses).
 			Count(&cnt).Error; err != nil {
@@ -311,7 +311,7 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 					continue
 				}
 				var c2 int64
-				activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})
+				activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 				if err := tx.Model(&models.ServiceSession{}).
 					Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, r.ID, activeStatuses).
 					Count(&c2).Error; err != nil {
@@ -402,7 +402,7 @@ func UserListAvailableTechnicians(c *gin.Context) {
 	}
 
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	activeSessionStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})
+	activeSessionStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 	var list []models.TechnicianAttendance
 	var merchant models.Merchant
 	if err := config.DB.First(&merchant, s.MerchantID).Error; err != nil {
@@ -491,7 +491,7 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			return err
 		}
 		baseStatus := models.NormalizeSessionStatus(s.Status)
-		if baseStatus != "staff_selecting" && baseStatus != "room_locked" && baseStatus != "appointment_waiting" {
+		if baseStatus != "staff_selecting" && baseStatus != "room_locked" {
 			return apiErr{status: http.StatusBadRequest, msg: "当前状态不可选工作人员"}
 		}
 		if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
@@ -539,7 +539,7 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
 			Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
 			Where("technician_attendances.merchant_id = ? AND technician_attendances.technician_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", s.MerchantID, input.TechnicianID, start).
-			Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})).
+			Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})).
 			Where("t.is_active = ?", true).
 			Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 			First(&candidate).Error; err != nil {

@@ -299,12 +299,12 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 		if err := tx.Model(&models.Appointment{}).
 			Where("id = ? AND status IN ?", *session.SourceID, []string{"confirmed", "arrived"}).
 			Updates(map[string]interface{}{
-				"status":                 appointmentStatus,
-				"arrived_at":             &arrivedAt,
-				"actual_arrived_at":      &arrivedAt,
-				"usage_id":               usage.ID,
-				"service_session_id":     session.ID,
-				"predicted_wait_minutes": session.PredictedAppointmentDelayMinutes,
+				"status":                  appointmentStatus,
+				"arrived_at":              &arrivedAt,
+				"actual_arrived_at":       &arrivedAt,
+				"usage_id":                usage.ID,
+				"service_session_id":      session.ID,
+				"predicted_delay_minutes": session.PredictedAppointmentDelayMinutes,
 			}).Error; err != nil {
 			return result, err
 		}

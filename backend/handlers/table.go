@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var tableActiveSessionStatuses = models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})
+var tableActiveSessionStatuses = models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 
 func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 	// 手动叫号模式：待上号不做超时释放，避免状态被自动回退

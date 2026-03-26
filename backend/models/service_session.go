@@ -28,7 +28,7 @@ type ServiceSession struct {
 	StartPendingTimeoutSeconds       int        `json:"start_pending_timeout_seconds" gorm:"column:start_pending_timeout_seconds;default:0;comment:待开始服务超时秒数（0表示使用系统默认）"`
 	StartPendingRemainingSeconds     int        `json:"start_pending_remaining_seconds" gorm:"-"`
 
-	Status string `json:"status" gorm:"size:30;default:created;comment:状态（created-已创建，room_selecting-选房中，room_locked-房间已锁定，staff_selecting-选人中，appointment_waiting-预约异常兼容等待，start_pending-待开始服务/待上号，delay_pending-延迟中，serving-服务中，auto_finishing-待自动结束，finished-已完成，canceled-已取消）"`
+	Status string `json:"status" gorm:"size:30;default:created;comment:状态（created-已创建，room_selecting-选房中，room_locked-房间已锁定，staff_selecting-选人中，start_pending-待开始服务/待上号，delay_pending-延迟中，serving-服务中，auto_finishing-待自动结束，finished-已完成，canceled-已取消）"`
 
 	RoomSelectDeadlineAt *time.Time `json:"room_select_deadline_at" gorm:"type:datetime(3);comment:选房截止时间"`
 	RoomLockedAt         *time.Time `json:"room_locked_at" gorm:"type:datetime(3);comment:房间锁定时间"`

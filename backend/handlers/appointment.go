@@ -1395,7 +1395,7 @@ func cancelUnstartedAppointmentArrival(tx *gorm.DB, appt *models.Appointment, no
 	}
 	baseStatus := models.NormalizeSessionStatus(session.Status)
 	switch baseStatus {
-	case "room_selecting", "room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending":
+	case "room_selecting", "room_locked", "staff_selecting", "start_pending", "delay_pending":
 	default:
 		return apiErr{status: http.StatusBadRequest, msg: "当前预约已开始服务，不能改签"}
 	}
@@ -2275,12 +2275,12 @@ func CheckInAppointment(c *gin.Context) {
 		if err := tx.Model(&models.Appointment{}).
 			Where("id = ? AND status IN ?", currentAppt.ID, []string{"confirmed", "arrived"}).
 			Updates(map[string]interface{}{
-				"status":                 "arrived",
-				"arrived_at":             &actualArrivedAt,
-				"actual_arrived_at":      &actualArrivedAt,
-				"usage_id":               usage.ID,
-				"service_session_id":     session.ID,
-				"predicted_wait_minutes": session.PredictedAppointmentDelayMinutes,
+				"status":                  "arrived",
+				"arrived_at":              &actualArrivedAt,
+				"actual_arrived_at":       &actualArrivedAt,
+				"usage_id":                usage.ID,
+				"service_session_id":      session.ID,
+				"predicted_delay_minutes": session.PredictedAppointmentDelayMinutes,
 			}).Error; err != nil {
 			return err
 		}
@@ -2839,7 +2839,7 @@ func executeAppointmentReschedule(tx *gorm.DB, appointmentID uint, proposal mode
 		"arrived_at":                 nil,
 		"service_session_id":         nil,
 		"usage_id":                   nil,
-		"predicted_wait_minutes":     0,
+		"predicted_delay_minutes":    0,
 	}
 	if err := tx.Model(&models.Appointment{}).Where("id = ?", current.ID).Updates(closeUpdates).Error; err != nil {
 		return oldAppointment, newAppointment, err
@@ -4212,7 +4212,7 @@ func CreateAppointmentCompensation(c *gin.Context) {
 				return err
 			}
 			baseStatus := models.NormalizeSessionStatus(session.Status)
-			if baseStatus != "serving" && baseStatus != "start_pending" && baseStatus != "delay_pending" && baseStatus != "appointment_waiting" {
+			if baseStatus != "serving" && baseStatus != "start_pending" && baseStatus != "delay_pending" {
 				return apiErr{status: http.StatusBadRequest, msg: "当前阶段不能补时"}
 			}
 			updates := map[string]interface{}{

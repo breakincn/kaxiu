@@ -599,7 +599,7 @@ func assignRoomIfPossible(tx *gorm.DB, s *models.ServiceSession, now time.Time) 
 		r := rooms[i]
 		var cnt int64
 		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, r.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending", "serving", "auto_finishing"})).
+			Where("merchant_id = ? AND room_id = ? AND status IN ?", s.MerchantID, r.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})).
 			Count(&cnt).Error; err != nil {
 			return err
 		}
@@ -783,9 +783,8 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		if baseStatus == "finished" || baseStatus == "canceled" {
 			return apiErr{status: http.StatusBadRequest, msg: "会话已结束"}
 		}
-		// 商户端手动改派只允许发生在“还没正式开始服务”的阶段，
-		// appointment_waiting 仅作为历史兼容状态保留改派能力。
-		if baseStatus != "room_locked" && baseStatus != "staff_selecting" && baseStatus != "appointment_waiting" {
+		// 商户端手动改派只允许发生在“还没正式开始服务”的阶段。
+		if baseStatus != "room_locked" && baseStatus != "staff_selecting" {
 			return apiErr{status: http.StatusBadRequest, msg: "当前会话状态不支持改派客服"}
 		}
 		var m models.Merchant
@@ -796,8 +795,7 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		if err := models.ValidateSessionModeForEntry(&s, &m); err != nil {
 			return apiErr{status: http.StatusBadRequest, msg: err.Error()}
 		}
-		// 兼容旧 appointment_waiting 会话：允许先换客服，再由调度器接手推进。
-		if m.SupportRoom && s.RoomID == nil && baseStatus != "appointment_waiting" {
+		if m.SupportRoom && s.RoomID == nil {
 			return apiErr{status: http.StatusBadRequest, msg: "请先选择房间"}
 		}
 		var tech models.Technician

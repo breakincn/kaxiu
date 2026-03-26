@@ -1169,7 +1169,7 @@ func TestCheckInAppointmentKeepsExecutionPathAndMarksDelayPendingWhenTechnicianB
 		t.Fatalf("load predicted_ready_at failed: %v", err)
 	}
 	if models.NormalizeSessionStatus(session.Status) != "start_pending" {
-		t.Fatalf("want start_pending instead of appointment_waiting, got %+v", session)
+		t.Fatalf("want start_pending on the new appointment main path, got %+v", session)
 	}
 	if session.PredictedAppointmentDelayMinutes <= 0 || strings.TrimSpace(predictedReadyAtText) == "" {
 		t.Fatalf("want predicted delay persisted on service session, got %+v predicted_ready_at=%q", session, predictedReadyAtText)

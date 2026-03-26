@@ -320,7 +320,7 @@ func TestChooseServiceSessionTechnicianKeepsMerchantBreachPendingForAppointmentW
 		CardID:     card.ID,
 		SourceType: serviceSessionSourceAppointment,
 		SourceID:   &appt.ID,
-		Status:     "cs_appointment_waiting",
+		Status:     "cs_staff_selecting",
 	}
 	if err := config.DB.Create(&session).Error; err != nil {
 		t.Fatalf("create session failed: %v", err)

@@ -144,7 +144,7 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 		return nil, nil
 	}
 	rows, err := tx.Table("appointments").
-		Select("id, card_id, merchant_id, user_id, booking_root_id, project_id, technician_id, appointment_time, status, predicted_wait_minutes, arrived_at, actual_arrived_at, actual_start_at, usage_id, service_session_id, appointment_settlement_id, settlement_status_snapshot, resolution_note, failed_at, failed_reason, created_at").
+		Select("id, card_id, merchant_id, user_id, booking_root_id, project_id, technician_id, appointment_time, status, predicted_delay_minutes, arrived_at, actual_arrived_at, actual_start_at, usage_id, service_session_id, appointment_settlement_id, settlement_status_snapshot, resolution_note, failed_at, failed_reason, created_at").
 		Where("id = ?", appointmentID).
 		Limit(1).
 		Rows()
@@ -338,7 +338,7 @@ func closeCrossDayUnfinishedAppointment(tx *gorm.DB, s *models.ServiceSession, a
 	}
 
 	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_selecting", "room_locked", "staff_selecting", "appointment_waiting", "start_pending", "delay_pending"})).
+		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_selecting", "room_locked", "staff_selecting", "start_pending", "delay_pending"})).
 		Updates(map[string]interface{}{
 			"status":                              models.ApplyStatusPrefix(s.Status, "canceled"),
 			"finished_at":                         &now,
@@ -1082,10 +1082,10 @@ func tryAssignOneAppointment(db *gorm.DB, appointmentID uint, now time.Time) err
 
 		if bestTechID > 0 {
 			updates := map[string]interface{}{
-				"technician_id":          bestTechID,
-				"predicted_wait_minutes": 0,
-				"failed_at":              nil,
-				"failed_reason":          "",
+				"technician_id":           bestTechID,
+				"predicted_delay_minutes": 0,
+				"failed_at":               nil,
+				"failed_reason":           "",
 			}
 			if err := tx.Model(&models.Appointment{}).
 				Where("id = ? AND technician_id IS NULL AND status = ?", a.ID, a.Status).
