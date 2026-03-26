@@ -30,6 +30,7 @@ func SetupUserRoutes(r *gin.Engine) {
 	// 用户端：店铺信息/直购（不需要登录）
 	user.GET("/s/:slug", handlers.GetShopInfo)
 	user.GET("/s/id/:id", handlers.GetShopInfoByID)
+	user.GET("/merchants/:id/live-service-status", handlers.GetMerchantLiveServiceStatus)
 
 	// 需要认证的接口（用户端）
 	auth := user.Group("")

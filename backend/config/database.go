@@ -29,12 +29,12 @@ func InitDB() {
 		log.Fatal("数据库连接失败:", err)
 	}
 
-	// 先删除旧的外键约束(忽略错误)
-	DB.Exec("ALTER TABLE `cards` DROP FOREIGN KEY `fk_cards_user`")
-	DB.Exec("ALTER TABLE `cards` DROP FOREIGN KEY `fk_cards_merchant`")
-	DB.Exec("ALTER TABLE `usages` DROP FOREIGN KEY `fk_usages_card`")
-	DB.Exec("ALTER TABLE `usages` DROP FOREIGN KEY `fk_usages_merchant`")
-	DB.Exec("ALTER TABLE `notices` DROP FOREIGN KEY `fk_notices_merchant`")
+	// 先删除旧的外键约束，仅在约束存在时执行，避免启动时打印误报。
+	dropForeignKeyIfExists("cards", "fk_cards_user")
+	dropForeignKeyIfExists("cards", "fk_cards_merchant")
+	dropForeignKeyIfExists("usages", "fk_usages_card")
+	dropForeignKeyIfExists("usages", "fk_usages_merchant")
+	dropForeignKeyIfExists("notices", "fk_notices_merchant")
 	// DB.Exec("ALTER TABLE `appointments` DROP FOREIGN KEY `fk_appointments_user`")
 	// DB.Exec("ALTER TABLE `appointments` DROP FOREIGN KEY `fk_appointments_merchant`")
 
@@ -274,6 +274,15 @@ func migrateLegacyMerchantProjects() {
 			}
 			DB.Create(&mp)
 		}
+	}
+}
+
+func dropForeignKeyIfExists(table, constraint string) {
+	if DB == nil || !DB.Migrator().HasConstraint(table, constraint) {
+		return
+	}
+	if err := DB.Migrator().DropConstraint(table, constraint); err != nil {
+		log.Printf("删除外键失败 %s.%s: %v", table, constraint, err)
 	}
 }
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -253,7 +254,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 				if strings.TrimSpace(stmt) == "" {
 					continue
 				}
-				if err := tx.Exec(stmt).Error; err != nil && !isIgnorableMigrationError(err) {
+				if err := execMigrationStatement(tx, stmt); err != nil && !isIgnorableMigrationError(err) {
 					return fmt.Errorf("migration %s failed on statement %q: %w", m.Version, stmt, err)
 				}
 			}
@@ -267,6 +268,68 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 	}
 
 	return nil
+}
+
+var (
+	alterTableAddColumnIfNotExistsPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+(.+)$`)
+	alterTableDropColumnIfExistsPattern   = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)(.*)$`)
+)
+
+func execMigrationStatement(tx *gorm.DB, stmt string) error {
+	rewritten, skip := rewriteMigrationStatementForCompatibility(tx, stmt)
+	if skip {
+		return nil
+	}
+	return tx.Exec(rewritten).Error
+}
+
+func rewriteMigrationStatementForCompatibility(tx *gorm.DB, stmt string) (rewritten string, skip bool) {
+	trimmed := strings.TrimSpace(stmt)
+	if trimmed == "" {
+		return "", true
+	}
+
+	if matches := alterTableAddColumnIfNotExistsPattern.FindStringSubmatch(trimmed); len(matches) == 4 {
+		tableToken, columnToken, definition := matches[1], matches[2], matches[3]
+		if hasColumnByTableName(tx, unquoteIdentifier(tableToken), unquoteIdentifier(columnToken)) {
+			return "", true
+		}
+		return fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tableToken, columnToken, definition), false
+	}
+
+	if matches := alterTableDropColumnIfExistsPattern.FindStringSubmatch(trimmed); len(matches) == 4 {
+		tableToken, columnToken, suffix := matches[1], matches[2], strings.TrimSpace(matches[3])
+		if !hasColumnByTableName(tx, unquoteIdentifier(tableToken), unquoteIdentifier(columnToken)) {
+			return "", true
+		}
+		rewritten = fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", tableToken, columnToken)
+		if suffix != "" {
+			rewritten += " " + suffix
+		}
+		return rewritten, false
+	}
+
+	return stmt, false
+}
+
+func unquoteIdentifier(name string) string {
+	return strings.Trim(name, "`")
+}
+
+func hasColumnByTableName(tx *gorm.DB, tableName, columnName string) bool {
+	if tx == nil || tableName == "" || columnName == "" {
+		return false
+	}
+	columnTypes, err := tx.Migrator().ColumnTypes(tableName)
+	if err != nil {
+		return false
+	}
+	for _, columnType := range columnTypes {
+		if strings.EqualFold(columnType.Name(), columnName) {
+			return true
+		}
+	}
+	return false
 }
 
 func isIgnorableMigrationError(err error) bool {

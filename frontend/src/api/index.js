@@ -495,6 +495,7 @@ export const appointmentApi = {
   // 公开接口：店铺信息
   getShopInfo: (slug) => api.get(`/user/s/${slug}`),
   getShopInfoByID: (id) => api.get(`/user/s/id/${id}`),
+  getLiveServiceStatus: (id) => api.get(`/user/merchants/${id}/live-service-status`),
 
   // 技师端：通过店铺短链接登录
   technicianLogin: (slug, account, password) => api.post(`/merchant/s/${slug}/login`, { account, password }),

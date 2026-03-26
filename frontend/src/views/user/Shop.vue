@@ -24,6 +24,82 @@
         </div>
       </div>
 
+      <div class="live-status-section">
+        <div class="live-status-card" :class="`is-${getLiveStatusLevel(liveServiceStatus)}`">
+          <div class="live-status-card-header">
+            <div class="live-status-heading">
+              <div class="live-status-kicker">门店实时服务状态</div>
+              <div class="live-status-title-row">
+                <h2>{{ liveServiceStatus?.status_text || '正在读取门店实时状态' }}</h2>
+                <span class="live-status-mode">{{ liveServiceStatus?.mode_variant_label || '实时估算' }}</span>
+              </div>
+              <p class="live-status-summary">
+                {{ liveServiceStatus?.summary_text || '根据当前核销、服务进度和叫号状态进行估算' }}
+              </p>
+            </div>
+            <button class="live-status-refresh" :disabled="liveServiceLoading" @click="refreshLiveServiceStatus">
+              {{ liveServiceLoading ? '刷新中...' : '刷新' }}
+            </button>
+          </div>
+
+          <div v-if="liveServiceError && !liveServiceStatus" class="live-status-empty">
+            {{ liveServiceError }}
+          </div>
+          <template v-else-if="liveServiceStatus">
+            <div class="live-status-metrics">
+              <div class="live-status-metric">
+                <span class="metric-label">到店人数</span>
+                <strong class="metric-value">{{ liveServiceStatus.counts?.arrived_count || 0 }}</strong>
+              </div>
+              <div class="live-status-metric">
+                <span class="metric-label">待服务</span>
+                <strong class="metric-value">{{ liveServiceStatus.counts?.waiting_count || 0 }}</strong>
+              </div>
+              <div class="live-status-metric">
+                <span class="metric-label">服务中</span>
+                <strong class="metric-value">{{ liveServiceStatus.counts?.serving_count || 0 }}</strong>
+              </div>
+              <div class="live-status-metric">
+                <span class="metric-label">空闲客服</span>
+                <strong class="metric-value">{{ liveServiceStatus.counts?.idle_staff_count || 0 }}</strong>
+              </div>
+            </div>
+
+            <div v-if="liveServiceStatus.queue" class="live-status-inline">
+              <span>当前叫到 {{ formatQueueCurrentNo(liveServiceStatus) }}</span>
+              <span>待叫号 {{ liveServiceStatus.queue.waiting_queue_count || 0 }} 人</span>
+            </div>
+
+            <div class="live-status-estimate">
+              <div class="estimate-main">
+                <div class="estimate-label">预计等待</div>
+                <div class="estimate-value">{{ formatLiveWait(liveServiceStatus) }}</div>
+              </div>
+              <div class="estimate-side">
+                <div class="estimate-recommendation">{{ formatLiveRecommendation(liveServiceStatus) }}</div>
+                <div class="estimate-tag">{{ getLiveActionText(liveServiceStatus) }}</div>
+              </div>
+            </div>
+
+            <div v-if="getLiveStatusStageItems(liveServiceStatus).length" class="live-status-stage-list">
+              <span
+                v-for="item in getLiveStatusStageItems(liveServiceStatus)"
+                :key="item.key"
+                class="live-stage-chip"
+              >
+                {{ item.label }} {{ item.count }}
+              </span>
+            </div>
+
+            <div class="live-status-footer">
+              <span>{{ liveServiceStatus.confidence_text || '结果仅供参考' }}</span>
+              <span v-if="liveServiceStatus.generated_at">{{ formatLiveGeneratedAt(liveServiceStatus.generated_at) }}</span>
+            </div>
+          </template>
+          <div v-else class="live-status-empty">正在读取门店实时状态...</div>
+        </div>
+      </div>
+
       <!-- 在售卡片列表 -->
       <div class="card-section">
         <h2 class="section-title">在售卡片</h2>
@@ -283,6 +359,9 @@ const router = useRouter()
 
 const loading = ref(true)
 const shopInfo = ref(null)
+const liveServiceStatus = ref(null)
+const liveServiceLoading = ref(false)
+const liveServiceError = ref('')
 const selectedCard = ref(null)
 const showPurchaseModal = ref(false)
 const showPaymentModal = ref(false)
@@ -351,6 +430,8 @@ const saveButtonDisabled = ref(false)
 const guideHighlighted = ref(false)
 
 let paymentActionsTimer = null
+let liveStatusTimer = null
+const LIVE_STATUS_POLL_MS = 30000
 
 onBeforeUnmount(() => {
   if (paymentActionsTimer) {
@@ -362,6 +443,9 @@ onBeforeUnmount(() => {
 		clearInterval(bindTimer)
 		bindTimer = null
 	}
+
+  stopLiveStatusPolling()
+  document.removeEventListener('visibilitychange', handleLiveStatusVisibilityChange)
 })
 
 const isLoggedIn = computed(() => {
@@ -385,6 +469,7 @@ onMounted(() => {
 	if (isLoggedIn.value) {
 		fetchCurrentUser()
 	}
+  document.addEventListener('visibilitychange', handleLiveStatusVisibilityChange)
 })
 
 async function fetchCurrentUser() {
@@ -499,6 +584,8 @@ async function loadShopInfo() {
     }
     
     shopInfo.value = res.data.data
+    await loadLiveServiceStatus(shopInfo.value?.merchant?.id)
+    startLiveStatusPolling()
 
     sellerTechnicianId.value = parseSellerTechnicianId()
     const presetTplId = parsePresetCardTemplateId()
@@ -511,14 +598,119 @@ async function loadShopInfo() {
   } catch (e) {
     console.error('加载店铺信息失败', e)
     shopInfo.value = null
+    liveServiceStatus.value = null
+    liveServiceError.value = ''
+    stopLiveStatusPolling()
   } finally {
     loading.value = false
   }
 }
 
+async function loadLiveServiceStatus(merchantId, options = {}) {
+  if (!merchantId) {
+    liveServiceStatus.value = null
+    return
+  }
+
+  const { silent = false } = options
+  liveServiceLoading.value = true
+  if (!silent) {
+    liveServiceError.value = ''
+  }
+
+  try {
+    const res = await shopApi.getLiveServiceStatus(merchantId)
+    liveServiceStatus.value = res.data?.data || null
+    liveServiceError.value = ''
+  } catch (e) {
+    console.error('加载门店实时状态失败', e)
+    liveServiceError.value = e.response?.data?.error || '门店实时状态获取失败'
+    if (!silent) {
+      liveServiceStatus.value = null
+    }
+  } finally {
+    liveServiceLoading.value = false
+  }
+}
+
+function stopLiveStatusPolling() {
+  if (liveStatusTimer) {
+    clearInterval(liveStatusTimer)
+    liveStatusTimer = null
+  }
+}
+
+function startLiveStatusPolling() {
+  stopLiveStatusPolling()
+  const merchantId = shopInfo.value?.merchant?.id
+  if (!merchantId) return
+  liveStatusTimer = setInterval(() => {
+    if (document.hidden) return
+    loadLiveServiceStatus(merchantId, { silent: true })
+  }, LIVE_STATUS_POLL_MS)
+}
+
+async function refreshLiveServiceStatus() {
+  const merchantId = shopInfo.value?.merchant?.id
+  if (!merchantId || liveServiceLoading.value) return
+  await loadLiveServiceStatus(merchantId)
+}
+
+function handleLiveStatusVisibilityChange() {
+  if (document.hidden) return
+  refreshLiveServiceStatus()
+}
+
 function getCardTypeLabel(type) {
   const labels = { times: '次数卡', lesson: '课时卡', balance: '充值卡' }
   return labels[type] || type
+}
+
+function getLiveStatusLevel(status) {
+  return status?.status_level || 'default'
+}
+
+function formatLiveWait(status) {
+  return status?.estimate?.wait_text || '暂无法估算'
+}
+
+function formatLiveRecommendation(status) {
+  return status?.estimate?.recommended_arrival_text || status?.recommendation_text || '请以门店现场情况为准'
+}
+
+function getLiveActionText(status) {
+  if (status?.estimate?.suggest_appointment) return '建议先预约'
+  if (status?.estimate?.should_visit_now) return '可直接到店'
+  if (status?.business_open === false) return '当前未营业'
+  return '建议错峰到店'
+}
+
+function formatQueueCurrentNo(status) {
+  const no = Number(status?.queue?.current_called_no || 0)
+  const prefix = String(status?.queue?.queue_prefix || '').trim()
+  if (!no) return '暂未叫号'
+  return `${prefix}${no}`
+}
+
+function getLiveStatusStageItems(status) {
+  const stages = status?.stages || {}
+  const items = [
+    { key: 'room_selecting', label: '待选房', count: Number(stages.room_selecting || 0) },
+    { key: 'room_locked', label: '已锁房', count: Number(stages.room_locked || 0) },
+    { key: 'staff_selecting', label: '待选客服', count: Number(stages.staff_selecting || 0) },
+    { key: 'start_pending', label: '待起单', count: Number(stages.start_pending || 0) },
+    { key: 'delay_pending', label: '待上号', count: Number(stages.delay_pending || 0) },
+    { key: 'timeout_waiting', label: '过号等待', count: Number(stages.timeout_waiting || 0) },
+    { key: 'serving', label: '服务中', count: Number(stages.serving || 0) },
+    { key: 'auto_finishing', label: '待结单', count: Number(stages.auto_finishing || 0) }
+  ]
+  return items.filter(item => item.count > 0)
+}
+
+function formatLiveGeneratedAt(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `更新于 ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
 }
 
 function selectCard(card) {
@@ -812,8 +1004,228 @@ function goToCards() {
   margin: 0;
 }
 
+.live-status-section {
+  margin: -20px 16px 16px;
+}
+
+.live-status-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 10px 30px rgba(24, 144, 255, 0.12);
+  border: 1px solid rgba(24, 144, 255, 0.08);
+}
+
+.live-status-card.is-smooth {
+  box-shadow: 0 10px 30px rgba(47, 158, 68, 0.14);
+}
+
+.live-status-card.is-busy {
+  box-shadow: 0 10px 30px rgba(250, 140, 22, 0.16);
+}
+
+.live-status-card.is-paused,
+.live-status-card.is-closed,
+.live-status-card.is-unavailable,
+.live-status-card.is-disabled {
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+}
+
+.live-status-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.live-status-heading {
+  min-width: 0;
+}
+
+.live-status-kicker {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1890ff;
+  margin-bottom: 6px;
+}
+
+.live-status-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.live-status-title-row h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #1f2329;
+}
+
+.live-status-mode {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #edf5ff;
+  color: #1867c0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.live-status-summary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #6b7280;
+}
+
+.live-status-refresh {
+  border: none;
+  background: #f2f6fb;
+  color: #1867c0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.live-status-refresh:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.live-status-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.live-status-metric {
+  padding: 12px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f3f7fb 100%);
+}
+
+.metric-label {
+  display: block;
+  font-size: 12px;
+  color: #7b8794;
+  margin-bottom: 6px;
+}
+
+.metric-value {
+  font-size: 22px;
+  line-height: 1;
+  color: #1f2329;
+}
+
+.live-status-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.live-status-inline span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f5f7fa;
+}
+
+.live-status-estimate {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  padding: 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #0d62d8 0%, #2b9cff 100%);
+  color: #fff;
+  margin-bottom: 12px;
+}
+
+.estimate-main {
+  min-width: 112px;
+}
+
+.estimate-label {
+  font-size: 12px;
+  opacity: 0.85;
+  margin-bottom: 6px;
+}
+
+.estimate-value {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.estimate-side {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.estimate-recommendation {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.estimate-tag {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.live-status-stage-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.live-stage-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f4f7fb;
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.live-status-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #8b95a1;
+}
+
+.live-status-empty {
+  padding: 10px 0 2px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
 .card-section {
-  margin: -20px 16px 0;
+  margin: 0 16px 0;
   padding-bottom: 20px;
 }
 
@@ -836,6 +1248,20 @@ function goToCards() {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+@media (max-width: 420px) {
+  .live-status-card-header {
+    flex-direction: column;
+  }
+
+  .live-status-refresh {
+    width: 100%;
+  }
+
+  .live-status-estimate {
+    flex-direction: column;
+  }
 }
 
 .card-item {

@@ -72,3 +72,57 @@ func TestRunMigrationsIsIdempotent(t *testing.T) {
 		t.Fatalf("want %d migrations, got %d", len(defaultMigrations), count)
 	}
 }
+
+func TestRunMigrationsSupportsAlterTableCompatibilityGuards(t *testing.T) {
+	oldMigrations := defaultMigrations
+	defaultMigrations = []dbMigration{
+		{
+			Version: "2026031701_cleanup",
+			Name:    "cleanup_appointment_compatibility_columns",
+			Statements: []string{
+				"ALTER TABLE appointments ADD COLUMN IF NOT EXISTS predicted_delay_minutes INT NOT NULL DEFAULT 0",
+				"UPDATE appointments SET predicted_delay_minutes = predicted_wait_minutes WHERE predicted_delay_minutes = 0",
+				"ALTER TABLE appointments DROP COLUMN IF EXISTS predicted_wait_minutes",
+				"ALTER TABLE merchants DROP COLUMN IF EXISTS appointment_max_wait_minutes",
+			},
+		},
+	}
+	defer func() { defaultMigrations = oldMigrations }()
+
+	dsn := "file:config_migrations_runner_compat_test?mode=memory&cache=shared&_loc=auto"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE appointments (id integer primary key, predicted_wait_minutes integer not null default 3)").Error; err != nil {
+		t.Fatalf("create appointments failed: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE merchants (id integer primary key)").Error; err != nil {
+		t.Fatalf("create merchants failed: %v", err)
+	}
+	if err := db.Exec("INSERT INTO appointments (id, predicted_wait_minutes) VALUES (1, 7)").Error; err != nil {
+		t.Fatalf("seed appointments failed: %v", err)
+	}
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("first run failed: %v", err)
+	}
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("second run failed: %v", err)
+	}
+
+	if !db.Migrator().HasColumn("appointments", "predicted_delay_minutes") {
+		t.Fatalf("predicted_delay_minutes should exist")
+	}
+	if db.Migrator().HasColumn("appointments", "predicted_wait_minutes") {
+		t.Fatalf("predicted_wait_minutes should be dropped")
+	}
+
+	var predictedDelay int
+	if err := db.Raw("SELECT predicted_delay_minutes FROM appointments WHERE id = 1").Scan(&predictedDelay).Error; err != nil {
+		t.Fatalf("query predicted_delay_minutes failed: %v", err)
+	}
+	if predictedDelay != 7 {
+		t.Fatalf("want predicted_delay_minutes 7, got %d", predictedDelay)
+	}
+}
