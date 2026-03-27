@@ -205,11 +205,11 @@
                 <div class="mt-1 text-sm text-gray-500">{{ formatDateTime(row.start_at) }} - {{ formatDateTime(row.end_at) }}</div>
               </div>
               <div class="flex items-center gap-2 shrink-0">
-                <div class="px-2 py-1 rounded-full text-xs font-medium" :class="getSchedulePublishingStatusClass(row.status)">
-                  {{ getSchedulePublishingStatusText(row.status) }}
+                <div class="px-2 py-1 rounded-full text-xs font-medium" :class="getSchedulePublishingStatusClass(getEffectiveSchedulePublishingStatus(row))">
+                  {{ getSchedulePublishingStatusText(getEffectiveSchedulePublishingStatus(row)) }}
                 </div>
                 <button
-                  v-if="row.status === 'leave'"
+                  v-if="getEffectiveSchedulePublishingStatus(row) === 'leave'"
                   @click="unmarkScheduleLeave(row)"
                   class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
                 >
@@ -226,11 +226,11 @@
                 查看受影响预约
               </button>
               <button
-                v-if="row.status === 'published' || row.status === 'unpublished' || row.status === 'canceled'"
+                v-if="['published', 'unpublished', 'canceled'].includes(getEffectiveSchedulePublishingStatus(row))"
                 @click="markScheduleLeave(row)"
                 class="px-3 py-2 bg-orange-500 text-white rounded-lg text-sm"
               >
-                {{ row.status === 'published' ? '标记请假' : '请假' }}
+                {{ getEffectiveSchedulePublishingStatus(row) === 'published' ? '标记请假' : '请假' }}
               </button>
             </div>
           </div>
@@ -5580,8 +5580,18 @@ const formatScheduleTechnicianLabel = (row) => {
   return `客服#${technicianId || '-'}`
 }
 
+const hasCanceledScheduleRows = computed(() => {
+  return (schedulePublishings.value || []).some(row => row?.status === 'canceled')
+})
+
+const getEffectiveSchedulePublishingStatus = (row) => {
+  const status = String(row?.status || '').trim()
+  if (status === 'published' && hasCanceledScheduleRows.value) return 'canceled'
+  return status
+}
+
 const getPublishableScheduleRows = () => {
-  return (schedulePublishings.value || []).filter(row => row?.status === 'unpublished' || row?.status === 'canceled')
+  return (schedulePublishings.value || []).filter(row => ['unpublished', 'canceled'].includes(getEffectiveSchedulePublishingStatus(row)))
 }
 
 const shouldShowScheduleAffectedAppointments = (row) => {
@@ -5589,7 +5599,7 @@ const shouldShowScheduleAffectedAppointments = (row) => {
 }
 
 const hasPublishedScheduleRows = computed(() => {
-  return (schedulePublishings.value || []).some(row => row?.status === 'published')
+  return (schedulePublishings.value || []).some(row => getEffectiveSchedulePublishingStatus(row) === 'published')
 })
 
 const fetchSchedulePublishings = async () => {
@@ -5682,14 +5692,15 @@ const viewSchedulePublishingAffectedAppointments = async (schedule) => {
 const markScheduleLeave = async (schedule) => {
   if (schedulePublishingActionSubmitting.value) return
   if (!schedule?.technician_id) return
-  const confirmText = schedule?.status === 'unpublished' || schedule?.status === 'canceled'
+  const status = getEffectiveSchedulePublishingStatus(schedule)
+  const confirmText = status === 'unpublished' || status === 'canceled'
     ? '确认给该客服请假吗？请假后会标记为“请假不可预约”，且不会进入后续预约排班发布。'
     : '确认将这条排班标记为请假吗？系统会立即扫描受影响预约并生成保护性改签建议。'
   if (!window.confirm(confirmText)) return
   schedulePublishingActionSubmitting.value = true
   try {
     let res = null
-    if (schedule?.id) {
+    if (status === 'published' && schedule?.id) {
       res = await attendanceApi.markScheduleLeave(schedule.id)
       alert('已标记请假并生成异常修复结果')
     } else {

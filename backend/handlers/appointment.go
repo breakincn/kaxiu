@@ -4868,7 +4868,11 @@ func UnmarkScheduleLeaveByTechnician(c *gin.Context) {
 		return
 	}
 	rows := make([]models.TechnicianSchedulePublishing, 0)
+	hasPublishedRows := false
 	for _, row := range allRows {
+		if row.Status == "published" {
+			hasPublishedRows = true
+		}
 		if row.Status != "leave" || row.TechnicianID == nil || *row.TechnicianID != input.TechnicianID {
 			continue
 		}
@@ -4881,8 +4885,10 @@ func UnmarkScheduleLeaveByTechnician(c *gin.Context) {
 	err = config.DB.Transaction(func(tx *gorm.DB) error {
 		for _, row := range rows {
 			nextStatus := "unpublished"
-			if row.PublishedAt != nil {
+			if row.PublishedAt != nil && hasPublishedRows {
 				nextStatus = "published"
+			} else if row.PublishedAt != nil {
+				nextStatus = "canceled"
 			}
 			if err := tx.Model(&models.TechnicianSchedulePublishing{}).
 				Where("id = ? AND merchant_id = ?", row.ID, merchantID).
