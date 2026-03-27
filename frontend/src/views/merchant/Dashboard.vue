@@ -163,11 +163,12 @@
             <div class="text-sm text-gray-500 mt-1">先核对次日客服状态并标记请假，再确认正式发布次日排班。</div>
           </div>
           <button
-            @click="publishNextDaySchedules"
-            :disabled="schedulePublishingSubmitting"
-            class="px-4 py-2 bg-slate-700 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+            @click="handleSchedulePublishingPrimaryAction"
+            :disabled="schedulePublishingSubmitting || schedulePublishingPrimaryAction.disabled"
+            :class="schedulePublishingPrimaryAction.className"
+            class="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
           >
-            {{ schedulePublishingSubmitting ? '发布中...' : '发布预约排班' }}
+            {{ schedulePublishingSubmitting ? schedulePublishingPrimaryAction.submittingText : schedulePublishingPrimaryAction.label }}
           </button>
         </div>
         <div class="mt-4 flex items-end gap-3">
@@ -182,13 +183,6 @@
               class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm disabled:opacity-50"
             >
               {{ schedulePublishingLoading ? '加载中...' : '刷新排班' }}
-            </button>
-            <button
-              @click="withdrawNextDaySchedules"
-              :disabled="schedulePublishingSubmitting || !hasPublishedScheduleRows"
-              class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm disabled:opacity-50"
-            >
-              {{ schedulePublishingSubmitting ? '处理中...' : '撤销发布' }}
             </button>
           </div>
         </div>
@@ -5602,6 +5596,56 @@ const hasPublishedScheduleRows = computed(() => {
   return (schedulePublishings.value || []).some(row => getEffectiveSchedulePublishingStatus(row) === 'published')
 })
 
+const latestPublishedScheduleAt = computed(() => {
+  let latest = null
+  for (const row of (schedulePublishings.value || [])) {
+    if (getEffectiveSchedulePublishingStatus(row) !== 'published') continue
+    const raw = String(row?.published_at || '').trim()
+    if (!raw) continue
+    const dt = new Date(raw)
+    if (Number.isNaN(dt.getTime())) continue
+    if (!latest || dt.getTime() > latest.getTime()) {
+      latest = dt
+    }
+  }
+  return latest
+})
+
+const canWithdrawPublishedScheduleRows = computed(() => {
+  if (!hasPublishedScheduleRows.value) return false
+  const latest = latestPublishedScheduleAt.value
+  if (!latest) return false
+  return Date.now() - latest.getTime() <= 30 * 60 * 1000
+})
+
+const schedulePublishingPrimaryAction = computed(() => {
+  if (canWithdrawPublishedScheduleRows.value) {
+    return {
+      mode: 'withdraw',
+      label: '撤销发布',
+      submittingText: '撤销中...',
+      disabled: false,
+      className: 'bg-slate-700 text-white'
+    }
+  }
+  if (hasPublishedScheduleRows.value) {
+    return {
+      mode: 'published',
+      label: '已发布预约',
+      submittingText: '处理中...',
+      disabled: true,
+      className: 'bg-green-500 text-white'
+    }
+  }
+  return {
+    mode: 'publish',
+    label: '发布预约排班',
+    submittingText: '发布中...',
+    disabled: false,
+    className: 'bg-slate-700 text-white'
+  }
+})
+
 const fetchSchedulePublishings = async () => {
   if (!schedulePublishingDate.value) return
   schedulePublishingLoading.value = true
@@ -5615,6 +5659,16 @@ const fetchSchedulePublishings = async () => {
     schedulePublishings.value = []
   } finally {
     schedulePublishingLoading.value = false
+  }
+}
+
+const handleSchedulePublishingPrimaryAction = async () => {
+  if (schedulePublishingPrimaryAction.value.mode === 'withdraw') {
+    await withdrawNextDaySchedules()
+    return
+  }
+  if (schedulePublishingPrimaryAction.value.mode === 'publish') {
+    await publishNextDaySchedules()
   }
 }
 
@@ -5642,17 +5696,18 @@ const publishNextDaySchedules = async () => {
 }
 
 const withdrawNextDaySchedules = async () => {
-  if (!hasPublishedScheduleRows.value) {
+  if (!canWithdrawPublishedScheduleRows.value) {
     alert('当前没有已发布排班可撤销')
     return
   }
-  if (!window.confirm(`确认撤销 ${schedulePublishingDate.value} 的已发布排班吗？\n\n撤销后可以重新编排并再次发布，已请假客服会保留请假状态。`)) {
+  if (!window.confirm(`确认撤销 ${schedulePublishingDate.value} 的已发布排班吗？\n\n仅支持发布后30分钟内撤销。\n撤销后会同时单方面取消该日期已预约用户的预约，已请假客服会保留请假状态。`)) {
     return
   }
   schedulePublishingSubmitting.value = true
   try {
-    await attendanceApi.withdrawNextDaySchedule(schedulePublishingDate.value)
-    alert('已撤销该日期的已发布排班')
+    const res = await attendanceApi.withdrawNextDaySchedule(schedulePublishingDate.value)
+    const canceledAppointments = Number(res?.data?.data?.canceled_appointments || 0)
+    alert(`已撤销该日期的已发布排班，并取消 ${canceledAppointments} 个已预约用户预约`)
     await fetchSchedulePublishings()
   } catch (err) {
     alert(err.response?.data?.error || '撤销发布失败')

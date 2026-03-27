@@ -313,8 +313,9 @@ func TestWithdrawNextDayScheduleConvertsPublishedRowsToCanceled(t *testing.T) {
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
 	setupAppointmentLifecycleTestDB(t)
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 5, 0, 0, appointmentLocation()))
 
-	merchant, _, tech, otherTech, _, _ := seedAppointmentPermissionFixture(t, config.DB)
+	merchant, user, tech, otherTech, _, _ := seedAppointmentPermissionFixture(t, config.DB)
 	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
 		t.Fatalf("enable customer service mode failed: %v", err)
 	}
@@ -331,6 +332,25 @@ func TestWithdrawNextDayScheduleConvertsPublishedRowsToCanceled(t *testing.T) {
 
 	loc := appointmentLocation()
 	targetDate := time.Date(time.Now().In(loc).Year(), time.Now().In(loc).Month(), time.Now().In(loc).Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	card := models.Card{MerchantID: merchant.ID, UserID: user.ID, CardNo: "W001", CardType: "次卡", TotalTimes: 10, RemainTimes: 9, UsedTimes: 1}
+	if err := config.DB.Create(&card).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+	appointmentTime := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 11, 0, 0, 0, loc)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	if _, err := initializeAppointmentSettlement(config.DB, &appt, "test_seed"); err != nil {
+		t.Fatalf("initialize settlement failed: %v", err)
+	}
 	path := "/merchant/schedules/withdraw-next-day?date=" + targetDate.Format("2006-01-02")
 	c, rec = newMerchantContext(http.MethodPost, path, merchant.ID)
 	c.Request = httptest.NewRequest(http.MethodPost, path, nil)
@@ -350,6 +370,53 @@ func TestWithdrawNextDayScheduleConvertsPublishedRowsToCanceled(t *testing.T) {
 		if row.Status != "canceled" {
 			t.Fatalf("want canceled rows after withdraw, got %s", row.Status)
 		}
+	}
+	updated := mustLoadAppointmentForTest(t, appt.ID)
+	if updated.Status != "canceled" {
+		t.Fatalf("want appointment canceled after withdraw, got %s", updated.Status)
+	}
+	if updated.ClosedReason != "schedule_publish_withdrawn" {
+		t.Fatalf("want closed_reason schedule_publish_withdrawn, got %s", updated.ClosedReason)
+	}
+	if updated.SettlementStatusSnapshot != "refunded" {
+		t.Fatalf("want settlement refunded after withdraw, got %s", updated.SettlementStatusSnapshot)
+	}
+}
+
+func TestWithdrawNextDayScheduleRejectsAfterThirtyMinutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 0, 0, 0, appointmentLocation()))
+
+	merchant, _, tech, otherTech, _, _ := seedAppointmentPermissionFixture(t, config.DB)
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+	merchant.SupportCustomerServiceMode = true
+	if err := config.DB.Model(&models.Technician{}).Where("id IN ?", []uint{tech.ID, otherTech.ID}).Update("is_active", true).Error; err != nil {
+		t.Fatalf("activate technicians failed: %v", err)
+	}
+
+	c, rec := newMerchantContext(http.MethodPost, "/merchant/schedules/publish-next-day", merchant.ID)
+	PublishNextDaySchedule(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("publish want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 31, 0, 0, appointmentLocation()))
+	loc := appointmentLocation()
+	targetDate := time.Date(time.Now().In(loc).Year(), time.Now().In(loc).Month(), time.Now().In(loc).Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	path := "/merchant/schedules/withdraw-next-day?date=" + targetDate.Format("2006-01-02")
+	c, rec = newMerchantContext(http.MethodPost, path, merchant.ID)
+	c.Request = httptest.NewRequest(http.MethodPost, path, nil)
+	WithdrawNextDaySchedule(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 after 30 minutes, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !containsText(rec.Body.String(), "超过30分钟") {
+		t.Fatalf("want over-30-minutes message, got body=%s", rec.Body.String())
 	}
 }
 

@@ -481,6 +481,8 @@ var appointmentCurrentTime = func() time.Time {
 	return time.Now().In(appointmentLocation())
 }
 
+const schedulePublishWithdrawWindow = 30 * time.Minute
+
 func nextDayBookingOpensAt(now time.Time) time.Time {
 	loc := now.Location()
 	return time.Date(now.Year(), now.Month(), now.Day(), 10, 0, 0, 0, loc)
@@ -1789,17 +1791,31 @@ func cancelAppointmentWithTime(appointment *models.Appointment, canceledAt time.
 		return nil
 	}
 	return config.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.Appointment{}).Where("id = ?", appointment.ID).Updates(map[string]interface{}{
-			"status":                     "canceled",
-			"canceled_at":                canceledAt,
-			"settlement_status_snapshot": "refunded",
-		}).Error; err != nil {
-			return err
-		}
-		appointment.Status = "canceled"
-		appointment.CanceledAt = &canceledAt
-		return updateAppointmentSettlementSnapshot(tx, appointment, "refunded", "appointment_canceled")
+		return cancelAppointmentWithTimeTx(tx, appointment, canceledAt, "canceled")
 	})
+}
+
+func cancelAppointmentWithTimeTx(tx *gorm.DB, appointment *models.Appointment, canceledAt time.Time, closedReason string) error {
+	if tx == nil || appointment == nil || appointment.ID == 0 {
+		return nil
+	}
+	updates := map[string]interface{}{
+		"status":                     "canceled",
+		"canceled_at":                canceledAt,
+		"settlement_status_snapshot": "refunded",
+	}
+	if strings.TrimSpace(closedReason) != "" {
+		updates["closed_reason"] = strings.TrimSpace(closedReason)
+	}
+	if err := tx.Model(&models.Appointment{}).Where("id = ?", appointment.ID).Updates(updates).Error; err != nil {
+		return err
+	}
+	appointment.Status = "canceled"
+	appointment.CanceledAt = &canceledAt
+	if strings.TrimSpace(closedReason) != "" {
+		appointment.ClosedReason = strings.TrimSpace(closedReason)
+	}
+	return updateAppointmentSettlementSnapshot(tx, appointment, "refunded", "appointment_canceled")
 }
 
 func autoCancelAppointmentIfOverdue(appointment *models.Appointment, now time.Time) (bool, error) {
@@ -4625,7 +4641,7 @@ func PublishNextDaySchedule(c *gin.Context) {
 		return
 	}
 	loc := appointmentLocation()
-	now := time.Now().In(loc)
+	now := appointmentCurrentTime().In(loc)
 	nextDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
 	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, nextDate)
 	if !ok {
@@ -4814,7 +4830,7 @@ func WithdrawNextDaySchedule(c *gin.Context) {
 	var date time.Time
 	var err error
 	if targetDate == "" {
-		now := time.Now().In(loc)
+		now := appointmentCurrentTime().In(loc)
 		date = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
 	} else {
 		date, err = time.ParseInLocation("2006-01-02", targetDate, loc)
@@ -4823,19 +4839,76 @@ func WithdrawNextDaySchedule(c *gin.Context) {
 			return
 		}
 	}
+	now := appointmentCurrentTime().In(loc)
+	publishedRows, err := loadPublishedSchedulePublishings(config.DB, merchantID, date)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取已发布排班失败"})
+		return
+	}
+	if len(publishedRows) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前没有已发布排班可撤销"})
+		return
+	}
+	var latestPublishedAt *time.Time
+	for _, row := range publishedRows {
+		if row.PublishedAt == nil {
+			continue
+		}
+		if latestPublishedAt == nil || row.PublishedAt.After(*latestPublishedAt) {
+			copyTime := *row.PublishedAt
+			latestPublishedAt = &copyTime
+		}
+	}
+	if latestPublishedAt == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前发布记录缺少发布时间，暂不支持撤销"})
+		return
+	}
+	if now.After(latestPublishedAt.Add(schedulePublishWithdrawWindow)) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "发布超过30分钟，当前不可撤销"})
+		return
+	}
+
 	var affected int64
-	if err := config.DB.Model(&models.TechnicianSchedulePublishing{}).
-		Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status = ?", merchantID, date, date.Add(24*time.Hour), "published").
-		Update("status", "canceled").Error; err != nil {
+	var canceledAppointments int64
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		appointmentIDs := make([]uint, 0)
+		if err := tx.Model(&models.Appointment{}).
+			Where("merchant_id = ? AND appointment_time >= ? AND appointment_time < ? AND status IN ?", merchantID, date, date.Add(24*time.Hour), []string{"pending", "confirmed"}).
+			Pluck("id", &appointmentIDs).Error; err != nil {
+			return err
+		}
+		for _, appointmentID := range appointmentIDs {
+			appointment, err := loadAppointmentByID(tx, appointmentID)
+			if err != nil {
+				return err
+			}
+			if appointment == nil {
+				continue
+			}
+			if err := cancelAppointmentWithTimeTx(tx, appointment, now, "schedule_publish_withdrawn"); err != nil {
+				return err
+			}
+		}
+		canceledAppointments = int64(len(appointmentIDs))
+		if err := tx.Model(&models.TechnicianSchedulePublishing{}).
+			Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status = ?", merchantID, date, date.Add(24*time.Hour), "published").
+			Update("status", "canceled").Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.TechnicianSchedulePublishing{}).
+			Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status = ?", merchantID, date, date.Add(24*time.Hour), "canceled").
+			Count(&affected).Error
+	})
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "撤销发布失败"})
 		return
 	}
-	_ = config.DB.Model(&models.TechnicianSchedulePublishing{}).
-		Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status = ?", merchantID, date, date.Add(24*time.Hour), "canceled").
-		Count(&affected).Error
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
-		"date":            date.Format("2006-01-02"),
-		"withdrawn_count": affected,
+		"date":                   date.Format("2006-01-02"),
+		"withdrawn_count":        affected,
+		"canceled_appointments":  canceledAppointments,
+		"withdraw_deadline_at":   latestPublishedAt.Add(schedulePublishWithdrawWindow).Format(time.RFC3339),
+		"latest_published_at":    latestPublishedAt.Format(time.RFC3339),
 	}})
 }
 
