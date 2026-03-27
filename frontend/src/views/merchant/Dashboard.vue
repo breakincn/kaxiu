@@ -172,9 +172,8 @@
           </button>
         </div>
         <div class="mt-4">
-          <div class="text-xs text-gray-400 mb-1">次日排班日期</div>
-          <div class="inline-flex items-center rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-            {{ schedulePublishingDate }}
+          <div class="text-sm text-gray-500">
+            次日排班日期：<span class="text-gray-700">{{ schedulePublishingDate }}</span>
           </div>
         </div>
         <div v-if="schedulePublishingError" class="mt-3 text-sm text-red-500">{{ schedulePublishingError }}</div>
