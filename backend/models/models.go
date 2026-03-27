@@ -371,6 +371,8 @@ type TechnicianSchedulePublishing struct {
 	Status       string     `json:"status" gorm:"size:20;default:published;comment:状态（published/leave/canceled）"`
 	PublishedAt  *time.Time `json:"published_at" gorm:"type:datetime(3);comment:发布时间"`
 	CreatedAt    *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+
+	Technician *Technician `json:"technician,omitempty" gorm:"-"`
 }
 
 func (TechnicianSchedulePublishing) TableName() string {

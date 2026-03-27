@@ -195,6 +195,220 @@ func TestMarkScheduleLeaveCreatesAffectedAppointmentsAndProtectedRepairSlots(t *
 	}
 }
 
+func TestListSchedulePublishingsIncludesUnpublishedTechniciansBeforePublish(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, _, tech, otherTech, _, _ := seedAppointmentPermissionFixture(t, config.DB)
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+	merchant.SupportCustomerServiceMode = true
+	if err := config.DB.Model(&models.Technician{}).Where("id IN ?", []uint{tech.ID, otherTech.ID}).Update("is_active", true).Error; err != nil {
+		t.Fatalf("activate technicians failed: %v", err)
+	}
+
+	loc := appointmentLocation()
+	targetDate := time.Date(time.Now().In(loc).Year(), time.Now().In(loc).Month(), time.Now().In(loc).Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	path := "/merchant/schedules/publishings?date=" + targetDate.Format("2006-01-02")
+	c, rec := newMerchantContext(http.MethodGet, path, merchant.ID)
+	c.Request = httptest.NewRequest(http.MethodGet, path, nil)
+
+	ListSchedulePublishings(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			Publishings []models.TechnicianSchedulePublishing `json:"publishings"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+	if len(resp.Data.Publishings) != 2 {
+		t.Fatalf("want 2 preview rows, got %d body=%s", len(resp.Data.Publishings), rec.Body.String())
+	}
+	for _, row := range resp.Data.Publishings {
+		if row.Status != "unpublished" {
+			t.Fatalf("want unpublished preview row, got %s", row.Status)
+		}
+		if row.Technician == nil || row.Technician.Account == "" || row.Technician.Name == "" {
+			t.Fatalf("want technician identity in preview row, got %+v", row.Technician)
+		}
+	}
+}
+
+func TestMarkScheduleLeaveByTechnicianBeforePublishAndPublishSkipsLeaveRows(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, _, tech, otherTech, _, _ := seedAppointmentPermissionFixture(t, config.DB)
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+	merchant.SupportCustomerServiceMode = true
+	if err := config.DB.Model(&models.Technician{}).Where("id IN ?", []uint{tech.ID, otherTech.ID}).Update("is_active", true).Error; err != nil {
+		t.Fatalf("activate technicians failed: %v", err)
+	}
+
+	loc := appointmentLocation()
+	targetDate := time.Date(time.Now().In(loc).Year(), time.Now().In(loc).Month(), time.Now().In(loc).Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	body, _ := json.Marshal(gin.H{
+		"date":          targetDate.Format("2006-01-02"),
+		"technician_id": tech.ID,
+	})
+	c, rec := newMerchantContext(http.MethodPost, "/merchant/schedules/leave", merchant.ID)
+	c.Request = httptest.NewRequest(http.MethodPost, "/merchant/schedules/leave", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	MarkScheduleLeaveByTechnician(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	c, rec = newMerchantContext(http.MethodPost, "/merchant/schedules/publish-next-day", merchant.ID)
+	PublishNextDaySchedule(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 on publish, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rows, err := loadSchedulePublishingsByDate(config.DB, merchant.ID, targetDate)
+	if err != nil {
+		t.Fatalf("load rows failed: %v", err)
+	}
+	var leaveCount int
+	var publishedCount int
+	for _, row := range rows {
+		if row.TechnicianID == nil {
+			continue
+		}
+		if *row.TechnicianID == tech.ID && row.Status == "leave" {
+			leaveCount++
+		}
+		if *row.TechnicianID == tech.ID && row.Status == "published" {
+			t.Fatalf("leave technician should not be published")
+		}
+		if *row.TechnicianID == otherTech.ID && row.Status == "published" {
+			publishedCount++
+		}
+	}
+	if leaveCount == 0 {
+		t.Fatalf("want leave row for technician %d", tech.ID)
+	}
+	if publishedCount == 0 {
+		t.Fatalf("want published row for technician %d", otherTech.ID)
+	}
+}
+
+func TestWithdrawNextDayScheduleConvertsPublishedRowsToCanceled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, _, tech, otherTech, _, _ := seedAppointmentPermissionFixture(t, config.DB)
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+	merchant.SupportCustomerServiceMode = true
+	if err := config.DB.Model(&models.Technician{}).Where("id IN ?", []uint{tech.ID, otherTech.ID}).Update("is_active", true).Error; err != nil {
+		t.Fatalf("activate technicians failed: %v", err)
+	}
+
+	c, rec := newMerchantContext(http.MethodPost, "/merchant/schedules/publish-next-day", merchant.ID)
+	PublishNextDaySchedule(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("publish want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	loc := appointmentLocation()
+	targetDate := time.Date(time.Now().In(loc).Year(), time.Now().In(loc).Month(), time.Now().In(loc).Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	path := "/merchant/schedules/withdraw-next-day?date=" + targetDate.Format("2006-01-02")
+	c, rec = newMerchantContext(http.MethodPost, path, merchant.ID)
+	c.Request = httptest.NewRequest(http.MethodPost, path, nil)
+	WithdrawNextDaySchedule(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("withdraw want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rows, err := loadSchedulePublishingsByDate(config.DB, merchant.ID, targetDate)
+	if err != nil {
+		t.Fatalf("load rows failed: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Fatalf("want rows after withdraw")
+	}
+	for _, row := range rows {
+		if row.Status != "canceled" {
+			t.Fatalf("want canceled rows after withdraw, got %s", row.Status)
+		}
+	}
+}
+
+func TestUnmarkScheduleLeaveByTechnicianRestoresPreviousState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, _, tech, _, _, _ := seedAppointmentPermissionFixture(t, config.DB)
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+	merchant.SupportCustomerServiceMode = true
+	if err := config.DB.Model(&models.Technician{}).Where("id = ?", tech.ID).Update("is_active", true).Error; err != nil {
+		t.Fatalf("activate technician failed: %v", err)
+	}
+
+	loc := appointmentLocation()
+	targetDate := time.Date(time.Now().In(loc).Year(), time.Now().In(loc).Month(), time.Now().In(loc).Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+
+	body, _ := json.Marshal(gin.H{
+		"date":          targetDate.Format("2006-01-02"),
+		"technician_id": tech.ID,
+	})
+	c, rec := newMerchantContext(http.MethodPost, "/merchant/schedules/leave", merchant.ID)
+	c.Request = httptest.NewRequest(http.MethodPost, "/merchant/schedules/leave", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	MarkScheduleLeaveByTechnician(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("mark leave want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	c, rec = newMerchantContext(http.MethodPost, "/merchant/schedules/unleave", merchant.ID)
+	c.Request = httptest.NewRequest(http.MethodPost, "/merchant/schedules/unleave", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	UnmarkScheduleLeaveByTechnician(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unleave want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rows, err := buildSchedulePublishingRowsForDate(config.DB, merchant, targetDate)
+	if err != nil {
+		t.Fatalf("build rows failed: %v", err)
+	}
+	found := false
+	for _, row := range rows {
+		if row.TechnicianID != nil && *row.TechnicianID == tech.ID {
+			found = true
+			if row.Status != "unpublished" {
+				t.Fatalf("want unpublished after unleave, got %s", row.Status)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("want technician row after unleave")
+	}
+}
+
 func TestScheduleEndpointsRequireAppointmentManagePermissionForStaff(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

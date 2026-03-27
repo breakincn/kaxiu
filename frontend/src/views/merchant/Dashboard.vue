@@ -160,14 +160,14 @@
         <div class="flex items-start justify-between gap-3">
           <div>
             <div class="font-medium text-gray-800">排班管理</div>
-            <div class="text-sm text-gray-500 mt-1">发布次日排班、标记请假，并查看受影响预约与排班影响处置建议。</div>
+            <div class="text-sm text-gray-500 mt-1">先核对次日客服状态并标记请假，再确认正式发布次日排班。</div>
           </div>
           <button
             @click="publishNextDaySchedules"
             :disabled="schedulePublishingSubmitting"
             class="px-4 py-2 bg-slate-700 text-white rounded-lg text-sm font-medium disabled:opacity-50"
           >
-            {{ schedulePublishingSubmitting ? '发布中...' : '发布次日排班' }}
+            {{ schedulePublishingSubmitting ? '发布中...' : '发布预约排班' }}
           </button>
         </div>
         <div class="mt-4 flex items-end gap-3">
@@ -175,39 +175,58 @@
             <div class="text-xs text-gray-400 mb-1">查看日期</div>
             <input v-model="schedulePublishingDate" type="date" class="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
-          <button
-            @click="fetchSchedulePublishings"
-            :disabled="schedulePublishingLoading"
-            class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm disabled:opacity-50"
-          >
-            {{ schedulePublishingLoading ? '加载中...' : '刷新排班' }}
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              @click="fetchSchedulePublishings"
+              :disabled="schedulePublishingLoading"
+              class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm disabled:opacity-50"
+            >
+              {{ schedulePublishingLoading ? '加载中...' : '刷新排班' }}
+            </button>
+            <button
+              @click="withdrawNextDaySchedules"
+              :disabled="schedulePublishingSubmitting || !hasPublishedScheduleRows"
+              class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm disabled:opacity-50"
+            >
+              {{ schedulePublishingSubmitting ? '处理中...' : '撤销发布' }}
+            </button>
+          </div>
         </div>
         <div v-if="schedulePublishingError" class="mt-3 text-sm text-red-500">{{ schedulePublishingError }}</div>
         <div v-else-if="schedulePublishingLoading" class="mt-3 text-sm text-gray-400">读取排班中...</div>
         <div v-else-if="schedulePublishings.length === 0" class="mt-3 rounded-lg border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-400 text-center">
-          当前日期暂无已发布排班
+          当前日期暂无客服排班视图
         </div>
         <div v-else class="mt-3 space-y-2">
-          <div v-for="row in schedulePublishings" :key="row.id" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+          <div v-for="row in schedulePublishings" :key="getSchedulePublishingRowKey(row)" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <div class="font-medium text-gray-800">{{ row.technician?.name || row.technician_name || `客服#${row.technician_id || '-'}` }}</div>
+                <div class="font-medium text-gray-800">{{ formatScheduleTechnicianLabel(row) }}</div>
                 <div class="mt-1 text-sm text-gray-500">{{ formatDateTime(row.start_at) }} - {{ formatDateTime(row.end_at) }}</div>
               </div>
-              <div class="px-2 py-1 rounded-full text-xs font-medium" :class="getSchedulePublishingStatusClass(row.status)">
-                {{ getSchedulePublishingStatusText(row.status) }}
+              <div class="flex items-center gap-2 shrink-0">
+                <div class="px-2 py-1 rounded-full text-xs font-medium" :class="getSchedulePublishingStatusClass(row.status)">
+                  {{ getSchedulePublishingStatusText(row.status) }}
+                </div>
+                <button
+                  v-if="row.status === 'leave'"
+                  @click="unmarkScheduleLeave(row)"
+                  class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
+                >
+                  销假
+                </button>
               </div>
             </div>
             <div class="mt-3 flex flex-wrap gap-2">
               <button
+                v-if="row.id"
                 @click="viewSchedulePublishingAffectedAppointments(row)"
                 class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
               >
                 查看受影响预约
               </button>
               <button
-                v-if="row.status === 'published'"
+                v-if="row.status === 'published' || row.status === 'unpublished'"
                 @click="markScheduleLeave(row)"
                 class="px-3 py-2 bg-orange-500 text-white rounded-lg text-sm"
               >
@@ -2707,6 +2726,7 @@ const appointmentRepairOverviewSchedule = ref(null)
 const appointmentRepairAffectedAppointments = ref([])
 const appointmentRepairItems = ref([])
 const appointmentRepairProtectedSlots = ref([])
+const schedulePublishingActionSubmitting = ref(false)
 const appointmentRepairOverviewScheduleLabel = computed(() => {
   const schedule = appointmentRepairOverviewSchedule.value
   if (!schedule?.publish_date && !schedule?.start_at) return ''
@@ -5528,17 +5548,45 @@ const reloadTechnicianMonthlyDisruptions = async () => {
 
 const getSchedulePublishingStatusText = (status) => {
   if (status === 'published') return '已发布'
+  if (status === 'unpublished') return '待发布'
   if (status === 'leave') return '已请假'
-  if (status === 'canceled') return '已取消'
+  if (status === 'canceled') return '待发布'
   return status || '未知'
 }
 
 const getSchedulePublishingStatusClass = (status) => {
   if (status === 'published') return 'bg-green-50 text-green-700'
+  if (status === 'unpublished') return 'bg-blue-50 text-blue-700'
   if (status === 'leave') return 'bg-orange-50 text-orange-700'
-  if (status === 'canceled') return 'bg-gray-100 text-gray-600'
+  if (status === 'canceled') return 'bg-blue-50 text-blue-700'
   return 'bg-gray-100 text-gray-600'
 }
+
+const getSchedulePublishingRowKey = (row) => {
+  if (row?.id) return `schedule-${row.id}`
+  return `schedule-${row?.technician_id || 'merchant'}-${row?.start_at || ''}-${row?.end_at || ''}`
+}
+
+const formatScheduleTechnicianLabel = (row) => {
+  const technicianId = Number(row?.technician_id || row?.technician?.id || 0)
+  const fromRow = row?.technician || null
+  const fromDirectory = (appointmentTechnicianDirectory.value || []).find(item => Number(item?.id || 0) === technicianId) || null
+  const technician = fromRow || fromDirectory
+  const account = String(technician?.account || technician?.code || '').trim()
+  const name = String(technician?.name || row?.technician_name || '').trim()
+  if (account && name) return `客服#${account} ${name}`
+  if (account) return `客服#${account}`
+  if (name) return `客服#${technicianId || '-'} ${name}`
+  return `客服#${technicianId || '-'}`
+}
+
+const getPublishableScheduleRows = () => {
+  return (schedulePublishings.value || []).filter(row => row?.status === 'unpublished' || row?.status === 'canceled')
+}
+
+const hasPublishedScheduleRows = computed(() => {
+  return (schedulePublishings.value || []).some(row => row?.status === 'published')
+})
 
 const fetchSchedulePublishings = async () => {
   if (!schedulePublishingDate.value) return
@@ -5557,6 +5605,16 @@ const fetchSchedulePublishings = async () => {
 }
 
 const publishNextDaySchedules = async () => {
+  const publishableRows = getPublishableScheduleRows()
+  if (publishableRows.length === 0) {
+    alert('当前没有待发布的次日排班')
+    return
+  }
+  const preview = publishableRows.slice(0, 6).map(row => formatScheduleTechnicianLabel(row)).join('\n')
+  const remain = publishableRows.length > 6 ? `\n等 ${publishableRows.length} 位客服` : ''
+  if (!window.confirm(`确认正式发布 ${schedulePublishingDate.value} 的次日排班吗？\n\n本次将发布以下客服：\n${preview}${remain}\n\n已标记请假的客服不会被发布。`)) {
+    return
+  }
   schedulePublishingSubmitting.value = true
   try {
     await attendanceApi.publishNextDaySchedule()
@@ -5564,6 +5622,26 @@ const publishNextDaySchedules = async () => {
     await fetchSchedulePublishings()
   } catch (err) {
     alert(err.response?.data?.error || '发布次日排班失败')
+  } finally {
+    schedulePublishingSubmitting.value = false
+  }
+}
+
+const withdrawNextDaySchedules = async () => {
+  if (!hasPublishedScheduleRows.value) {
+    alert('当前没有已发布排班可撤销')
+    return
+  }
+  if (!window.confirm(`确认撤销 ${schedulePublishingDate.value} 的已发布排班吗？\n\n撤销后可以重新编排并再次发布，已请假客服会保留请假状态。`)) {
+    return
+  }
+  schedulePublishingSubmitting.value = true
+  try {
+    await attendanceApi.withdrawNextDaySchedule(schedulePublishingDate.value)
+    alert('已撤销该日期的已发布排班')
+    await fetchSchedulePublishings()
+  } catch (err) {
+    alert(err.response?.data?.error || '撤销发布失败')
   } finally {
     schedulePublishingSubmitting.value = false
   }
@@ -5598,18 +5676,52 @@ const viewSchedulePublishingAffectedAppointments = async (schedule) => {
 }
 
 const markScheduleLeave = async (schedule) => {
-  if (!schedule?.id) return
+  if (schedulePublishingActionSubmitting.value) return
+  if (!schedule?.technician_id) return
   if (!window.confirm('确认将这条排班标记为请假吗？系统会立即扫描受影响预约并生成保护性改签建议。')) return
+  schedulePublishingActionSubmitting.value = true
   try {
-    const res = await attendanceApi.markScheduleLeave(schedule.id)
-    alert('已标记请假并生成异常修复结果')
+    let res = null
+    if (schedule?.id) {
+      res = await attendanceApi.markScheduleLeave(schedule.id)
+      alert('已标记请假并生成异常修复结果')
+    } else {
+      await attendanceApi.markScheduleLeaveByTechnician({
+        date: schedulePublishingDate.value,
+        technician_id: schedule.technician_id
+      })
+      alert('已标记请假，该客服不会进入次日正式发布')
+    }
     await fetchSchedulePublishings()
-    showAppointmentRepairOverviewModal.value = true
-    appointmentRepairOverviewLoading.value = false
-    appointmentRepairOverviewError.value = ''
-    fillAppointmentRepairOverview(res?.data?.data || {})
+    if (res) {
+      showAppointmentRepairOverviewModal.value = true
+      appointmentRepairOverviewLoading.value = false
+      appointmentRepairOverviewError.value = ''
+      fillAppointmentRepairOverview(res?.data?.data || {})
+    }
   } catch (err) {
     alert(err.response?.data?.error || '标记请假失败')
+  } finally {
+    schedulePublishingActionSubmitting.value = false
+  }
+}
+
+const unmarkScheduleLeave = async (schedule) => {
+  if (schedulePublishingActionSubmitting.value) return
+  if (!schedule?.technician_id) return
+  if (!window.confirm('确认销假吗？销假后该客服会恢复到可重新编排/可发布状态。')) return
+  schedulePublishingActionSubmitting.value = true
+  try {
+    await attendanceApi.unmarkScheduleLeaveByTechnician({
+      date: schedulePublishingDate.value,
+      technician_id: schedule.technician_id
+    })
+    alert('已销假')
+    await fetchSchedulePublishings()
+  } catch (err) {
+    alert(err.response?.data?.error || '销假失败')
+  } finally {
+    schedulePublishingActionSubmitting.value = false
   }
 }
 

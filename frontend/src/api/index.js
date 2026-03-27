@@ -363,6 +363,9 @@ export const attendanceApi = {
   getCurrentStatus: () => api.get('/merchant/technician/attendance'),
   listSchedulePublishings: (date) => api.get('/merchant/schedules/publishings', { params: { date } }),
   publishNextDaySchedule: () => api.post('/merchant/schedules/publish-next-day'),
+  withdrawNextDaySchedule: (date) => api.post('/merchant/schedules/withdraw-next-day', null, { params: { date } }),
+  markScheduleLeaveByTechnician: (data) => api.post('/merchant/schedules/leave', data),
+  unmarkScheduleLeaveByTechnician: (data) => api.post('/merchant/schedules/unleave', data),
   markScheduleLeave: (id) => api.post(`/merchant/schedules/${id}/leave`),
   getScheduleAffectedAppointments: (scheduleId) => api.get('/merchant/schedules/affected-appointments', { params: { schedule_id: scheduleId } })
 }

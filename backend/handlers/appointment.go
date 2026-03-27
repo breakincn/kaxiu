@@ -139,6 +139,116 @@ func loadSchedulePublishingsByDate(tx *gorm.DB, merchantID uint, targetDate time
 	return out, nil
 }
 
+func schedulePublishingRowKey(technicianID *uint, startAt, endAt *time.Time) string {
+	tech := uint(0)
+	if technicianID != nil {
+		tech = *technicianID
+	}
+	start := ""
+	if startAt != nil {
+		start = startAt.In(time.UTC).Format(time.RFC3339Nano)
+	}
+	end := ""
+	if endAt != nil {
+		end = endAt.In(time.UTC).Format(time.RFC3339Nano)
+	}
+	return fmt.Sprintf("%d|%s|%s", tech, start, end)
+}
+
+func attachTechnicianToScheduleRows(rows []models.TechnicianSchedulePublishing, technicians []models.Technician) []models.TechnicianSchedulePublishing {
+	if len(rows) == 0 || len(technicians) == 0 {
+		return rows
+	}
+	byID := make(map[uint]models.Technician, len(technicians))
+	for _, tech := range technicians {
+		byID[tech.ID] = tech
+	}
+	for i := range rows {
+		if rows[i].TechnicianID == nil || *rows[i].TechnicianID == 0 {
+			continue
+		}
+		tech, ok := byID[*rows[i].TechnicianID]
+		if !ok {
+			continue
+		}
+		copyTech := tech
+		rows[i].Technician = &copyTech
+	}
+	return rows
+}
+
+func buildSchedulePublishingRowsForDate(tx *gorm.DB, merchant models.Merchant, targetDate time.Time) ([]models.TechnicianSchedulePublishing, error) {
+	rows, err := loadSchedulePublishingsByDate(tx, merchant.ID, targetDate)
+	if err != nil {
+		return nil, err
+	}
+	if !merchant.SupportCustomerServiceMode {
+		if len(rows) > 0 {
+			return rows, nil
+		}
+		intervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
+		if !ok {
+			return []models.TechnicianSchedulePublishing{}, nil
+		}
+		out := make([]models.TechnicianSchedulePublishing, 0, len(intervals))
+		dateOnly := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, targetDate.Location())
+		for _, interval := range intervals {
+			start := interval.Start
+			end := interval.End
+			publishDate := dateOnly
+			out = append(out, models.TechnicianSchedulePublishing{
+				MerchantID:  merchant.ID,
+				PublishDate: &publishDate,
+				StartAt:     &start,
+				EndAt:       &end,
+				Status:      "unpublished",
+			})
+		}
+		return out, nil
+	}
+
+	technicians, err := listAppointmentBookableTechnicians(tx, merchant)
+	if err != nil {
+		return nil, err
+	}
+	if len(technicians) == 0 {
+		return rows, nil
+	}
+	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
+	if !ok {
+		return []models.TechnicianSchedulePublishing{}, nil
+	}
+	dateOnly := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, targetDate.Location())
+	byKey := make(map[string]models.TechnicianSchedulePublishing, len(rows))
+	for _, row := range rows {
+		byKey[schedulePublishingRowKey(row.TechnicianID, row.StartAt, row.EndAt)] = row
+	}
+	out := make([]models.TechnicianSchedulePublishing, 0, len(technicians)*len(intervals))
+	for _, tech := range technicians {
+		for _, interval := range intervals {
+			start := interval.Start
+			end := interval.End
+			key := schedulePublishingRowKey(&tech.ID, &start, &end)
+			row, ok := byKey[key]
+			if !ok {
+				publishDate := dateOnly
+				row = models.TechnicianSchedulePublishing{
+					MerchantID:   merchant.ID,
+					TechnicianID: &tech.ID,
+					PublishDate:  &publishDate,
+					StartAt:      &start,
+					EndAt:        &end,
+					Status:       "unpublished",
+				}
+			}
+			copyTech := tech
+			row.Technician = &copyTech
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
 func loadSchedulePublishingByID(tx *gorm.DB, merchantID, scheduleID uint) (*models.TechnicianSchedulePublishing, error) {
 	if tx == nil || merchantID == 0 || scheduleID == 0 {
 		return nil, nil
@@ -4476,7 +4586,20 @@ func PublishNextDaySchedule(c *gin.Context) {
 	publishedAt := now
 	rows := make([]models.TechnicianSchedulePublishing, 0)
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("merchant_id = ? AND publish_date >= ? AND publish_date < ?", merchantID, nextDate, nextDate.Add(24*time.Hour)).Delete(&models.TechnicianSchedulePublishing{}).Error; err != nil {
+		existingRows, err := loadSchedulePublishingsByDate(tx, merchantID, nextDate)
+		if err != nil {
+			return err
+		}
+		existingByKey := make(map[string]models.TechnicianSchedulePublishing, len(existingRows))
+		leaveKeys := make(map[string]struct{}, len(existingRows))
+		for _, row := range existingRows {
+			key := schedulePublishingRowKey(row.TechnicianID, row.StartAt, row.EndAt)
+			existingByKey[key] = row
+			if row.Status == "leave" {
+				leaveKeys[key] = struct{}{}
+			}
+		}
+		if err := tx.Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status <> ?", merchantID, nextDate, nextDate.Add(24*time.Hour), "leave").Delete(&models.TechnicianSchedulePublishing{}).Error; err != nil {
 			return err
 		}
 		technicians := make([]models.Technician, 0)
@@ -4489,18 +4612,29 @@ func PublishNextDaySchedule(c *gin.Context) {
 		}
 		if len(technicians) == 0 {
 			for _, it := range intervals {
+				key := schedulePublishingRowKey(nil, &it.Start, &it.End)
+				if _, skip := leaveKeys[key]; skip {
+					continue
+				}
 				rows = append(rows, models.TechnicianSchedulePublishing{MerchantID: merchantID, PublishDate: &nextDate, StartAt: &it.Start, EndAt: &it.End, Status: "published", PublishedAt: &publishedAt})
 			}
 		} else {
 			for _, tech := range technicians {
 				for _, it := range intervals {
 					techID := tech.ID
+					key := schedulePublishingRowKey(&techID, &it.Start, &it.End)
+					if _, skip := leaveKeys[key]; skip {
+						continue
+					}
 					rows = append(rows, models.TechnicianSchedulePublishing{MerchantID: merchantID, TechnicianID: &techID, PublishDate: &nextDate, StartAt: &it.Start, EndAt: &it.End, Status: "published", PublishedAt: &publishedAt})
 				}
 			}
 		}
-		if len(rows) == 0 {
+		if len(rows) == 0 && len(existingByKey) == 0 {
 			return apiErr{status: http.StatusBadRequest, msg: "没有可发布的排班"}
+		}
+		if len(rows) == 0 {
+			return nil
 		}
 		return tx.Create(&rows).Error
 	})
@@ -4514,6 +4648,209 @@ func PublishNextDaySchedule(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{"publish_date": nextDate.Format("2006-01-02"), "items": rows}})
+}
+
+type markScheduleLeaveByTechnicianInput struct {
+	Date         string `json:"date"`
+	TechnicianID uint   `json:"technician_id"`
+}
+
+type scheduleDateTechnicianInput struct {
+	Date         string `json:"date"`
+	TechnicianID uint   `json:"technician_id"`
+}
+
+func MarkScheduleLeaveByTechnician(c *gin.Context) {
+	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
+		return
+	}
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+	var input markScheduleLeaveByTechnicianInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		return
+	}
+	loc := appointmentLocation()
+	targetDate, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(input.Date), loc)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
+		return
+	}
+	if input.TechnicianID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少有效的 technician_id"})
+		return
+	}
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+	var technician models.Technician
+	if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ?", input.TechnicianID, merchantID, true).First(&technician).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "客服不存在"})
+		return
+	}
+	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "商户未设置营业时间"})
+		return
+	}
+	createdRows := make([]models.TechnicianSchedulePublishing, 0, len(intervals))
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		existingRows, err := loadSchedulePublishingsByDate(tx, merchantID, targetDate)
+		if err != nil {
+			return err
+		}
+		existingByKey := make(map[string]models.TechnicianSchedulePublishing, len(existingRows))
+		for _, row := range existingRows {
+			existingByKey[schedulePublishingRowKey(row.TechnicianID, row.StartAt, row.EndAt)] = row
+		}
+		dateOnly := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, targetDate.Location())
+		for _, interval := range intervals {
+			start := interval.Start
+			end := interval.End
+			key := schedulePublishingRowKey(&input.TechnicianID, &start, &end)
+			if existing, ok := existingByKey[key]; ok {
+				if existing.Status != "leave" {
+					if err := tx.Model(&models.TechnicianSchedulePublishing{}).Where("id = ? AND merchant_id = ?", existing.ID, merchantID).Update("status", "leave").Error; err != nil {
+						return err
+					}
+					existing.Status = "leave"
+				}
+				copyTech := technician
+				existing.Technician = &copyTech
+				createdRows = append(createdRows, existing)
+				continue
+			}
+			row := models.TechnicianSchedulePublishing{
+				MerchantID:   merchantID,
+				TechnicianID: &input.TechnicianID,
+				PublishDate:  &dateOnly,
+				StartAt:      &start,
+				EndAt:        &end,
+				Status:       "leave",
+			}
+			if err := tx.Create(&row).Error; err != nil {
+				return err
+			}
+			copyTech := technician
+			row.Technician = &copyTech
+			createdRows = append(createdRows, row)
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "标记请假失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"date":  targetDate.Format("2006-01-02"),
+		"items": createdRows,
+	}})
+}
+
+func WithdrawNextDaySchedule(c *gin.Context) {
+	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
+		return
+	}
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+	loc := appointmentLocation()
+	targetDate := strings.TrimSpace(c.Query("date"))
+	var date time.Time
+	var err error
+	if targetDate == "" {
+		now := time.Now().In(loc)
+		date = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	} else {
+		date, err = time.ParseInLocation("2006-01-02", targetDate, loc)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
+			return
+		}
+	}
+	var affected int64
+	if err := config.DB.Model(&models.TechnicianSchedulePublishing{}).
+		Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status = ?", merchantID, date, date.Add(24*time.Hour), "published").
+		Update("status", "canceled").Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "撤销发布失败"})
+		return
+	}
+	_ = config.DB.Model(&models.TechnicianSchedulePublishing{}).
+		Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status = ?", merchantID, date, date.Add(24*time.Hour), "canceled").
+		Count(&affected).Error
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"date":            date.Format("2006-01-02"),
+		"withdrawn_count": affected,
+	}})
+}
+
+func UnmarkScheduleLeaveByTechnician(c *gin.Context) {
+	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
+		return
+	}
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+	var input scheduleDateTechnicianInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		return
+	}
+	loc := appointmentLocation()
+	targetDate, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(input.Date), loc)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
+		return
+	}
+	if input.TechnicianID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少有效的 technician_id"})
+		return
+	}
+	allRows, err := loadSchedulePublishingsByDate(config.DB, merchantID, targetDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取请假排班失败"})
+		return
+	}
+	rows := make([]models.TechnicianSchedulePublishing, 0)
+	for _, row := range allRows {
+		if row.Status != "leave" || row.TechnicianID == nil || *row.TechnicianID != input.TechnicianID {
+			continue
+		}
+		rows = append(rows, row)
+	}
+	if len(rows) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "未找到请假排班"})
+		return
+	}
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		for _, row := range rows {
+			nextStatus := "unpublished"
+			if row.PublishedAt != nil {
+				nextStatus = "published"
+			}
+			if err := tx.Model(&models.TechnicianSchedulePublishing{}).
+				Where("id = ? AND merchant_id = ?", row.ID, merchantID).
+				Update("status", nextStatus).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "销假失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"date":          targetDate.Format("2006-01-02"),
+		"technician_id": input.TechnicianID,
+	}})
 }
 
 func MarkScheduleLeave(c *gin.Context) {
@@ -4601,7 +4938,12 @@ func ListSchedulePublishings(c *gin.Context) {
 			return
 		}
 	}
-	rows, err := loadSchedulePublishingsByDate(config.DB, merchantID, date)
+	var merchant models.Merchant
+	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "商户不存在"})
+		return
+	}
+	rows, err := buildSchedulePublishingRowsForDate(config.DB, merchant, date)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取排班发布列表失败"})
 		return
