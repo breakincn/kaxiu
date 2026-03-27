@@ -171,25 +171,16 @@
             {{ schedulePublishingSubmitting ? schedulePublishingPrimaryAction.submittingText : schedulePublishingPrimaryAction.label }}
           </button>
         </div>
-        <div class="mt-4 flex items-end gap-3">
-          <div>
-            <div class="text-xs text-gray-400 mb-1">查看日期</div>
-            <input v-model="schedulePublishingDate" type="date" class="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-          </div>
-          <div class="flex items-center gap-2">
-            <button
-              @click="fetchSchedulePublishings"
-              :disabled="schedulePublishingLoading"
-              class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm disabled:opacity-50"
-            >
-              {{ schedulePublishingLoading ? '加载中...' : '刷新排班' }}
-            </button>
+        <div class="mt-4">
+          <div class="text-xs text-gray-400 mb-1">次日排班日期</div>
+          <div class="inline-flex items-center rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+            {{ schedulePublishingDate }}
           </div>
         </div>
         <div v-if="schedulePublishingError" class="mt-3 text-sm text-red-500">{{ schedulePublishingError }}</div>
         <div v-else-if="schedulePublishingLoading" class="mt-3 text-sm text-gray-400">读取排班中...</div>
         <div v-else-if="schedulePublishings.length === 0" class="mt-3 rounded-lg border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-400 text-center">
-          当前日期暂无客服排班视图
+          当前次日暂无客服排班视图
         </div>
         <div v-else class="mt-3 space-y-2">
           <div v-for="row in schedulePublishings" :key="getSchedulePublishingRowKey(row)" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
