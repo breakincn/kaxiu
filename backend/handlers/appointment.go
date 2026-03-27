@@ -4453,7 +4453,7 @@ func createProtectedRepairSlotForAppointment(tx *gorm.DB, publishing models.Tech
 }
 
 func PublishNextDaySchedule(c *gin.Context) {
-	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage", "merchant.service.manage", "merchant.cs.manage") {
+	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
 		return
 	}
 	merchantID, ok := getMerchantID(c)
@@ -4517,7 +4517,7 @@ func PublishNextDaySchedule(c *gin.Context) {
 }
 
 func MarkScheduleLeave(c *gin.Context) {
-	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage", "merchant.service.manage", "merchant.cs.manage") {
+	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
 		return
 	}
 	id64, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 64)
@@ -4580,7 +4580,7 @@ func MarkScheduleLeave(c *gin.Context) {
 }
 
 func ListSchedulePublishings(c *gin.Context) {
-	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.view", "merchant.appointment.manage", "merchant.service.manage", "merchant.cs.manage") {
+	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
 		return
 	}
 	merchantID, ok := getMerchantID(c)
@@ -4613,7 +4613,7 @@ func ListSchedulePublishings(c *gin.Context) {
 }
 
 func GetScheduleAffectedAppointments(c *gin.Context) {
-	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.view", "merchant.appointment.manage", "merchant.service.manage", "merchant.cs.manage") {
+	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
 		return
 	}
 	scheduleID64, err := strconv.ParseUint(strings.TrimSpace(c.Query("schedule_id")), 10, 64)

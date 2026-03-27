@@ -195,6 +195,84 @@ func TestMarkScheduleLeaveCreatesAffectedAppointmentsAndProtectedRepairSlots(t *
 	}
 }
 
+func TestScheduleEndpointsRequireAppointmentManagePermissionForStaff(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupAppointmentPermissionTestDB(t)
+
+	merchant, _, tech, _, role, _ := seedAppointmentPermissionFixture(t, config.DB)
+	seedAppointmentPermission(t, config.DB, role.ID, "merchant.appointment.view")
+
+	loc := appointmentLocation()
+	nextDay := time.Now().In(loc).Add(24 * time.Hour)
+	publishDate := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 0, 0, 0, 0, loc)
+	startAt := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 10, 0, 0, 0, loc)
+	endAt := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 13, 0, 0, 0, loc)
+	publishing := models.TechnicianSchedulePublishing{
+		MerchantID:   merchant.ID,
+		TechnicianID: &tech.ID,
+		PublishDate:  &publishDate,
+		StartAt:      &startAt,
+		EndAt:        &endAt,
+		Status:       "published",
+	}
+	if err := config.DB.Create(&publishing).Error; err != nil {
+		t.Fatalf("create publishing failed: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		run  func() *httptest.ResponseRecorder
+	}{
+		{
+			name: "list publishings",
+			run: func() *httptest.ResponseRecorder {
+				path := "/merchant/schedules/publishings?date=" + publishDate.Format("2006-01-02")
+				c, rec := newStaffContext(http.MethodGet, path, merchant.ID, tech.ID, role.ID)
+				c.Request = httptest.NewRequest(http.MethodGet, path, nil)
+				ListSchedulePublishings(c)
+				return rec
+			},
+		},
+		{
+			name: "publish next day",
+			run: func() *httptest.ResponseRecorder {
+				c, rec := newStaffContext(http.MethodPost, "/merchant/schedules/publish-next-day", merchant.ID, tech.ID, role.ID)
+				PublishNextDaySchedule(c)
+				return rec
+			},
+		},
+		{
+			name: "mark leave",
+			run: func() *httptest.ResponseRecorder {
+				path := "/merchant/schedules/" + strconv.Itoa(int(publishing.ID)) + "/leave"
+				c, rec := newStaffContext(http.MethodPost, path, merchant.ID, tech.ID, role.ID)
+				c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(publishing.ID))}}
+				MarkScheduleLeave(c)
+				return rec
+			},
+		},
+		{
+			name: "affected appointments",
+			run: func() *httptest.ResponseRecorder {
+				path := "/merchant/schedules/affected-appointments?schedule_id=" + strconv.Itoa(int(publishing.ID))
+				c, rec := newStaffContext(http.MethodGet, path, merchant.ID, tech.ID, role.ID)
+				c.Request = httptest.NewRequest(http.MethodGet, path, nil)
+				GetScheduleAffectedAppointments(c)
+				return rec
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		rec := tc.run()
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("%s: want 403, got %d body=%s", tc.name, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestCreateAppointmentRescheduleRequestRejectsUserWhenAffectedByLeave(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

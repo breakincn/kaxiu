@@ -155,7 +155,7 @@
       </button>
     </div>
 
-    <div class="px-4 pt-1 pb-3">
+    <div v-if="canAppointmentManage" class="px-4 pt-1 pb-3">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-start justify-between gap-3">
           <div>
