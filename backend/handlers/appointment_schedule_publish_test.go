@@ -243,6 +243,88 @@ func TestListSchedulePublishingsIncludesUnpublishedTechniciansBeforePublish(t *t
 	}
 }
 
+func TestListSchedulePublishingsDoesNotExposeRepairCountsForPublishedRows(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+	merchant.SupportCustomerServiceMode = true
+
+	loc := appointmentLocation()
+	nextDay := time.Now().In(loc).Add(24 * time.Hour)
+	publishDate := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 0, 0, 0, 0, loc)
+	startAt := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 10, 0, 0, 0, loc)
+	endAt := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 13, 0, 0, 0, loc)
+	publishing := models.TechnicianSchedulePublishing{
+		MerchantID:   merchant.ID,
+		TechnicianID: &tech.ID,
+		PublishDate:  &publishDate,
+		StartAt:      &startAt,
+		EndAt:        &endAt,
+		Status:       "published",
+	}
+	if err := config.DB.Create(&publishing).Error; err != nil {
+		t.Fatalf("create publishing failed: %v", err)
+	}
+
+	appointmentTime := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 10, 30, 0, 0, loc)
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+
+	path := "/merchant/schedules/publishings?date=" + publishDate.Format("2006-01-02")
+	c, rec := newMerchantContext(http.MethodGet, path, merchant.ID)
+	c.Request = httptest.NewRequest(http.MethodGet, path, nil)
+
+	ListSchedulePublishings(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			Publishings []models.TechnicianSchedulePublishing `json:"publishings"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+	if len(resp.Data.Publishings) == 0 {
+		t.Fatalf("want publishings, got 0")
+	}
+	for _, row := range resp.Data.Publishings {
+		if row.Status == "leave" {
+			continue
+		}
+		if row.AffectedAppointmentsCount != 0 {
+			t.Fatalf("want affected_appointments_count=0 for non-leave row, got %d body=%s", row.AffectedAppointmentsCount, rec.Body.String())
+		}
+		if row.ProtectedRepairSlotsCount != 0 {
+			t.Fatalf("want protected_repair_slots_count=0 for non-leave row, got %d body=%s", row.ProtectedRepairSlotsCount, rec.Body.String())
+		}
+	}
+}
+
 func TestMarkScheduleLeaveByTechnicianBeforePublishAndPublishSkipsLeaveRows(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

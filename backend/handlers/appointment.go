@@ -199,7 +199,7 @@ func attachScheduleRepairCounts(tx *gorm.DB, rows []models.TechnicianSchedulePub
 		if row.PublishDate == nil {
 			continue
 		}
-		if row.Status == "unpublished" {
+		if row.Status != "leave" {
 			rows[i].AffectedAppointmentsCount = 0
 			rows[i].ProtectedRepairSlotsCount = 0
 			continue
