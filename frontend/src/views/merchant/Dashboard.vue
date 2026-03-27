@@ -5714,6 +5714,15 @@ const fillAppointmentRepairOverview = (data) => {
   appointmentRepairProtectedSlots.value = Array.isArray(data.protected_repair_slots) ? data.protected_repair_slots : []
 }
 
+const hasAppointmentRepairOverviewContent = (data) => {
+  const affectedCount = Number(data?.affected_appointments_count || 0)
+  const protectedCount = Number(data?.protected_repair_slots_count || 0)
+  if (affectedCount > 0 || protectedCount > 0) return true
+  const affectedAppointments = Array.isArray(data?.affected_appointments) ? data.affected_appointments : []
+  const protectedRepairSlots = Array.isArray(data?.protected_repair_slots) ? data.protected_repair_slots : []
+  return affectedAppointments.length > 0 || protectedRepairSlots.length > 0
+}
+
 const viewSchedulePublishingAffectedAppointments = async (schedule) => {
   if (!schedule?.id) return
   showAppointmentRepairOverviewModal.value = true
@@ -5757,10 +5766,13 @@ const markScheduleLeave = async (schedule) => {
     }
     await fetchSchedulePublishings()
     if (res) {
-      showAppointmentRepairOverviewModal.value = true
-      appointmentRepairOverviewLoading.value = false
-      appointmentRepairOverviewError.value = ''
-      fillAppointmentRepairOverview(res?.data?.data || {})
+      const repairData = res?.data?.data || {}
+      if (hasAppointmentRepairOverviewContent(repairData)) {
+        showAppointmentRepairOverviewModal.value = true
+        appointmentRepairOverviewLoading.value = false
+        appointmentRepairOverviewError.value = ''
+        fillAppointmentRepairOverview(repairData)
+      }
     }
   } catch (err) {
     alert(err.response?.data?.error || '标记请假失败')
