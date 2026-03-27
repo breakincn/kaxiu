@@ -166,7 +166,7 @@
             @click="handleSchedulePublishingPrimaryAction"
             :disabled="schedulePublishingSubmitting || schedulePublishingPrimaryAction.disabled"
             :class="schedulePublishingPrimaryAction.className"
-            class="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+            class="px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap disabled:opacity-50"
           >
             {{ schedulePublishingSubmitting ? schedulePublishingPrimaryAction.submittingText : schedulePublishingPrimaryAction.label }}
           </button>
@@ -5625,7 +5625,7 @@ const schedulePublishingPrimaryAction = computed(() => {
       label: '撤销发布',
       submittingText: '撤销中...',
       disabled: false,
-      className: 'bg-slate-700 text-white'
+      className: 'bg-orange-500 text-white'
     }
   }
   if (hasPublishedScheduleRows.value) {
@@ -5642,7 +5642,7 @@ const schedulePublishingPrimaryAction = computed(() => {
     label: '发布预约排班',
     submittingText: '发布中...',
     disabled: false,
-    className: 'bg-slate-700 text-white'
+    className: 'bg-orange-500 text-white'
   }
 })
 
