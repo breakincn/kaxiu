@@ -611,14 +611,10 @@ const hasAppointmentProjects = computed(() => {
 
 const selectedAppointmentTimeText = computed(() => {
   if (!selectedTimeSlot.value) return '-'
-  const d = new Date(selectedTimeSlot.value)
-  if (Number.isNaN(d.getTime())) return String(selectedTimeSlot.value).slice(0, 16).replace('T', ' ')
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const min = String(d.getMinutes()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd} ${hh}:${min}`
+  const raw = String(selectedTimeSlot.value).trim().replace('T', ' ')
+  const match = raw.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/)
+  if (match) return `${match[1]} ${match[2]}`
+  return raw.slice(0, 16)
 })
 
 const displayedTimeSlots = computed(() => {
@@ -1198,10 +1194,10 @@ const selectTimeSlot = (slot) => {
 
 const formatSlotTime = (timeStr) => {
   if (!timeStr) return ''
-  const date = new Date(timeStr)
-  const hours = date.getHours().toString().padStart(2, '0')
-  const minutes = date.getMinutes().toString().padStart(2, '0')
-  return `${hours}:${minutes}`
+  const raw = String(timeStr).trim().replace('T', ' ')
+  const match = raw.match(/\b(\d{2}):(\d{2})(?::\d{2})?\b/)
+  if (match) return `${match[1]}:${match[2]}`
+  return raw
 }
 
 const confirmAppointment = async () => {

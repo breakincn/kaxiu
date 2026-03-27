@@ -259,7 +259,7 @@ func TestAvailableSlotsAndCreateRejectNonBookableProject(t *testing.T) {
 	}
 }
 
-func TestAvailableSlotsPrefersLowerCrossSlotFragmentScore(t *testing.T) {
+func TestAvailableSlotsOrderedChronologicallyForUsers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
@@ -336,8 +336,18 @@ func TestAvailableSlotsPrefersLowerCrossSlotFragmentScore(t *testing.T) {
 	if len(resp.Data.TimeSlots) < 3 {
 		t.Fatalf("want at least 3 ranked slots, got body=%s", rec.Body.String())
 	}
-	if got := resp.Data.TimeSlots[0].Time; got != appointmentFixtureTime(11, 30).Format("2006-01-02 15:04:05") {
-		t.Fatalf("want best-ranked slot 11:30 first, got %s body=%s", got, rec.Body.String())
+	if got := resp.Data.TimeSlots[0].Time; got != appointmentFixtureTime(10, 0).Format("2006-01-02 15:04:05") {
+		t.Fatalf("want earliest slot 10:00 first, got %s body=%s", got, rec.Body.String())
+	}
+	found1130 := false
+	for _, slot := range resp.Data.TimeSlots {
+		if slot.Time == appointmentFixtureTime(11, 30).Format("2006-01-02 15:04:05") {
+			found1130 = true
+			break
+		}
+	}
+	if !found1130 {
+		t.Fatalf("want 11:30 slot still available, got body=%s", rec.Body.String())
 	}
 }
 

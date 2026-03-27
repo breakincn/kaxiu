@@ -89,6 +89,18 @@ func isWithinBusinessIntervals(t time.Time, intervals []businessInterval) bool {
 	return false
 }
 
+func slotWithinBusinessIntervals(intervals []businessInterval, slotStart, slotEnd time.Time) bool {
+	if len(intervals) == 0 {
+		return false
+	}
+	for _, it := range intervals {
+		if (slotStart.Equal(it.Start) || slotStart.After(it.Start)) && (slotEnd.Equal(it.End) || slotEnd.Before(it.End)) {
+			return true
+		}
+	}
+	return false
+}
+
 func loadPublishedSchedulePublishings(tx *gorm.DB, merchantID uint, targetDate time.Time) ([]models.TechnicianSchedulePublishing, error) {
 	if tx == nil || merchantID == 0 {
 		return nil, nil
@@ -835,6 +847,10 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 	}
 
 	targetDate, _ := time.ParseInLocation("2006-01-02", date, loc)
+	businessIntervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
+	if !ok {
+		return nil, apiErr{status: http.StatusBadRequest, msg: "商户未设置营业时间"}
+	}
 	publishedRows, err := loadPublishedSchedulePublishings(config.DB, merchantID, targetDate)
 	if err != nil {
 		return nil, err
@@ -849,6 +865,10 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 	for _, it := range intervals {
 		latestStart := it.End.Add(-time.Duration(occupiedMinutes) * time.Minute)
 		for t := it.Start; !t.After(latestStart); t = t.Add(time.Duration(granularity) * time.Minute) {
+			slotEnd := t.Add(time.Duration(occupiedMinutes) * time.Minute)
+			if !slotWithinBusinessIntervals(businessIntervals, t, slotEnd) {
+				continue
+			}
 			allSlots = append(allSlots, t.Format("2006-01-02 15:04:05"))
 		}
 	}
@@ -958,9 +978,6 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 	}
 
 	sort.SliceStable(timeSlots, func(i, j int) bool {
-		if timeSlots[i].PlacementScore != timeSlots[j].PlacementScore {
-			return timeSlots[i].PlacementScore < timeSlots[j].PlacementScore
-		}
 		return timeSlots[i].SlotTime.Before(timeSlots[j].SlotTime)
 	})
 
