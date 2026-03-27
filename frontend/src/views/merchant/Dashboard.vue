@@ -5756,7 +5756,6 @@ const markScheduleLeave = async (schedule) => {
     let res = null
     if (status === 'published' && schedule?.id) {
       res = await attendanceApi.markScheduleLeave(schedule.id)
-      alert('已标记请假并生成异常修复结果')
     } else {
       await attendanceApi.markScheduleLeaveByTechnician({
         date: schedulePublishingDate.value,
@@ -5768,10 +5767,13 @@ const markScheduleLeave = async (schedule) => {
     if (res) {
       const repairData = res?.data?.data || {}
       if (hasAppointmentRepairOverviewContent(repairData)) {
+        alert('已标记请假并生成异常修复结果')
         showAppointmentRepairOverviewModal.value = true
         appointmentRepairOverviewLoading.value = false
         appointmentRepairOverviewError.value = ''
         fillAppointmentRepairOverview(repairData)
+      } else {
+        alert('已标记请假')
       }
     }
   } catch (err) {
