@@ -692,7 +692,7 @@ func TestListSchedulePublishingsShowsCanceledAfterWithdrawThenUnleave(t *testing
 	}
 }
 
-func TestScheduleEndpointsRequireAppointmentManagePermissionForStaff(t *testing.T) {
+func TestScheduleEndpointsRestrictRepairActionsForStaffWithoutManagePermission(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
@@ -723,24 +723,6 @@ func TestScheduleEndpointsRequireAppointmentManagePermissionForStaff(t *testing.
 		run  func() *httptest.ResponseRecorder
 	}{
 		{
-			name: "list publishings",
-			run: func() *httptest.ResponseRecorder {
-				path := "/merchant/schedules/publishings?date=" + publishDate.Format("2006-01-02")
-				c, rec := newStaffContext(http.MethodGet, path, merchant.ID, tech.ID, role.ID)
-				c.Request = httptest.NewRequest(http.MethodGet, path, nil)
-				ListSchedulePublishings(c)
-				return rec
-			},
-		},
-		{
-			name: "publish next day",
-			run: func() *httptest.ResponseRecorder {
-				c, rec := newStaffContext(http.MethodPost, "/merchant/schedules/publish-next-day", merchant.ID, tech.ID, role.ID)
-				PublishNextDaySchedule(c)
-				return rec
-			},
-		},
-		{
 			name: "mark leave",
 			run: func() *httptest.ResponseRecorder {
 				path := "/merchant/schedules/" + strconv.Itoa(int(publishing.ID)) + "/leave"
@@ -766,6 +748,215 @@ func TestScheduleEndpointsRequireAppointmentManagePermissionForStaff(t *testing.
 		rec := tc.run()
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%s: want 403, got %d body=%s", tc.name, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestStaffCanListAndPublishOwnScheduleWithoutManagePermission(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, _, tech, otherTech, role, _ := seedAppointmentPermissionFixture(t, config.DB)
+	seedAppointmentPermission(t, config.DB, role.ID, "merchant.appointment.view")
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+	if err := config.DB.Model(&models.Technician{}).Where("id IN ?", []uint{tech.ID, otherTech.ID}).Update("is_active", true).Error; err != nil {
+		t.Fatalf("activate technicians failed: %v", err)
+	}
+
+	loc := appointmentLocation()
+	now := time.Date(2026, 3, 27, 9, 0, 0, 0, loc)
+	withAppointmentCurrentTime(t, now)
+	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	startAt := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, loc)
+	endAt := time.Date(now.Year(), now.Month(), now.Day(), 22, 0, 0, 0, loc)
+	previewRows := []models.TechnicianSchedulePublishing{
+		{MerchantID: merchant.ID, TechnicianID: &tech.ID, PublishDate: &targetDate, StartAt: &startAt, EndAt: &endAt, Status: "unpublished"},
+		{MerchantID: merchant.ID, TechnicianID: &otherTech.ID, PublishDate: &targetDate, StartAt: &startAt, EndAt: &endAt, Status: "unpublished"},
+	}
+	if err := config.DB.Create(&previewRows).Error; err != nil {
+		t.Fatalf("create preview rows failed: %v", err)
+	}
+
+	listPath := "/merchant/schedules/publishings?date=" + targetDate.Format("2006-01-02")
+	listCtx, listRec := newStaffContext(http.MethodGet, listPath, merchant.ID, tech.ID, role.ID)
+	listCtx.Request = httptest.NewRequest(http.MethodGet, listPath, nil)
+	ListSchedulePublishings(listCtx)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list want 200, got %d body=%s", listRec.Code, listRec.Body.String())
+	}
+
+	var listResp struct {
+		Data struct {
+			Publishings []models.TechnicianSchedulePublishing `json:"publishings"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("decode list response failed: %v", err)
+	}
+	if len(listResp.Data.Publishings) == 0 {
+		t.Fatalf("want own preview rows, got 0")
+	}
+	for _, row := range listResp.Data.Publishings {
+		if row.TechnicianID == nil || *row.TechnicianID != tech.ID {
+			t.Fatalf("want only own technician rows, got %+v", row)
+		}
+		if row.Status != "unpublished" {
+			t.Fatalf("want unpublished row before publish, got %s", row.Status)
+		}
+	}
+
+	publishPath := "/merchant/schedules/publish-next-day?date=" + targetDate.Format("2006-01-02")
+	publishCtx, publishRec := newStaffContext(http.MethodPost, publishPath, merchant.ID, tech.ID, role.ID)
+	publishCtx.Request = httptest.NewRequest(http.MethodPost, publishPath, nil)
+	PublishNextDaySchedule(publishCtx)
+	if publishRec.Code != http.StatusOK {
+		t.Fatalf("publish want 200, got %d body=%s", publishRec.Code, publishRec.Body.String())
+	}
+
+	rows, err := loadSchedulePublishingsByDate(config.DB, merchant.ID, targetDate)
+	if err != nil {
+		t.Fatalf("load publishings failed: %v", err)
+	}
+	ownPublished := 0
+	otherPublished := 0
+	for _, row := range rows {
+		if row.TechnicianID == nil || row.Status != "published" {
+			continue
+		}
+		switch *row.TechnicianID {
+		case tech.ID:
+			ownPublished++
+		case otherTech.ID:
+			otherPublished++
+		}
+	}
+	if ownPublished == 0 {
+		t.Fatalf("want own published rows created, got 0")
+	}
+	if otherPublished != 0 {
+		t.Fatalf("want other technician untouched, got %d", otherPublished)
+	}
+}
+
+func TestStaffCannotPublishTomorrowScheduleBeforeFourPM(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, _, tech, _, role, _ := seedAppointmentPermissionFixture(t, config.DB)
+	seedAppointmentPermission(t, config.DB, role.ID, "merchant.appointment.view")
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+
+	loc := appointmentLocation()
+	now := time.Date(2026, 3, 27, 15, 0, 0, 0, loc)
+	withAppointmentCurrentTime(t, now)
+	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	path := "/merchant/schedules/publish-next-day?date=" + targetDate.Format("2006-01-02")
+	c, rec := newStaffContext(http.MethodPost, path, merchant.ID, tech.ID, role.ID)
+	c.Request = httptest.NewRequest(http.MethodPost, path, nil)
+
+	PublishNextDaySchedule(c)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "16:00") {
+		t.Fatalf("want 16:00 hint, got %s", rec.Body.String())
+	}
+}
+
+func TestStaffWithdrawOnlyOwnPublishedScheduleAndAppointments(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, otherTech, role, _ := seedAppointmentPermissionFixture(t, config.DB)
+	seedAppointmentPermission(t, config.DB, role.ID, "merchant.appointment.view")
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+
+	loc := appointmentLocation()
+	now := time.Date(2026, 3, 27, 9, 15, 0, 0, loc)
+	withAppointmentCurrentTime(t, now)
+	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	startAt := time.Date(now.Year(), now.Month(), now.Day(), 10, 0, 0, 0, loc)
+	endAt := time.Date(now.Year(), now.Month(), now.Day(), 13, 0, 0, 0, loc)
+	publishedAt := time.Date(now.Year(), now.Month(), now.Day(), 8, 30, 0, 0, loc)
+
+	rows := []models.TechnicianSchedulePublishing{
+		{MerchantID: merchant.ID, TechnicianID: &tech.ID, PublishDate: &targetDate, StartAt: &startAt, EndAt: &endAt, Status: "published", PublishedAt: &publishedAt},
+		{MerchantID: merchant.ID, TechnicianID: &otherTech.ID, PublishDate: &targetDate, StartAt: &startAt, EndAt: &endAt, Status: "published", PublishedAt: &publishedAt},
+	}
+	if err := config.DB.Create(&rows).Error; err != nil {
+		t.Fatalf("create publishings failed: %v", err)
+	}
+
+	ownAppointmentTime := time.Date(now.Year(), now.Month(), now.Day(), 10, 30, 0, 0, loc)
+	otherAppointmentTime := time.Date(now.Year(), now.Month(), now.Day(), 11, 0, 0, 0, loc)
+	ownAppointment := models.Appointment{MerchantID: merchant.ID, UserID: user.ID, TechnicianID: &tech.ID, AppointmentTime: &ownAppointmentTime, Status: "confirmed"}
+	otherAppointment := models.Appointment{MerchantID: merchant.ID, UserID: user.ID, TechnicianID: &otherTech.ID, AppointmentTime: &otherAppointmentTime, Status: "confirmed"}
+	if err := config.DB.Create(&ownAppointment).Error; err != nil {
+		t.Fatalf("create own appointment failed: %v", err)
+	}
+	if err := config.DB.Create(&otherAppointment).Error; err != nil {
+		t.Fatalf("create other appointment failed: %v", err)
+	}
+
+	path := "/merchant/schedules/withdraw-next-day?date=" + targetDate.Format("2006-01-02")
+	c, rec := newStaffContext(http.MethodPost, path, merchant.ID, tech.ID, role.ID)
+	c.Request = httptest.NewRequest(http.MethodPost, path, nil)
+
+	WithdrawNextDaySchedule(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var refreshedOwn struct {
+		Status string
+	}
+	if err := config.DB.Model(&models.Appointment{}).Select("status").Where("id = ?", ownAppointment.ID).Scan(&refreshedOwn).Error; err != nil {
+		t.Fatalf("reload own appointment failed: %v", err)
+	}
+	var refreshedOther struct {
+		Status string
+	}
+	if err := config.DB.Model(&models.Appointment{}).Select("status").Where("id = ?", otherAppointment.ID).Scan(&refreshedOther).Error; err != nil {
+		t.Fatalf("reload other appointment failed: %v", err)
+	}
+	if refreshedOwn.Status == "confirmed" {
+		t.Fatalf("want own appointment canceled after withdraw, got %s", refreshedOwn.Status)
+	}
+	if refreshedOther.Status != "confirmed" {
+		t.Fatalf("want other appointment unchanged, got %s", refreshedOther.Status)
+	}
+
+	publishings, err := loadSchedulePublishingsByDate(config.DB, merchant.ID, targetDate)
+	if err != nil {
+		t.Fatalf("reload publishings failed: %v", err)
+	}
+	for _, row := range publishings {
+		if row.TechnicianID == nil {
+			continue
+		}
+		switch *row.TechnicianID {
+		case tech.ID:
+			if row.Status != "canceled" {
+				t.Fatalf("want own publishing canceled, got %s", row.Status)
+			}
+		case otherTech.ID:
+			if row.Status != "published" {
+				t.Fatalf("want other publishing unchanged, got %s", row.Status)
+			}
 		}
 	}
 }

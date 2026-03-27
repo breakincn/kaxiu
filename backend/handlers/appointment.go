@@ -501,6 +501,103 @@ var appointmentCurrentTime = func() time.Time {
 
 const schedulePublishWithdrawWindow = 30 * time.Minute
 
+func isStaffAuthInHandler(c *gin.Context) bool {
+	authTypeAny, _ := c.Get("auth_type")
+	authType, _ := authTypeAny.(string)
+	return authType == "staff"
+}
+
+func requireCurrentTechnicianID(c *gin.Context) (uint, bool) {
+	technicianIDAny, ok := c.Get("technician_id")
+	if !ok {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅客服可操作"})
+		return 0, false
+	}
+	technicianID, ok := technicianIDAny.(uint)
+	if !ok || technicianID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return 0, false
+	}
+	return technicianID, true
+}
+
+func schedulePublishCutoffAt(targetDate time.Time) time.Time {
+	return time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 10, 0, 0, 0, targetDate.Location())
+}
+
+func scheduleWithdrawCutoffAt(targetDate time.Time) time.Time {
+	return time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 10, 30, 0, 0, targetDate.Location())
+}
+
+func scheduleNextDayOpenAt(targetDate time.Time) time.Time {
+	prevDate := targetDate.Add(-24 * time.Hour)
+	return time.Date(prevDate.Year(), prevDate.Month(), prevDate.Day(), 16, 0, 0, 0, targetDate.Location())
+}
+
+func resolveSchedulePublishingDate(raw string, now time.Time, staffScoped bool) (time.Time, error) {
+	loc := now.Location()
+	if strings.TrimSpace(raw) != "" {
+		return time.ParseInLocation("2006-01-02", strings.TrimSpace(raw), loc)
+	}
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	if staffScoped && now.Before(scheduleWithdrawCutoffAt(today)) {
+		return today, nil
+	}
+	return today.Add(24 * time.Hour), nil
+}
+
+func validateStaffSchedulePublishWindow(now, targetDate time.Time) error {
+	loc := now.Location()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	target := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, loc)
+	switch {
+	case target.Equal(today):
+		if !now.Before(schedulePublishCutoffAt(target)) {
+			return apiErr{status: http.StatusBadRequest, msg: "当天预约排班仅可在当天10:00前发布"}
+		}
+		return nil
+	case target.Equal(today.Add(24 * time.Hour)):
+		if now.Before(scheduleNextDayOpenAt(target)) {
+			return apiErr{status: http.StatusBadRequest, msg: "次日预约排班仅可在前一日16:00后发布"}
+		}
+		if !now.Before(schedulePublishCutoffAt(target)) {
+			return apiErr{status: http.StatusBadRequest, msg: "次日预约排班超过次日10:00后不可再发布"}
+		}
+		return nil
+	default:
+		return apiErr{status: http.StatusBadRequest, msg: "仅支持发布当天或次日预约排班"}
+	}
+}
+
+func validateStaffScheduleWithdrawWindow(now, targetDate time.Time) error {
+	if !now.Before(scheduleWithdrawCutoffAt(targetDate)) {
+		return apiErr{status: http.StatusBadRequest, msg: "当天10:30后不可撤销预约安排"}
+	}
+	return nil
+}
+
+func filterScheduleRowsByTechnician(rows []models.TechnicianSchedulePublishing, technicianID uint) []models.TechnicianSchedulePublishing {
+	if technicianID == 0 || len(rows) == 0 {
+		return rows
+	}
+	filtered := make([]models.TechnicianSchedulePublishing, 0, len(rows))
+	for _, row := range rows {
+		if row.TechnicianID == nil || *row.TechnicianID != technicianID {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	return filtered
+}
+
+func loadPublishedSchedulePublishingsByTechnician(tx *gorm.DB, merchantID, technicianID uint, targetDate time.Time) ([]models.TechnicianSchedulePublishing, error) {
+	rows, err := loadPublishedSchedulePublishings(tx, merchantID, targetDate)
+	if err != nil {
+		return nil, err
+	}
+	return filterScheduleRowsByTechnician(rows, technicianID), nil
+}
+
 func nextDayBookingOpensAt(now time.Time) time.Time {
 	loc := now.Location()
 	return time.Date(now.Year(), now.Month(), now.Day(), 10, 0, 0, 0, loc)
@@ -4659,12 +4756,21 @@ func createProtectedRepairSlotForAppointment(tx *gorm.DB, publishing models.Tech
 }
 
 func PublishNextDaySchedule(c *gin.Context) {
-	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
+	isStaff := isStaffAuthInHandler(c)
+	if !isStaff && !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
 		return
 	}
 	merchantID, ok := getMerchantID(c)
 	if !ok {
 		return
+	}
+	var scopedTechnicianID uint
+	if isStaff {
+		var techOK bool
+		scopedTechnicianID, techOK = requireCurrentTechnicianID(c)
+		if !techOK {
+			return
+		}
 	}
 	var merchant models.Merchant
 	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
@@ -4673,38 +4779,66 @@ func PublishNextDaySchedule(c *gin.Context) {
 	}
 	loc := appointmentLocation()
 	now := appointmentCurrentTime().In(loc)
-	nextDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
-	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, nextDate)
+	targetDate, err := resolveSchedulePublishingDate(c.Query("date"), now, isStaff)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
+		return
+	}
+	if isStaff {
+		var ae apiErr
+		if err := validateStaffSchedulePublishWindow(now, targetDate); err != nil {
+			if errors.As(err, &ae) {
+				c.JSON(ae.status, gin.H{"error": ae.msg})
+				return
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前不允许发布预约排班"})
+			return
+		}
+	}
+	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "商户未设置营业时间"})
 		return
 	}
 	publishedAt := now
 	rows := make([]models.TechnicianSchedulePublishing, 0)
-	err := config.DB.Transaction(func(tx *gorm.DB) error {
-		existingRows, err := loadSchedulePublishingsByDate(tx, merchantID, nextDate)
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		existingRows, err := loadSchedulePublishingsByDate(tx, merchantID, targetDate)
 		if err != nil {
 			return err
 		}
-		existingByKey := make(map[string]models.TechnicianSchedulePublishing, len(existingRows))
 		leaveKeys := make(map[string]struct{}, len(existingRows))
 		for _, row := range existingRows {
+			if isStaff && (row.TechnicianID == nil || *row.TechnicianID != scopedTechnicianID) {
+				continue
+			}
 			key := schedulePublishingRowKey(row.TechnicianID, row.StartAt, row.EndAt)
-			existingByKey[key] = row
 			if row.Status == "leave" {
 				leaveKeys[key] = struct{}{}
 			}
 		}
-		if err := tx.Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status <> ?", merchantID, nextDate, nextDate.Add(24*time.Hour), "leave").Delete(&models.TechnicianSchedulePublishing{}).Error; err != nil {
+		deleteQuery := tx.Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status <> ?", merchantID, targetDate, targetDate.Add(24*time.Hour), "leave")
+		if isStaff {
+			deleteQuery = deleteQuery.Where("technician_id = ?", scopedTechnicianID)
+		}
+		if err := deleteQuery.Delete(&models.TechnicianSchedulePublishing{}).Error; err != nil {
 			return err
 		}
 		technicians := make([]models.Technician, 0)
 		if merchant.SupportCustomerServiceMode {
-			list, err := listAppointmentBookableTechnicians(tx, merchant)
-			if err != nil {
-				return err
+			if isStaff {
+				var tech models.Technician
+				if err := tx.Where("id = ? AND merchant_id = ? AND is_active = ?", scopedTechnicianID, merchantID, true).First(&tech).Error; err != nil {
+					return apiErr{status: http.StatusNotFound, msg: "客服不存在"}
+				}
+				technicians = append(technicians, tech)
+			} else {
+				list, err := listAppointmentBookableTechnicians(tx, merchant)
+				if err != nil {
+					return err
+				}
+				technicians = list
 			}
-			technicians = list
 		}
 		if len(technicians) == 0 {
 			for _, it := range intervals {
@@ -4712,7 +4846,7 @@ func PublishNextDaySchedule(c *gin.Context) {
 				if _, skip := leaveKeys[key]; skip {
 					continue
 				}
-				rows = append(rows, models.TechnicianSchedulePublishing{MerchantID: merchantID, PublishDate: &nextDate, StartAt: &it.Start, EndAt: &it.End, Status: "published", PublishedAt: &publishedAt})
+				rows = append(rows, models.TechnicianSchedulePublishing{MerchantID: merchantID, PublishDate: &targetDate, StartAt: &it.Start, EndAt: &it.End, Status: "published", PublishedAt: &publishedAt})
 			}
 		} else {
 			for _, tech := range technicians {
@@ -4722,11 +4856,11 @@ func PublishNextDaySchedule(c *gin.Context) {
 					if _, skip := leaveKeys[key]; skip {
 						continue
 					}
-					rows = append(rows, models.TechnicianSchedulePublishing{MerchantID: merchantID, TechnicianID: &techID, PublishDate: &nextDate, StartAt: &it.Start, EndAt: &it.End, Status: "published", PublishedAt: &publishedAt})
+					rows = append(rows, models.TechnicianSchedulePublishing{MerchantID: merchantID, TechnicianID: &techID, PublishDate: &targetDate, StartAt: &it.Start, EndAt: &it.End, Status: "published", PublishedAt: &publishedAt})
 				}
 			}
 		}
-		if len(rows) == 0 && len(existingByKey) == 0 {
+		if len(rows) == 0 && len(leaveKeys) == 0 {
 			return apiErr{status: http.StatusBadRequest, msg: "没有可发布的排班"}
 		}
 		if len(rows) == 0 {
@@ -4743,7 +4877,7 @@ func PublishNextDaySchedule(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "发布次日排班失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"publish_date": nextDate.Format("2006-01-02"), "items": rows}})
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"publish_date": targetDate.Format("2006-01-02"), "items": rows}})
 }
 
 type markScheduleLeaveByTechnicianInput struct {
@@ -4849,32 +4983,50 @@ func MarkScheduleLeaveByTechnician(c *gin.Context) {
 }
 
 func WithdrawNextDaySchedule(c *gin.Context) {
-	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
+	isStaff := isStaffAuthInHandler(c)
+	if !isStaff && !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
 		return
 	}
 	merchantID, ok := getMerchantID(c)
 	if !ok {
 		return
 	}
+	var scopedTechnicianID uint
+	if isStaff {
+		var techOK bool
+		scopedTechnicianID, techOK = requireCurrentTechnicianID(c)
+		if !techOK {
+			return
+		}
+	}
 	loc := appointmentLocation()
 	targetDate := strings.TrimSpace(c.Query("date"))
 	var date time.Time
 	var err error
-	if targetDate == "" {
-		now := appointmentCurrentTime().In(loc)
-		date = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
-	} else {
-		date, err = time.ParseInLocation("2006-01-02", targetDate, loc)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
+	date, err = resolveSchedulePublishingDate(targetDate, appointmentCurrentTime().In(loc), isStaff)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
+		return
+	}
+	now := appointmentCurrentTime().In(loc)
+	if isStaff {
+		var ae apiErr
+		if err := validateStaffScheduleWithdrawWindow(now, date); err != nil {
+			if errors.As(err, &ae) {
+				c.JSON(ae.status, gin.H{"error": ae.msg})
+				return
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前不可撤销"})
 			return
 		}
 	}
-	now := appointmentCurrentTime().In(loc)
 	publishedRows, err := loadPublishedSchedulePublishings(config.DB, merchantID, date)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取已发布排班失败"})
 		return
+	}
+	if isStaff {
+		publishedRows = filterScheduleRowsByTechnician(publishedRows, scopedTechnicianID)
 	}
 	if len(publishedRows) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "当前没有已发布排班可撤销"})
@@ -4894,7 +5046,7 @@ func WithdrawNextDaySchedule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "当前发布记录缺少发布时间，暂不支持撤销"})
 		return
 	}
-	if now.After(latestPublishedAt.Add(schedulePublishWithdrawWindow)) {
+	if !isStaff && now.After(latestPublishedAt.Add(schedulePublishWithdrawWindow)) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "发布超过30分钟，当前不可撤销"})
 		return
 	}
@@ -4903,9 +5055,12 @@ func WithdrawNextDaySchedule(c *gin.Context) {
 	var canceledAppointments int64
 	err = config.DB.Transaction(func(tx *gorm.DB) error {
 		appointmentIDs := make([]uint, 0)
-		if err := tx.Model(&models.Appointment{}).
-			Where("merchant_id = ? AND appointment_time >= ? AND appointment_time < ? AND status IN ?", merchantID, date, date.Add(24*time.Hour), []string{"pending", "confirmed"}).
-			Pluck("id", &appointmentIDs).Error; err != nil {
+		appointmentQuery := tx.Model(&models.Appointment{}).
+			Where("merchant_id = ? AND appointment_time >= ? AND appointment_time < ? AND status IN ?", merchantID, date, date.Add(24*time.Hour), []string{"pending", "confirmed"})
+		if isStaff {
+			appointmentQuery = appointmentQuery.Where("technician_id = ?", scopedTechnicianID)
+		}
+		if err := appointmentQuery.Pluck("id", &appointmentIDs).Error; err != nil {
 			return err
 		}
 		for _, appointmentID := range appointmentIDs {
@@ -4921,13 +5076,20 @@ func WithdrawNextDaySchedule(c *gin.Context) {
 			}
 		}
 		canceledAppointments = int64(len(appointmentIDs))
-		if err := tx.Model(&models.TechnicianSchedulePublishing{}).
-			Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status = ?", merchantID, date, date.Add(24*time.Hour), "published").
-			Update("status", "canceled").Error; err != nil {
+		updateQuery := tx.Model(&models.TechnicianSchedulePublishing{}).
+			Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status = ?", merchantID, date, date.Add(24*time.Hour), "published")
+		if isStaff {
+			updateQuery = updateQuery.Where("technician_id = ?", scopedTechnicianID)
+		}
+		if err := updateQuery.Update("status", "canceled").Error; err != nil {
 			return err
 		}
-		return tx.Model(&models.TechnicianSchedulePublishing{}).
-			Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status = ?", merchantID, date, date.Add(24*time.Hour), "canceled").
+		countQuery := tx.Model(&models.TechnicianSchedulePublishing{}).
+			Where("merchant_id = ? AND publish_date >= ? AND publish_date < ? AND status = ?", merchantID, date, date.Add(24*time.Hour), "canceled")
+		if isStaff {
+			countQuery = countQuery.Where("technician_id = ?", scopedTechnicianID)
+		}
+		return countQuery.
 			Count(&affected).Error
 	})
 	if err != nil {
@@ -4935,11 +5097,11 @@ func WithdrawNextDaySchedule(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
-		"date":                   date.Format("2006-01-02"),
-		"withdrawn_count":        affected,
-		"canceled_appointments":  canceledAppointments,
-		"withdraw_deadline_at":   latestPublishedAt.Add(schedulePublishWithdrawWindow).Format(time.RFC3339),
-		"latest_published_at":    latestPublishedAt.Format(time.RFC3339),
+		"date":                  date.Format("2006-01-02"),
+		"withdrawn_count":       affected,
+		"canceled_appointments": canceledAppointments,
+		"withdraw_deadline_at":  latestPublishedAt.Add(schedulePublishWithdrawWindow).Format(time.RFC3339),
+		"latest_published_at":   latestPublishedAt.Format(time.RFC3339),
 	}})
 }
 
@@ -5076,26 +5238,27 @@ func MarkScheduleLeave(c *gin.Context) {
 }
 
 func ListSchedulePublishings(c *gin.Context) {
-	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
+	if !isStaffAuthInHandler(c) && !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.manage") {
 		return
 	}
 	merchantID, ok := getMerchantID(c)
 	if !ok {
 		return
 	}
-	loc := appointmentLocation()
-	targetDate := strings.TrimSpace(c.Query("date"))
-	var date time.Time
-	var err error
-	if targetDate == "" {
-		now := time.Now().In(loc)
-		date = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
-	} else {
-		date, err = time.ParseInLocation("2006-01-02", targetDate, loc)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
+	isStaff := isStaffAuthInHandler(c)
+	var scopedTechnicianID uint
+	if isStaff {
+		var techOK bool
+		scopedTechnicianID, techOK = requireCurrentTechnicianID(c)
+		if !techOK {
 			return
 		}
+	}
+	loc := appointmentLocation()
+	date, err := resolveSchedulePublishingDate(strings.TrimSpace(c.Query("date")), appointmentCurrentTime().In(loc), isStaff)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误，应为 YYYY-MM-DD"})
+		return
 	}
 	var merchant models.Merchant
 	if err := config.DB.First(&merchant, merchantID).Error; err != nil {
@@ -5106,6 +5269,9 @@ func ListSchedulePublishings(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取排班发布列表失败"})
 		return
+	}
+	if isStaff {
+		rows = filterScheduleRowsByTechnician(rows, scopedTechnicianID)
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
 		"date":        date.Format("2006-01-02"),

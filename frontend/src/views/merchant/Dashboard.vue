@@ -155,7 +155,7 @@
       </button>
     </div>
 
-    <div v-if="canAppointmentManage" class="px-4 pt-1 pb-3">
+    <div v-if="showMerchantSchedulePublishingPanel" class="px-4 pt-1 pb-3">
       <div class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-start justify-between gap-3">
           <div>
@@ -334,6 +334,49 @@
       v-if="((currentTab === 'appointment' && showAppointmentTab) || (currentTab === 'exception' && showExceptionTab))"
       class="px-4 py-4 space-y-4"
     >
+      <div
+        v-if="showTechnicianSchedulePublishingPanel"
+        class="bg-white rounded-xl p-4 shadow-sm"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="font-medium text-gray-800">我的预约排班</div>
+            <div class="text-sm text-gray-500 mt-1">{{ technicianSchedulePublishingSubtitle }}</div>
+          </div>
+          <button
+            @click="handleSchedulePublishingPrimaryAction"
+            :disabled="schedulePublishingSubmitting || schedulePublishingPrimaryAction.disabled"
+            :class="schedulePublishingPrimaryAction.className"
+            class="px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap disabled:opacity-50"
+          >
+            {{ schedulePublishingSubmitting ? schedulePublishingPrimaryAction.submittingText : schedulePublishingPrimaryAction.label }}
+          </button>
+        </div>
+        <div class="mt-4 text-sm text-gray-500">
+          排班日期：<span class="text-gray-700">{{ schedulePublishingDate }}</span>
+        </div>
+        <div v-if="technicianSchedulePublishingHint" class="mt-2 text-xs text-gray-500">
+          {{ technicianSchedulePublishingHint }}
+        </div>
+        <div v-if="schedulePublishingError" class="mt-3 text-sm text-red-500">{{ schedulePublishingError }}</div>
+        <div v-else-if="schedulePublishingLoading" class="mt-3 text-sm text-gray-400">读取排班中...</div>
+        <div v-else-if="schedulePublishings.length === 0" class="mt-3 rounded-lg border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-400 text-center">
+          当前暂无可展示的预约排班
+        </div>
+        <div v-else class="mt-3 space-y-2">
+          <div v-for="row in schedulePublishings" :key="getSchedulePublishingRowKey(row)" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="font-medium text-gray-800">{{ formatDateTime(row.start_at) }} - {{ formatDateTime(row.end_at) }}</div>
+                <div v-if="row.technician?.name" class="mt-1 text-sm text-gray-500">{{ row.technician.name }}</div>
+              </div>
+              <div class="px-2 py-1 rounded-full text-xs font-medium shrink-0" :class="getSchedulePublishingStatusClass(getEffectiveSchedulePublishingStatus(row))">
+                {{ getSchedulePublishingStatusText(getEffectiveSchedulePublishingStatus(row)) }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       <div
         v-if="currentTab === 'exception'"
         class="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700"
@@ -1971,6 +2014,10 @@ const canAppointmentManage = computed(() => hasMerchantPermission('merchant.appo
 const canRoomManage = computed(() => hasMerchantPermission('merchant.service.manage'))
 const canQueueCalling = computed(() => hasMerchantPermission('merchant.queue.calling'))
 const canTableView = computed(() => hasMerchantPermission('merchant.table.view'))
+const showMerchantSchedulePublishingPanel = computed(() => false)
+const showTechnicianSchedulePublishingPanel = computed(() => {
+  return isTechnicianAuth() && currentTab.value === 'appointment' && showAppointmentTab.value
+})
 
 // 统计卡片显示个数
 const visibleStatsCount = computed(() => {
@@ -2711,6 +2758,112 @@ const appointmentRepairAffectedAppointments = ref([])
 const appointmentRepairItems = ref([])
 const appointmentRepairProtectedSlots = ref([])
 const schedulePublishingActionSubmitting = ref(false)
+const schedulePublishingNow = computed(() => new Date(currentTime.value || Date.now()))
+const formatScheduleDateValue = (date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+const parseScheduleDateValue = (value) => {
+  const match = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return null
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 0, 0, 0, 0)
+  if (Number.isNaN(date.getTime())) return null
+  return date
+}
+const getSchedulePublishCutoff = (date) => {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 10, 0, 0, 0)
+}
+const getScheduleWithdrawCutoff = (date) => {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 10, 30, 0, 0)
+}
+const getScheduleNextDayOpenAt = (date) => {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1, 16, 0, 0, 0)
+}
+const getDefaultSchedulePublishingDate = () => {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+  if (isTechnicianAuth() && now < getScheduleWithdrawCutoff(today)) {
+    return formatScheduleDateValue(today)
+  }
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return formatScheduleDateValue(tomorrow)
+}
+const currentSchedulePublishingDate = computed(() => parseScheduleDateValue(schedulePublishingDate.value))
+const isTodaySchedulePublishingTarget = computed(() => {
+  const target = currentSchedulePublishingDate.value
+  if (!target) return false
+  const now = schedulePublishingNow.value
+  return target.getFullYear() === now.getFullYear() &&
+    target.getMonth() === now.getMonth() &&
+    target.getDate() === now.getDate()
+})
+const technicianSchedulePublishingWindowState = computed(() => {
+  const target = currentSchedulePublishingDate.value
+  const now = schedulePublishingNow.value
+  if (!target || !isTechnicianAuth()) {
+    return {
+      canPublish: true,
+      canWithdraw: false,
+      publishBlockedReason: '',
+      withdrawBlockedReason: ''
+    }
+  }
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+  const targetDay = new Date(target.getFullYear(), target.getMonth(), target.getDate(), 0, 0, 0, 0)
+  const publishCutoff = getSchedulePublishCutoff(targetDay)
+  const withdrawCutoff = getScheduleWithdrawCutoff(targetDay)
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+
+  if (targetDay.getTime() === today.getTime()) {
+    return {
+      canPublish: now < publishCutoff,
+      canWithdraw: now < withdrawCutoff,
+      publishBlockedReason: now < publishCutoff ? '' : '今日预约排班已过 10:00 发布时间',
+      withdrawBlockedReason: now < withdrawCutoff ? '' : '今日预约排班已过 10:30 撤销截止时间'
+    }
+  }
+
+  if (targetDay.getTime() === tomorrow.getTime()) {
+    const nextDayOpenAt = getScheduleNextDayOpenAt(targetDay)
+    if (now < nextDayOpenAt) {
+      return {
+        canPublish: false,
+        canWithdraw: true,
+        publishBlockedReason: '次日预约排班需在前一日 16:00 后才能发布',
+        withdrawBlockedReason: ''
+      }
+    }
+    return {
+      canPublish: now < publishCutoff,
+      canWithdraw: now < withdrawCutoff,
+      publishBlockedReason: now < publishCutoff ? '' : '次日预约排班已过 10:00 发布时间',
+      withdrawBlockedReason: now < withdrawCutoff ? '' : '次日预约排班已过 10:30 撤销截止时间'
+    }
+  }
+
+  return {
+    canPublish: false,
+    canWithdraw: false,
+    publishBlockedReason: '仅支持发布今日或次日预约排班',
+    withdrawBlockedReason: '仅支持撤销今日或次日预约排班'
+  }
+})
+const technicianSchedulePublishingSubtitle = computed(() => {
+  return isTodaySchedulePublishingTarget.value
+    ? '请在今天 10:00 前发布今天的预约安排，10:30 前可撤销。'
+    : '请在前一日 16:00 后至次日 10:00 前发布次日安排，10:30 前可撤销。'
+})
+const technicianSchedulePublishingHint = computed(() => {
+  if (!isTechnicianAuth()) return ''
+  if (hasPublishedScheduleRows.value) {
+    return technicianSchedulePublishingWindowState.value.withdrawBlockedReason || '当前排班已发布，可在截止前撤销。'
+  }
+  return technicianSchedulePublishingWindowState.value.publishBlockedReason
+})
 const appointmentRepairOverviewScheduleLabel = computed(() => {
   const schedule = appointmentRepairOverviewSchedule.value
   if (!schedule?.publish_date && !schedule?.start_at) return ''
@@ -5602,6 +5755,9 @@ const latestPublishedScheduleAt = computed(() => {
 })
 
 const canWithdrawPublishedScheduleRows = computed(() => {
+  if (isTechnicianAuth()) {
+    return hasPublishedScheduleRows.value && technicianSchedulePublishingWindowState.value.canWithdraw
+  }
   if (!hasPublishedScheduleRows.value) return false
   const latest = latestPublishedScheduleAt.value
   if (!latest) return false
@@ -5609,6 +5765,34 @@ const canWithdrawPublishedScheduleRows = computed(() => {
 })
 
 const schedulePublishingPrimaryAction = computed(() => {
+  if (isTechnicianAuth()) {
+    if (canWithdrawPublishedScheduleRows.value) {
+      return {
+        mode: 'withdraw',
+        label: '撤销安排',
+        submittingText: '撤销中...',
+        disabled: false,
+        className: 'bg-orange-500 text-white'
+      }
+    }
+    if (hasPublishedScheduleRows.value) {
+      return {
+        mode: 'published',
+        label: '已发布安排',
+        submittingText: '处理中...',
+        disabled: true,
+        className: 'bg-green-500 text-white'
+      }
+    }
+    const canPublish = technicianSchedulePublishingWindowState.value.canPublish
+    return {
+      mode: 'publish',
+      label: isTodaySchedulePublishingTarget.value ? '发布今日安排' : '发布次日安排',
+      submittingText: '发布中...',
+      disabled: !canPublish,
+      className: canPublish ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-400'
+    }
+  }
   if (canWithdrawPublishedScheduleRows.value) {
     return {
       mode: 'withdraw',
@@ -5652,6 +5836,13 @@ const fetchSchedulePublishings = async () => {
   }
 }
 
+const syncSchedulePublishingTargetDate = async () => {
+  const nextDate = getDefaultSchedulePublishingDate()
+  if (schedulePublishingDate.value === nextDate) return
+  schedulePublishingDate.value = nextDate
+  await fetchSchedulePublishings()
+}
+
 const handleSchedulePublishingPrimaryAction = async () => {
   if (schedulePublishingPrimaryAction.value.mode === 'withdraw') {
     await withdrawNextDaySchedules()
@@ -5665,18 +5856,23 @@ const handleSchedulePublishingPrimaryAction = async () => {
 const publishNextDaySchedules = async () => {
   const publishableRows = getPublishableScheduleRows()
   if (publishableRows.length === 0) {
-    alert('当前没有待发布的次日排班')
+    alert(isTechnicianAuth() ? '当前没有待发布的预约排班' : '当前没有待发布的次日排班')
     return
   }
-  const preview = publishableRows.slice(0, 6).map(row => formatScheduleTechnicianLabel(row)).join('\n')
-  const remain = publishableRows.length > 6 ? `\n等 ${publishableRows.length} 位客服` : ''
-  if (!window.confirm(`确认正式发布 ${schedulePublishingDate.value} 的次日排班吗？\n\n本次将发布以下客服：\n${preview}${remain}\n\n已标记请假的客服不会被发布。`)) {
+  const promptText = isTechnicianAuth()
+    ? `确认发布 ${schedulePublishingDate.value} 的预约排班吗？\n\n发布后该日期的预约会按你当前排班对外开放。`
+    : (() => {
+        const preview = publishableRows.slice(0, 6).map(row => formatScheduleTechnicianLabel(row)).join('\n')
+        const remain = publishableRows.length > 6 ? `\n等 ${publishableRows.length} 位客服` : ''
+        return `确认正式发布 ${schedulePublishingDate.value} 的次日排班吗？\n\n本次将发布以下客服：\n${preview}${remain}\n\n已标记请假的客服不会被发布。`
+      })()
+  if (!window.confirm(promptText)) {
     return
   }
   schedulePublishingSubmitting.value = true
   try {
-    await attendanceApi.publishNextDaySchedule()
-    alert('次日排班已发布')
+    await attendanceApi.publishNextDaySchedule(schedulePublishingDate.value)
+    alert(isTechnicianAuth() ? '预约排班已发布' : '次日排班已发布')
     await fetchSchedulePublishings()
   } catch (err) {
     alert(err.response?.data?.error || '发布次日排班失败')
@@ -5690,14 +5886,19 @@ const withdrawNextDaySchedules = async () => {
     alert('当前没有已发布排班可撤销')
     return
   }
-  if (!window.confirm(`确认撤销 ${schedulePublishingDate.value} 的已发布排班吗？\n\n仅支持发布后30分钟内撤销。\n撤销后会同时单方面取消该日期已预约用户的预约，已请假客服会保留请假状态。`)) {
+  const confirmText = isTechnicianAuth()
+    ? `确认撤销 ${schedulePublishingDate.value} 的预约排班吗？\n\n撤销后会同时取消该日期已分配给你的预约。`
+    : `确认撤销 ${schedulePublishingDate.value} 的已发布排班吗？\n\n仅支持发布后30分钟内撤销。\n撤销后会同时单方面取消该日期已预约用户的预约，已请假客服会保留请假状态。`
+  if (!window.confirm(confirmText)) {
     return
   }
   schedulePublishingSubmitting.value = true
   try {
     const res = await attendanceApi.withdrawNextDaySchedule(schedulePublishingDate.value)
     const canceledAppointments = Number(res?.data?.data?.canceled_appointments || 0)
-    alert(`已撤销该日期的已发布排班，并取消 ${canceledAppointments} 个已预约用户预约`)
+    alert(isTechnicianAuth()
+      ? `已撤销该日期排班，并取消 ${canceledAppointments} 个分配给你的预约`
+      : `已撤销该日期的已发布排班，并取消 ${canceledAppointments} 个已预约用户预约`)
     await fetchSchedulePublishings()
   } catch (err) {
     alert(err.response?.data?.error || '撤销发布失败')
@@ -6051,6 +6252,9 @@ const stopCountdownTimer = () => {
 watch(currentTime, () => {
   syncServiceTabRefreshOnCountdownBoundary()
   syncStartTabRefreshOnCountdownBoundary()
+  if (isTechnicianAuth()) {
+    void syncSchedulePublishingTargetDate()
+  }
 })
 
 watch(
@@ -6234,9 +6438,7 @@ onMounted(async () => {
   merchantId.value = parsedMerchantId
   await fetchMerchant()
   console.log('Merchant loaded:', merchant.value)
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  schedulePublishingDate.value = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`
+  schedulePublishingDate.value = getDefaultSchedulePublishingDate()
   fetchSchedulePublishings()
 
   await fetchCurrentTechnicianMe()
