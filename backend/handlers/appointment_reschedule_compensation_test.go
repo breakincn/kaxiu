@@ -83,6 +83,7 @@ func TestMerchantRescheduleRequestNeedsUserAcceptance(t *testing.T) {
 	setupAppointmentLifecycleTestDB(t)
 
 	merchant, user, tech, _, _, _ := seedAppointmentPermissionFixture(t, config.DB)
+	seedNextDayPublishedScheduleForMerchant(t, merchant, tech.ID)
 	card := models.Card{MerchantID: merchant.ID, UserID: user.ID, CardNo: "A001", CardType: "次卡", TotalTimes: 10, RemainTimes: 8, UsedTimes: 2}
 	if err := config.DB.Create(&card).Error; err != nil {
 		t.Fatalf("create card failed: %v", err)
@@ -187,8 +188,10 @@ func TestUserRescheduleRequestNeedsMerchantAcceptance(t *testing.T) {
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
 	setupAppointmentLifecycleTestDB(t)
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 30, 0, 0, appointmentLocation()))
 
 	merchant, user, tech, _, _, _ := seedAppointmentPermissionFixture(t, config.DB)
+	seedNextDayPublishedScheduleForMerchant(t, merchant, tech.ID)
 	card := models.Card{MerchantID: merchant.ID, UserID: user.ID, CardNo: "A003", CardType: "次卡", TotalTimes: 10, RemainTimes: 8, UsedTimes: 2}
 	if err := config.DB.Create(&card).Error; err != nil {
 		t.Fatalf("create card failed: %v", err)
@@ -368,8 +371,10 @@ func TestCanceledRescheduleRequestCannotBeAccepted(t *testing.T) {
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
 	setupAppointmentLifecycleTestDB(t)
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 30, 0, 0, appointmentLocation()))
 
 	merchant, user, tech, _, _, _ := seedAppointmentPermissionFixture(t, config.DB)
+	seedNextDayPublishedScheduleForMerchant(t, merchant, tech.ID)
 	card := models.Card{MerchantID: merchant.ID, UserID: user.ID, CardNo: "A004", CardType: "次卡", TotalTimes: 10, RemainTimes: 8, UsedTimes: 2}
 	if err := config.DB.Create(&card).Error; err != nil {
 		t.Fatalf("create card failed: %v", err)

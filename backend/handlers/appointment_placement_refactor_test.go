@@ -74,8 +74,10 @@ func TestCreateAppointmentAutoAssignsTechnicianAndRejectsOverlap(t *testing.T) {
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
 	setupAppointmentLifecycleTestDB(t)
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 30, 0, 0, appointmentLocation()))
 
 	merchant, user, tech, project, card1, card2 := seedAppointmentPlacementFixture(t, true)
+	seedNextDayPublishedScheduleForMerchant(t, merchant, tech.ID)
 	slot := appointmentFixtureTime(10, 0)
 
 	body, _ := json.Marshal(gin.H{
@@ -211,8 +213,10 @@ func TestAvailableSlotsAndCreateRejectNonBookableProject(t *testing.T) {
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
 	setupAppointmentLifecycleTestDB(t)
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 30, 0, 0, appointmentLocation()))
 
 	merchant, user, _, _, card1, _ := seedAppointmentPlacementFixture(t, false)
+	seedNextDayPublishedScheduleForMerchant(t, merchant)
 	project := models.MerchantProject{
 		MerchantID:        merchant.ID,
 		Name:              "线下附加项",
@@ -260,6 +264,7 @@ func TestAvailableSlotsPrefersLowerCrossSlotFragmentScore(t *testing.T) {
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
 	setupAppointmentLifecycleTestDB(t)
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 30, 0, 0, appointmentLocation()))
 
 	merchant, user, _, _, card1, _ := seedAppointmentPlacementFixture(t, false)
 	if err := config.DB.Model(&models.MerchantProject{}).Where("merchant_id = ?", merchant.ID).Update("bookable_online", false).Error; err != nil {
@@ -292,6 +297,7 @@ func TestAvailableSlotsPrefersLowerCrossSlotFragmentScore(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("normalize project booking config failed: %v", err)
 	}
+	seedNextDayPublishedScheduleForMerchant(t, merchant)
 	blockStart := appointmentFixtureTime(11, 0)
 	blocker := models.Appointment{
 		MerchantID:      merchant.ID,
@@ -342,6 +348,7 @@ func TestConfirmAppointmentAssignsTechnicianForLegacyPendingRecord(t *testing.T)
 	setupAppointmentLifecycleTestDB(t)
 
 	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	seedNextDayPublishedScheduleForMerchant(t, merchant, tech.ID)
 	start := appointmentFixtureTime(13, 0)
 	appt := models.Appointment{
 		MerchantID:      merchant.ID,
@@ -376,8 +383,10 @@ func TestCreateRescheduleRequestPersistsAssignedTechnicianWhenUnspecified(t *tes
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
 	setupAppointmentLifecycleTestDB(t)
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 30, 0, 0, appointmentLocation()))
 
 	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	seedNextDayPublishedScheduleForMerchant(t, merchant, tech.ID)
 	oldTime := appointmentFixtureTime(10, 0)
 	appt := models.Appointment{
 		MerchantID:      merchant.ID,

@@ -301,6 +301,8 @@ func TestGetAvailableTimeSlotsAllowsUserContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load location failed: %v", err)
 	}
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(loc).Year(), time.Now().In(loc).Month(), time.Now().In(loc).Day(), 10, 30, 0, 0, loc))
+	seedNextDayPublishedScheduleForMerchant(t, merchant)
 	date := time.Now().In(loc).Add(24 * time.Hour).Format("2006-01-02")
 
 	rec := httptest.NewRecorder()

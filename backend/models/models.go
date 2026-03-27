@@ -372,7 +372,9 @@ type TechnicianSchedulePublishing struct {
 	PublishedAt  *time.Time `json:"published_at" gorm:"type:datetime(3);comment:发布时间"`
 	CreatedAt    *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
-	Technician *Technician `json:"technician,omitempty" gorm:"-"`
+	Technician                *Technician `json:"technician,omitempty" gorm:"-"`
+	AffectedAppointmentsCount int         `json:"affected_appointments_count" gorm:"-"`
+	ProtectedRepairSlotsCount int         `json:"protected_repair_slots_count" gorm:"-"`
 }
 
 func (TechnicianSchedulePublishing) TableName() string {

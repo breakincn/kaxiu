@@ -177,6 +177,47 @@ func attachTechnicianToScheduleRows(rows []models.TechnicianSchedulePublishing, 
 	return rows
 }
 
+func attachScheduleRepairCounts(tx *gorm.DB, rows []models.TechnicianSchedulePublishing) ([]models.TechnicianSchedulePublishing, error) {
+	if len(rows) == 0 || tx == nil {
+		return rows, nil
+	}
+	slotCache := make(map[string][]models.ProtectedRepairSlot)
+	for i := range rows {
+		row := rows[i]
+		if row.PublishDate == nil {
+			continue
+		}
+		if row.Status == "unpublished" {
+			rows[i].AffectedAppointmentsCount = 0
+			rows[i].ProtectedRepairSlotsCount = 0
+			continue
+		}
+		affected, err := loadAffectedAppointmentsForPublishing(tx, row)
+		if err != nil {
+			return nil, err
+		}
+		rows[i].AffectedAppointmentsCount = len(affected)
+		dateKey := row.PublishDate.In(time.UTC).Format("2006-01-02")
+		slots, ok := slotCache[dateKey]
+		if !ok {
+			loaded, err := loadProtectedRepairSlotsByPublishDate(tx, row.MerchantID, row.PublishDate)
+			if err != nil {
+				return nil, err
+			}
+			slots = loaded
+			slotCache[dateKey] = slots
+		}
+		count := 0
+		for _, slot := range slots {
+			if row.TechnicianID != nil && slot.TechnicianID != nil && *row.TechnicianID == *slot.TechnicianID {
+				count++
+			}
+		}
+		rows[i].ProtectedRepairSlotsCount = count
+	}
+	return rows, nil
+}
+
 func buildSchedulePublishingRowsForDate(tx *gorm.DB, merchant models.Merchant, targetDate time.Time) ([]models.TechnicianSchedulePublishing, error) {
 	rows, err := loadSchedulePublishingsByDate(tx, merchant.ID, targetDate)
 	if err != nil {
@@ -212,7 +253,7 @@ func buildSchedulePublishingRowsForDate(tx *gorm.DB, merchant models.Merchant, t
 		return nil, err
 	}
 	if len(technicians) == 0 {
-		return rows, nil
+		return attachScheduleRepairCounts(tx, rows)
 	}
 	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
 	if !ok {
@@ -246,7 +287,7 @@ func buildSchedulePublishingRowsForDate(tx *gorm.DB, merchant models.Merchant, t
 			out = append(out, row)
 		}
 	}
-	return out, nil
+	return attachScheduleRepairCounts(tx, out)
 }
 
 func loadSchedulePublishingByID(tx *gorm.DB, merchantID, scheduleID uint) (*models.TechnicianSchedulePublishing, error) {
@@ -335,18 +376,16 @@ func buildPublishedScheduleIntervals(rows []models.TechnicianSchedulePublishing)
 
 func slotWithinPublishedSchedule(rows []models.TechnicianSchedulePublishing, slotStart, slotEnd time.Time, technicianID *uint) bool {
 	if len(rows) == 0 {
-		return true
+		return false
 	}
 	for _, row := range rows {
 		if row.StartAt == nil || row.EndAt == nil || !row.EndAt.After(*row.StartAt) {
 			continue
 		}
 		if technicianID != nil && *technicianID > 0 {
-			if row.TechnicianID == nil || *row.TechnicianID != *technicianID {
+			if row.TechnicianID != nil && *row.TechnicianID != *technicianID {
 				continue
 			}
-		} else if row.TechnicianID != nil {
-			continue
 		}
 		if (slotStart.Equal(*row.StartAt) || slotStart.After(*row.StartAt)) && (slotEnd.Equal(*row.EndAt) || slotEnd.Before(*row.EndAt)) {
 			return true
@@ -436,6 +475,15 @@ func appointmentLocation() *time.Location {
 		return time.Local
 	}
 	return loc
+}
+
+var appointmentCurrentTime = func() time.Time {
+	return time.Now().In(appointmentLocation())
+}
+
+func nextDayBookingOpensAt(now time.Time) time.Time {
+	loc := now.Location()
+	return time.Date(now.Year(), now.Month(), now.Day(), 10, 0, 0, 0, loc)
 }
 
 func loadCoreAppointmentOccupiedMinutes(tx *gorm.DB, merchantID uint) ([]int, error) {
@@ -718,7 +766,7 @@ func validateAppointmentPlacementRules(tx *gorm.DB, merchant models.Merchant, ta
 }
 
 func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, date string, projectID uint, loc *time.Location, opts *availableTimeSlotsOptions) (gin.H, error) {
-	now := time.Now().In(loc)
+	now := appointmentCurrentTime().In(loc)
 	serviceMinutes := 30
 	serviceGapMinutes := 3
 	if projectID > 0 {
@@ -763,10 +811,7 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 	}
 	intervals, ok := buildPublishedScheduleIntervals(publishedRows)
 	if !ok {
-		intervals, ok = getMerchantBusinessIntervalsForDate(merchant, targetDate)
-	}
-	if !ok {
-		return nil, apiErr{status: http.StatusBadRequest, msg: "商户未设置营业时间"}
+		return nil, apiErr{status: http.StatusBadRequest, msg: "当前尚未发布次日预约排班"}
 	}
 
 	var allSlots []string
@@ -2104,10 +2149,14 @@ func CreateAppointment(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().In(loc)
+	now := appointmentCurrentTime().In(loc)
 	tomorrowDate := now.Add(24 * time.Hour).Format("2006-01-02")
 	if appointmentTime.In(loc).Format("2006-01-02") != tomorrowDate {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持预约明天"})
+		return
+	}
+	if now.Before(nextDayBookingOpensAt(now)) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "次日预约于当天10:00开放，请先等待门店完成预约排班发布"})
 		return
 	}
 
@@ -5150,6 +5199,10 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	if authType == "user" {
 		if date != tomorrowDate {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持预约明天"})
+			return
+		}
+		if now.Before(nextDayBookingOpensAt(now)) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "次日预约于当天10:00开放，请先等待门店完成预约排班发布"})
 			return
 		}
 	} else {
