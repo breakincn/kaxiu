@@ -365,10 +365,16 @@ func loadProtectedRepairSlotsByPublishDate(tx *gorm.DB, merchantID uint, publish
 
 func buildPublishedScheduleIntervals(rows []models.TechnicianSchedulePublishing) ([]businessInterval, bool) {
 	intervals := make([]businessInterval, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
 	for _, row := range rows {
 		if row.StartAt == nil || row.EndAt == nil || !row.EndAt.After(*row.StartAt) {
 			continue
 		}
+		key := row.StartAt.In(time.UTC).Format(time.RFC3339Nano) + "|" + row.EndAt.In(time.UTC).Format(time.RFC3339Nano)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
 		intervals = append(intervals, businessInterval{Start: *row.StartAt, End: *row.EndAt})
 	}
 	return intervals, len(intervals) > 0
@@ -488,12 +494,34 @@ func nextDayBookingOpensAt(now time.Time) time.Time {
 	return time.Date(now.Year(), now.Month(), now.Day(), 10, 0, 0, 0, loc)
 }
 
+func isMissingColumnErr(err error, column string) bool {
+	if err == nil || strings.TrimSpace(column) == "" {
+		return false
+	}
+	return strings.Contains(err.Error(), "Unknown column '"+strings.TrimSpace(column)+"'")
+}
+
+func findActiveBookableProject(db *gorm.DB, merchantID uint, projectID uint, out *models.MerchantProject) error {
+	if db == nil || merchantID == 0 || projectID == 0 || out == nil {
+		return gorm.ErrRecordNotFound
+	}
+	err := db.Where("id = ? AND merchant_id = ? AND is_active = ? AND bookable_online = ?", projectID, merchantID, true, true).First(out).Error
+	if isMissingColumnErr(err, "bookable_online") {
+		return db.Where("id = ? AND merchant_id = ? AND is_active = ?", projectID, merchantID, true).First(out).Error
+	}
+	return err
+}
+
 func loadCoreAppointmentOccupiedMinutes(tx *gorm.DB, merchantID uint) ([]int, error) {
 	if tx == nil || merchantID == 0 {
 		return []int{projectBookingOccupiedMinutes(30, 3)}, nil
 	}
 	var projects []models.MerchantProject
-	if err := tx.Where("merchant_id = ? AND is_active = ? AND bookable_online = ?", merchantID, true, true).Find(&projects).Error; err != nil {
+	err := tx.Where("merchant_id = ? AND is_active = ? AND bookable_online = ?", merchantID, true, true).Find(&projects).Error
+	if isMissingColumnErr(err, "bookable_online") {
+		err = tx.Where("merchant_id = ? AND is_active = ?", merchantID, true).Find(&projects).Error
+	}
+	if err != nil {
 		return nil, err
 	}
 	out := make([]int, 0, len(projects))
@@ -773,7 +801,7 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 	serviceGapMinutes := 3
 	if projectID > 0 {
 		var project models.MerchantProject
-		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ? AND bookable_online = ?", projectID, merchant.ID, true, true).First(&project).Error; err != nil {
+		if err := findActiveBookableProject(config.DB, merchant.ID, projectID, &project); err != nil {
 			return nil, apiErr{status: http.StatusBadRequest, msg: "无效的项目"}
 		}
 		serviceMinutes = project.Duration
@@ -2128,7 +2156,7 @@ func CreateAppointment(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
 			return
 		}
-		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ? AND bookable_online = ?", *input.ProjectID, input.MerchantID, true, true).First(&project).Error; err != nil {
+		if err := findActiveBookableProject(config.DB, input.MerchantID, *input.ProjectID, &project); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
 			return
 		}
@@ -2931,7 +2959,7 @@ func executeAppointmentReschedule(tx *gorm.DB, appointmentID uint, proposal mode
 	serviceGapMinutes := getAppointmentGapMinutes(current.MerchantID, current)
 	if proposal.NewProjectID != nil && *proposal.NewProjectID > 0 {
 		var project models.MerchantProject
-		if err := tx.Where("id = ? AND merchant_id = ? AND is_active = ? AND bookable_online = ?", *proposal.NewProjectID, current.MerchantID, true, true).First(&project).Error; err != nil {
+		if err := findActiveBookableProject(tx, current.MerchantID, *proposal.NewProjectID, &project); err != nil {
 			return oldAppointment, newAppointment, apiErr{status: http.StatusBadRequest, msg: "无效的项目"}
 		}
 		projectID = proposal.NewProjectID
@@ -3309,7 +3337,7 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 	serviceGapMinutes := getAppointmentGapMinutes(appointment.MerchantID, *appointment)
 	if input.ProjectID != nil && *input.ProjectID > 0 {
 		var project models.MerchantProject
-		if err := config.DB.Where("id = ? AND merchant_id = ? AND is_active = ? AND bookable_online = ?", *input.ProjectID, appointment.MerchantID, true, true).First(&project).Error; err != nil {
+		if err := findActiveBookableProject(config.DB, appointment.MerchantID, *input.ProjectID, &project); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目"})
 			return
 		}
