@@ -506,22 +506,11 @@ func nextDayBookingOpensAt(now time.Time) time.Time {
 	return time.Date(now.Year(), now.Month(), now.Day(), 10, 0, 0, 0, loc)
 }
 
-func isMissingColumnErr(err error, column string) bool {
-	if err == nil || strings.TrimSpace(column) == "" {
-		return false
-	}
-	return strings.Contains(err.Error(), "Unknown column '"+strings.TrimSpace(column)+"'")
-}
-
 func findActiveBookableProject(db *gorm.DB, merchantID uint, projectID uint, out *models.MerchantProject) error {
 	if db == nil || merchantID == 0 || projectID == 0 || out == nil {
 		return gorm.ErrRecordNotFound
 	}
-	err := db.Where("id = ? AND merchant_id = ? AND is_active = ? AND bookable_online = ?", projectID, merchantID, true, true).First(out).Error
-	if isMissingColumnErr(err, "bookable_online") {
-		return db.Where("id = ? AND merchant_id = ? AND is_active = ?", projectID, merchantID, true).First(out).Error
-	}
-	return err
+	return db.Where("id = ? AND merchant_id = ? AND is_active = ? AND bookable_online = ?", projectID, merchantID, true, true).First(out).Error
 }
 
 func loadCoreAppointmentOccupiedMinutes(tx *gorm.DB, merchantID uint) ([]int, error) {
@@ -530,9 +519,6 @@ func loadCoreAppointmentOccupiedMinutes(tx *gorm.DB, merchantID uint) ([]int, er
 	}
 	var projects []models.MerchantProject
 	err := tx.Where("merchant_id = ? AND is_active = ? AND bookable_online = ?", merchantID, true, true).Find(&projects).Error
-	if isMissingColumnErr(err, "bookable_online") {
-		err = tx.Where("merchant_id = ? AND is_active = ?", merchantID, true).Find(&projects).Error
-	}
 	if err != nil {
 		return nil, err
 	}

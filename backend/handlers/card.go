@@ -44,19 +44,6 @@ func dateOnlyPtr(t time.Time) *time.Time {
 	return &d
 }
 
-func normalizeLegacyCardProjects(tx *gorm.DB, projects []models.MerchantProject) []models.MerchantProject {
-	if len(projects) == 0 || tx == nil {
-		return projects
-	}
-	if tx.Migrator().HasColumn(&models.MerchantProject{}, "bookable_online") {
-		return projects
-	}
-	for i := range projects {
-		projects[i].BookableOnline = true
-	}
-	return projects
-}
-
 func nextMerchantCardNo(tx *gorm.DB, merchantID uint) (string, error) {
 	var last string
 	err := tx.Raw(
@@ -155,7 +142,7 @@ func GetCard(c *gin.Context) {
 		WHERE cp.card_id = ? AND p.merchant_id = ?
 		ORDER BY cp.id ASC
 	`, card.ID, card.MerchantID).Scan(&projects)
-	card.Projects = normalizeLegacyCardProjects(config.DB, projects)
+	card.Projects = projects
 
 	c.JSON(http.StatusOK, gin.H{"data": card})
 }
@@ -189,7 +176,7 @@ func GetCardProjects(c *gin.Context) {
 			Where("merchant_id = ? AND id IN ?", card.MerchantID, boundIDs).
 			Order("sort_order asc, id asc").
 			Find(&projects)
-		c.JSON(http.StatusOK, gin.H{"data": normalizeLegacyCardProjects(config.DB, projects)})
+		c.JSON(http.StatusOK, gin.H{"data": projects})
 		return
 	}
 
@@ -224,7 +211,7 @@ func GetCardProjects(c *gin.Context) {
 		Order("sort_order asc, id asc").
 		Find(&projects)
 
-	c.JSON(http.StatusOK, gin.H{"data": normalizeLegacyCardProjects(config.DB, projects)})
+	c.JSON(http.StatusOK, gin.H{"data": projects})
 }
 
 func GetNextMerchantCardNo(c *gin.Context) {

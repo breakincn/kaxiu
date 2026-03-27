@@ -224,6 +224,13 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchants ADD COLUMN appointment_reschedule_recommendation_enabled BOOLEAN NOT NULL DEFAULT 0 COMMENT '是否启用系统优化性改签推荐'",
 		},
 	},
+	{
+		Version: "2026032701",
+		Name:    "ensure_merchant_projects_bookable_online",
+		Statements: []string{
+			"ALTER TABLE merchant_projects ADD COLUMN IF NOT EXISTS bookable_online BOOLEAN NOT NULL DEFAULT 1 COMMENT '是否参与公开预约'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {
