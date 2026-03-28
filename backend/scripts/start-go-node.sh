@@ -26,6 +26,8 @@ if [ "$started" -ne 1 ]; then
   exit 1
 fi
 
+echo "Go 服务启动成功：127.0.0.1:8080"
+
 export PATH=/Users/will/.nvm/versions/node/v16.20.2/bin:$PATH
 cd /Users/will/Projects/Go/kabao/frontend
 exec npm run dev
