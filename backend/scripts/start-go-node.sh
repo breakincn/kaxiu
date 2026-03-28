@@ -3,6 +3,7 @@
 set -e
 
 blue='\033[34m'
+green='\033[32m'
 reset='\033[0m'
 
 kill -9 $(lsof -ti tcp:2345) 2>/dev/null || true
@@ -39,8 +40,8 @@ if [ -z "$go_port" ]; then
 fi
 
 echo "Go 服务启动成功：127.0.0.1:${go_port}"
-printf "  ➜  Local:   ${blue}https://localhost:%s${reset}\n" "$go_port"
-printf "  ➜  Network: ${blue}https://10.0.0.20:%s${reset}\n" "$go_port"
+printf "  ${green}➜${reset}  Local:   ${blue}https://localhost:%s${reset}\n" "$go_port"
+printf "  ${green}➜${reset}  Network: ${blue}https://10.0.0.20:%s${reset}\n" "$go_port"
 
 export PATH=/Users/will/.nvm/versions/node/v16.20.2/bin:$PATH
 cd /Users/will/Projects/Go/kabao/frontend
@@ -70,8 +71,8 @@ if [ -z "$node_port" ]; then
 fi
 
 echo "Node 服务启动成功：127.0.0.1:${node_port}"
-printf "  ➜  Local:   ${blue}https://localhost:%s${reset}\n" "$node_port"
-printf "  ➜  Network: ${blue}https://10.0.0.20:%s${reset}\n" "$node_port"
+printf "  ${green}➜${reset}  Local:   ${blue}https://localhost:%s${reset}\n" "$node_port"
+printf "  ${green}➜${reset}  Network: ${blue}https://10.0.0.20:%s${reset}\n" "$node_port"
 echo "所有服务已启动完成"
 echo "Go 日志：/tmp/kabao-go-debug.log"
 echo "Node 日志：/tmp/kabao-node-dev.log"
