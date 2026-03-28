@@ -22,6 +22,7 @@ for i in {1..20}; do
 done
 
 if [ "$started" -ne 1 ]; then
+  echo "Go 服务启动失败，日志如下："
   cat /tmp/kabao-go-debug.log
   exit 1
 fi
