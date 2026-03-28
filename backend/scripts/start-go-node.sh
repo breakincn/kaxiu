@@ -13,7 +13,7 @@ rm -f /tmp/kabao-go-debug.log
 
 (
   cd /Users/will/Projects/Go/kabao/backend
-  nohup dlv debug . --headless --listen=127.0.0.1:2345 --api-version=2 --accept-multiclient --continue > /tmp/kabao-go-debug.log 2>&1 &
+  nohup dlv debug . --headless --listen=127.0.0.1:2345 --api-version=2 --accept-multiclient --continue --output /tmp/__debug_bin > /tmp/kabao-go-debug.log 2>&1 &
 )
 
 started=0
