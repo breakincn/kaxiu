@@ -11,6 +11,11 @@ icon = "debug"
 command = "zsh -lc 'cd /Users/will/Projects/Go/kabao/backend && dlv debug . --headless --listen=127.0.0.1:2345 --api-version=2 --accept-multiclient --continue'"
 
 [[actions]]
-name = "go + node run"
+name = "node debug"
 icon = "debug"
+command = "zsh -lc 'export PATH=/Users/will/.nvm/versions/node/v16.20.2/bin:$PATH && cd /Users/will/Projects/Go/kabao/frontend && npm run dev'"
+
+[[actions]]
+name = "go + node run"
+icon = "test"
 command = "zsh -lc 'zsh /Users/will/Projects/Go/kabao/backend/scripts/start-go-node.sh'"
