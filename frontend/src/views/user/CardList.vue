@@ -196,7 +196,7 @@
             @click="handleAppointmentAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
           >
-            {{ selectedCardCanArriveNow ? '核销预约' : '查看预约' }}
+            {{ selectedCardCanArriveNow ? '出示预约签到码' : '查看预约' }}
           </button>
           <button
             v-if="!selectedCardCanArriveNow"
@@ -285,7 +285,7 @@
     <div v-if="showVerifyCodeModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[55]" @click.self="closeVerifyCodeModal">
       <div class="bg-white rounded-2xl w-11/12 max-w-lg overflow-hidden">
         <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
-          <h3 class="font-medium text-lg">到店出示核销码</h3>
+          <h3 class="font-medium text-lg">{{ verifyCodeModalTitle }}</h3>
           <button @click="closeVerifyCodeModal" class="text-white">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -296,6 +296,9 @@
           <div class="text-center">
             <div class="text-gray-800 font-medium">{{ selectedCard?.merchant?.name || '商户' }}</div>
             <div class="text-gray-500 text-sm mt-1">{{ selectedCard?.card_type || '' }}</div>
+          </div>
+          <div class="mt-2 text-center text-gray-600 text-sm">
+            {{ verifyCodeModalHint }}
           </div>
           <div v-if="verifyQrDataUrl" class="mt-4 flex justify-center">
             <img :src="verifyQrDataUrl" alt="核销二维码" class="w-56 h-56" />
@@ -472,6 +475,7 @@ const verifyCode = ref('')
 const codeExpireTime = ref('')
 const verifyQrDataUrl = ref('')
 const verifyCodeProject = ref(null)
+const verifyCodeMode = ref('verify')
 const hasActiveAppointment = ref(false)
 const selectedCardAppointment = ref(null)
 const selectedCardCanArriveNow = ref(false)
@@ -849,8 +853,20 @@ const closeVerifyCodeModal = () => {
   codeExpireTime.value = ''
   verifyQrDataUrl.value = ''
   verifyCodeProject.value = null
+  verifyCodeMode.value = 'verify'
   stopVerifyStatusPoll()
 }
+
+const verifyCodeModalTitle = computed(() => {
+  return verifyCodeMode.value === 'appointment_checkin' ? '到店出示预约签到码' : '到店出示核销码'
+})
+
+const verifyCodeModalHint = computed(() => {
+  if (verifyCodeMode.value === 'appointment_checkin') {
+    return '请向工作人员出示此预约签到码，由工作人员扫码完成签到建单'
+  }
+  return '请向工作人员出示此码，由工作人员扫码完成到店核销'
+})
 
 const ensureSelectedCardForAppointment = async () => {
   const cardId = Number(selectedCard.value?.id || 0)
@@ -886,12 +902,15 @@ const ensureSelectedCardForAppointment = async () => {
   return Array.isArray(selectedCard.value?.projects) && selectedCard.value.projects.length > 0
 }
 
-const doGenerateVerifyCode = async (projectId) => {
-  const payload = projectId ? { project_id: Number(projectId) } : undefined
+const doGenerateVerifyCode = async (projectId, options = {}) => {
+  const payload = {}
+  if (projectId) payload.project_id = Number(projectId)
+  if (options?.appointmentId) payload.appointment_id = Number(options.appointmentId)
   const res = await cardApi.generateVerifyCode(Number(selectedCard.value.id), payload)
   verifyCode.value = res.data.data.code
   const expireAt = new Date(res.data.data.expire_at * 1000)
   codeExpireTime.value = expireAt.toLocaleTimeString()
+  verifyCodeMode.value = options?.appointmentId ? 'appointment_checkin' : 'verify'
 
   if (projectId) {
     verifyCodeProject.value = (selectedCard.value?.projects || []).find(p => Number(p.id) === Number(projectId)) || null
@@ -926,6 +945,7 @@ const closeAllOverlayModals = () => {
   codeExpireTime.value = ''
   verifyQrDataUrl.value = ''
   verifyCodeProject.value = null
+  verifyCodeMode.value = 'verify'
   selectedVerifyProjectId.value = null
   selectedAppointmentProjectId.value = null
   selectedTechnicianId.value = null
@@ -1017,7 +1037,7 @@ const openAppointmentArrivalVerifyFlowFromAction = async () => {
 
   generatingVerifyCode.value = true
   try {
-    await doGenerateVerifyCode(projectId > 0 ? projectId : null)
+    await doGenerateVerifyCode(projectId > 0 ? projectId : null, { appointmentId: Number(selectedCardAppointment.value?.id || 0) })
     showVerifyCodeModal.value = true
     await startVerifyStatusPoll()
   } catch (err) {

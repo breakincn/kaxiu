@@ -1809,6 +1809,130 @@ func TestCheckInAppointmentCreatesSessionWithoutDeductingCardTimes(t *testing.T)
 	}
 }
 
+func TestCommitPreparedVerifyAppointmentCodeCreatesSessionWithoutDeductingCardTimes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("KABAO_JWT_SECRET", "test-jwt-secret")
+
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	loc := appointmentLocation()
+	startAt := time.Now().In(loc).Add(5 * time.Minute)
+	appointmentTime := time.Date(startAt.Year(), startAt.Month(), startAt.Day(), startAt.Hour(), startAt.Minute(), 0, 0, loc)
+	reservedEnd := appointmentTime.Add(time.Duration(project.Duration) * time.Minute)
+	occupiedEnd := reservedEnd.Add(time.Duration(project.ServiceGapMinutes) * time.Minute)
+	appt := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card1.ID,
+		ProjectID:       &project.ID,
+		TechnicianID:    &tech.ID,
+		AppointmentTime: &appointmentTime,
+		ReservedStartAt: &appointmentTime,
+		ReservedEndAt:   &reservedEnd,
+		OccupiedEndAt:   &occupiedEnd,
+		Status:          "confirmed",
+	}
+	if err := config.DB.Create(&appt).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	if err := config.DB.Model(&models.Appointment{}).Where("id = ?", appt.ID).Update("booking_root_id", appt.ID).Error; err != nil {
+		t.Fatalf("set booking_root_id failed: %v", err)
+	}
+	appt.BookingRootID = &appt.ID
+	if _, err := initializeAppointmentSettlement(config.DB, &appt, "test_seed"); err != nil {
+		t.Fatalf("initialize settlement failed: %v", err)
+	}
+
+	verifyCode := models.VerifyCode{
+		CardID:    card1.ID,
+		ProjectID: &project.ID,
+		Code:      "APPT-TEST01",
+		ExpireAt:  time.Now().Add(5 * time.Minute).Unix(),
+		Used:      false,
+	}
+	if err := config.DB.Create(&verifyCode).Error; err != nil {
+		t.Fatalf("create verify code failed: %v", err)
+	}
+
+	beforeCard := models.Card{}
+	if err := config.DB.First(&beforeCard, card1.ID).Error; err != nil {
+		t.Fatalf("load card before checkin failed: %v", err)
+	}
+
+	prepareBody, _ := json.Marshal(map[string]any{"code": verifyCode.Code})
+	prepareRec := httptest.NewRecorder()
+	prepareCtx, _ := gin.CreateTestContext(prepareRec)
+	prepareCtx.Request = httptest.NewRequest(http.MethodPost, "/merchant/verify/prepare", bytes.NewReader(prepareBody))
+	prepareCtx.Request.Header.Set("Content-Type", "application/json")
+	prepareCtx.Set("merchant_id", merchant.ID)
+	prepareCtx.Set("auth_type", "merchant")
+
+	PrepareVerify(prepareCtx)
+	if prepareRec.Code != http.StatusOK {
+		t.Fatalf("prepare want 200, got %d body=%s", prepareRec.Code, prepareRec.Body.String())
+	}
+
+	var preparePayload struct {
+		Data struct {
+			VerifyToken string `json:"verify_token"`
+			VerifyMode  string `json:"verify_mode"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(prepareRec.Body.Bytes(), &preparePayload); err != nil {
+		t.Fatalf("decode prepare response failed: %v", err)
+	}
+	if preparePayload.Data.VerifyToken == "" {
+		t.Fatalf("want verify token in prepare response")
+	}
+	if preparePayload.Data.VerifyMode != "appointment_checkin" {
+		t.Fatalf("want verify_mode=appointment_checkin, got %s", preparePayload.Data.VerifyMode)
+	}
+
+	commitBody, _ := json.Marshal(map[string]any{"verify_token": preparePayload.Data.VerifyToken})
+	commitRec := httptest.NewRecorder()
+	commitCtx, _ := gin.CreateTestContext(commitRec)
+	commitCtx.Request = httptest.NewRequest(http.MethodPost, "/merchant/verify/commit", bytes.NewReader(commitBody))
+	commitCtx.Request.Header.Set("Content-Type", "application/json")
+	commitCtx.Set("merchant_id", merchant.ID)
+	commitCtx.Set("auth_type", "merchant")
+
+	CommitPreparedVerify(commitCtx)
+	if commitRec.Code != http.StatusOK {
+		t.Fatalf("commit want 200, got %d body=%s", commitRec.Code, commitRec.Body.String())
+	}
+
+	var commitPayload struct {
+		Data struct {
+			Action string `json:"action"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(commitRec.Body.Bytes(), &commitPayload); err != nil {
+		t.Fatalf("decode commit response failed: %v", err)
+	}
+	if commitPayload.Data.Action != "appointment_checkin" {
+		t.Fatalf("want action=appointment_checkin, got %s", commitPayload.Data.Action)
+	}
+
+	updated := mustLoadAppointmentForTest(t, appt.ID)
+	if updated.Status != "arrived" {
+		t.Fatalf("want appointment arrived, got %s", updated.Status)
+	}
+	if updated.ActualArrivedAt == nil || updated.ServiceSessionID == nil || updated.UsageID == nil {
+		t.Fatalf("want actual_arrived_at/service_session_id/usage_id filled, got %+v", updated)
+	}
+
+	afterCard := models.Card{}
+	if err := config.DB.First(&afterCard, card1.ID).Error; err != nil {
+		t.Fatalf("load card after checkin failed: %v", err)
+	}
+	if afterCard.RemainTimes != beforeCard.RemainTimes || afterCard.UsedTimes != beforeCard.UsedTimes {
+		t.Fatalf("want card times unchanged on appointment checkin, before=%d/%d after=%d/%d", beforeCard.RemainTimes, beforeCard.UsedTimes, afterCard.RemainTimes, afterCard.UsedTimes)
+	}
+}
+
 func TestCheckInAppointmentKeepsExecutionPathAndMarksDelayPendingWhenTechnicianBusy(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

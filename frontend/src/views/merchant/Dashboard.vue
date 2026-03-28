@@ -486,10 +486,10 @@
               </button>
               <button
                 v-if="appt.status === 'confirmed'"
-                @click="checkInAppointment(appt)"
+                @click="goScanAppointmentCheckIn(appt)"
                 class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
               >
-                签到建单
+                扫码签到
               </button>
               <button
                 v-if="appt.status === 'confirmed'"
@@ -4689,19 +4689,15 @@ const cancelAppointment = async (appt) => {
   }
 }
 
-const checkInAppointment = async (appt) => {
+const goScanAppointmentCheckIn = (appt) => {
   if (!appt?.id) return
-  try {
-    await appointmentApi.checkInAppointment(appt.id)
-    alert('签到成功，已创建服务单')
-    await fetchAppointments()
-    await fetchQueueStatus()
-    if (appt?.service_session_id) {
-      await fetchServiceSessions()
+  router.push({
+    path: '/merchant/scan-verify',
+    query: {
+      return_path: '/merchant',
+      tab: 'appointment'
     }
-  } catch (err) {
-    alert(err.response?.data?.error || '签到失败')
-  }
+  })
 }
 
 const verifyCard = async () => {

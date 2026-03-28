@@ -20,12 +20,14 @@ import (
 const preparedVerifyTokenTTL = 45 * time.Second
 
 type preparedVerifyClaims struct {
-	MerchantID   uint   `json:"merchant_id"`
-	VerifyCodeID uint   `json:"verify_code_id"`
-	CardID       uint   `json:"card_id"`
-	ProjectID    uint   `json:"project_id,omitempty"`
-	AuthType     string `json:"auth_type"`
-	TechnicianID uint   `json:"technician_id,omitempty"`
+	MerchantID    uint   `json:"merchant_id"`
+	VerifyCodeID  uint   `json:"verify_code_id"`
+	CardID        uint   `json:"card_id"`
+	ProjectID     uint   `json:"project_id,omitempty"`
+	AuthType      string `json:"auth_type"`
+	TechnicianID  uint   `json:"technician_id,omitempty"`
+	VerifyMode    string `json:"verify_mode,omitempty"`
+	AppointmentID uint   `json:"appointment_id,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -176,7 +178,7 @@ func loadVerifyCardContext(tx *gorm.DB, merchant models.Merchant, verifyCode mod
 	if card.EndDate != nil && now.After(*card.EndDate) {
 		return apiErr{status: http.StatusBadRequest, msg: "卡片已过期"}
 	}
-	if card.RemainTimes <= 0 {
+	if card.RemainTimes <= 0 && !strings.HasPrefix(strings.TrimSpace(verifyCode.Code), "APPT-") {
 		return apiErr{status: http.StatusBadRequest, msg: "剩余次数不足"}
 	}
 	return nil
@@ -327,6 +329,108 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 	return result, nil
 }
 
+func performAppointmentCheckInWithVerifyCode(tx *gorm.DB, merchant models.Merchant, verifyCode models.VerifyCode, card models.Card, appointmentID uint, now time.Time) (verifyCommitResult, error) {
+	result := verifyCommitResult{
+		Merchant:    merchant,
+		Card:        card,
+		Action:      "appointment_checkin",
+		RemainTimes: card.RemainTimes,
+		UsedAt:      now,
+	}
+	if tx == nil {
+		return result, nil
+	}
+
+	currentAppt, err := loadAppointmentByID(tx, appointmentID)
+	if err != nil {
+		return result, err
+	}
+	if currentAppt == nil {
+		return result, gorm.ErrRecordNotFound
+	}
+	if currentAppt.CardID != card.ID || currentAppt.MerchantID != merchant.ID || currentAppt.UserID != card.UserID {
+		return result, apiErr{status: http.StatusBadRequest, msg: "预约与签到码不匹配"}
+	}
+	currentStatus := normalizeAppointmentStatus(currentAppt.Status)
+	if currentStatus != "confirmed" {
+		return result, apiErr{status: http.StatusBadRequest, msg: "当前预约状态不可签到"}
+	}
+	if !canArriveForAppointment(*currentAppt, &merchant, now.In(appointmentLocation())) {
+		return result, apiErr{status: http.StatusBadRequest, msg: "当前不在可签到时间窗口内"}
+	}
+	if currentAppt.ProjectID != nil && verifyCode.ProjectID != nil && *currentAppt.ProjectID != *verifyCode.ProjectID {
+		return result, apiErr{status: http.StatusBadRequest, msg: "预约项目与签到码不匹配"}
+	}
+
+	res := tx.Model(&models.VerifyCode{}).
+		Where("id = ? AND used = ?", verifyCode.ID, false).
+		Updates(map[string]interface{}{"used": true, "used_at": now})
+	if res.Error != nil {
+		return result, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return result, apiErr{status: http.StatusBadRequest, msg: "签到码已使用"}
+	}
+
+	usage := models.Usage{
+		CardID:             card.ID,
+		MerchantID:         card.MerchantID,
+		ProjectID:          currentAppt.ProjectID,
+		UsedTimes:          1,
+		UsedAt:             &now,
+		VerifyCode:         verifyCode.Code,
+		VerifyCodeExpireAt: verifyCode.ExpireAt,
+		Status:             "in_progress",
+	}
+	if err := tx.Create(&usage).Error; err != nil {
+		return result, err
+	}
+
+	session, nextStep, shouldEnqueueOnsite, err := createServiceSessionForUsage(tx, merchant, card, verifyCode, usage, now)
+	if err != nil {
+		return result, err
+	}
+
+	actualArrivedAt := now
+	if err := tx.Model(&models.Appointment{}).
+		Where("id = ? AND status IN ?", currentAppt.ID, []string{"confirmed", "arrived"}).
+		Updates(map[string]interface{}{
+			"status":                  "arrived",
+			"arrived_at":              &actualArrivedAt,
+			"actual_arrived_at":       &actualArrivedAt,
+			"usage_id":                usage.ID,
+			"service_session_id":      session.ID,
+			"predicted_delay_minutes": session.PredictedAppointmentDelayMinutes,
+		}).Error; err != nil {
+		return result, err
+	}
+
+	if session.PredictedAppointmentDelayMinutes > 0 {
+		loaded, err := loadAppointmentByID(tx, currentAppt.ID)
+		if err != nil {
+			return result, err
+		}
+		if loaded == nil {
+			return result, gorm.ErrRecordNotFound
+		}
+		if err := markAppointmentDelayPending(tx, loaded); err != nil {
+			return result, err
+		}
+	}
+
+	result.UsageID = usage.ID
+	result.SessionID = session.ID
+	result.NextStep = nextStep
+	result.ShouldEnqueueOnsite = shouldEnqueueOnsite
+	result.AppointmentStatus = "arrived"
+	result.PredictedWaitMinutes = session.PredictedAppointmentDelayMinutes
+	result.SessionWaitState = models.NormalizeSessionStatus(session.Status)
+	if session.TechnicianID != nil {
+		result.BoundTechnicianID = *session.TechnicianID
+	}
+	return result, nil
+}
+
 func PrepareVerify(c *gin.Context) {
 	merchantIDAny, ok := c.Get("merchant_id")
 	if !ok {
@@ -362,11 +466,27 @@ func PrepareVerify(c *gin.Context) {
 	var verifyCode models.VerifyCode
 	var card models.Card
 	var project *models.MerchantProject
+	verifyMode := "verify"
+	var appointmentID uint
 
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
 		var err error
 		merchant, verifyCode, card, project, err = loadVerifyPrepareContext(tx, merchantID, code, now)
-		return err
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(strings.TrimSpace(verifyCode.Code), "APPT-") {
+			source, err := detectServiceSessionSource(tx, merchant, card, now.In(appointmentLocation()))
+			if err != nil {
+				return err
+			}
+			if source.SourceType != serviceSessionSourceAppointment || source.SourceID == nil || *source.SourceID == 0 {
+				return apiErr{status: http.StatusBadRequest, msg: "预约签到码当前不可用"}
+			}
+			verifyMode = "appointment_checkin"
+			appointmentID = *source.SourceID
+		}
+		return nil
 	})
 	if err != nil {
 		var ae apiErr
@@ -379,11 +499,13 @@ func PrepareVerify(c *gin.Context) {
 	}
 
 	claims := preparedVerifyClaims{
-		MerchantID:   merchantID,
-		VerifyCodeID: verifyCode.ID,
-		CardID:       card.ID,
-		AuthType:     authType,
-		TechnicianID: technicianID,
+		MerchantID:    merchantID,
+		VerifyCodeID:  verifyCode.ID,
+		CardID:        card.ID,
+		AuthType:      authType,
+		TechnicianID:  technicianID,
+		VerifyMode:    verifyMode,
+		AppointmentID: appointmentID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.NewString(),
 			Subject:   fmt.Sprintf("merchant-verify:%d", verifyCode.ID),
@@ -418,6 +540,10 @@ func PrepareVerify(c *gin.Context) {
 			"name":             project.Name,
 			"duration_minutes": project.Duration,
 		}
+	}
+	out["verify_mode"] = verifyMode
+	if appointmentID > 0 {
+		out["appointment_id"] = appointmentID
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "校验成功", "data": out})
@@ -519,7 +645,8 @@ func CommitPreparedVerify(c *gin.Context) {
 		if card.EndDate != nil && now.After(*card.EndDate) {
 			return apiErr{status: http.StatusBadRequest, msg: "卡片已过期"}
 		}
-		if card.RemainTimes <= 0 {
+		isAppointmentCheckIn := strings.TrimSpace(claims.VerifyMode) == "appointment_checkin"
+		if card.RemainTimes <= 0 && !isAppointmentCheckIn {
 			return apiErr{status: http.StatusBadRequest, msg: "剩余次数不足"}
 		}
 
@@ -540,6 +667,14 @@ func CommitPreparedVerify(c *gin.Context) {
 			}
 		} else if handCardNo != "" {
 			return apiErr{status: http.StatusBadRequest, msg: "商户未开启手牌功能"}
+		}
+
+		if isAppointmentCheckIn {
+			if claims.AppointmentID == 0 {
+				return apiErr{status: http.StatusBadRequest, msg: "预约签到令牌无效"}
+			}
+			result, err = performAppointmentCheckInWithVerifyCode(tx, merchant, verifyCode, card, claims.AppointmentID, now.In(appointmentLocation()))
+			return err
 		}
 
 		result, err = performVerifyCommit(tx, c, merchant, verifyCode, card, handCardNo)

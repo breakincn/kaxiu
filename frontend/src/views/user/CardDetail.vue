@@ -262,7 +262,7 @@
               @click="openAppointmentArrivalVerifyFlow"
               class="w-full py-2.5 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark transition-colors"
             >
-              到店核销
+              出示预约签到码
             </button>
             <button
               v-if="showUserRescheduleAction"
@@ -663,7 +663,7 @@
     <div v-if="showVerifyCodeModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[55]" @click.self="closeVerifyCodeModal">
       <div class="bg-white rounded-2xl w-11/12 max-w-lg overflow-hidden">
         <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
-          <h3 class="font-medium text-lg">到店出示核销码</h3>
+          <h3 class="font-medium text-lg">{{ verifyCodeModalTitle }}</h3>
           <button @click="closeVerifyCodeModal" class="text-white">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -676,7 +676,7 @@
             <div class="text-gray-500 text-sm mt-1">{{ card?.card_type || '' }}</div>
           </div>
           <div class="mt-2 text-center text-gray-600 text-sm">
-            请向工作人员出示此码，由工作人员扫码完成到店核销
+            {{ verifyCodeModalHint }}
           </div>
           <div v-if="verifyQrDataUrl" class="mt-4 flex justify-center">
             <img :src="verifyQrDataUrl" alt="核销二维码" class="w-56 h-56" />
@@ -764,6 +764,7 @@ const codeExpireTime = ref('')
 const generating = ref(false)
 const verifyQrDataUrl = ref('')
 const verifyCodeProject = ref(null) // 当前核销码对应的项目
+const verifyCodeMode = ref('verify')
 const showVerifyCodeModal = ref(false)
 let verifyExpireTimer = null
 
@@ -3330,7 +3331,21 @@ const closeProjectModal = () => {
 
 const closeVerifyCodeModal = () => {
   showVerifyCodeModal.value = false
+  if (!verifyCode.value) {
+    verifyCodeMode.value = 'verify'
+  }
 }
+
+const verifyCodeModalTitle = computed(() => {
+  return verifyCodeMode.value === 'appointment_checkin' ? '到店出示预约签到码' : '到店出示核销码'
+})
+
+const verifyCodeModalHint = computed(() => {
+  if (verifyCodeMode.value === 'appointment_checkin') {
+    return '请向工作人员出示此预约签到码，由工作人员扫码完成签到建单'
+  }
+  return '请向工作人员出示此码，由工作人员扫码完成到店核销'
+})
 
 const getUsageProjectText = (usage) => {
   const pFromUsage = usage?.project
@@ -3348,12 +3363,15 @@ const getUsageProjectText = (usage) => {
   return txt ? `项目：${txt}` : ''
 }
 
-const doGenerateVerifyCode = async (projectId) => {
-  const payload = projectId ? { project_id: projectId } : undefined
+const doGenerateVerifyCode = async (projectId, options = {}) => {
+  const payload = {}
+  if (projectId) payload.project_id = projectId
+  if (options?.appointmentId) payload.appointment_id = options.appointmentId
   const res = await cardApi.generateVerifyCode(route.params.id, payload)
   verifyCode.value = res.data.data.code
   const expireAt = new Date(res.data.data.expire_at * 1000)
   codeExpireTime.value = expireAt.toLocaleTimeString()
+  verifyCodeMode.value = options?.appointmentId ? 'appointment_checkin' : 'verify'
 
   // 保存当前核销码对应的项目信息
   if (projectId) {
@@ -3381,6 +3399,7 @@ const doGenerateVerifyCode = async (projectId) => {
     codeExpireTime.value = ''
     verifyQrDataUrl.value = ''
     verifyCodeProject.value = null
+    verifyCodeMode.value = 'verify'
     verifyExpireTimer = null
 
     stopVerifyStatusPoll()
@@ -3684,7 +3703,7 @@ const openAppointmentArrivalVerifyFlow = async () => {
   if (appointment.value?.project_id) {
     generating.value = true
     try {
-      await doGenerateVerifyCode(Number(appointment.value.project_id))
+      await doGenerateVerifyCode(Number(appointment.value.project_id), { appointmentId: Number(appointment.value.id) })
       showVerifyCodeModal.value = true
     } catch (err) {
       alert(err.response?.data?.error || '生成核销码失败')

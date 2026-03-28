@@ -635,7 +635,8 @@ func GenerateVerifyCode(c *gin.Context) {
 	}
 
 	var input struct {
-		ProjectID *uint `json:"project_id"`
+		ProjectID     *uint `json:"project_id"`
+		AppointmentID *uint `json:"appointment_id"`
 	}
 	_ = c.ShouldBindJSON(&input)
 
@@ -649,14 +650,53 @@ func GenerateVerifyCode(c *gin.Context) {
 		}
 	}
 
-	// 检查卡片是否有效
 	now := time.Now()
+	var appointment *models.Appointment
+	if input.AppointmentID != nil && *input.AppointmentID > 0 {
+		appt, err := loadAppointmentByID(config.DB, *input.AppointmentID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询预约失败"})
+			return
+		}
+		if appt == nil || appt.CardID != card.ID || appt.UserID != card.UserID || appt.MerchantID != card.MerchantID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "预约不存在或不属于当前卡片"})
+			return
+		}
+
+		status := normalizeAppointmentStatus(appt.Status)
+		if status != "confirmed" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前预约不可生成签到码"})
+			return
+		}
+
+		var merchant models.Merchant
+		if err := config.DB.First(&merchant, card.MerchantID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询商户失败"})
+			return
+		}
+		if !canArriveForAppointment(*appt, &merchant, now.In(appointmentLocation())) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前不在可到店签到时间窗口内"})
+			return
+		}
+
+		if appt.ProjectID != nil {
+			if input.ProjectID == nil || *input.ProjectID == 0 {
+				input.ProjectID = appt.ProjectID
+			} else if *input.ProjectID != *appt.ProjectID {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "预约项目与签到项目不一致"})
+				return
+			}
+		}
+		appointment = appt
+	}
+
+	// 检查卡片是否有效
 	if card.EndDate != nil && now.After(*card.EndDate) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "卡片已过期"})
 		return
 	}
 
-	if card.RemainTimes <= 0 {
+	if appointment == nil && card.RemainTimes <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "剩余次数不足"})
 		return
 	}
@@ -711,6 +751,9 @@ func GenerateVerifyCode(c *gin.Context) {
 		Update("expire_at", now.Unix())
 
 	code := uuid.New().String()[:8]
+	if appointment != nil {
+		code = "APPT-" + strings.ToUpper(uuid.New().String()[:8])
+	}
 	expireAt := now.Add(5 * time.Minute).Unix()
 
 	verifyCode := models.VerifyCode{CardID: card.ID, ProjectID: input.ProjectID, Code: code, ExpireAt: expireAt, Used: false}
@@ -718,10 +761,17 @@ func GenerateVerifyCode(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"code":       code,
-			"expire_at":  expireAt,
-			"card_id":    card.ID,
-			"project_id": input.ProjectID,
+			"code":           code,
+			"expire_at":      expireAt,
+			"card_id":        card.ID,
+			"project_id":     input.ProjectID,
+			"appointment_id": input.AppointmentID,
+			"verify_mode": func() string {
+				if appointment != nil {
+					return "appointment_checkin"
+				}
+				return "verify"
+			}(),
 		},
 	})
 }

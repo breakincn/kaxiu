@@ -55,7 +55,7 @@
         </div>
 
         <p class="text-gray-400 text-xs mt-3">
-          提示：请允许浏览器使用摄像头权限，建议使用微信内置浏览器 / Safari / Chrome。
+          提示：支持扫描普通核销码与预约签到码；请允许浏览器使用摄像头权限，建议使用微信内置浏览器 / Safari / Chrome。
         </p>
       </div>
     </div>
@@ -296,6 +296,8 @@ const handleCommitSuccess = (data) => {
   if (action === 'start') {
     const sid = data?.session_id
     resultText.value = getStartSuccessLabel(routeTermMerchant.value, sid)
+  } else if (action === 'appointment_checkin') {
+    resultText.value = '签到成功，已创建服务单'
   } else {
     const remainTimes = data?.remain_times
     resultText.value = `核销成功！剩余次数: ${remainTimes ?? '-'}`
@@ -318,7 +320,7 @@ onMounted(() => {
   mode.value = String(route.query.mode || 'verify')
   pageTitle.value = isStartOnlyMode()
     ? getScanStartLabel(routeTermMerchant.value)
-    : replaceTerms('扫码核销', routeTermMerchant.value)
+    : replaceTerms('扫码核销/签到', routeTermMerchant.value)
 
   const token = getMerchantToken()
   if (!token) {
