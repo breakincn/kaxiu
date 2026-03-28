@@ -105,7 +105,14 @@ if [ "${#remaining_ports[@]}" -gt 0 ]; then
     done
   done
   if [ "${#manual_kill_pids[@]}" -gt 0 ]; then
-    echo "手工执行：${blue}kill -9 ${(@j: :)manual_kill_pids}${reset}"
+    manual_kill_command=""
+    for port in "${remaining_ports[@]}"; do
+      if [ -n "$manual_kill_command" ]; then
+        manual_kill_command="${manual_kill_command}; "
+      fi
+      manual_kill_command="${manual_kill_command}kill -9 \$(lsof -ti tcp:${port})"
+    done
+    echo "手工执行：${blue}${manual_kill_command}${reset}"
   fi
 fi
 
