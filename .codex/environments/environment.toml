@@ -8,7 +8,7 @@ script = ""
 [[actions]]
 name = "go debug"
 icon = "debug"
-command = "zsh -lc 'cd /Users/will/Projects/Go/kabao/backend && dlv debug . --init=.dlv-auto'"
+command = "zsh -lc 'cd /Users/will/Projects/Go/kabao/backend && dlv debug . --headless --listen=127.0.0.1:2345 --api-version=2 --accept-multiclient --continue'"
 
 [[actions]]
 name = "go + node run"
