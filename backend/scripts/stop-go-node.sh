@@ -97,7 +97,7 @@ if [ "${#failed_services[@]}" -gt 0 ]; then
 fi
 
 if [ "${#remaining_ports[@]}" -gt 0 ]; then
-  echo "仍在监听的端口：${(j:,:)remaining_ports}"
+  echo "仍在监听的端口：$(IFS=,; echo "${remaining_ports[*]}")"
   manual_kill_pids=()
   for port in "${remaining_ports[@]}"; do
     for pid in $(lsof -ti tcp:$port 2>/dev/null || true); do
