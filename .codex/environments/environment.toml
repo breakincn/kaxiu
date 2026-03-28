@@ -19,3 +19,8 @@ command = "zsh -lc 'export PATH=/Users/will/.nvm/versions/node/v16.20.2/bin:$PAT
 name = "go + node run"
 icon = "test"
 command = "zsh -lc 'zsh /Users/will/Projects/Go/kabao/backend/scripts/start-go-node.sh'"
+
+[[actions]]
+name = "go + node stop"
+icon = "tool"
+command = "zsh -lc 'kill -9 $(lsof -ti tcp:2345) $(lsof -ti tcp:8080) $(lsof -ti tcp:3000) 2>/dev/null || true'"
