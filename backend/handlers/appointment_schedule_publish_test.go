@@ -872,6 +872,63 @@ func TestStaffCannotPublishTomorrowScheduleBeforeFourPM(t *testing.T) {
 	}
 }
 
+func TestStaffListSchedulePublishingsIncludesOwnRowsForOperationalRole(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, _, tech, _, role, _ := seedAppointmentPermissionFixture(t, config.DB)
+	seedAppointmentPermission(t, config.DB, role.ID, "merchant.appointment.view")
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+	if err := config.DB.Model(&models.ServiceRole{}).Where("id = ?", role.ID).Update("role_type", "operational").Error; err != nil {
+		t.Fatalf("update role type failed: %v", err)
+	}
+
+	loc := appointmentLocation()
+	now := time.Date(2026, 3, 28, 9, 0, 0, 0, loc)
+	withAppointmentCurrentTime(t, now)
+	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+
+	listPath := "/merchant/schedules/publishings?date=" + targetDate.Format("2006-01-02")
+	listCtx, listRec := newStaffContext(http.MethodGet, listPath, merchant.ID, tech.ID, role.ID)
+	listCtx.Request = httptest.NewRequest(http.MethodGet, listPath, nil)
+	ListSchedulePublishings(listCtx)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list want 200, got %d body=%s", listRec.Code, listRec.Body.String())
+	}
+
+	var listResp struct {
+		Data struct {
+			Publishings []models.TechnicianSchedulePublishing `json:"publishings"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("decode list response failed: %v", err)
+	}
+	if len(listResp.Data.Publishings) == 0 {
+		t.Fatalf("want own preview rows for operational role, got 0")
+	}
+	for _, row := range listResp.Data.Publishings {
+		if row.TechnicianID == nil || *row.TechnicianID != tech.ID {
+			t.Fatalf("want only own technician rows, got %+v", row)
+		}
+		if row.Status != "unpublished" {
+			t.Fatalf("want unpublished row before publish, got %s", row.Status)
+		}
+	}
+
+	publishPath := "/merchant/schedules/publish-next-day?date=" + targetDate.Format("2006-01-02")
+	publishCtx, publishRec := newStaffContext(http.MethodPost, publishPath, merchant.ID, tech.ID, role.ID)
+	publishCtx.Request = httptest.NewRequest(http.MethodPost, publishPath, nil)
+	PublishNextDaySchedule(publishCtx)
+	if publishRec.Code != http.StatusOK {
+		t.Fatalf("publish want 200, got %d body=%s", publishRec.Code, publishRec.Body.String())
+	}
+}
+
 func TestStaffWithdrawOnlyOwnPublishedScheduleAndAppointments(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

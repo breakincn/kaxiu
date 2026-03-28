@@ -302,6 +302,58 @@ func buildSchedulePublishingRowsForDate(tx *gorm.DB, merchant models.Merchant, t
 	return attachScheduleRepairCounts(tx, out)
 }
 
+func buildSchedulePublishingRowsForTechnician(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, technicianID uint) ([]models.TechnicianSchedulePublishing, error) {
+	if tx == nil || merchant.ID == 0 || technicianID == 0 {
+		return []models.TechnicianSchedulePublishing{}, nil
+	}
+	rows, err := loadSchedulePublishingsByDate(tx, merchant.ID, targetDate)
+	if err != nil {
+		return nil, err
+	}
+	rows = filterScheduleRowsByTechnician(rows, technicianID)
+	if !merchant.SupportCustomerServiceMode {
+		return attachScheduleRepairCounts(tx, rows)
+	}
+	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, targetDate)
+	if !ok {
+		return []models.TechnicianSchedulePublishing{}, nil
+	}
+	var technician models.Technician
+	if err := tx.Where("id = ? AND merchant_id = ?", technicianID, merchant.ID).First(&technician).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return []models.TechnicianSchedulePublishing{}, nil
+		}
+		return nil, err
+	}
+	dateOnly := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, targetDate.Location())
+	byKey := make(map[string]models.TechnicianSchedulePublishing, len(rows))
+	for _, row := range rows {
+		byKey[schedulePublishingRowKey(row.TechnicianID, row.StartAt, row.EndAt)] = row
+	}
+	out := make([]models.TechnicianSchedulePublishing, 0, len(intervals))
+	for _, interval := range intervals {
+		start := interval.Start
+		end := interval.End
+		key := schedulePublishingRowKey(&technicianID, &start, &end)
+		row, ok := byKey[key]
+		if !ok {
+			publishDate := dateOnly
+			row = models.TechnicianSchedulePublishing{
+				MerchantID:   merchant.ID,
+				TechnicianID: &technicianID,
+				PublishDate:  &publishDate,
+				StartAt:      &start,
+				EndAt:        &end,
+				Status:       "unpublished",
+			}
+		}
+		copyTech := technician
+		row.Technician = &copyTech
+		out = append(out, row)
+	}
+	return attachScheduleRepairCounts(tx, out)
+}
+
 func loadSchedulePublishingByID(tx *gorm.DB, merchantID, scheduleID uint) (*models.TechnicianSchedulePublishing, error) {
 	if tx == nil || merchantID == 0 || scheduleID == 0 {
 		return nil, nil
@@ -5271,7 +5323,11 @@ func ListSchedulePublishings(c *gin.Context) {
 		return
 	}
 	if isStaff {
-		rows = filterScheduleRowsByTechnician(rows, scopedTechnicianID)
+		rows, err = buildSchedulePublishingRowsForTechnician(config.DB, merchant, date, scopedTechnicianID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取客服排班发布列表失败"})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
 		"date":        date.Format("2006-01-02"),

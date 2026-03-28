@@ -2862,6 +2862,9 @@ const technicianSchedulePublishingHint = computed(() => {
   if (hasPublishedScheduleRows.value) {
     return technicianSchedulePublishingWindowState.value.withdrawBlockedReason || '当前排班已发布，可在截止前撤销。'
   }
+  if (!hasPublishableScheduleRows.value) {
+    return '当前没有待发布的预约排班'
+  }
   return technicianSchedulePublishingWindowState.value.publishBlockedReason
 })
 const appointmentRepairOverviewScheduleLabel = computed(() => {
@@ -5727,6 +5730,10 @@ const getPublishableScheduleRows = () => {
   return (schedulePublishings.value || []).filter(row => ['unpublished', 'canceled'].includes(getEffectiveSchedulePublishingStatus(row)))
 }
 
+const hasPublishableScheduleRows = computed(() => {
+  return getPublishableScheduleRows().length > 0
+})
+
 const shouldShowScheduleAffectedAppointments = (row) => {
   return Number(row?.affected_appointments_count || 0) > 0 || Number(row?.protected_repair_slots_count || 0) > 0
 }
@@ -5781,12 +5788,13 @@ const schedulePublishingPrimaryAction = computed(() => {
       }
     }
     const canPublish = technicianSchedulePublishingWindowState.value.canPublish
+    const canPublishRows = hasPublishableScheduleRows.value
     return {
       mode: 'publish',
       label: isTodaySchedulePublishingTarget.value ? '发布今日安排' : '发布次日安排',
       submittingText: '发布中...',
-      disabled: !canPublish,
-      className: canPublish ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-400'
+      disabled: !canPublish || !canPublishRows,
+      className: canPublish && canPublishRows ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-400'
     }
   }
   if (canWithdrawPublishedScheduleRows.value) {
@@ -5811,8 +5819,8 @@ const schedulePublishingPrimaryAction = computed(() => {
     mode: 'publish',
     label: '发布预约排班',
     submittingText: '发布中...',
-    disabled: false,
-    className: 'bg-orange-500 text-white'
+    disabled: !hasPublishableScheduleRows.value,
+    className: hasPublishableScheduleRows.value ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-400'
   }
 })
 
