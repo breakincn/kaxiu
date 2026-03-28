@@ -112,7 +112,8 @@ if [ "${#remaining_ports[@]}" -gt 0 ]; then
       fi
       manual_kill_command="${manual_kill_command}kill -9 \$(lsof -ti tcp:${port})"
     done
-    echo "手工执行：${blue}${manual_kill_command}${reset}"
+    echo "手工执行："
+    echo "${blue}${manual_kill_command}${reset}"
   fi
 fi
 
