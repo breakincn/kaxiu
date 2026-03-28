@@ -2,6 +2,9 @@
 
 set -e
 
+blue='\033[34m'
+reset='\033[0m'
+
 stopped_services=()
 failed_services=()
 
@@ -102,7 +105,7 @@ if [ "${#remaining_ports[@]}" -gt 0 ]; then
     done
   done
   if [ "${#manual_kill_pids[@]}" -gt 0 ]; then
-    echo "手工执行：kill -9 ${(@j: :)manual_kill_pids}"
+    echo "手工执行：${blue}kill -9 ${(@j: :)manual_kill_pids}${reset}"
   fi
 fi
 
