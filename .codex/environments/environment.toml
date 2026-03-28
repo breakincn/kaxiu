@@ -9,11 +9,11 @@ script = ""
 #name = "go debug restart"
 #icon = "debug"
 #command = "zsh -lc 'zsh /Users/will/Projects/Go/kabao/backend/scripts/restart-go-debug.sh'"
-#
-#[[actions]]
-#name = "node debug"
-#icon = "debug"
-#command = "zsh -lc 'export PATH=/Users/will/.nvm/versions/node/v16.20.2/bin:$PATH && cd /Users/will/Projects/Go/kabao/frontend && npm run dev'"
+
+[[actions]]
+name = "node run"
+icon = "test"
+command = "zsh -lc 'export PATH=/Users/will/.nvm/versions/node/v16.20.2/bin:$PATH && cd /Users/will/Projects/Go/kabao/frontend && npm run dev'"
 
 [[actions]]
 name = "go + node run"
