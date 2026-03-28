@@ -6,9 +6,9 @@ name = "kabao"
 script = ""
 
 [[actions]]
-name = "go debug"
+name = "go debug restart"
 icon = "debug"
-command = "zsh -lc 'cd /Users/will/Projects/Go/kabao/backend && dlv debug . --headless --listen=127.0.0.1:2345 --api-version=2 --accept-multiclient --continue --output /tmp/__debug_bin'"
+command = "zsh -lc 'kill -9 $(lsof -ti tcp:2345) $(lsof -ti tcp:8080) $(pgrep -f \"dlv debug\" | tr \"\\n\" \" \") 2>/dev/null || true; cd /Users/will/Projects/Go/kabao/backend && dlv debug . --headless --listen=127.0.0.1:2345 --api-version=2 --accept-multiclient --continue --output /tmp/__debug_bin'"
 
 [[actions]]
 name = "node debug"
