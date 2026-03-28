@@ -13,8 +13,10 @@ rm -f /tmp/kabao-go-debug.log
 )
 
 started=0
+go_endpoint=""
 for i in {1..20}; do
   if lsof -nP -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1; then
+    go_endpoint=$(lsof -nP -iTCP:8080 -sTCP:LISTEN | awk 'NR==2 {print $9; exit}')
     started=1
     break
   fi
@@ -27,7 +29,13 @@ if [ "$started" -ne 1 ]; then
   exit 1
 fi
 
-echo "Go 服务启动成功：127.0.0.1:8080"
+go_port=$(printf '%s\n' "$go_endpoint" | sed -E 's/.*:([0-9]+).*/\1/')
+if [ -z "$go_port" ]; then
+  echo "Go 服务端口解析失败"
+  exit 1
+fi
+
+echo "Go 服务启动成功：127.0.0.1:${go_port}"
 
 export PATH=/Users/will/.nvm/versions/node/v16.20.2/bin:$PATH
 cd /Users/will/Projects/Go/kabao/frontend
