@@ -39,4 +39,26 @@ echo "Go 服务启动成功：127.0.0.1:${go_port}"
 
 export PATH=/Users/will/.nvm/versions/node/v16.20.2/bin:$PATH
 cd /Users/will/Projects/Go/kabao/frontend
-exec npm run dev
+nohup npm run dev > /tmp/kabao-node-dev.log 2>&1 &
+
+node_started=0
+for i in {1..10}; do
+  if lsof -nP -iTCP:3000 -sTCP:LISTEN >/dev/null 2>&1; then
+    node_started=1
+    break
+  fi
+  sleep 1
+done
+
+if [ "$node_started" -ne 1 ]; then
+  echo "Node 服务启动失败，日志如下："
+  cat /tmp/kabao-node-dev.log
+  exit 1
+fi
+
+echo "Node 服务启动成功：127.0.0.1:3000"
+echo "所有服务已启动完成"
+echo "Go 日志：/tmp/kabao-go-debug.log"
+echo "Node 日志：/tmp/kabao-node-dev.log"
+
+exit 0
