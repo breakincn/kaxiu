@@ -95,6 +95,15 @@ fi
 
 if [ "${#remaining_ports[@]}" -gt 0 ]; then
   echo "仍在监听的端口：${(j:,:)remaining_ports}"
+  manual_kill_pids=()
+  for port in "${remaining_ports[@]}"; do
+    for pid in $(lsof -ti tcp:$port 2>/dev/null || true); do
+      manual_kill_pids+=("$pid")
+    done
+  done
+  if [ "${#manual_kill_pids[@]}" -gt 0 ]; then
+    echo "手工执行：kill -9 ${(@j: :)manual_kill_pids}"
+  fi
 fi
 
 if [ "${#stopped_services[@]}" -eq 0 ] && [ "${#failed_services[@]}" -eq 0 ]; then
