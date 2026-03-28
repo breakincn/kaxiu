@@ -23,4 +23,4 @@ command = "zsh -lc 'zsh /Users/will/Projects/Go/kabao/backend/scripts/start-go-n
 [[actions]]
 name = "go + node stop"
 icon = "tool"
-command = "zsh -lc 'kill -9 $(lsof -ti tcp:2345) $(lsof -ti tcp:8080) $(lsof -ti tcp:3000) 2>/dev/null || true'"
+command = "zsh -lc 'kill -9 $(lsof -ti tcp:2345) $(lsof -ti tcp:8080) $(lsof -ti tcp:3000) $(pgrep -f \"dlv debug\" | tr \"\\n\" \" \") $(pgrep -f \"npm run dev\" | tr \"\\n\" \" \") 2>/dev/null || true'"
