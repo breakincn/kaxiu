@@ -1939,6 +1939,17 @@ func normalizeAppointmentForRead(appt *models.Appointment, now time.Time) error 
 		return nil
 	}
 	appt.Status = normalizeAppointmentStatus(appt.Status)
+	if appt.Status == "no_show" && appt.TechnicianID == nil && !appointmentHasArrivalEvidence(appt) {
+		if strings.TrimSpace(appt.LiabilityLevel) == "" {
+			appt.LiabilityLevel = "pending_merchant"
+		}
+		if strings.TrimSpace(appt.DisruptionReason) == "" {
+			appt.DisruptionReason = "appointment_state_inconsistent"
+		}
+		if strings.TrimSpace(appt.DisplayWaitMessage) == "" {
+			appt.DisplayWaitMessage = "该预约已失约，但客服模式下直到失约前仍未分配客服，当前按预约状态异常处理"
+		}
+	}
 	if appointmentIsCrossDayUnfinished(appt, now) && appointmentHasArrivalEvidence(appt) {
 		if err := config.DB.Transaction(func(tx *gorm.DB) error {
 			return autoCloseCrossDayUnfinishedAppointment(tx, appt, now, "system", nil, "系统自动结案：读取时发现跨日未开始服务")

@@ -83,6 +83,74 @@ func TestRunAppointmentNoShowOnceMarksConfirmedAppointmentAsNoShow(t *testing.T)
 	}
 }
 
+func TestRunAppointmentNoShowOnceMarksUnassignedCustomerServiceAppointmentAsInconsistent(t *testing.T) {
+	db := setupAppointmentSchedulerTestDB(t)
+
+	now := time.Now()
+	merchant := models.Merchant{
+		Name:                            "appointment-no-show-unassigned",
+		Phone:                           "18800000209",
+		Password:                        "pwd",
+		SupportAppointment:              true,
+		SupportCustomerServiceMode:      true,
+		AppointmentGraceWindowMinutes:   15,
+		AppointmentReserveBufferMinutes: 10,
+	}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	appointmentTime := now.Add(-20 * time.Minute)
+	appointment := models.Appointment{
+		MerchantID:      merchant.ID,
+		UserID:          1,
+		CardID:          1,
+		Status:          "confirmed",
+		AppointmentTime: &appointmentTime,
+	}
+	if err := db.Create(&appointment).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	settlement := models.AppointmentSettlement{AppointmentID: appointment.ID, MerchantID: merchant.ID, UserID: appointment.UserID, CardID: appointment.CardID, Status: "pending", SettlementStatusSnapshot: "pending"}
+	if err := db.Create(&settlement).Error; err != nil {
+		t.Fatalf("create settlement failed: %v", err)
+	}
+	if err := db.Model(&models.Appointment{}).Where("id = ?", appointment.ID).Update("appointment_settlement_id", settlement.ID).Error; err != nil {
+		t.Fatalf("bind settlement failed: %v", err)
+	}
+
+	if err := runAppointmentNoShowOnce(db, now); err != nil {
+		t.Fatalf("runAppointmentNoShowOnce failed: %v", err)
+	}
+
+	var got struct {
+		Status                          string `gorm:"column:status"`
+		NoShowAtRaw                     string `gorm:"column:no_show_at"`
+		DisruptionReason                string `gorm:"column:disruption_reason"`
+		LiabilityLevel                  string `gorm:"column:liability_level"`
+		SalarySettlementReferenceStatus string `gorm:"column:salary_settlement_reference_status"`
+		ResolutionNote                  string `gorm:"column:resolution_note"`
+	}
+	if err := db.Table("appointments").Select("status, no_show_at, disruption_reason, liability_level, salary_settlement_reference_status, resolution_note").Where("id = ?", appointment.ID).Scan(&got).Error; err != nil {
+		t.Fatalf("reload appointment failed: %v", err)
+	}
+	if got.Status != "no_show" {
+		t.Fatalf("want no_show, got %s", got.Status)
+	}
+	if got.NoShowAtRaw == "" {
+		t.Fatalf("want no_show_at filled")
+	}
+	if got.DisruptionReason != "appointment_state_inconsistent" {
+		t.Fatalf("want disruption_reason=appointment_state_inconsistent, got %s", got.DisruptionReason)
+	}
+	if got.LiabilityLevel != "pending_merchant" || got.SalarySettlementReferenceStatus != "pending" {
+		t.Fatalf("want pending_merchant/pending snapshot, got %+v", got)
+	}
+	if !strings.Contains(got.ResolutionNote, "未分配客服") {
+		t.Fatalf("want resolution note mention unassigned technician, got %q", got.ResolutionNote)
+	}
+}
+
 func TestRunAppointmentAssignOnceBackfillsConfirmedAppointmentWithoutTechnician(t *testing.T) {
 	db := setupAppointmentSchedulerTestDB(t)
 

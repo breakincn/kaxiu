@@ -547,29 +547,49 @@ func runAppointmentNoShowOnce(db *gorm.DB, now time.Time) error {
 		if now.Before(deadline) {
 			continue
 		}
-		if err := db.Model(&models.Appointment{}).
-			Where("id = ? AND status = ?", check.AppointmentID, "confirmed").
-			Updates(map[string]interface{}{
-				"status":     "no_show",
-				"no_show_at": &now,
-			}).Error; err != nil {
-			log.Printf("mark appointment %d no_show error: %v", check.AppointmentID, err)
+		appointment, err := loadSchedulerAppointmentByID(db, check.AppointmentID)
+		if err != nil {
+			log.Printf("load appointment %d before no_show failed: %v", check.AppointmentID, err)
 			continue
 		}
-		if err := syncAppointmentLiabilitySnapshot(db, check.AppointmentID, map[string]interface{}{
+		if appointment == nil {
+			continue
+		}
+		updates := map[string]interface{}{
+			"status":     "no_show",
+			"no_show_at": &now,
+		}
+		appointmentUpdates := map[string]interface{}{
 			"merchant_breach_pending":            false,
 			"breach_decision_at":                 &now,
 			"disruption_status":                  "closed",
 			"disruption_reason":                  "user_no_show",
 			"liability_level":                    "user",
 			"salary_settlement_reference_status": "no_pay",
-		}, map[string]interface{}{
+		}
+		settlementUpdates := map[string]interface{}{
 			"merchant_breach_pending":            false,
 			"breach_decision_at":                 &now,
 			"liability_level":                    "user",
 			"salary_settlement_reference_status": "no_pay",
 			"latest_reason":                      "user_no_show",
-		}); err != nil {
+		}
+		if merchant.SupportCustomerServiceMode && appointment.TechnicianID == nil && !schedulerAppointmentHasArrivalEvidence(appointment) {
+			updates["resolution_note"] = "系统巡检异常标记：客服模式预约超时失约前仍未分配客服"
+			appointmentUpdates["disruption_reason"] = "appointment_state_inconsistent"
+			appointmentUpdates["liability_level"] = "pending_merchant"
+			appointmentUpdates["salary_settlement_reference_status"] = "pending"
+			settlementUpdates["liability_level"] = "pending_merchant"
+			settlementUpdates["salary_settlement_reference_status"] = "pending"
+			settlementUpdates["latest_reason"] = "appointment_state_inconsistent"
+		}
+		if err := db.Model(&models.Appointment{}).
+			Where("id = ? AND status = ?", check.AppointmentID, "confirmed").
+			Updates(updates).Error; err != nil {
+			log.Printf("mark appointment %d no_show error: %v", check.AppointmentID, err)
+			continue
+		}
+		if err := syncAppointmentLiabilitySnapshot(db, check.AppointmentID, appointmentUpdates, settlementUpdates); err != nil {
 			log.Printf("sync appointment %d no_show liability error: %v", check.AppointmentID, err)
 		}
 	}
