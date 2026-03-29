@@ -81,7 +81,7 @@
     </div>
 
     <!-- 预约状态展示：仅保留查看，不再在详情页提供入口操作 -->
-    <div v-if="card.merchant?.support_appointment && !card?.locked && appointment" class="px-4 mt-4">
+    <div v-if="card.merchant?.support_appointment && !card?.locked && appointment && shouldShowAppointmentStatusCard" class="px-4 mt-4">
       <div ref="appointmentAnchor" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
         <div class="flex items-center gap-2 mb-3">
           <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -176,87 +176,16 @@
               </div>
             </div>
           </div>
-          <div v-if="appointmentSettlement || appointment.status === 'no_show' || appointmentDelayLedgerItems.length > 0 || (appointment.compensations || []).length > 0" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 space-y-3">
-            <div class="flex items-center justify-between">
-              <div class="text-sm font-medium text-gray-800">结算与补偿</div>
-              <div
-                v-if="appointmentSettlementStatusText"
-                class="px-2 py-1 rounded-full text-xs font-medium"
-                :class="getAppointmentSettlementStatusClass(appointmentSettlement?.settlement_status_snapshot || appointment.settlement_status_snapshot)"
-              >
-                {{ appointmentSettlementStatusText }}
-              </div>
-            </div>
-            <div v-if="appointmentSettlement" class="grid grid-cols-2 gap-3 text-sm">
-              <div class="rounded-lg bg-white px-3 py-3 border border-gray-100">
-                <div class="text-xs text-gray-400">结算状态</div>
-                <div class="mt-1 font-medium text-gray-800">{{ appointmentSettlementStatusText || '待结算' }}</div>
-              </div>
-              <div class="rounded-lg bg-white px-3 py-3 border border-gray-100">
-                <div class="text-xs text-gray-400">责任归属</div>
-                <div class="mt-1 font-medium text-gray-800">{{ getLiabilityText(appointmentSettlement.liability_level || appointment.liability_level) }}</div>
-              </div>
-            </div>
-            <div v-if="appointmentSettlement?.latest_reason || appointment.disruption_reason" class="text-sm text-gray-600">
-              原因：{{ getReasonText(appointmentSettlement?.latest_reason || appointment.disruption_reason) }}
-            </div>
-            <div v-if="appointment.merchant_cancel_reason" class="rounded-lg bg-white px-3 py-3 border border-gray-100 text-sm text-gray-700">
-              <div class="font-medium text-gray-800">商户取消原因</div>
-              <div class="mt-1">{{ appointment.merchant_cancel_reason }}</div>
-            </div>
-            <div v-if="appointment.user_rebuttal_note" class="rounded-lg bg-white px-3 py-3 border border-gray-100 text-sm text-gray-700">
-              <div class="font-medium text-gray-800">我的抗辩</div>
-              <div class="mt-1">{{ appointment.user_rebuttal_note }}</div>
-            </div>
-            <div v-if="appointmentDelayLedgerItems.length > 0" class="space-y-2">
-              <div class="text-sm font-medium text-gray-700">拖堂账本</div>
-              <div v-for="ledger in appointmentDelayLedgerItems" :key="ledger.id" class="rounded-lg bg-white px-3 py-3 border border-gray-100 text-sm text-gray-700">
-                <div class="font-medium text-gray-800">延迟 {{ ledger.delay_minutes }} 分钟</div>
-                <div class="mt-1">计入补偿桶 {{ ledger.credited_minutes }} 分钟</div>
-                <div v-if="ledger.delay_compensation_value > 0" class="mt-1">累计补偿值 {{ ledger.delay_compensation_value }}</div>
-                <div class="mt-1 text-gray-500">账本状态：{{ getDelayLedgerStatusText(ledger) }}</div>
-              </div>
-            </div>
-            <div v-if="(appointment.compensations || []).length > 0" class="space-y-2">
-              <div class="text-sm font-medium text-gray-700">补偿结果</div>
-              <div v-for="comp in appointment.compensations" :key="comp.id" class="rounded-lg bg-white px-3 py-3 border border-gray-100 text-sm text-gray-700">
-                <div class="font-medium text-gray-800">{{ getCompensationTypeText(comp.type) }}</div>
-                <div v-if="getCompensationValueText(comp)" class="mt-1">{{ getCompensationValueText(comp) }}</div>
-                <div v-if="comp.reason" class="mt-1 text-gray-500">{{ getReasonText(comp.reason) }}</div>
-              </div>
-            </div>
-            <div v-if="latestForceMajeureReliefRequest" class="rounded-lg bg-white px-3 py-3 border border-gray-100 text-sm text-gray-700">
-              <div class="font-medium text-gray-800">不可抗力申请</div>
-              <div class="mt-1">状态：{{ getForceMajeureStatusText(latestForceMajeureReliefRequest.status) }}</div>
-              <div class="mt-1">发起方：{{ getForceMajeureActorText(latestForceMajeureReliefRequest.proposed_by_type) }}</div>
-              <div v-if="latestForceMajeureReliefRequest.reason" class="mt-1">原因：{{ latestForceMajeureReliefRequest.reason }}</div>
-              <div v-if="latestForceMajeureReliefRequest.evidence_note" class="mt-1 text-gray-500">举证：{{ latestForceMajeureReliefRequest.evidence_note }}</div>
-            </div>
-            <div class="flex gap-2">
-              <button
-                v-if="canCreateForceMajeureRelief"
-                @click="createUserForceMajeureRelief"
-                class="flex-1 py-2.5 border-2 border-primary text-primary font-medium rounded-lg hover:bg-primary-light transition-colors"
-              >
-                申请不可抗力
-              </button>
-              <button
-                v-if="canAcceptForceMajeureRelief"
-                @click="acceptForceMajeureRelief"
-                class="flex-1 py-2.5 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark transition-colors"
-              >
-                确认不可抗力
-              </button>
-              <button
-                v-if="canRejectForceMajeureRelief"
-                @click="rejectForceMajeureRelief"
-                class="flex-1 py-2.5 border-2 border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                拒绝申请
-              </button>
-            </div>
-          </div>
           <p class="text-xs text-gray-400">* 预约履约状态会随商户服务推进及时更新</p>
+          <div v-if="showAppointmentSettlementButton" class="mt-3">
+            <button
+              type="button"
+              @click="openAppointmentSettlementModal"
+              class="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors"
+            >
+              结算与补偿
+            </button>
+          </div>
           <div class="space-y-2 mt-3">
             <button
               v-if="showAppointmentArrivalVerifyButton"
@@ -356,7 +285,7 @@
             总数{{ card.total_times }}次/剩余{{ card.remain_times }}次
           </span>
         </div>
-        <div v-if="!usageRecordsCollapsed && usages.length > 0">
+        <div v-if="!usageRecordsCollapsed && displayUsages.length > 0">
           <div
             v-for="(usage, index) in visibleUsages"
             :key="usage.id"
@@ -377,6 +306,9 @@
               <div class="text-gray-800">核销次数：{{ card.total_times }} / <span :class="getUsageCurrentTimesClass(usage, index)">{{ getUsageSequence(index) }}</span></div>
               <div class="text-gray-400 text-sm mt-0.5">
                 单号：{{ getUsageTrackingNumber(usage) }}
+              </div>
+              <div v-if="getUsageAppointmentNumber(usage)" class="text-gray-400 text-sm mt-0.5">
+                预约号：#{{ getUsageAppointmentNumber(usage) }}
               </div>
               <div v-if="getUsageQueueDisplayText(usage)" class="text-sm mt-0.5 font-medium">
                 叫号：<span :class="getUsageQueueNoClass(usage)">{{ getUsageQueueDisplayText(usage) }}</span>
@@ -433,6 +365,15 @@
             </div>
             <div v-if="getUsageOperatorInfo(usage)" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
               <span v-if="getUsageOperatorInfo(usage)">{{ getUsageOperatorInfo(usage) }}</span>
+            </div>
+            <div v-if="isSyntheticAppointmentUsage(usage) && showAppointmentSettlementButton" class="col-span-2 mt-2">
+              <button
+                type="button"
+                @click.stop="openAppointmentSettlementModal"
+                class="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors"
+              >
+                结算与补偿
+              </button>
             </div>
             <div class="flex items-center gap-2">
               <span class="text-gray-500 text-sm">{{ getWeekDay(usage.used_at) }}</span>
@@ -692,6 +633,99 @@
         </div>
       </div>
     </div>
+
+    <div v-if="showAppointmentSettlementModal && appointment" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[55]" @click.self="closeAppointmentSettlementModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
+        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between">
+          <h3 class="font-medium text-lg">结算与补偿</h3>
+          <button @click="closeAppointmentSettlementModal" class="text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="px-5 py-5 overflow-y-auto space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="text-sm font-medium text-gray-800">结算状态</div>
+            <div
+              v-if="appointmentSettlementStatusText"
+              class="px-2 py-1 rounded-full text-xs font-medium"
+              :class="getAppointmentSettlementStatusClass(appointmentSettlement?.settlement_status_snapshot || appointment.settlement_status_snapshot)"
+            >
+              {{ appointmentSettlementStatusText }}
+            </div>
+          </div>
+          <div v-if="appointmentSettlement" class="grid grid-cols-2 gap-3 text-sm">
+            <div class="rounded-lg bg-gray-50 px-3 py-3 border border-gray-100">
+              <div class="text-xs text-gray-400">结算状态</div>
+              <div class="mt-1 font-medium text-gray-800">{{ appointmentSettlementStatusText || '待结算' }}</div>
+            </div>
+            <div class="rounded-lg bg-gray-50 px-3 py-3 border border-gray-100">
+              <div class="text-xs text-gray-400">责任归属</div>
+              <div class="mt-1 font-medium text-gray-800">{{ getLiabilityText(appointmentSettlement.liability_level || appointment.liability_level) }}</div>
+            </div>
+          </div>
+          <div v-if="appointmentSettlement?.latest_reason || appointment.disruption_reason" class="text-sm text-gray-600">
+            原因：{{ getReasonText(appointmentSettlement?.latest_reason || appointment.disruption_reason) }}
+          </div>
+          <div v-if="appointment.merchant_cancel_reason" class="rounded-lg bg-gray-50 px-3 py-3 border border-gray-100 text-sm text-gray-700">
+            <div class="font-medium text-gray-800">商户取消原因</div>
+            <div class="mt-1">{{ appointment.merchant_cancel_reason }}</div>
+          </div>
+          <div v-if="appointment.user_rebuttal_note" class="rounded-lg bg-gray-50 px-3 py-3 border border-gray-100 text-sm text-gray-700">
+            <div class="font-medium text-gray-800">我的抗辩</div>
+            <div class="mt-1">{{ appointment.user_rebuttal_note }}</div>
+          </div>
+          <div v-if="appointmentDelayLedgerItems.length > 0" class="space-y-2">
+            <div class="text-sm font-medium text-gray-700">拖堂账本</div>
+            <div v-for="ledger in appointmentDelayLedgerItems" :key="ledger.id" class="rounded-lg bg-gray-50 px-3 py-3 border border-gray-100 text-sm text-gray-700">
+              <div class="font-medium text-gray-800">延迟 {{ ledger.delay_minutes }} 分钟</div>
+              <div class="mt-1">计入补偿桶 {{ ledger.credited_minutes }} 分钟</div>
+              <div v-if="ledger.delay_compensation_value > 0" class="mt-1">累计补偿值 {{ ledger.delay_compensation_value }}</div>
+              <div class="mt-1 text-gray-500">账本状态：{{ getDelayLedgerStatusText(ledger) }}</div>
+            </div>
+          </div>
+          <div v-if="(appointment.compensations || []).length > 0" class="space-y-2">
+            <div class="text-sm font-medium text-gray-700">补偿结果</div>
+            <div v-for="comp in appointment.compensations" :key="comp.id" class="rounded-lg bg-gray-50 px-3 py-3 border border-gray-100 text-sm text-gray-700">
+              <div class="font-medium text-gray-800">{{ getCompensationTypeText(comp.type) }}</div>
+              <div v-if="getCompensationValueText(comp)" class="mt-1">{{ getCompensationValueText(comp) }}</div>
+              <div v-if="comp.reason" class="mt-1 text-gray-500">{{ getReasonText(comp.reason) }}</div>
+            </div>
+          </div>
+          <div v-if="latestForceMajeureReliefRequest" class="rounded-lg bg-gray-50 px-3 py-3 border border-gray-100 text-sm text-gray-700">
+            <div class="font-medium text-gray-800">不可抗力申请</div>
+            <div class="mt-1">状态：{{ getForceMajeureStatusText(latestForceMajeureReliefRequest.status) }}</div>
+            <div class="mt-1">发起方：{{ getForceMajeureActorText(latestForceMajeureReliefRequest.proposed_by_type) }}</div>
+            <div v-if="latestForceMajeureReliefRequest.reason" class="mt-1">原因：{{ latestForceMajeureReliefRequest.reason }}</div>
+            <div v-if="latestForceMajeureReliefRequest.evidence_note" class="mt-1 text-gray-500">举证：{{ latestForceMajeureReliefRequest.evidence_note }}</div>
+          </div>
+          <div class="flex gap-2">
+            <button
+              v-if="canCreateForceMajeureRelief"
+              @click="createUserForceMajeureRelief"
+              class="flex-1 py-2.5 border-2 border-primary text-primary font-medium rounded-lg hover:bg-primary-light transition-colors"
+            >
+              申请不可抗力
+            </button>
+            <button
+              v-if="canAcceptForceMajeureRelief"
+              @click="acceptForceMajeureRelief"
+              class="flex-1 py-2.5 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark transition-colors"
+            >
+              确认不可抗力
+            </button>
+            <button
+              v-if="canRejectForceMajeureRelief"
+              @click="rejectForceMajeureRelief"
+              class="flex-1 py-2.5 border-2 border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              拒绝申请
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -728,6 +762,7 @@ const canArriveNow = ref(false)
 const countdown = ref(0)
 const usageRecordsCollapsed = ref(false)
 const visibleUsageCount = ref(10)
+const showAppointmentSettlementModal = ref(false)
 let countdownTimer = null
 
 const getAppointmentDisplayWaitState = (appt) => String(appt?.display_wait_state || '').trim()
@@ -829,6 +864,69 @@ const appointmentSettlementStatusText = computed(() => {
   return getAppointmentSettlementStatusText(
     appointmentSettlement.value?.settlement_status_snapshot || appointment.value?.settlement_status_snapshot
   )
+})
+const appointmentHasUsageRecord = computed(() => {
+  const usageID = Number(appointment.value?.usage_id || 0)
+  if (!usageID) return false
+  return (usages.value || []).some(item => Number(item?.id || 0) === usageID)
+})
+const isAppointmentServiceWindowExpired = computed(() => {
+  if (!appointment.value) return false
+  const deadlineMs = getAppointmentArrivalDeadlineMs(appointment.value)
+  if (deadlineMs > 0) return nowTick.value > deadlineMs
+  return false
+})
+const shouldArchiveAppointmentToUsage = computed(() => {
+  const appt = appointment.value
+  if (!appt) return false
+  return String(appt.status || '').trim() === 'no_show' && isAppointmentServiceWindowExpired.value
+})
+const shouldShowAppointmentStatusCard = computed(() => {
+  return Boolean(appointment.value) && !shouldArchiveAppointmentToUsage.value
+})
+const hasAppointmentSettlementContent = computed(() => {
+  const appt = appointment.value
+  if (!appt) return false
+  return Boolean(
+    appointmentSettlement.value ||
+    appointmentDelayLedgerItems.value.length > 0 ||
+    (appt.compensations || []).length > 0 ||
+    latestForceMajeureReliefRequest.value ||
+    appt.disruption_reason ||
+    appt.merchant_cancel_reason ||
+    appt.user_rebuttal_note
+  )
+})
+const showAppointmentSettlementButton = computed(() => {
+  const appt = appointment.value
+  if (!appt || !hasAppointmentSettlementContent.value) return false
+  const status = String(appt.status || '').trim()
+  return isAppointmentServiceWindowExpired.value && (status === 'no_show' || status === 'failed')
+})
+const syntheticAppointmentUsage = computed(() => {
+  const appt = appointment.value
+  if (!appt || !shouldArchiveAppointmentToUsage.value || appointmentHasUsageRecord.value) return null
+  const appointmentID = Number(appt.id || 0)
+  if (!appointmentID) return null
+  return {
+    id: `appointment-${appointmentID}`,
+    appointment_id: appointmentID,
+    is_synthetic_appointment_usage: true,
+    status: 'success',
+    used_at: appt.appointment_time,
+    finished_at: null,
+    project_id: appt.project_id,
+    project: appt.project || null,
+    merchant: card.value?.merchant || null,
+    used_times: 1
+  }
+})
+const displayUsages = computed(() => {
+  const list = Array.isArray(usages.value) ? [...usages.value] : []
+  if (syntheticAppointmentUsage.value) {
+    list.unshift(syntheticAppointmentUsage.value)
+  }
+  return list
 })
 
 const showUsageQrModal = ref(false)
@@ -1469,17 +1567,21 @@ const getUsageServiceRemainText = (usage) => {
 }
 
 const getUsageTrackingNumber = (usage) => {
+  if (isSyntheticAppointmentUsage(usage)) {
+    return `预约#${getUsageAppointmentNumber(usage)}`
+  }
   if (!usage?.id) return ''
   return String(usage.id).padStart(9, '0')
 }
 
 const getUsageSequence = (index) => {
-  if (!card.value || !usages.value || !usages.value[index]) return 0
-  if (usages.value[index].status === 'failed') return '-'
+  const list = displayUsages.value || []
+  if (!card.value || !list[index]) return 0
+  if (list[index].status === 'failed') return '-'
   
   let seq = (card.value.total_times || 0) - (card.value.remain_times || 0)
   for (let i = 0; i < index; i++) {
-    const u = usages.value[i]
+    const u = list[i]
     if (u && u.status !== 'failed') {
       seq -= (u.used_times || 0)
     }
@@ -2692,15 +2794,15 @@ const userDisplayedRescheduleTechnicians = computed(() => {
     .map(t => ({ ...t, availability_state: 'safe', predicted_delay_minutes: 0 }))
 })
 
-const visibleUsages = computed(() => {
-  return (usages.value || []).slice(0, visibleUsageCount.value)
-})
+const visibleUsages = computed(() => displayUsages.value.slice(0, visibleUsageCount.value))
 
 const hasMoreUsages = computed(() => {
-  return visibleUsageCount.value < (usages.value?.length || 0)
+  return visibleUsageCount.value < displayUsages.value.length
 })
 
 const getUsageOperatorInfo = (usage) => {
+  if (isSyntheticAppointmentUsage(usage)) return ''
+
   // 如果已结单，只显示服务人员
   if (usage.status === 'success' && usage.finished_at) {
     if (usage.technician) {
@@ -2752,7 +2854,25 @@ const handleUsageHeaderClick = () => {
 }
 
 const loadMoreUsages = () => {
-  visibleUsageCount.value = Math.min(visibleUsageCount.value + 10, usages.value.length)
+  visibleUsageCount.value = Math.min(visibleUsageCount.value + 10, displayUsages.value.length)
+}
+
+const isSyntheticAppointmentUsage = (usage) => {
+  return Boolean(usage?.is_synthetic_appointment_usage)
+}
+
+const getUsageAppointmentNumber = (usage) => {
+  const appointmentID = Number(usage?.appointment_id || 0)
+  return appointmentID > 0 ? appointmentID : ''
+}
+
+const openAppointmentSettlementModal = () => {
+  if (!showAppointmentSettlementButton.value) return
+  showAppointmentSettlementModal.value = true
+}
+
+const closeAppointmentSettlementModal = () => {
+  showAppointmentSettlementModal.value = false
 }
 
 const shouldKeepUsageQrModalOpenForUsage = (usage) => {
@@ -2851,7 +2971,7 @@ const fetchUsages = async () => {
       startAutoAssignPollIfNeeded()
       startUsageLivePollIfNeeded()
 
-      if (route.query.scrollToUsages === '1' && usages.value.length > 0) {
+      if (route.query.scrollToUsages === '1' && displayUsages.value.length > 0) {
         await scrollToUsages()
       }
     } catch (err) {
@@ -3601,8 +3721,8 @@ const calculateCountdown = () => {
   return Math.floor((appointmentTimeMs - nowMs) / 1000)
 }
 
-const getAppointmentArrivalDeadlineMs = () => {
-  const appt = appointment.value
+const getAppointmentArrivalDeadlineMs = (targetAppointment = appointment.value) => {
+  const appt = targetAppointment
   if (!appt) return 0
   if (appt.reserved_end_at) {
     const reservedEndMs = new Date(appt.reserved_end_at).getTime()
