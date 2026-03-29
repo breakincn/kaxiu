@@ -97,6 +97,7 @@
               <span class="ml-2 text-gray-600 text-sm">
                 {{ appointment.technician ? ((appointment.technician.service_role?.name || '客服') + '：' + appointment.technician.name) : '待分配' }}
               </span>
+              <div v-if="appointment.id" class="text-gray-400 text-sm mt-1">预约号：#{{ appointment.id }}</div>
             </div>
             <span :class="getAppointmentStatusClass(appointment)">
               {{ getAppointmentStatusText(appointment) }}

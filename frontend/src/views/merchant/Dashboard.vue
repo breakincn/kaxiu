@@ -390,6 +390,7 @@
           <div class="flex justify-between items-start">
             <div>
               <div class="font-medium text-gray-800">{{ appt.user?.nickname || appt.user_id }} <span class="ml-2 text-gray-500 text-sm font-normal">{{ formatAppointmentTechnicianDisplay(appt) }}</span></div>
+              <div v-if="getAppointmentIdDisplay(appt)" class="text-gray-500 text-sm mt-1">预约号: {{ getAppointmentIdDisplay(appt) }}</div>
               <div v-if="getAppointmentCardTypeDisplay(appt)" class="text-gray-500 text-sm mt-1">预约卡片: {{ getAppointmentCardTypeDisplay(appt) }}</div>
               <div v-if="getAppointmentCardNoDisplay(appt)" class="text-gray-500 text-sm mt-1">预约卡号: {{ getAppointmentCardNoDisplay(appt) }}</div>
               <div v-if="getAppointmentProjectDisplay(appt)" class="text-gray-500 text-sm mt-1">预约项目: {{ getAppointmentProjectDisplay(appt) }}</div>
@@ -1171,6 +1172,7 @@
             <div class="flex items-start justify-between gap-3">
               <div>
                 <div class="font-medium text-gray-800">{{ appt.user?.nickname || '用户' }}</div>
+                <div class="mt-1 text-sm text-gray-500">预约号: {{ getAppointmentIdDisplay(appt) || '-' }}</div>
                 <div class="mt-1 text-sm text-gray-500">预约卡片: {{ getAppointmentCardTypeDisplay(appt) || '-' }}</div>
                 <div class="mt-1 text-sm text-gray-500">预约卡号: {{ getAppointmentCardNoDisplay(appt) || '-' }}</div>
                 <div class="mt-1 text-sm text-gray-500">预约项目: {{ appt.project?.name || '-' }}（{{ getAppointmentServiceMinutes(appt) }}分钟）</div>
@@ -1583,7 +1585,11 @@
           <div v-if="appointmentDetailLoading" class="py-12 text-center text-gray-400">加载中...</div>
           <div v-else-if="appointmentDetailError" class="py-12 text-center text-red-500">{{ appointmentDetailError }}</div>
           <div v-else class="space-y-4">
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+                <div class="text-xs text-gray-400">预约号</div>
+                <div class="mt-1 font-medium text-gray-800">{{ getAppointmentIdDisplay(appointmentDetailTarget) || '-' }}</div>
+              </div>
               <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
                 <div class="text-xs text-gray-400">结算状态</div>
                 <div class="mt-1 font-medium text-gray-800">{{ getAppointmentSettlementStatusText(appointmentDetailSettlement?.settlement_status_snapshot || appointmentDetailTarget?.settlement_status_snapshot) || '待结算' }}</div>
@@ -5129,6 +5135,11 @@ const getAppointmentCardTypeDisplay = (appt) => {
   return String(appt?.card?.card_type || '').trim()
 }
 
+const getAppointmentIdDisplay = (appt) => {
+  const id = Number(appt?.id || 0)
+  return id > 0 ? `#${id}` : ''
+}
+
 const getAppointmentCardNoDisplay = (appt) => {
   return String(appt?.card?.card_no || '').trim()
 }
@@ -5194,7 +5205,15 @@ const hasAppointmentForceMajeureIssue = (appt) => {
   return !!getLatestForceMajeureReliefRequest(appt)
 }
 
+const isPlainUserNoShowAppointment = (appt) => {
+  if (!appt) return false
+  if (getAppointmentNormalizedStatus(appt) !== 'no_show') return false
+  if (getAppointmentDisruptionReason(appt) !== 'user_no_show') return false
+  return getAppointmentLiabilityLevel(appt) === 'user'
+}
+
 const hasAppointmentDisruptionFlag = (appt) => {
+  if (isPlainUserNoShowAppointment(appt)) return false
   return !!getAppointmentDisruptionReason(appt) || hasAppointmentLiabilityIssue(appt)
 }
 
