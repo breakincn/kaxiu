@@ -351,6 +351,65 @@ func TestAvailableSlotsOrderedChronologicallyForUsers(t *testing.T) {
 	}
 }
 
+func TestGetAvailableTimeSlotsFiltersUnpublishedTechnicians(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 30, 0, 0, appointmentLocation()))
+
+	merchant, user, tech, project, _, _ := seedAppointmentPlacementFixture(t, true)
+	unpublishedTech := models.Technician{
+		MerchantID:    merchant.ID,
+		ServiceRoleID: tech.ServiceRoleID,
+		Name:          "小美",
+		Code:          "X1",
+		Account:       "js0099",
+		Password:      "x",
+		IsActive:      true,
+	}
+	if err := config.DB.Create(&unpublishedTech).Error; err != nil {
+		t.Fatalf("create unpublished technician failed: %v", err)
+	}
+	seedNextDayPublishedScheduleForMerchant(t, merchant, tech.ID)
+
+	date := appointmentFixtureTime(10, 0).Format("2006-01-02")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/merchant/merchants/"+strconv.Itoa(int(merchant.ID))+"/available-slots?date="+date+"&project_id="+strconv.Itoa(int(project.ID)), nil)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(merchant.ID))}}
+	c.Set("auth_type", "user")
+	c.Set("user_id", user.ID)
+	GetAvailableTimeSlots(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			Technicians []struct {
+				ID uint `json:"id"`
+			} `json:"technicians"`
+			TimeSlots []struct {
+				TechnicianIDs []uint `json:"technician_ids"`
+			} `json:"time_slots"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal failed: %v body=%s", err, rec.Body.String())
+	}
+	if len(resp.Data.Technicians) != 1 || resp.Data.Technicians[0].ID != tech.ID {
+		t.Fatalf("want only published technician %d, got %+v", tech.ID, resp.Data.Technicians)
+	}
+	for _, slot := range resp.Data.TimeSlots {
+		for _, technicianID := range slot.TechnicianIDs {
+			if technicianID == unpublishedTech.ID {
+				t.Fatalf("unpublished technician %d should not appear in slot candidates: %+v", unpublishedTech.ID, resp.Data.TimeSlots)
+			}
+		}
+	}
+}
+
 func TestConfirmAppointmentAssignsTechnicianForLegacyPendingRecord(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

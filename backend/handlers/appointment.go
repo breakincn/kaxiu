@@ -736,6 +736,29 @@ func listAppointmentBookableTechnicians(tx *gorm.DB, merchant models.Merchant) (
 	return technicians, nil
 }
 
+func filterTechniciansByPublishedScheduleRows(technicians []models.Technician, rows []models.TechnicianSchedulePublishing) []models.Technician {
+	if len(technicians) == 0 || len(rows) == 0 {
+		return technicians
+	}
+	allowed := make(map[uint]struct{}, len(rows))
+	for _, row := range rows {
+		if row.TechnicianID == nil || *row.TechnicianID == 0 {
+			return technicians
+		}
+		allowed[*row.TechnicianID] = struct{}{}
+	}
+	if len(allowed) == 0 {
+		return technicians
+	}
+	filtered := make([]models.Technician, 0, len(technicians))
+	for _, tech := range technicians {
+		if _, ok := allowed[tech.ID]; ok {
+			filtered = append(filtered, tech)
+		}
+	}
+	return filtered
+}
+
 func loadAppointmentOccupiedRangesForFragment(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, technicianID *uint, excludeAppointmentID uint) ([]appointmentOccupiedRange, error) {
 	dayStart := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, targetDate.Location())
 	dayEnd := dayStart.Add(24 * time.Hour)
@@ -993,6 +1016,9 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 	intervals, ok := buildPublishedScheduleIntervals(publishedRows)
 	if !ok {
 		return nil, apiErr{status: http.StatusBadRequest, msg: "当前尚未发布次日预约排班"}
+	}
+	if len(technicians) > 0 {
+		technicians = filterTechniciansByPublishedScheduleRows(technicians, publishedRows)
 	}
 
 	var allSlots []string
