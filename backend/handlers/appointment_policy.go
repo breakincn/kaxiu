@@ -217,8 +217,24 @@ func appointmentDetectableWindow(appt models.Appointment, merchant *models.Merch
 	return start, end, true
 }
 
+func appointmentArrivalDeadline(appt models.Appointment, merchant *models.Merchant) (time.Time, bool) {
+	if appt.ReservedEndAt != nil {
+		minServiceMinutes := appt.LateArrivalMinServiceMinutes
+		if minServiceMinutes <= 0 && appt.AppointmentTime != nil && appt.ReservedEndAt.After(*appt.AppointmentTime) {
+			minServiceMinutes = int(appt.ReservedEndAt.Sub(*appt.AppointmentTime) / time.Minute / 2)
+		}
+		return appt.ReservedEndAt.Add(-time.Duration(minServiceMinutes) * time.Minute), true
+	}
+	_, end, ok := appointmentDetectableWindow(appt, merchant)
+	return end, ok
+}
+
 func canArriveForAppointment(appt models.Appointment, merchant *models.Merchant, now time.Time) bool {
-	start, end, ok := appointmentDetectableWindow(appt, merchant)
+	start, _, ok := appointmentDetectableWindow(appt, merchant)
+	if !ok {
+		return false
+	}
+	deadline, ok := appointmentArrivalDeadline(appt, merchant)
 	if !ok {
 		return false
 	}
@@ -226,7 +242,7 @@ func canArriveForAppointment(appt models.Appointment, merchant *models.Merchant,
 	if status != "confirmed" && status != "arrived" {
 		return false
 	}
-	return !now.Before(start) && !now.After(end)
+	return !now.Before(start) && !now.After(deadline)
 }
 
 func appointmentActiveConflictStatuses() []string {

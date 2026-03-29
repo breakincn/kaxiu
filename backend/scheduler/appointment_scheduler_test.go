@@ -151,6 +151,69 @@ func TestRunAppointmentNoShowOnceMarksUnassignedCustomerServiceAppointmentAsInco
 	}
 }
 
+func TestRunAppointmentNoShowOnceWaitsForLateArrivalServiceThreshold(t *testing.T) {
+	db := setupAppointmentSchedulerTestDB(t)
+
+	now := time.Date(2026, 3, 29, 10, 50, 0, 0, time.UTC)
+	merchant := models.Merchant{
+		Name:                            "appointment-no-show-threshold",
+		Phone:                           "18800000219",
+		Password:                        "pwd",
+		SupportAppointment:              true,
+		AppointmentGraceWindowMinutes:   15,
+		AppointmentReserveBufferMinutes: 10,
+	}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	appointmentTime := time.Date(2026, 3, 29, 10, 30, 0, 0, time.UTC)
+	reservedEndAt := appointmentTime.Add(45 * time.Minute)
+	appointment := models.Appointment{
+		MerchantID:                      merchant.ID,
+		UserID:                          1,
+		CardID:                          1,
+		Status:                          "confirmed",
+		AppointmentTime:                 &appointmentTime,
+		ReservedEndAt:                   &reservedEndAt,
+		LateArrivalMinServiceMinutes:    22,
+		SettlementStatusSnapshot:        "pending",
+		SalarySettlementReferenceStatus: "pending",
+	}
+	if err := db.Create(&appointment).Error; err != nil {
+		t.Fatalf("create appointment failed: %v", err)
+	}
+	settlement := models.AppointmentSettlement{AppointmentID: appointment.ID, MerchantID: merchant.ID, UserID: appointment.UserID, CardID: appointment.CardID, Status: "pending", SettlementStatusSnapshot: "pending"}
+	if err := db.Create(&settlement).Error; err != nil {
+		t.Fatalf("create settlement failed: %v", err)
+	}
+	if err := db.Model(&models.Appointment{}).Where("id = ?", appointment.ID).Update("appointment_settlement_id", settlement.ID).Error; err != nil {
+		t.Fatalf("bind settlement failed: %v", err)
+	}
+
+	if err := runAppointmentNoShowOnce(db, now); err != nil {
+		t.Fatalf("runAppointmentNoShowOnce failed: %v", err)
+	}
+
+	var status string
+	if err := db.Table("appointments").Select("status").Where("id = ?", appointment.ID).Scan(&status).Error; err != nil {
+		t.Fatalf("reload appointment failed: %v", err)
+	}
+	if status != "confirmed" {
+		t.Fatalf("want confirmed before late-arrival threshold, got %s", status)
+	}
+
+	if err := runAppointmentNoShowOnce(db, time.Date(2026, 3, 29, 10, 54, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("runAppointmentNoShowOnce after threshold failed: %v", err)
+	}
+	if err := db.Table("appointments").Select("status").Where("id = ?", appointment.ID).Scan(&status).Error; err != nil {
+		t.Fatalf("reload appointment after threshold failed: %v", err)
+	}
+	if status != "no_show" {
+		t.Fatalf("want no_show after late-arrival threshold, got %s", status)
+	}
+}
+
 func TestRunAppointmentAssignOnceBackfillsConfirmedAppointmentWithoutTechnician(t *testing.T) {
 	db := setupAppointmentSchedulerTestDB(t)
 

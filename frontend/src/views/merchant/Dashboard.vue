@@ -5032,9 +5032,18 @@ const isPendingExpired = (appt) => {
 const isWriteOffExpired = (appt) => {
   if (!appt || appt.status !== 'confirmed' || !appt.appointment_time) return false
 
-  const appointmentTime = new Date(appt.appointment_time).getTime()
-  const serviceMinutes = getAppointmentServiceMinutes(appt)
-  const deadlineMs = appointmentTime + (serviceMinutes + 30) * 60 * 1000
+  let deadlineMs = 0
+  if (appt.reserved_end_at) {
+    const reservedEndMs = new Date(appt.reserved_end_at).getTime()
+    if (Number.isFinite(reservedEndMs) && reservedEndMs > 0) {
+      const minServiceMinutes = Math.max(0, Math.floor(Number(appt.late_arrival_min_service_minutes || 0)))
+      deadlineMs = reservedEndMs - minServiceMinutes * 60 * 1000
+    }
+  }
+  if (!deadlineMs) {
+    const appointmentTime = new Date(appt.appointment_time).getTime()
+    deadlineMs = appointmentTime + 15 * 60 * 1000
+  }
   return currentTime.value > deadlineMs
 }
 

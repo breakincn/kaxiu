@@ -144,7 +144,7 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 		return nil, nil
 	}
 	rows, err := tx.Table("appointments").
-		Select("id, card_id, merchant_id, user_id, booking_root_id, project_id, technician_id, appointment_time, status, predicted_delay_minutes, arrived_at, actual_arrived_at, actual_start_at, usage_id, service_session_id, appointment_settlement_id, settlement_status_snapshot, resolution_note, failed_at, failed_reason, created_at").
+		Select("id, card_id, merchant_id, user_id, booking_root_id, project_id, technician_id, appointment_time, reserved_end_at, late_arrival_min_service_minutes, status, predicted_delay_minutes, arrived_at, actual_arrived_at, actual_start_at, usage_id, service_session_id, appointment_settlement_id, settlement_status_snapshot, resolution_note, failed_at, failed_reason, created_at").
 		Where("id = ?", appointmentID).
 		Limit(1).
 		Rows()
@@ -162,6 +162,7 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 		projectIDRaw               interface{}
 		technicianIDRaw            interface{}
 		appointmentTimeRaw         interface{}
+		reservedEndAtRaw           interface{}
 		arrivedAtRaw               interface{}
 		actualArrivedAtRaw         interface{}
 		actualStartAtRaw           interface{}
@@ -180,6 +181,8 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 		&projectIDRaw,
 		&technicianIDRaw,
 		&appointmentTimeRaw,
+		&reservedEndAtRaw,
+		&appt.LateArrivalMinServiceMinutes,
 		&appt.Status,
 		&appt.PredictedWaitMinutes,
 		&arrivedAtRaw,
@@ -208,6 +211,9 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 	if v, ok := parseSchedulerDBTimeValue(appointmentTimeRaw); ok {
 		appt.AppointmentTime = v
 	}
+	if v, ok := parseSchedulerDBTimeValue(reservedEndAtRaw); ok {
+		appt.ReservedEndAt = v
+	}
 	if v, ok := parseSchedulerDBTimeValue(arrivedAtRaw); ok {
 		appt.ArrivedAt = v
 	}
@@ -233,6 +239,24 @@ func loadSchedulerAppointmentByID(tx *gorm.DB, appointmentID uint) (*models.Appo
 		appt.CreatedAt = v
 	}
 	return &appt, nil
+}
+
+func appointmentNoShowDeadline(appt *models.Appointment, merchant models.Merchant) (time.Time, bool) {
+	if appt == nil || appt.AppointmentTime == nil {
+		return time.Time{}, false
+	}
+	if appt.ReservedEndAt != nil {
+		minServiceMinutes := appt.LateArrivalMinServiceMinutes
+		if minServiceMinutes <= 0 && appt.ReservedEndAt.After(*appt.AppointmentTime) {
+			minServiceMinutes = int(appt.ReservedEndAt.Sub(*appt.AppointmentTime) / time.Minute / 2)
+		}
+		return appt.ReservedEndAt.Add(-time.Duration(minServiceMinutes) * time.Minute), true
+	}
+	graceMinutes := merchant.AppointmentGraceWindowMinutes
+	if graceMinutes <= 0 {
+		graceMinutes = 15
+	}
+	return appt.AppointmentTime.Add(time.Duration(graceMinutes) * time.Minute), true
 }
 
 func sameSchedulerCalendarDay(left, right time.Time) bool {
@@ -543,16 +567,16 @@ func runAppointmentNoShowOnce(db *gorm.DB, now time.Time) error {
 			log.Printf("load merchant for appointment %d error: %v", check.AppointmentID, err)
 			continue
 		}
-		deadline := check.AppointmentTime.Add(time.Duration(merchantAppointmentGraceWindowMinutes(merchant)) * time.Minute)
-		if now.Before(deadline) {
-			continue
-		}
 		appointment, err := loadSchedulerAppointmentByID(db, check.AppointmentID)
 		if err != nil {
 			log.Printf("load appointment %d before no_show failed: %v", check.AppointmentID, err)
 			continue
 		}
 		if appointment == nil {
+			continue
+		}
+		deadline, ok := appointmentNoShowDeadline(appointment, merchant)
+		if !ok || now.Before(deadline) {
 			continue
 		}
 		updates := map[string]interface{}{

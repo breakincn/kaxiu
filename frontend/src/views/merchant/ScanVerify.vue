@@ -299,7 +299,7 @@ const handleCommitSuccess = (data) => {
     const sid = data?.session_id
     resultText.value = getStartSuccessLabel(routeTermMerchant.value, sid)
   } else if (action === 'appointment_checkin') {
-    resultText.value = '签到成功，已创建服务单'
+    resultText.value = '扫码成功，已建单进入服务'
   } else {
     const remainTimes = data?.remain_times
     resultText.value = `核销成功！剩余次数: ${remainTimes ?? '-'}`

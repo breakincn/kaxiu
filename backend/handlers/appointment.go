@@ -2191,7 +2191,7 @@ func GetCardAppointment(c *gin.Context) {
 
 	var appointment models.Appointment
 	err := config.DB.Preload("Merchant").Preload("Project").Preload("Technician").Preload("Technician.ServiceRole").Preload("Compensations", appointmentCompensationPreload).Preload("RescheduleRequests", appointmentRescheduleRequestPreload).Preload("CancelRequests", appointmentCancelRequestPreload).Preload("ForceMajeureReliefRequests", appointmentForceMajeureReliefRequestPreload).
-		Where("card_id = ? AND merchant_id = ? AND user_id = ? AND status IN ('pending', 'confirmed', 'arrived', 'failed')", card.ID, card.MerchantID, card.UserID).
+		Where("card_id = ? AND merchant_id = ? AND user_id = ? AND status IN ('pending', 'confirmed', 'arrived', 'failed', 'no_show')", card.ID, card.MerchantID, card.UserID).
 		Order("CASE WHEN status IN ('pending','confirmed','arrived') THEN 0 ELSE 1 END ASC").
 		Order("appointment_time DESC").
 		First(&appointment).Error

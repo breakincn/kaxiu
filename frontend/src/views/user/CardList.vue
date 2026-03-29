@@ -858,12 +858,12 @@ const closeVerifyCodeModal = () => {
 }
 
 const verifyCodeModalTitle = computed(() => {
-  return verifyCodeMode.value === 'appointment_checkin' ? '到店出示预约签到码' : '到店出示核销码'
+  return verifyCodeMode.value === 'appointment_checkin' ? '到店出示预约到店码' : '到店出示核销码'
 })
 
 const verifyCodeModalHint = computed(() => {
   if (verifyCodeMode.value === 'appointment_checkin') {
-    return '请向工作人员出示此预约签到码，由工作人员扫码完成签到建单'
+    return '若到店后剩余服务时长仍达到该项目时长的一半，请向工作人员出示此码，由客服扫码后建单进入服务'
   }
   return '请向工作人员出示此码，由工作人员扫码完成到店核销'
 })

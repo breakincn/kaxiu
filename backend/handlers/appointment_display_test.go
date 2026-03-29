@@ -59,3 +59,26 @@ func TestDecorateAppointmentDisplayKeepsActiveWaiting(t *testing.T) {
 		t.Fatalf("want current_estimated_wait_minutes=18, got %d", appt.CurrentEstimatedWaitMinutes)
 	}
 }
+
+func TestCanArriveForAppointmentUsesRemainingServiceThreshold(t *testing.T) {
+	loc := appointmentLocation()
+	merchant := &models.Merchant{
+		AppointmentReserveBufferMinutes: 10,
+		AppointmentGraceWindowMinutes:   15,
+	}
+	appointmentTime := time.Date(2026, 3, 29, 10, 30, 0, 0, loc)
+	reservedEndAt := appointmentTime.Add(45 * time.Minute)
+	appt := models.Appointment{
+		Status:                       "confirmed",
+		AppointmentTime:              &appointmentTime,
+		ReservedEndAt:                &reservedEndAt,
+		LateArrivalMinServiceMinutes: 22,
+	}
+
+	if !canArriveForAppointment(appt, merchant, time.Date(2026, 3, 29, 10, 53, 0, 0, loc)) {
+		t.Fatalf("want appointment still arriveable at threshold")
+	}
+	if canArriveForAppointment(appt, merchant, time.Date(2026, 3, 29, 10, 54, 0, 0, loc)) {
+		t.Fatalf("want appointment not arriveable after threshold")
+	}
+}

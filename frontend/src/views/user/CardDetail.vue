@@ -110,7 +110,7 @@
               {{ formatDateTime(appointment.appointment_time) }}
             </div>
             <div class="text-right">
-              <div v-if="appointment.status === 'confirmed'" class="text-sm text-gray-600 mb-1">距待开始</div>
+              <div v-if="appointment.status === 'confirmed'" class="text-sm text-gray-600 mb-1">{{ getAppointmentCountdownLabel() }}</div>
               <div v-if="!isAppointmentPassed()" :class="getCountdownClass()" class="text-sm font-medium">
                 {{ getCountdownText() }}
               </div>
@@ -175,7 +175,7 @@
               </div>
             </div>
           </div>
-          <div v-if="appointmentSettlement || appointmentDelayLedgerItems.length > 0 || (appointment.compensations || []).length > 0" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 space-y-3">
+          <div v-if="appointmentSettlement || appointment.status === 'no_show' || appointmentDelayLedgerItems.length > 0 || (appointment.compensations || []).length > 0" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 space-y-3">
             <div class="flex items-center justify-between">
               <div class="text-sm font-medium text-gray-800">结算与补偿</div>
               <div
@@ -821,6 +821,10 @@ const canAcceptForceMajeureRelief = computed(() => {
 })
 const canRejectForceMajeureRelief = computed(() => canAcceptForceMajeureRelief.value)
 const appointmentSettlementStatusText = computed(() => {
+  const apptStatus = String(appointment.value?.status || '').trim()
+  if (apptStatus === 'no_show') {
+    return isBalanceStyleCard() ? '预约已完成扣额' : '预约已完成扣次'
+  }
   return getAppointmentSettlementStatusText(
     appointmentSettlement.value?.settlement_status_snapshot || appointment.value?.settlement_status_snapshot
   )
@@ -2825,15 +2829,7 @@ const fetchUsages = async () => {
       const allUsages = res.data.data || []
       usagesSnapshotAtMs.value = Date.now()
 
-      // 过滤掉超过12小时的失败记录
-      const now = Date.now()
-      usages.value = allUsages.filter(u => {
-        if (u.status !== 'failed') return true
-        if (!u.used_at) return true
-        const usedAtMs = new Date(u.used_at).getTime()
-        const diffHours = (now - usedAtMs) / (1000 * 60 * 60)
-        return diffHours <= 12
-      })
+      usages.value = allUsages
       syncSelectedUsageAfterRefresh()
       clearInactiveUsageDeadlineState()
 
@@ -2959,6 +2955,11 @@ const getAppointmentSettlementStatusText = (status) => {
     offset: '已对冲'
   }
   return map[value] || value
+}
+
+const isBalanceStyleCard = () => {
+  const value = String(card.value?.card_type || '').trim()
+  return value.includes('储值') || value.includes('余额') || value.includes('额度') || value.toLowerCase().includes('balance')
 }
 
 const getAppointmentSettlementStatusClass = (status) => {
@@ -3337,12 +3338,12 @@ const closeVerifyCodeModal = () => {
 }
 
 const verifyCodeModalTitle = computed(() => {
-  return verifyCodeMode.value === 'appointment_checkin' ? '到店出示预约签到码' : '到店出示核销码'
+  return verifyCodeMode.value === 'appointment_checkin' ? '到店出示预约到店码' : '到店出示核销码'
 })
 
 const verifyCodeModalHint = computed(() => {
   if (verifyCodeMode.value === 'appointment_checkin') {
-    return '请向工作人员出示此预约签到码，由工作人员扫码完成签到建单'
+    return '若到店后剩余服务时长仍达到该项目时长的一半，请向工作人员出示此码，由客服扫码后建单进入服务'
   }
   return '请向工作人员出示此码，由工作人员扫码完成到店核销'
 })
@@ -3599,6 +3600,25 @@ const calculateCountdown = () => {
   return Math.floor((appointmentTimeMs - nowMs) / 1000)
 }
 
+const getAppointmentArrivalDeadlineMs = () => {
+  const appt = appointment.value
+  if (!appt) return 0
+  if (appt.reserved_end_at) {
+    const reservedEndMs = new Date(appt.reserved_end_at).getTime()
+    if (Number.isFinite(reservedEndMs) && reservedEndMs > 0) {
+      const minServiceMinutes = Math.max(0, Math.floor(Number(appt.late_arrival_min_service_minutes || 0)))
+      return reservedEndMs - minServiceMinutes * 60 * 1000
+    }
+  }
+  if (appt.appointment_time) {
+    const appointmentTimeMs = new Date(appt.appointment_time).getTime()
+    if (Number.isFinite(appointmentTimeMs) && appointmentTimeMs > 0) {
+      return appointmentTimeMs + 15 * 60 * 1000
+    }
+  }
+  return 0
+}
+
 // 更新倒计时
 const updateCountdown = () => {
   countdown.value = calculateCountdown()
@@ -3619,8 +3639,12 @@ const stopCountdownTimer = () => {
   }
 }
 
-// 判断预约是否已过（超过预约时间1分钟）
+// 判断预约是否已过
 const isAppointmentPassed = () => {
+  const deadlineMs = getAppointmentArrivalDeadlineMs()
+  if (deadlineMs > 0) {
+    return Date.now() > deadlineMs
+  }
   return countdown.value < -60
 }
 
@@ -3644,17 +3668,11 @@ const getCountdownClass = () => {
   }
 }
 
-// 获取倒计时文字
-const getCountdownText = () => {
-  if (countdown.value <= 0 && countdown.value > -60) {
-    return '预约时间已到'
-  }
-  
-  const totalSeconds = Math.abs(countdown.value)
+const formatCountdownSeconds = (totalSeconds) => {
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
-  
+
   if (hours > 0) {
     return `${hours}小时${minutes}分${seconds}秒`
   } else if (minutes > 0) {
@@ -3662,6 +3680,32 @@ const getCountdownText = () => {
   } else {
     return `${seconds}秒`
   }
+}
+
+// 获取倒计时文字
+const getCountdownText = () => {
+  const nowMs = Date.now()
+  const appointmentTimeMs = appointment.value?.appointment_time ? new Date(appointment.value.appointment_time).getTime() : 0
+  const arrivalDeadlineMs = getAppointmentArrivalDeadlineMs()
+  if (appointmentTimeMs > 0 && nowMs > appointmentTimeMs && canArriveNow.value && arrivalDeadlineMs > nowMs) {
+    const remainSeconds = Math.floor((arrivalDeadlineMs - nowMs) / 1000)
+    if (remainSeconds <= 0) return '预约时间已到'
+    return formatCountdownSeconds(remainSeconds)
+  }
+  if (countdown.value <= 0 && countdown.value > -60) {
+    return '预约时间已到'
+  }
+  return formatCountdownSeconds(Math.abs(countdown.value))
+}
+
+const getAppointmentCountdownLabel = () => {
+  const appt = appointment.value
+  if (String(appt?.status || '').trim() !== 'confirmed') return '距待开始'
+  const appointmentTimeMs = appt?.appointment_time ? new Date(appt.appointment_time).getTime() : 0
+  if (appointmentTimeMs > 0 && Date.now() > appointmentTimeMs && canArriveNow.value) {
+    return '距最晚到店'
+  }
+  return '距待开始'
 }
 
 const getAppointmentProjectDisplay = (appt) => {
