@@ -4514,7 +4514,7 @@ const fetchAppointments = async () => {
     ])
     appointments.value = (appointmentsRes.data.data || [])
       .filter(a => a.status !== 'canceled')
-      .sort((a, b) => new Date(a?.appointment_time || 0).getTime() - new Date(b?.appointment_time || 0).getTime())
+      .sort((a, b) => new Date(b?.appointment_time || 0).getTime() - new Date(a?.appointment_time || 0).getTime())
     appointmentTechnicianDirectory.value = techniciansRes.data?.data || []
   } catch (err) {
     console.error('获取预约列表失败:', err)
