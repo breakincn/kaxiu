@@ -486,13 +486,6 @@
               </button>
               <button
                 v-if="appt.status === 'confirmed'"
-                @click="goScanAppointmentCheckIn(appt)"
-                class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
-              >
-                扫码签到
-              </button>
-              <button
-                v-if="appt.status === 'confirmed'"
                 @click="cancelAppointment(appt)"
                 class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
               >
@@ -1159,6 +1152,35 @@
           >
             {{ getMerchantScanStartLabel() }}
           </button>
+        </div>
+      </div>
+
+      <div v-if="isTechnicianAuth() && serviceTabUpcomingAppointments.length > 0" class="bg-white rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="font-medium text-gray-800">1小时内我的预约</div>
+            <div class="text-gray-500 text-sm mt-1">可在这里核对即将到店的预约，并在本页扫码上钟时兼容预约签到。</div>
+          </div>
+        </div>
+        <div class="mt-3 space-y-3">
+          <div
+            v-for="appt in serviceTabUpcomingAppointments"
+            :key="`service-upcoming-${appt.id}`"
+            class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="font-medium text-gray-800">{{ appt.user?.nickname || '用户' }}</div>
+                <div class="mt-1 text-sm text-gray-500">预约卡片: {{ getAppointmentCardTypeDisplay(appt) || '-' }}</div>
+                <div class="mt-1 text-sm text-gray-500">预约卡号: {{ getAppointmentCardNoDisplay(appt) || '-' }}</div>
+                <div class="mt-1 text-sm text-gray-500">预约项目: {{ appt.project?.name || '-' }}（{{ getAppointmentServiceMinutes(appt) }}分钟）</div>
+                <div class="mt-1 text-sm text-gray-500">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
+              </div>
+              <span :class="getStatusBadgeClass(appt)">
+                {{ getStatusText(appt) }}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2886,7 +2908,7 @@ const technicianMonthlyDisruptionItems = computed(() => {
 })
 const unassignedAppointments = computed(() => {
   if (!isTechnicianAuth()) return []
-  return (appointments.value || []).filter(a => !a?.technician_id)
+  return (appointments.value || []).filter(a => isTechnicianVisibleUnassignedAppointment(a))
 })
 const assignedAppointments = computed(() => {
   if (!isTechnicianAuth()) return appointments.value || []
@@ -2991,6 +3013,24 @@ const appointmentSummaryCount = computed(() => {
   // 统计卡文案是“待确认预约”，这里只统计真正仍待商户确认的 pending，
   // 已 confirmed / arrived 的预约应继续留在列表里，但不应再占用顶部待确认数字。
   return (appointments.value || []).filter(a => !isExceptionAppointment(a) && a?.status === 'pending').length
+})
+
+const serviceTabUpcomingAppointments = computed(() => {
+  if (!isTechnicianAuth()) return []
+  const now = currentTime.value
+  const windowMs = 60 * 60 * 1000
+  return assignedAppointments.value
+    .filter(appt => {
+      if (isExceptionAppointment(appt) || isAppointmentSettled(appt)) return false
+      const appointmentTimeMs = getAppointmentTimeMs(appt)
+      if (appointmentTimeMs === null) return false
+      return Math.abs(appointmentTimeMs - now) <= windowMs
+    })
+    .sort((left, right) => {
+      const leftMs = getAppointmentTimeMs(left) ?? 0
+      const rightMs = getAppointmentTimeMs(right) ?? 0
+      return leftMs - rightMs
+    })
 })
 const todayUsages = ref([])
 const todayStartUsages = ref([])
@@ -4692,17 +4732,6 @@ const cancelAppointment = async (appt) => {
   }
 }
 
-const goScanAppointmentCheckIn = (appt) => {
-  if (!appt?.id) return
-  router.push({
-    path: '/merchant/scan-verify',
-    query: {
-      return_path: '/merchant',
-      tab: 'appointment'
-    }
-  })
-}
-
 const verifyCard = async () => {
   if (!verifyCodeInput.value || verifying.value) return
   
@@ -5007,6 +5036,19 @@ const isWriteOffExpired = (appt) => {
   const serviceMinutes = getAppointmentServiceMinutes(appt)
   const deadlineMs = appointmentTime + (serviceMinutes + 30) * 60 * 1000
   return currentTime.value > deadlineMs
+}
+
+const isTechnicianVisibleUnassignedAppointment = (appt) => {
+  if (!appt || appt.technician_id) return false
+  if (isAppointmentSettled(appt)) return false
+  const status = getAppointmentNormalizedStatus(appt)
+  if (status === 'pending') {
+    return !isPendingExpired(appt)
+  }
+  if (status === 'confirmed') {
+    return !isWriteOffExpired(appt)
+  }
+  return status === 'arrived'
 }
 
 // 判断是否已过服务时间（不显示倒计时）

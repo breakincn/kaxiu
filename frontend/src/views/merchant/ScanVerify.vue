@@ -238,10 +238,12 @@ const onDecoded = async (decodedText) => {
   const code = (decodedText || '').trim()
   if (!code) return
 
-  // 开始服务专用模式：仅允许 SS:<session_id>
-  if (isStartOnlyMode() && !code.startsWith('SS:')) {
+  // 服务页扫码允许两类码：
+  // 1. SS:<session_id> 上钟码
+  // 2. APPT-... 预约签到码
+  if (isStartOnlyMode() && !code.startsWith('SS:') && !code.startsWith('APPT-')) {
     resultSuccess.value = false
-    resultText.value = getStartCodePromptLabel(routeTermMerchant.value)
+    resultText.value = `${getStartCodePromptLabel(routeTermMerchant.value)}；预约签到请扫描 APPT 开头的预约签到码`
     return
   }
 
