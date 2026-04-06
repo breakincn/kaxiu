@@ -360,11 +360,11 @@
         </div>
         <div v-if="schedulePublishingError" class="mt-3 text-sm text-red-500">{{ schedulePublishingError }}</div>
         <div v-else-if="schedulePublishingLoading" class="mt-3 text-sm text-gray-400">读取排班中...</div>
-        <div v-else-if="schedulePublishings.length === 0" class="mt-3 rounded-lg border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-400 text-center">
+        <div v-else-if="visibleSchedulePublishings.length === 0" class="mt-3 rounded-lg border border-dashed border-gray-200 px-4 py-6 text-sm text-gray-400 text-center">
           当前暂无可展示的预约排班
         </div>
         <div v-else class="mt-3 space-y-2">
-          <div v-for="row in schedulePublishings" :key="getSchedulePublishingRowKey(row)" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+          <div v-for="row in visibleSchedulePublishings" :key="getSchedulePublishingRowKey(row)" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
             <div class="flex items-start justify-between gap-3">
               <div>
                 <div class="font-medium text-gray-800">{{ formatDateTime(row.start_at) }} - {{ formatDateTime(row.end_at) }}</div>
@@ -2044,7 +2044,16 @@ const canQueueCalling = computed(() => hasMerchantPermission('merchant.queue.cal
 const canTableView = computed(() => hasMerchantPermission('merchant.table.view'))
 const showMerchantSchedulePublishingPanel = computed(() => false)
 const showTechnicianSchedulePublishingPanel = computed(() => {
-  return isTechnicianAuth() && currentTab.value === 'appointment' && showAppointmentTab.value
+  if (!isTechnicianAuth() || currentTab.value !== 'appointment' || !showAppointmentTab.value) {
+    return false
+  }
+  if (schedulePublishingLoading.value || schedulePublishingError.value) {
+    return true
+  }
+  if (schedulePublishings.value.length === 0) {
+    return true
+  }
+  return visibleSchedulePublishings.value.length > 0
 })
 
 // 统计卡片显示个数
@@ -2828,9 +2837,7 @@ const isTodaySchedulePublishingTarget = computed(() => {
     target.getMonth() === now.getMonth() &&
     target.getDate() === now.getDate()
 })
-const technicianSchedulePublishingWindowState = computed(() => {
-  const target = currentSchedulePublishingDate.value
-  const now = schedulePublishingNow.value
+const getSchedulePublishingWindowStateForDate = (target, now = schedulePublishingNow.value) => {
   if (!target || !isTechnicianAuth()) {
     return {
       canPublish: true,
@@ -2877,8 +2884,11 @@ const technicianSchedulePublishingWindowState = computed(() => {
     canPublish: false,
     canWithdraw: false,
     publishBlockedReason: '仅支持发布今日或次日预约排班',
-    withdrawBlockedReason: '仅支持撤销今日或次日预约排班'
+      withdrawBlockedReason: '仅支持撤销今日或次日预约排班'
   }
+}
+const technicianSchedulePublishingWindowState = computed(() => {
+  return getSchedulePublishingWindowStateForDate(currentSchedulePublishingDate.value, schedulePublishingNow.value)
 })
 const technicianSchedulePublishingSubtitle = computed(() => {
   return isTodaySchedulePublishingTarget.value
@@ -5787,7 +5797,7 @@ const formatScheduleTechnicianLabel = (row) => {
 }
 
 const hasCanceledScheduleRows = computed(() => {
-  return (schedulePublishings.value || []).some(row => row?.status === 'canceled')
+  return visibleSchedulePublishings.value.some(row => row?.status === 'canceled')
 })
 
 const getEffectiveSchedulePublishingStatus = (row) => {
@@ -5796,8 +5806,35 @@ const getEffectiveSchedulePublishingStatus = (row) => {
   return status
 }
 
+const getSchedulePublishingTargetDateFromRow = (row) => {
+  if (row?.publish_date) {
+    const parsed = parseScheduleDateValue(row.publish_date)
+    if (parsed) return parsed
+  }
+  if (row?.start_at) {
+    const parsed = new Date(row.start_at)
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 0, 0, 0, 0)
+    }
+  }
+  return null
+}
+
+const isExpiredSchedulePublishingRow = (row) => {
+  const status = getEffectiveSchedulePublishingStatus(row)
+  if (!['unpublished', 'canceled'].includes(status)) return false
+  const targetDate = getSchedulePublishingTargetDateFromRow(row)
+  if (!targetDate) return false
+  const windowState = getSchedulePublishingWindowStateForDate(targetDate, schedulePublishingNow.value)
+  return !windowState.canPublish
+}
+
+const visibleSchedulePublishings = computed(() => {
+  return (schedulePublishings.value || []).filter(row => !isExpiredSchedulePublishingRow(row))
+})
+
 const getPublishableScheduleRows = () => {
-  return (schedulePublishings.value || []).filter(row => ['unpublished', 'canceled'].includes(getEffectiveSchedulePublishingStatus(row)))
+  return visibleSchedulePublishings.value.filter(row => ['unpublished', 'canceled'].includes(getEffectiveSchedulePublishingStatus(row)))
 }
 
 const hasPublishableScheduleRows = computed(() => {
@@ -5809,12 +5846,12 @@ const shouldShowScheduleAffectedAppointments = (row) => {
 }
 
 const hasPublishedScheduleRows = computed(() => {
-  return (schedulePublishings.value || []).some(row => getEffectiveSchedulePublishingStatus(row) === 'published')
+  return visibleSchedulePublishings.value.some(row => getEffectiveSchedulePublishingStatus(row) === 'published')
 })
 
 const latestPublishedScheduleAt = computed(() => {
   let latest = null
-  for (const row of (schedulePublishings.value || [])) {
+  for (const row of visibleSchedulePublishings.value) {
     if (getEffectiveSchedulePublishingStatus(row) !== 'published') continue
     const raw = String(row?.published_at || '').trim()
     if (!raw) continue
