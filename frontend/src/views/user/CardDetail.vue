@@ -304,11 +304,14 @@
                 {{ usage.status === 'success' ? '未归还手牌' : '已分配手牌' }}：<span class="text-lg font-bold">{{ usage.hand_card_no }}</span>
               </div>
               <div class="text-gray-800">核销次数：{{ card.total_times }} / <span :class="getUsageCurrentTimesClass(usage, index)">{{ getUsageSequence(index) }}</span></div>
+              <div v-if="getUsageAppointmentNumber(usage)" class="text-gray-400 text-sm mt-0.5">
+                预约号：#{{ getUsageAppointmentNumber(usage) }}
+              </div>
               <div class="text-gray-400 text-sm mt-0.5">
                 单号：{{ getUsageTrackingNumber(usage) }}
               </div>
-              <div v-if="getUsageAppointmentNumber(usage)" class="text-gray-400 text-sm mt-0.5">
-                预约号：#{{ getUsageAppointmentNumber(usage) }}
+              <div v-if="getUsageSyntheticStatusText(usage)" class="text-gray-400 text-sm mt-0.5">
+                状态：{{ getUsageSyntheticStatusText(usage) }}
               </div>
               <div v-if="getUsageQueueDisplayText(usage)" class="text-sm mt-0.5 font-medium">
                 叫号：<span :class="getUsageQueueNoClass(usage)">{{ getUsageQueueDisplayText(usage) }}</span>
@@ -330,6 +333,9 @@
               </div>
               <div v-if="usage?.status === 'success' && usage?.finished_at" class="text-gray-400 text-sm mt-0.5">
                 服务结束：{{ formatDateTime(usage.finished_at) }}
+              </div>
+              <div v-else-if="getUsageSyntheticServiceEndText(usage)" class="text-gray-400 text-sm mt-0.5">
+                服务结束：{{ getUsageSyntheticServiceEndText(usage) }}
               </div>
               <div v-if="getUsageRoomInfo(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageRoomInfo(usage) }}
@@ -1568,10 +1574,39 @@ const getUsageServiceRemainText = (usage) => {
 
 const getUsageTrackingNumber = (usage) => {
   if (isSyntheticAppointmentUsage(usage)) {
-    return `预约#${getUsageAppointmentNumber(usage)}`
+    return replaceTerms('未起单', card.value?.merchant)
   }
   if (!usage?.id) return ''
   return String(usage.id).padStart(9, '0')
+}
+
+const getSyntheticUsageAppointment = (usage) => {
+  if (!isSyntheticAppointmentUsage(usage)) return null
+  const usageAppointmentId = Number(usage?.appointment_id || 0)
+  const currentAppointmentId = Number(appointment.value?.id || 0)
+  if (usageAppointmentId > 0 && usageAppointmentId === currentAppointmentId) {
+    return appointment.value
+  }
+  return null
+}
+
+const getUsageSyntheticStatusText = (usage) => {
+  const appt = getSyntheticUsageAppointment(usage)
+  if (!appt) return ''
+  const status = String(appt.status || '').trim()
+  const reason = String(appt.disruption_reason || appt.failed_reason || '').trim()
+  if (status === 'no_show' && reason === 'user_no_show') {
+    return '失约-用户未到店'
+  }
+  return ''
+}
+
+const getUsageSyntheticServiceEndText = (usage) => {
+  const appt = getSyntheticUsageAppointment(usage)
+  if (!appt) return ''
+  const deadlineMs = getAppointmentArrivalDeadlineMs(appt)
+  if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) return ''
+  return formatDateTime(new Date(deadlineMs))
 }
 
 const getUsageSequence = (index) => {
