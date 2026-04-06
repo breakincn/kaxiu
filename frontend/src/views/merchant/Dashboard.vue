@@ -223,12 +223,13 @@
     </div>
 
     <!-- Tab 切换 -->
-    <div class="px-4 flex gap-2 border-b bg-white">
+    <div class="px-4 border-b bg-white overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div class="flex gap-2 min-w-max whitespace-nowrap">
       <button
         v-if="showVerifyTab"
         @click="selectTab('verify')"
         :class="[
-          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'verify'
             ? 'border-primary text-primary'
             : 'border-transparent text-gray-500'
@@ -240,7 +241,7 @@
         v-if="showAppointmentTab"
         @click="selectTab('appointment')"
         :class="[
-          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'appointment'
             ? 'border-primary text-primary'
             : 'border-transparent text-gray-500'
@@ -252,7 +253,7 @@
         v-if="showExceptionTab"
         @click="selectTab('exception')"
         :class="[
-          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'exception'
             ? 'border-primary text-primary'
             : 'border-transparent text-gray-500'
@@ -264,7 +265,7 @@
         v-if="showFinishTab"
         @click="selectTab('finish')"
         :class="[
-          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'finish'
             ? 'border-primary text-primary'
             : 'border-transparent text-gray-500'
@@ -276,7 +277,7 @@
         v-if="showNoticeTab"
         @click="selectTab('notice')"
         :class="[
-          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'notice'
             ? 'border-primary text-primary'
             : 'border-transparent text-gray-500'
@@ -288,7 +289,7 @@
         v-if="showCardsTab"
         @click="selectTab('cards')"
         :class="[
-          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'cards'
             ? 'border-primary text-primary'
             : 'border-transparent text-gray-500'
@@ -301,7 +302,7 @@
         v-if="showTableTab"
         @click="selectTab('table')"
         :class="[
-          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'table'
             ? 'border-primary text-primary'
             : 'border-transparent text-gray-500'
@@ -314,7 +315,7 @@
         v-if="showServiceTab"
         @click="selectTab('service')"
         :class="[
-          'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
           currentTab === 'service'
             ? 'border-primary text-primary'
             : 'border-transparent text-gray-500'
@@ -322,6 +323,7 @@
       >
         服务
       </button>
+      </div>
     </div>
 
     <!-- 看板 -->
