@@ -69,7 +69,7 @@
 
             <div>
               <label class="text-sm font-medium text-gray-700 mb-2 block">预约时段展示粒度</label>
-              <p class="text-xs text-gray-500 mb-2">用户预约时展示的时间网格，建议使用 15 分钟</p>
+              <p class="text-xs text-gray-500 mb-2">用户预约时展示的时间网格；单一时长商户默认建议使用 5 分钟</p>
               <div class="relative">
                 <input
                   v-model.number="form.appointment_slot_granularity_minutes"
@@ -166,7 +166,7 @@ const form = ref({
   appointment_reserve_buffer_minutes: 10,
   appointment_grace_window_minutes: 15,
   appointment_prediction_buffer_minutes: 5,
-  appointment_slot_granularity_minutes: 15,
+  appointment_slot_granularity_minutes: 5,
   appointment_reschedule_same_or_next_day_threshold_minutes: 180,
   appointment_reschedule_next_day_only_threshold_minutes: 90,
   appointment_reschedule_recommendation_enabled: false
@@ -212,7 +212,7 @@ const load = async () => {
       appointment_reserve_buffer_minutes: Number(m.appointment_reserve_buffer_minutes ?? 10),
       appointment_grace_window_minutes: Number(m.appointment_grace_window_minutes ?? 15),
       appointment_prediction_buffer_minutes: Number(m.appointment_prediction_buffer_minutes ?? 5),
-      appointment_slot_granularity_minutes: Number(m.appointment_slot_granularity_minutes ?? 15),
+      appointment_slot_granularity_minutes: Number(m.appointment_slot_granularity_minutes ?? 5),
       appointment_reschedule_same_or_next_day_threshold_minutes: Number(m.appointment_reschedule_same_or_next_day_threshold_minutes ?? 180),
       appointment_reschedule_next_day_only_threshold_minutes: Number(m.appointment_reschedule_next_day_only_threshold_minutes ?? 90),
       appointment_reschedule_recommendation_enabled: !!m.appointment_reschedule_recommendation_enabled

@@ -175,7 +175,7 @@ func merchantAppointmentSlotGranularityMinutes(m *models.Merchant) int {
 	if m != nil && m.AppointmentSlotGranularityMinutes > 0 {
 		return normalizeAppointmentSlotGranularityMinutes(m.AppointmentSlotGranularityMinutes)
 	}
-	return 15
+	return 5
 }
 
 func merchantAppointmentRescheduleSameOrNextDayThresholdMinutes(m *models.Merchant) int {

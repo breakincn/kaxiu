@@ -144,6 +144,13 @@ var defaultMigrations = []dbMigration{
 		},
 	},
 	{
+		Version: "2026040601",
+		Name:    "change_appointment_slot_granularity_default_to_5",
+		Statements: []string{
+			"ALTER TABLE merchants MODIFY COLUMN appointment_slot_granularity_minutes INT NOT NULL DEFAULT 5 COMMENT '预约时段展示粒度分钟数'",
+		},
+	},
+	{
 		Version: "2026032301",
 		Name:    "add_appointment_locking_publishings_and_protected_repair_slots",
 		Statements: []string{

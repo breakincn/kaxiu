@@ -22,7 +22,7 @@ func normalizeProjectServiceGapMinutes(v int) int {
 
 func normalizeAppointmentSlotGranularityMinutes(v int) int {
 	if v < 5 || v > 60 || v%5 != 0 {
-		return 15
+		return 5
 	}
 	return v
 }
