@@ -5187,25 +5187,25 @@ const getStatusBadgeClass = (appt) => {
   if (!appt) return ''
 
   if (appt.status === 'pending' && isPendingExpired(appt)) {
-    return 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500'
+    return 'shrink-0 whitespace-nowrap px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500'
   }
 
   if (appt.status === 'confirmed' && isWriteOffExpired(appt)) {
-    return 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500'
+    return 'shrink-0 whitespace-nowrap px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500'
   }
 
   if (isHistoricalArrivedAppointment(appt)) {
-    return 'px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-700'
+    return 'shrink-0 whitespace-nowrap px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-700'
   }
 
   const classes = {
-    pending: 'px-2 py-1 rounded text-xs font-medium bg-primary-light text-primary',
-    confirmed: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700',
-    arrived: 'px-2 py-1 rounded text-xs font-medium bg-amber-50 text-amber-700',
-    completed: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700',
-    failed: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500',
-    no_show: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500',
-    canceled: 'px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500'
+    pending: 'shrink-0 whitespace-nowrap px-2 py-1 rounded text-xs font-medium bg-primary-light text-primary',
+    confirmed: 'shrink-0 whitespace-nowrap px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700',
+    arrived: 'shrink-0 whitespace-nowrap px-2 py-1 rounded text-xs font-medium bg-amber-50 text-amber-700',
+    completed: 'shrink-0 whitespace-nowrap px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700',
+    failed: 'shrink-0 whitespace-nowrap px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500',
+    no_show: 'shrink-0 whitespace-nowrap px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500',
+    canceled: 'shrink-0 whitespace-nowrap px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500'
   }
   return classes[appt.status] || ''
 }
