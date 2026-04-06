@@ -137,7 +137,7 @@
         v-if="showExceptionSummaryCard"
         type="button"
         class="bg-white rounded-xl p-4 text-left border border-red-100"
-        @click="selectTab('exception')"
+        @click="selectTab(showTableTab ? 'table' : 'exception')"
       >
         <div class="text-gray-600 text-sm mb-1">待处理异常</div>
         <div class="text-3xl font-bold" :class="exceptionSummaryCount > 0 ? 'text-red-500' : 'text-gray-400'">{{ exceptionSummaryCount }}</div>
@@ -250,18 +250,6 @@
         预约
       </button>
       <button
-        v-if="showExceptionTab"
-        @click="selectTab('exception')"
-        :class="[
-          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
-          currentTab === 'exception'
-            ? 'border-primary text-primary'
-            : 'border-transparent text-gray-500'
-        ]"
-      >
-        异常中心
-      </button>
-      <button
         v-if="showFinishTab"
         @click="selectTab('finish')"
         :class="[
@@ -299,19 +287,6 @@
       </button>
 
       <button
-        v-if="showTableTab"
-        @click="selectTab('table')"
-        :class="[
-          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
-          currentTab === 'table'
-            ? 'border-primary text-primary'
-            : 'border-transparent text-gray-500'
-        ]"
-      >
-        看板
-      </button>
-
-      <button
         v-if="showServiceTab"
         @click="selectTab('service')"
         :class="[
@@ -323,17 +298,223 @@
       >
         服务
       </button>
+      <button
+        v-if="showTableTab"
+        @click="selectTab('table')"
+        :class="[
+          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          currentTab === 'table'
+            ? 'border-primary text-primary'
+            : 'border-transparent text-gray-500'
+        ]"
+      >
+        看板
+      </button>
       </div>
     </div>
 
     <!-- 看板 -->
     <div v-if="currentTab === 'table' && showTableTab" class="py-2">
-      <Table :embedded="true" />
+      <Table :embedded="true">
+        <template #exception-content>
+          <div class="px-4 pb-4 space-y-4">
+        <div class="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          集中处理超时待处理、异常结案、履约争议、脏数据收口、补偿处理，以及改签/改派异常。
+        </div>
+        <div v-if="appointmentPanelGroups.length > 0" class="space-y-4">
+          <div v-for="group in appointmentPanelGroups" :key="`table-${group.key}`" class="space-y-4">
+            <div v-if="group.title" class="px-1 text-sm font-medium text-gray-500">{{ group.title }}</div>
+            <div v-for="appt in group.items" :key="`table-${appt.id}`" class="bg-white rounded-xl p-4 shadow-sm">
+              <div class="flex justify-between items-start">
+                <div>
+                  <div class="font-medium text-gray-800">{{ appt.user?.nickname || appt.user_id }} <span class="ml-2 text-gray-500 text-sm font-normal">{{ formatAppointmentTechnicianDisplay(appt) }}</span></div>
+                  <div v-if="getAppointmentIdDisplay(appt)" class="text-gray-500 text-sm mt-1">预约号: {{ getAppointmentIdDisplay(appt) }}</div>
+                  <div v-if="getAppointmentCardTypeDisplay(appt)" class="text-gray-500 text-sm mt-1">预约卡片: {{ getAppointmentCardTypeDisplay(appt) }}</div>
+                  <div v-if="getAppointmentCardNoDisplay(appt)" class="text-gray-500 text-sm mt-1">预约卡号: {{ getAppointmentCardNoDisplay(appt) }}</div>
+                  <div v-if="getAppointmentProjectDisplay(appt)" class="text-gray-500 text-sm mt-1">预约项目: {{ getAppointmentProjectDisplay(appt) }}</div>
+                  <div class="text-gray-500 text-sm mt-1">预约时间: {{ formatDateTime(appt.appointment_time) }}</div>
+                  <div v-if="appt.status === 'pending' && getPendingCountdown(appt) !== null" :class="getPendingCountdownClass(appt)" class="mt-1">
+                    {{ getPendingCountdownDisplay(appt) }}
+                  </div>
+                  <div v-if="appt.status === 'confirmed' && getAppointmentCountdown(appt) !== null && !isServiceTimeExpired(appt)" :class="getServiceCountdownClass(appt)" class="mt-1">
+                    服务开始: {{ getServiceCountdownDisplay(appt) }}
+                  </div>
+                  <div
+                    v-if="getAppointmentRiskHint(appt)"
+                    class="mt-2 rounded-lg px-3 py-2 text-sm"
+                    :class="getAppointmentRiskHintClass(appt)"
+                  >
+                    {{ getAppointmentRiskHint(appt) }}
+                  </div>
+                  <div
+                    v-if="isCrossDayUnfinishedAppointment(appt)"
+                    class="mt-2 rounded-lg px-3 py-2 text-sm bg-red-50 text-red-700 border border-red-100 space-y-1"
+                  >
+                    <div>责任归属：{{ getLiabilityText(appt.liability_level) }}</div>
+                    <div>异常原因：{{ getReasonText(appt.disruption_reason) }}</div>
+                  </div>
+                  <div
+                    v-if="getLatestPendingRescheduleRequest(appt)"
+                    class="mt-2 rounded-lg px-3 py-2 text-sm border"
+                    :class="isMerchantConfirmationPending(appt) ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-blue-50 text-blue-700 border-blue-100'"
+                  >
+                    <div class="font-medium">
+                      {{ isMerchantConfirmationPending(appt) ? '待商户确认改签' : '已向用户发起改签提议' }}
+                    </div>
+                    <div class="mt-1">
+                      提议时间：{{ formatDateTime(getLatestPendingRescheduleRequest(appt)?.new_appointment_time) }}
+                    </div>
+                    <div v-if="getRescheduleRequestTechnicianText(getLatestPendingRescheduleRequest(appt))" class="mt-1">
+                      {{ getRescheduleRequestTechnicianText(getLatestPendingRescheduleRequest(appt)) }}
+                    </div>
+                  </div>
+                  <div v-if="appt.resolution_note" class="mt-2 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 border border-gray-100">
+                    处理备注: {{ appt.resolution_note }}
+                  </div>
+                  <div v-if="(appt.compensations || []).length > 0" class="mt-2 space-y-2">
+                    <div
+                      v-for="comp in appt.compensations"
+                      :key="comp.id"
+                      class="rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 border border-gray-100"
+                    >
+                      <div class="font-medium">补偿：{{ getCompensationTypeText(comp.type) }}</div>
+                      <div v-if="getCompensationValueText(comp)" class="mt-1">{{ getCompensationValueText(comp) }}</div>
+                      <div class="mt-1 text-gray-500">{{ comp.reason }}</div>
+                    </div>
+                  </div>
+                  <div v-if="getLatestForceMajeureReliefRequest(appt)" class="mt-2 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 border border-gray-100">
+                    <div class="font-medium">不可抗力申请：{{ getForceMajeureStatusText(getLatestForceMajeureReliefRequest(appt)?.status) }}</div>
+                    <div class="mt-1">发起方：{{ getForceMajeureActorText(getLatestForceMajeureReliefRequest(appt)?.proposed_by_type) }}</div>
+                    <div v-if="getLatestForceMajeureReliefRequest(appt)?.reason" class="mt-1">原因：{{ getLatestForceMajeureReliefRequest(appt)?.reason }}</div>
+                  </div>
+                </div>
+                <span :class="getStatusBadgeClass(appt)">
+                  {{ getStatusText(appt) }}
+                </span>
+              </div>
+
+              <div class="flex gap-2 mt-3">
+                <button
+                  @click="openAppointmentDetailModal(appt)"
+                  class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm"
+                >
+                  结算详情
+                </button>
+                <template v-if="canOperateAppointment(appt)">
+                  <button
+                    v-if="appt.status === 'pending' && !isPendingExpired(appt)"
+                    @click="confirmAppointment(appt.id)"
+                    class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+                  >
+                    确认预约
+                  </button>
+                  <button
+                    v-if="appt.status === 'pending' && !isPendingExpired(appt)"
+                    @click="cancelAppointment(appt)"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+                  >
+                    取消
+                  </button>
+                  <button
+                    v-if="appt.status === 'pending' && isPendingExpired(appt)"
+                    disabled
+                    class="flex-1 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm font-medium cursor-not-allowed"
+                  >
+                    未确认预约
+                  </button>
+                  <button
+                    v-if="appt.status === 'confirmed'"
+                    @click="cancelAppointment(appt)"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+                  >
+                    取消
+                  </button>
+                  <button
+                    v-if="appt.status === 'arrived' && appt.service_session_id && !isCrossDayUnfinishedAppointment(appt)"
+                    @click="reassignAppointmentService(appt)"
+                    class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+                  >
+                    改派其他客服
+                  </button>
+                  <button
+                    v-if="isMerchantConfirmationPending(appt)"
+                    @click="acceptAppointmentRescheduleRequest(appt)"
+                    class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+                  >
+                    确认改签
+                  </button>
+                  <button
+                    v-if="isMerchantConfirmationPending(appt)"
+                    @click="rejectAppointmentRescheduleRequest(appt)"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+                  >
+                    拒绝
+                  </button>
+                  <button
+                    v-if="canCancelAppointmentRescheduleRequest(appt)"
+                    @click="cancelAppointmentRescheduleRequest(appt)"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+                  >
+                    撤销改签
+                  </button>
+                  <button
+                    v-if="shouldShowAppointmentReschedule(appt)"
+                    @click="openAppointmentRescheduleModal(appt)"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+                  >
+                    发起改签
+                  </button>
+                  <button
+                    v-if="isCrossDayUnfinishedAppointment(appt)"
+                    @click="closeAppointmentException(appt)"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+                  >
+                    异常结案
+                  </button>
+                  <button
+                    v-if="shouldShowAppointmentCompensation(appt)"
+                    @click="openAppointmentCompensationModal(appt)"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+                  >
+                    补偿
+                  </button>
+                  <button
+                    v-if="canCreateForceMajeureRelief(appt)"
+                    @click="createMerchantForceMajeureRelief(appt)"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+                  >
+                    不可抗力
+                  </button>
+                  <button
+                    v-if="canAcceptForceMajeureRelief(appt)"
+                    @click="acceptAppointmentForceMajeureRelief(appt)"
+                    class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+                  >
+                    确认可抗力
+                  </button>
+                  <button
+                    v-if="canRejectForceMajeureRelief(appt)"
+                    @click="rejectAppointmentForceMajeureRelief(appt)"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+                  >
+                    拒绝可抗力
+                  </button>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="bg-white rounded-xl px-4 py-10 text-center text-gray-400">
+          {{ appointmentPanelEmptyText }}
+        </div>
+          </div>
+        </template>
+      </Table>
     </div>
 
     <!-- 预约 / 异常中心 -->
     <div
-      v-if="((currentTab === 'appointment' && showAppointmentTab) || (currentTab === 'exception' && showExceptionTab))"
+      v-if="((currentTab === 'appointment' && showAppointmentTab) || (currentTab === 'exception' && showExceptionStandaloneTab))"
       class="px-4 py-4 space-y-4"
     >
       <div
@@ -380,7 +561,7 @@
         </div>
       </div>
       <div
-        v-if="currentTab === 'exception'"
+        v-if="showExceptionStandaloneContent"
         class="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700"
       >
         集中处理超时待处理、异常结案、履约争议、脏数据收口、补偿处理，以及改签/改派异常。
@@ -2122,6 +2303,15 @@ const showAppointmentSummaryCard = computed(() => {
 const showExceptionTab = computed(() => {
   return showAppointmentTab.value
 })
+const showExceptionStandaloneTab = computed(() => {
+  return showExceptionTab.value && !showTableTab.value
+})
+const showExceptionContentInTable = computed(() => {
+  return currentTab.value === 'table' && showTableTab.value && showExceptionTab.value
+})
+const showExceptionStandaloneContent = computed(() => {
+  return currentTab.value === 'exception' && showExceptionStandaloneTab.value
+})
 
 const showExceptionSummaryCard = computed(() => {
   return showExceptionTab.value && exceptionSummaryCount.value > 0
@@ -2163,6 +2353,14 @@ const selectTab = (tab) => {
   } catch (e) {
     // ignore
   }
+}
+
+const normalizeDashboardTab = (tab) => {
+  const normalizedTab = tab === 'start' ? 'service' : tab
+  if (normalizedTab === 'exception' && showTableTab.value) {
+    return 'table'
+  }
+  return normalizedTab
 }
 
 const queuePendingList = ref([])
@@ -2536,7 +2734,7 @@ const getDefaultTab = () => {
   if (showAppointmentTab.value) {
     return 'appointment'
   }
-  if (showExceptionTab.value) {
+  if (showExceptionStandaloneTab.value) {
     return 'exception'
   }
   if (showVerifyTab.value) {
@@ -2558,7 +2756,7 @@ const getDefaultTab = () => {
 
 const getFirstVisibleTab = () => {
   if (showAppointmentTab.value) return 'appointment'
-  if (showExceptionTab.value) return 'exception'
+  if (showExceptionStandaloneTab.value) return 'exception'
   if (showVerifyTab.value) return 'verify'
   if (showFinishTab.value) return 'finish'
   if (showNoticeTab.value) return 'notice'
@@ -3016,11 +3214,11 @@ const exceptionGroups = computed(() => {
 })
 
 const appointmentPanelGroups = computed(() => {
-  return currentTab.value === 'exception' ? exceptionGroups.value : appointmentFlowGroups.value
+  return (showExceptionStandaloneContent.value || showExceptionContentInTable.value) ? exceptionGroups.value : appointmentFlowGroups.value
 })
 
 const appointmentPanelEmptyText = computed(() => {
-  return currentTab.value === 'exception' ? '暂无异常单' : '暂无预约'
+  return (showExceptionStandaloneContent.value || showExceptionContentInTable.value) ? '暂无异常单' : '暂无预约'
 })
 
 const exceptionSummaryCount = computed(() => {
@@ -6399,7 +6597,7 @@ watch(
 )
 
 watch(currentTab, (tab) => {
-  const normalizedTab = tab === 'start' ? 'service' : tab
+  const normalizedTab = normalizeDashboardTab(tab)
   if (normalizedTab !== tab) {
     selectTab(normalizedTab)
     return
@@ -6411,14 +6609,14 @@ watch(currentTab, (tab) => {
   if (tab !== 'service') {
     stopServiceSessionTimer()
   }
-  // 倒计时：appointment/exception/verify/service 需要每秒刷新 currentTime
-  if (tab === 'appointment' || tab === 'exception' || tab === 'verify' || tab === 'service') {
+  // 倒计时：appointment/exception/verify/service 以及带异常区块的看板需要每秒刷新 currentTime
+  if (tab === 'appointment' || tab === 'exception' || tab === 'verify' || tab === 'service' || (tab === 'table' && showExceptionTab.value)) {
     startCountdownTimer()
   } else {
     stopCountdownTimer()
   }
 
-  if (tab === 'appointment' || tab === 'exception') {
+  if (tab === 'appointment' || tab === 'exception' || (tab === 'table' && showExceptionTab.value)) {
     clearCountdownBoundaryState()
     fetchAppointments()
     return
@@ -6518,7 +6716,7 @@ onMounted(async () => {
   try {
     const savedTab = localStorage.getItem(DASHBOARD_ACTIVE_TAB_STORAGE_KEY)
     if (savedTab && ['verify', 'appointment', 'exception', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(savedTab)) {
-      const normalizedSavedTab = savedTab === 'start' ? 'service' : savedTab
+      const normalizedSavedTab = normalizeDashboardTab(savedTab)
       selectTab(normalizedSavedTab)
       console.log('从 localStorage 恢复 tab:', normalizedSavedTab)
     }
@@ -6538,7 +6736,7 @@ onMounted(async () => {
   // 检查查询参数，自动切换到指定Tab（优先级高于 localStorage）
   const tabParam = route.query.tab
   if (tabParam && ['verify', 'appointment', 'exception', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(tabParam)) {
-    selectTab(tabParam === 'start' ? 'service' : tabParam)
+    selectTab(normalizeDashboardTab(tabParam))
   }
 
   // 检查错误参数，显示错误弹窗
@@ -6587,7 +6785,7 @@ onMounted(async () => {
         // 检查恢复的 tab 是否有权限显示
       const canShowRestoredTab = 
         (restoredTab === 'appointment' && showAppointmentTab.value) ||
-        (restoredTab === 'exception' && showExceptionTab.value) ||
+        (restoredTab === 'exception' && showExceptionStandaloneTab.value) ||
         (restoredTab === 'verify' && showVerifyTab.value) ||
         (restoredTab === 'finish' && showFinishTab.value) ||
         (restoredTab === 'notice' && showNoticeTab.value) ||
@@ -6624,7 +6822,7 @@ onMounted(async () => {
       const tabVisibleMap = {
       verify: showVerifyTab.value,
       appointment: showAppointmentTab.value,
-      exception: showExceptionTab.value,
+      exception: showExceptionStandaloneTab.value,
       finish: showFinishTab.value,
       notice: showNoticeTab.value,
       cards: showCardsTab.value,
@@ -6650,7 +6848,7 @@ onMounted(async () => {
   await fetchQueueCallingStatus()
   
   // 根据最终的 currentTab 加载对应的数据
-  if (currentTab.value === 'appointment' || currentTab.value === 'exception') {
+  if (currentTab.value === 'appointment' || currentTab.value === 'exception' || (currentTab.value === 'table' && showExceptionTab.value)) {
     fetchAppointments()
     startCountdownTimer()
   } else if (currentTab.value === 'verify') {

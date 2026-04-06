@@ -37,6 +37,15 @@
           >
             服务
           </button>
+          <button
+            v-if="hasExceptionContent"
+            type="button"
+            class="flex-1 px-3 py-2 rounded-lg text-sm font-medium border"
+            :class="activeTab === 'exception' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
+            @click="selectTab('exception')"
+          >
+            异常中心
+          </button>
         </div>
 
         <div v-if="activeTab === 'staff'" class="mt-3 flex gap-2">
@@ -210,6 +219,10 @@
             </div>
           </div>
 
+          <div v-else-if="activeTab === 'exception' && hasExceptionContent">
+            <slot name="exception-content" />
+          </div>
+
         </div>
       </div>
     </div>
@@ -242,7 +255,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useSlots } from 'vue'
 import { useRouter } from 'vue-router'
 import { merchantApi, serviceSessionApi } from '../../api'
 import {
@@ -258,6 +271,8 @@ import { normalizeSessionStatus } from '../../utils/sessionStatus'
 import ServiceSessionItem from '../../components/ServiceSessionItem.vue'
 
 const router = useRouter()
+const slots = useSlots()
+const hasExceptionContent = computed(() => !!slots['exception-content'])
 
 defineProps({
   embedded: {
@@ -534,6 +549,9 @@ const loadRoleAttendanceConfigs = async () => {
 }
 
 const load = async () => {
+  if (activeTab.value === 'exception') {
+    return
+  }
   loading.value = true
   try {
     if (activeTab.value === 'rooms') {
@@ -603,6 +621,10 @@ const doExtendSession = async () => {
 }
 
 onMounted(async () => {
+  if (activeTab.value === 'exception' && !hasExceptionContent.value) {
+    activeTab.value = 'rooms'
+    localStorage.setItem('tableActiveTab', 'rooms')
+  }
   // 如果没有保存的标签，默认选择房间
   if (!activeTab.value) {
     activeTab.value = 'rooms'
