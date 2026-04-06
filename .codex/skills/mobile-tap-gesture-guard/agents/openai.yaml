@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mobile Tap Gesture Guard"
+  short_description: "Fix mobile scroll-to-click gesture conflicts"
+  default_prompt: "Use $mobile-tap-gesture-guard to fix accidental navigation caused by vertical scroll, tap, and long-press conflicts on a mobile list page."
