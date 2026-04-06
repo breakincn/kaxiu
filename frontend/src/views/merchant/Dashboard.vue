@@ -1637,6 +1637,7 @@
                     查看统计
                   </button>
                   <button
+                    v-if="appointmentDetailHasRepairOverview"
                     @click="viewAppointmentRepairOverview(appointmentDetailTarget)"
                     class="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm"
                   >
@@ -2773,6 +2774,7 @@ const appointmentDetailError = ref('')
 const appointmentDetailSettlement = ref(null)
 const appointmentDetailDelayLedgers = ref([])
 const appointmentDetailSummary = ref(null)
+const appointmentDetailHasRepairOverview = ref(false)
 const appointmentDetailCompensations = computed(() => appointmentDetailSummary.value?.compensations || [])
 const showTechnicianMonthlyDisruptionModal = ref(false)
 const technicianMonthlyDisruptionTechnicianId = ref(null)
@@ -5693,6 +5695,7 @@ const closeAppointmentDetailModal = () => {
   appointmentDetailSettlement.value = null
   appointmentDetailDelayLedgers.value = []
   appointmentDetailSummary.value = null
+  appointmentDetailHasRepairOverview.value = false
 }
 
 const closeTechnicianMonthlyDisruptionModal = () => {
@@ -5716,6 +5719,21 @@ const closeAppointmentRepairOverviewModal = () => {
   appointmentRepairProtectedSlots.value = []
 }
 
+const loadAppointmentDetailRepairOverviewVisibility = async (appointmentId) => {
+  if (!appointmentId) {
+    appointmentDetailHasRepairOverview.value = false
+    return
+  }
+  try {
+    const res = await appointmentApi.getMerchantAppointmentRepairOverview(appointmentId)
+    if (Number(appointmentDetailTarget.value?.id || 0) !== Number(appointmentId)) return
+    appointmentDetailHasRepairOverview.value = hasAppointmentRepairOverviewContent(res?.data?.data || {})
+  } catch (err) {
+    if (Number(appointmentDetailTarget.value?.id || 0) !== Number(appointmentId)) return
+    appointmentDetailHasRepairOverview.value = false
+  }
+}
+
 const openAppointmentDetailModal = async (appt) => {
   appointmentDetailTarget.value = appt
   appointmentDetailLoading.value = true
@@ -5723,7 +5741,9 @@ const openAppointmentDetailModal = async (appt) => {
   appointmentDetailSettlement.value = null
   appointmentDetailDelayLedgers.value = []
   appointmentDetailSummary.value = null
+  appointmentDetailHasRepairOverview.value = false
   showAppointmentDetailModal.value = true
+  loadAppointmentDetailRepairOverviewVisibility(appt.id)
   try {
     const [settlementRes, delayRes, summaryRes] = await Promise.all([
       appointmentApi.getMerchantSettlement(appt.id),
