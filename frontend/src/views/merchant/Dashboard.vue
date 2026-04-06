@@ -317,7 +317,7 @@
     <div v-if="currentTab === 'table' && showTableTab" class="py-2">
       <Table :embedded="true">
         <template #exception-content>
-          <div class="px-4 pb-4 space-y-4">
+          <div class="pb-4 space-y-4">
         <div class="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
           集中处理超时待处理、异常结案、履约争议、脏数据收口、补偿处理，以及改签/改派异常。
         </div>
