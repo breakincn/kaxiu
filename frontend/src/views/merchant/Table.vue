@@ -12,10 +12,10 @@
 
     <div class="px-4 pt-2 pb-4">
       <div class="bg-white rounded-xl shadow-sm px-4 pt-3 pb-4">
-        <div class="flex gap-2">
+        <div class="flex gap-2 overflow-x-auto overscroll-x-contain pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             type="button"
-            class="flex-1 px-3 py-2 rounded-lg text-sm font-medium border"
+            class="shrink-0 min-w-[72px] px-3 py-2 rounded-lg text-sm font-medium border whitespace-nowrap"
             :class="activeTab === 'rooms' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
             @click="selectTab('rooms')"
           >
@@ -23,7 +23,7 @@
           </button>
           <button
             type="button"
-            class="flex-1 px-3 py-2 rounded-lg text-sm font-medium border"
+            class="shrink-0 min-w-[72px] px-3 py-2 rounded-lg text-sm font-medium border whitespace-nowrap"
             :class="activeTab === 'staff' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
             @click="selectTab('staff')"
           >
@@ -31,7 +31,7 @@
           </button>
           <button
             type="button"
-            class="flex-1 px-3 py-2 rounded-lg text-sm font-medium border"
+            class="shrink-0 min-w-[72px] px-3 py-2 rounded-lg text-sm font-medium border whitespace-nowrap"
             :class="activeTab === 'service' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
             @click="selectTab('service')"
           >
@@ -40,7 +40,7 @@
           <button
             v-if="hasExceptionContent"
             type="button"
-            class="flex-1 px-3 py-2 rounded-lg text-sm font-medium border"
+            class="shrink-0 min-w-[96px] px-3 py-2 rounded-lg text-sm font-medium border whitespace-nowrap"
             :class="activeTab === 'exception' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
             @click="selectTab('exception')"
           >
