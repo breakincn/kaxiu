@@ -873,12 +873,42 @@ func evaluateAppointmentFragmentImpact(tx *gorm.DB, merchant models.Merchant, ta
 }
 
 func validateAppointmentPlacementRules(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, appointmentStart time.Time, occupiedMinutes int, technicianID *uint, excludeAppointmentID uint) (appointmentPlacementDecision, error) {
+	return validateAppointmentPlacementRulesForProject(tx, merchant, targetDate, appointmentStart, 0, occupiedMinutes, technicianID, excludeAppointmentID)
+}
+
+func validateAppointmentPlacementRulesForProject(tx *gorm.DB, merchant models.Merchant, targetDate time.Time, appointmentStart time.Time, projectID uint, occupiedMinutes int, technicianID *uint, excludeAppointmentID uint) (appointmentPlacementDecision, error) {
 	decision := appointmentPlacementDecision{}
 	publishedRows, err := loadPublishedSchedulePublishings(tx, merchant.ID, targetDate)
 	if err != nil {
 		return decision, err
 	}
 	appointmentEnd := appointmentStart.Add(time.Duration(occupiedMinutes) * time.Minute)
+	if merchantUsesMixedTimeline(merchant) && merchant.SupportCustomerServiceMode {
+		engine, err := newMixedTimelineEngine(tx, merchant, targetDate, projectID, occupiedMinutes, publishedRows, excludeAppointmentID)
+		if err != nil {
+			return decision, err
+		}
+		technicians, err := listAppointmentBookableTechnicians(tx, merchant)
+		if err != nil {
+			return decision, err
+		}
+		technicians = filterTechniciansByPublishedScheduleRows(technicians, publishedRows)
+		filtered := technicians[:0]
+		for _, tech := range technicians {
+			if technicianID != nil && *technicianID > 0 && tech.ID != *technicianID {
+				continue
+			}
+			if !engine.technicianAllowsProject(tech.ID) {
+				continue
+			}
+			filtered = append(filtered, tech)
+		}
+		if len(filtered) == 0 {
+			return decision, apiErr{status: http.StatusBadRequest, msg: "当前无可预约客服"}
+		}
+		decision, _, _, err = engine.chooseBestAtTime(filtered, appointmentStart, occupiedMinutes, technicianID)
+		return decision, err
+	}
 	if technicianID != nil && *technicianID > 0 {
 		if !slotWithinPublishedSchedule(publishedRows, appointmentStart, appointmentEnd, technicianID) {
 			return decision, apiErr{status: http.StatusBadRequest, msg: "该时间不在已发布可预约排班内"}
@@ -1020,6 +1050,19 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 	if len(technicians) > 0 {
 		technicians = filterTechniciansByPublishedScheduleRows(technicians, publishedRows)
 	}
+	if merchantUsesMixedTimeline(merchant) && len(technicians) > 0 {
+		engine, err := newMixedTimelineEngine(config.DB, merchant, targetDate, projectID, occupiedMinutes, publishedRows, excludeAppointmentID)
+		if err != nil {
+			return nil, err
+		}
+		filteredTechs := technicians[:0]
+		for _, tech := range technicians {
+			if engine.technicianAllowsProject(tech.ID) {
+				filteredTechs = append(filteredTechs, tech)
+			}
+		}
+		technicians = filteredTechs
+	}
 
 	var allSlots []string
 	granularity := merchantAppointmentSlotGranularityMinutes(&merchant)
@@ -1042,6 +1085,13 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 	}
 
 	timeSlots := make([]rankedAppointmentTimeSlot, 0, len(allSlots))
+	var mixedEngine *mixedTimelineEngine
+	if merchantUsesMixedTimeline(merchant) && len(technicians) > 0 {
+		mixedEngine, err = newMixedTimelineEngine(config.DB, merchant, targetDate, projectID, occupiedMinutes, publishedRows, excludeAppointmentID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	for _, slot := range allSlots {
 		slotTime, _ := time.ParseInLocation("2006-01-02 15:04:05", slot, loc)
 		slotEnd := slotTime.Add(time.Duration(occupiedMinutes) * time.Minute)
@@ -1051,7 +1101,14 @@ func buildAvailableTimeSlotsPayload(merchant models.Merchant, merchantID uint, d
 		candidates := make([]appointmentTechnicianCandidate, 0, len(technicians))
 		placementScore := int(^uint(0) >> 1)
 
-		if available && len(allTechIDs) > 0 {
+		if mixedEngine != nil && len(allTechIDs) > 0 {
+			decision, allCandidates, bestTechIDs, err := mixedEngine.chooseBestAtTime(technicians, slotTime, occupiedMinutes, nil)
+			if err == nil && len(bestTechIDs) > 0 {
+				placementScore = decision.PlacementScore
+				availableTechIDs = append(availableTechIDs, bestTechIDs...)
+				candidates = append(candidates, allCandidates...)
+			}
+		} else if available && len(allTechIDs) > 0 {
 			for _, tech := range technicians {
 				if !slotWithinPublishedSchedule(publishedRows, slotTime, slotEnd, &tech.ID) {
 					candidates = append(candidates, appointmentTechnicianCandidate{
@@ -2450,7 +2507,11 @@ func CreateAppointment(c *gin.Context) {
 	// 预约创建必须做事务级校验：用户手选客服时，要在落库前重新检查“未来预约占产能”规则，
 	// 避免前端时段缓存与并发提交之间出现超卖或越过最大等待上限。
 	if err := config.DB.Transaction(func(tx *gorm.DB) error {
-		decision, err := validateAppointmentPlacementRules(tx, merchant, targetDate, appointmentTime, occupiedMinutes, input.TechnicianID, 0)
+		projectID := uint(0)
+		if input.ProjectID != nil {
+			projectID = *input.ProjectID
+		}
+		decision, err := validateAppointmentPlacementRulesForProject(tx, merchant, targetDate, appointmentTime, projectID, occupiedMinutes, input.TechnicianID, 0)
 		if err != nil {
 			return err
 		}
@@ -2548,7 +2609,11 @@ func ConfirmAppointment(c *gin.Context) {
 		if current.Status != "pending" {
 			return apiErr{status: http.StatusBadRequest, msg: "只能确认待处理的预约"}
 		}
-		decision, err := validateAppointmentPlacementRules(tx, merchant, targetDate, *current.AppointmentTime, occupiedMinutes, current.TechnicianID, current.ID)
+		projectID := uint(0)
+		if current.ProjectID != nil {
+			projectID = *current.ProjectID
+		}
+		decision, err := validateAppointmentPlacementRulesForProject(tx, merchant, targetDate, *current.AppointmentTime, projectID, occupiedMinutes, current.TechnicianID, current.ID)
 		if err != nil {
 			return err
 		}
@@ -3169,7 +3234,11 @@ func executeAppointmentReschedule(tx *gorm.DB, appointmentID uint, proposal mode
 		}
 	}
 
-	decision, err := validateAppointmentPlacementRules(tx, merchant, proposal.NewAppointmentTime.In(appointmentLocation()), *proposal.NewAppointmentTime, occupiedMinutes, technicianID, current.ID)
+	nextProjectID := uint(0)
+	if projectID != nil {
+		nextProjectID = *projectID
+	}
+	decision, err := validateAppointmentPlacementRulesForProject(tx, merchant, proposal.NewAppointmentTime.In(appointmentLocation()), *proposal.NewAppointmentTime, nextProjectID, occupiedMinutes, technicianID, current.ID)
 	if err != nil {
 		return oldAppointment, newAppointment, err
 	}
@@ -3534,7 +3603,13 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 		serviceGapMinutes = project.ServiceGapMinutes
 	}
 	occupiedMinutes := projectBookingOccupiedMinutes(serviceMinutes, serviceGapMinutes)
-	placementDecision, err := validateAppointmentPlacementRules(config.DB, merchant, newAppointmentTime.In(appointmentLocation()), newAppointmentTime, occupiedMinutes, input.TechnicianID, appointment.ID)
+	nextProjectID := uint(0)
+	if input.ProjectID != nil {
+		nextProjectID = *input.ProjectID
+	} else if appointment.ProjectID != nil {
+		nextProjectID = *appointment.ProjectID
+	}
+	placementDecision, err := validateAppointmentPlacementRulesForProject(config.DB, merchant, newAppointmentTime.In(appointmentLocation()), newAppointmentTime, nextProjectID, occupiedMinutes, input.TechnicianID, appointment.ID)
 	if err != nil {
 		var ae apiErr
 		if errors.As(err, &ae) {

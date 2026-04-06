@@ -151,6 +151,14 @@ var defaultMigrations = []dbMigration{
 		},
 	},
 	{
+		Version: "2026040602",
+		Name:    "add_appointment_scheduling_mode_and_technician_project_bindings",
+		Statements: []string{
+			"ALTER TABLE merchants ADD COLUMN appointment_scheduling_mode varchar(40) NOT NULL DEFAULT 'technician_grouped' COMMENT '预约排布模式（technician_grouped/technician_mixed_timeline）'",
+			"CREATE TABLE IF NOT EXISTS technician_appointment_projects (\n  id bigint unsigned NOT NULL AUTO_INCREMENT,\n  merchant_id bigint unsigned NOT NULL,\n  technician_id bigint unsigned NOT NULL,\n  project_id bigint unsigned NOT NULL,\n  created_at datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),\n  PRIMARY KEY (id),\n  UNIQUE KEY uidx_tap_once (technician_id, project_id),\n  KEY idx_tap_merchant_id (merchant_id),\n  KEY idx_tap_technician_id (technician_id),\n  KEY idx_tap_project_id (project_id)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='客服可预约项目绑定表'",
+		},
+	},
+	{
 		Version: "2026032301",
 		Name:    "add_appointment_locking_publishings_and_protected_repair_slots",
 		Statements: []string{

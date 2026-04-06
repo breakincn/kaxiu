@@ -36,6 +36,7 @@ func setupAppointmentPermissionTestDB(t *testing.T) *gorm.DB {
 		&models.RolePermission{},
 		&models.MerchantRolePermissionOverride{},
 		&models.Technician{},
+		&models.TechnicianAppointmentProject{},
 		&models.Appointment{},
 		&models.AppointmentCompensation{},
 		&models.AppointmentSettlement{},

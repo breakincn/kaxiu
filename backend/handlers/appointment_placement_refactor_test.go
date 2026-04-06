@@ -447,6 +447,130 @@ func TestConfirmAppointmentAssignsTechnicianForLegacyPendingRecord(t *testing.T)
 	}
 }
 
+func TestGetAvailableTimeSlotsMixedTimelineFiltersTechniciansByAllowedProject(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 30, 0, 0, appointmentLocation()))
+
+	merchant, user, tech, project, _, _ := seedAppointmentPlacementFixture(t, true)
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("appointment_scheduling_mode", appointmentSchedulingModeMixedTimeline).Error; err != nil {
+		t.Fatalf("enable mixed timeline failed: %v", err)
+	}
+	merchant.AppointmentSchedulingMode = appointmentSchedulingModeMixedTimeline
+	otherProject := models.MerchantProject{
+		MerchantID:        merchant.ID,
+		Name:              "燃脂课程",
+		Duration:          90,
+		BookableOnline:    true,
+		ServiceGapMinutes: 5,
+		StartDelaySeconds: 60,
+		IsActive:          true,
+	}
+	if err := config.DB.Create(&otherProject).Error; err != nil {
+		t.Fatalf("create other project failed: %v", err)
+	}
+	secondTech := models.Technician{
+		MerchantID:    merchant.ID,
+		ServiceRoleID: tech.ServiceRoleID,
+		Name:          "小美",
+		Code:          "X2",
+		Account:       "js0098",
+		Password:      "x",
+		IsActive:      true,
+	}
+	if err := config.DB.Create(&secondTech).Error; err != nil {
+		t.Fatalf("create second tech failed: %v", err)
+	}
+	if err := config.DB.Create(&models.TechnicianAppointmentProject{MerchantID: merchant.ID, TechnicianID: tech.ID, ProjectID: project.ID}).Error; err != nil {
+		t.Fatalf("bind project to first tech failed: %v", err)
+	}
+	if err := config.DB.Create(&models.TechnicianAppointmentProject{MerchantID: merchant.ID, TechnicianID: secondTech.ID, ProjectID: otherProject.ID}).Error; err != nil {
+		t.Fatalf("bind project to second tech failed: %v", err)
+	}
+	seedNextDayPublishedScheduleForMerchant(t, merchant, tech.ID, secondTech.ID)
+
+	date := appointmentFixtureTime(10, 0).Format("2006-01-02")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/merchant/merchants/"+strconv.Itoa(int(merchant.ID))+"/available-slots?date="+date+"&project_id="+strconv.Itoa(int(project.ID)), nil)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(merchant.ID))}}
+	c.Set("auth_type", "user")
+	c.Set("user_id", user.ID)
+	GetAvailableTimeSlots(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			Technicians []struct {
+				ID uint `json:"id"`
+			} `json:"technicians"`
+			TimeSlots []struct {
+				TechnicianIDs []uint `json:"technician_ids"`
+			} `json:"time_slots"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal failed: %v body=%s", err, rec.Body.String())
+	}
+	if len(resp.Data.Technicians) != 1 || resp.Data.Technicians[0].ID != tech.ID {
+		t.Fatalf("want only mapped technician %d, got %+v body=%s", tech.ID, resp.Data.Technicians, rec.Body.String())
+	}
+	for _, slot := range resp.Data.TimeSlots {
+		for _, technicianID := range slot.TechnicianIDs {
+			if technicianID != tech.ID {
+				t.Fatalf("unexpected technician id %d in slot %+v", technicianID, slot)
+			}
+		}
+	}
+}
+
+func TestCreateAppointmentMixedTimelineRejectsTechnicianWithoutAllowedProject(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 30, 0, 0, appointmentLocation()))
+
+	merchant, user, tech, project, card1, _ := seedAppointmentPlacementFixture(t, true)
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("appointment_scheduling_mode", appointmentSchedulingModeMixedTimeline).Error; err != nil {
+		t.Fatalf("enable mixed timeline failed: %v", err)
+	}
+	otherProject := models.MerchantProject{
+		MerchantID:        merchant.ID,
+		Name:              "燃脂课程",
+		Duration:          90,
+		BookableOnline:    true,
+		ServiceGapMinutes: 5,
+		StartDelaySeconds: 60,
+		IsActive:          true,
+	}
+	if err := config.DB.Create(&otherProject).Error; err != nil {
+		t.Fatalf("create other project failed: %v", err)
+	}
+	if err := config.DB.Create(&models.TechnicianAppointmentProject{MerchantID: merchant.ID, TechnicianID: tech.ID, ProjectID: otherProject.ID}).Error; err != nil {
+		t.Fatalf("bind mismatched project failed: %v", err)
+	}
+	seedNextDayPublishedScheduleForMerchant(t, merchant, tech.ID)
+
+	body, _ := json.Marshal(gin.H{
+		"card_id":          card1.ID,
+		"merchant_id":      merchant.ID,
+		"user_id":          user.ID,
+		"project_id":       project.ID,
+		"appointment_time": appointmentFixtureTime(10, 0).Format("2006-01-02 15:04:05"),
+		"technician_id":    tech.ID,
+	})
+	c, rec := newUserJSONContext(http.MethodPost, "/user/appointments", user.ID, body)
+	CreateAppointment(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 for technician without allowed project, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCreateRescheduleRequestPersistsAssignedTechnicianWhenUnspecified(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

@@ -89,7 +89,9 @@ func TestMerchantRescheduleRequestNeedsUserAcceptance(t *testing.T) {
 		t.Fatalf("create card failed: %v", err)
 	}
 
-	oldTime := time.Now().Add(24 * time.Hour).Truncate(time.Second)
+	loc := appointmentLocation()
+	base := appointmentCurrentTime().In(loc).Add(24 * time.Hour)
+	oldTime := time.Date(base.Year(), base.Month(), base.Day(), 11, 0, 0, 0, loc)
 	appt := models.Appointment{
 		MerchantID:      merchant.ID,
 		UserID:          user.ID,
@@ -188,7 +190,8 @@ func TestUserRescheduleRequestNeedsMerchantAcceptance(t *testing.T) {
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
 	setupAppointmentLifecycleTestDB(t)
-	withAppointmentCurrentTime(t, time.Date(time.Now().In(appointmentLocation()).Year(), time.Now().In(appointmentLocation()).Month(), time.Now().In(appointmentLocation()).Day(), 10, 30, 0, 0, appointmentLocation()))
+	loc := appointmentLocation()
+	withAppointmentCurrentTime(t, time.Date(time.Now().In(loc).Year(), time.Now().In(loc).Month(), time.Now().In(loc).Day(), 10, 30, 0, 0, loc))
 
 	merchant, user, tech, _, _, _ := seedAppointmentPermissionFixture(t, config.DB)
 	seedNextDayPublishedScheduleForMerchant(t, merchant, tech.ID)
@@ -197,7 +200,8 @@ func TestUserRescheduleRequestNeedsMerchantAcceptance(t *testing.T) {
 		t.Fatalf("create card failed: %v", err)
 	}
 
-	oldTime := time.Now().Add(24 * time.Hour).Truncate(time.Second)
+	base := appointmentCurrentTime().In(loc).Add(24 * time.Hour)
+	oldTime := time.Date(base.Year(), base.Month(), base.Day(), 11, 0, 0, 0, loc)
 	appt := models.Appointment{MerchantID: merchant.ID, UserID: user.ID, CardID: card.ID, TechnicianID: &tech.ID, AppointmentTime: &oldTime, Status: "confirmed"}
 	if err := config.DB.Create(&appt).Error; err != nil {
 		t.Fatalf("create appointment failed: %v", err)

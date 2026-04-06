@@ -320,6 +320,7 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		AppointmentGraceWindowMinutes                      *int    `json:"appointment_grace_window_minutes"`
 		AppointmentPredictionBufferMinute                  *int    `json:"appointment_prediction_buffer_minutes"`
 		AppointmentSlotGranularityMinutes                  *int    `json:"appointment_slot_granularity_minutes"`
+		AppointmentSchedulingMode                          *string `json:"appointment_scheduling_mode"`
 		AppointmentRescheduleSameOrNextDayThresholdMinutes *int    `json:"appointment_reschedule_same_or_next_day_threshold_minutes"`
 		AppointmentRescheduleNextDayOnlyThresholdMinutes   *int    `json:"appointment_reschedule_next_day_only_threshold_minutes"`
 		AppointmentRescheduleRecommendationEnabled         *bool   `json:"appointment_reschedule_recommendation_enabled"`
@@ -564,6 +565,25 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 			return
 		}
 		updates["appointment_slot_granularity_minutes"] = *input.AppointmentSlotGranularityMinutes
+	}
+	if input.AppointmentSchedulingMode != nil {
+		mode := strings.TrimSpace(*input.AppointmentSchedulingMode)
+		if mode == "" {
+			mode = "technician_grouped"
+		}
+		if mode != "technician_grouped" && mode != "technician_mixed_timeline" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "预约排布模式必须是 technician_grouped 或 technician_mixed_timeline"})
+			return
+		}
+		targetSupportCustomerServiceMode := merchant.SupportCustomerServiceMode
+		if input.SupportCustomerServiceMode != nil {
+			targetSupportCustomerServiceMode = *input.SupportCustomerServiceMode
+		}
+		if mode == "technician_mixed_timeline" && !targetSupportCustomerServiceMode {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "仅客服模式下可开启 technician_mixed_timeline"})
+			return
+		}
+		updates["appointment_scheduling_mode"] = mode
 	}
 	if input.AppointmentRescheduleSameOrNextDayThresholdMinutes != nil {
 		if *input.AppointmentRescheduleSameOrNextDayThresholdMinutes < 0 || *input.AppointmentRescheduleSameOrNextDayThresholdMinutes > 1440 {
