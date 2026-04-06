@@ -72,13 +72,13 @@
       >
         <template v-if="item._type === 'card'">
           <div
-            @click="onCardClick(item.id)"
-            @touchstart="onCardTouchStart(item)"
+            @click="onCardClick($event, item.id)"
+            @touchstart="onCardTouchStart($event, item)"
             @touchmove="onCardTouchMove"
-            @touchend="onCardTouchEnd"
-            @touchcancel="onCardTouchEnd"
+            @touchend="onCardTouchEnd($event, item)"
+            @touchcancel="onCardTouchCancel"
             :class="[
-              'rounded-2xl p-4 cursor-pointer transition-transform active:scale-[0.98]',
+              'rounded-2xl p-4 cursor-pointer transition-transform',
               pressingCardId === item.id ? 'scale-[0.985] opacity-90' : '',
               'select-none',
               'kb-card'
@@ -131,9 +131,11 @@
             <div 
               v-if="item.pinnedNotice" 
               class="pt-2 border-t border-gray-100"
-              @touchstart.stop
-              @touchend.stop.prevent="goToDetailWithNotice(item.id)"
-              @click.stop.prevent="goToDetailWithNotice(item.id)"
+              @touchstart.stop="onNoticeTouchStart($event, item.id)"
+              @touchmove.stop="onNoticeTouchMove"
+              @touchend.stop.prevent="onNoticeTouchEnd($event, item.id)"
+              @touchcancel.stop="onNoticeTouchCancel"
+              @click.stop.prevent="onNoticeClick($event, item.id)"
             >
               <div class="flex items-center gap-2 mb-1">
                 <svg class="w-3 h-3 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -496,11 +498,26 @@ const prevBodyStyle = {
   webkitTouchCallout: ''
 }
 
+const TAP_MOVE_THRESHOLD_PX = 8
+const TAP_MOVE_THRESHOLD_SQ = TAP_MOVE_THRESHOLD_PX * TAP_MOVE_THRESHOLD_PX
+const TAP_CANCEL_CLICK_SUPPRESS_MS = 350
+const TAP_OPEN_CLICK_SUPPRESS_MS = 500
+const LONG_PRESS_DURATION_MS = 820
+const LONG_PRESS_CLICK_SUPPRESS_MS = 900
+
 let longPressTimer = null
-let longPressStart = null
 let verifyStatusPollTimer = null
 const suppressClickUntil = ref(0)
 const verifyStatusChecking = ref(false)
+const activeCardId = ref(null)
+let cardTouchStartX = 0
+let cardTouchStartY = 0
+let cardTouchMoved = false
+let cardLongPressed = false
+let noticeTouchCardId = null
+let noticeTouchStartX = 0
+let noticeTouchStartY = 0
+let noticeTouchMoved = false
 
 const triggerHaptic = () => {
   try {
@@ -709,13 +726,48 @@ const fetchCards = async () => {
   }
 }
 
+const setSuppressClick = (durationMs) => {
+  suppressClickUntil.value = Math.max(suppressClickUntil.value, Date.now() + durationMs)
+}
+
+const clearCardLongPressTimer = () => {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
+
+const resetCardTouchState = () => {
+  clearCardLongPressTimer()
+  pressingCardId.value = null
+  activeCardId.value = null
+  cardTouchStartX = 0
+  cardTouchStartY = 0
+  cardTouchMoved = false
+  cardLongPressed = false
+}
+
+const resetNoticeTouchState = () => {
+  noticeTouchCardId = null
+  noticeTouchStartX = 0
+  noticeTouchStartY = 0
+  noticeTouchMoved = false
+}
+
+const hasTouchMovedPastThreshold = (touch, startX, startY) => {
+  if (!touch) return false
+  const dx = touch.clientX - startX
+  const dy = touch.clientY - startY
+  return Math.abs(dy) >= TAP_MOVE_THRESHOLD_PX || Math.abs(dx) >= TAP_MOVE_THRESHOLD_PX || (dx * dx + dy * dy >= TAP_MOVE_THRESHOLD_SQ)
+}
+
 const goToDetail = (id) => {
   router.push(`/user/cards/${id}`)
 }
 
 const goToDetailWithNotice = (id) => {
   if (!id) return
-  suppressClickUntil.value = Date.now() + 500
+  setSuppressClick(TAP_OPEN_CLICK_SUPPRESS_MS)
   router.push({
     path: `/user/cards/${id}`,
     query: {
@@ -724,53 +776,113 @@ const goToDetailWithNotice = (id) => {
   })
 }
 
-const onCardClick = (id) => {
+const onCardClick = (_event, id) => {
   if (Date.now() < suppressClickUntil.value) return
   goToDetail(id)
 }
 
-const onCardTouchStart = (card) => {
+const onCardTouchStart = (event, card) => {
   if (!card || !card.id) return
-  if (longPressTimer) {
-    clearTimeout(longPressTimer)
-    longPressTimer = null
-  }
-
+  clearCardLongPressTimer()
+  const touch = event?.touches?.[0]
+  activeCardId.value = card.id
   pressingCardId.value = card.id
+  cardTouchStartX = touch?.clientX || 0
+  cardTouchStartY = touch?.clientY || 0
+  cardTouchMoved = false
+  cardLongPressed = false
 
-  longPressStart = null
-  longPressTimer = setTimeout(async () => {
-    suppressClickUntil.value = Date.now() + 900
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null
+    if (activeCardId.value !== card.id || cardTouchMoved) return
+    cardLongPressed = true
+    pressingCardId.value = null
+    setSuppressClick(LONG_PRESS_CLICK_SUPPRESS_MS)
     triggerHaptic()
     openActionSheet(card)
-  }, 820)
+  }, LONG_PRESS_DURATION_MS)
 }
 
 const onCardTouchMove = (e) => {
-  if (!longPressTimer) return
+  if (!activeCardId.value) return
   const t = e?.touches?.[0]
   if (!t) return
-
-  if (!longPressStart) {
-    longPressStart = { x: t.clientX, y: t.clientY }
-    return
-  }
-
-  const dx = t.clientX - longPressStart.x
-  const dy = t.clientY - longPressStart.y
-  if (dx * dx + dy * dy > 12 * 12) {
-    clearTimeout(longPressTimer)
-    longPressTimer = null
+  if (!cardTouchMoved && hasTouchMovedPastThreshold(t, cardTouchStartX, cardTouchStartY)) {
+    cardTouchMoved = true
     pressingCardId.value = null
+    clearCardLongPressTimer()
+    setSuppressClick(TAP_CANCEL_CLICK_SUPPRESS_MS)
   }
 }
 
-const onCardTouchEnd = () => {
-  if (longPressTimer) {
-    clearTimeout(longPressTimer)
-    longPressTimer = null
+const onCardTouchEnd = (_event, card) => {
+  const wasMoved = cardTouchMoved
+  const wasLongPressed = cardLongPressed
+  const shouldOpenDetail = Boolean(
+    card?.id &&
+    activeCardId.value === card.id &&
+    !wasMoved &&
+    !wasLongPressed
+  )
+  resetCardTouchState()
+  if (!shouldOpenDetail) {
+    if (wasMoved || wasLongPressed) {
+      setSuppressClick(wasLongPressed ? LONG_PRESS_CLICK_SUPPRESS_MS : TAP_CANCEL_CLICK_SUPPRESS_MS)
+    }
+    return
   }
-  pressingCardId.value = null
+  setSuppressClick(TAP_OPEN_CLICK_SUPPRESS_MS)
+  goToDetail(card.id)
+}
+
+const onCardTouchCancel = () => {
+  if (activeCardId.value) {
+    setSuppressClick(TAP_CANCEL_CLICK_SUPPRESS_MS)
+  }
+  resetCardTouchState()
+}
+
+const onNoticeTouchStart = (event, cardId) => {
+  const touch = event?.touches?.[0]
+  noticeTouchCardId = Number(cardId || 0) || null
+  noticeTouchStartX = touch?.clientX || 0
+  noticeTouchStartY = touch?.clientY || 0
+  noticeTouchMoved = false
+}
+
+const onNoticeTouchMove = (event) => {
+  if (!noticeTouchCardId) return
+  const touch = event?.touches?.[0]
+  if (!noticeTouchMoved && hasTouchMovedPastThreshold(touch, noticeTouchStartX, noticeTouchStartY)) {
+    noticeTouchMoved = true
+    setSuppressClick(TAP_CANCEL_CLICK_SUPPRESS_MS)
+  }
+}
+
+const onNoticeTouchEnd = (_event, cardId) => {
+  const shouldOpenNotice = Boolean(
+    noticeTouchCardId &&
+    Number(cardId || 0) === noticeTouchCardId &&
+    !noticeTouchMoved
+  )
+  resetNoticeTouchState()
+  if (!shouldOpenNotice) {
+    setSuppressClick(TAP_CANCEL_CLICK_SUPPRESS_MS)
+    return
+  }
+  goToDetailWithNotice(cardId)
+}
+
+const onNoticeTouchCancel = () => {
+  if (noticeTouchCardId) {
+    setSuppressClick(TAP_CANCEL_CLICK_SUPPRESS_MS)
+  }
+  resetNoticeTouchState()
+}
+
+const onNoticeClick = (_event, cardId) => {
+  if (Date.now() < suppressClickUntil.value) return
+  goToDetailWithNotice(cardId)
 }
 
 const openCardQrModal = async (card) => {
@@ -956,7 +1068,8 @@ const closeAllOverlayModals = () => {
   hasActiveAppointment.value = false
   selectedCardAppointment.value = null
   selectedCardCanArriveNow.value = false
-  pressingCardId.value = null
+  resetCardTouchState()
+  resetNoticeTouchState()
   selectedCard.value = null
   try {
     document.documentElement.classList.remove('kb-no-select')
@@ -1382,10 +1495,8 @@ onUnmounted(() => {
     pollTimer = null
   }
 
-  if (longPressTimer) {
-    clearTimeout(longPressTimer)
-    longPressTimer = null
-  }
+  resetCardTouchState()
+  resetNoticeTouchState()
 
   window.removeEventListener('pageshow', handlePageRestoreCleanup)
   document.removeEventListener('visibilitychange', handleVisibilityCleanup)

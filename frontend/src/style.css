@@ -56,6 +56,7 @@ body {
   color: var(--kb-text);
   border: 1px solid var(--kb-border);
   box-shadow: var(--kb-shadow);
+  touch-action: pan-y;
 }
 
 .kb-card-muted {
