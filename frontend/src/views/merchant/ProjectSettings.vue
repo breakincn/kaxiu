@@ -79,6 +79,19 @@
               </div>
 
               <div>
+                <div class="text-sm font-medium text-gray-700 mb-2">自动分配房间延迟时间（分钟）</div>
+                <input
+                  v-model.number="project.room_select_timeout_minutes"
+                  type="number"
+                  min="0.5"
+                  max="60"
+                  step="0.5"
+                  placeholder="如 1.5"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
                 <div class="text-sm font-medium text-gray-700 mb-2">自动分配客服延迟时间（分钟）</div>
                 <input
                   v-model.number="project.auto_assign_technician_delay_minutes"
@@ -231,6 +244,7 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
     bookable_online: project.bookable_online !== false,
     service_gap_minutes: Number(project.service_gap_minutes ?? 3),
     start_delay_seconds: Number(project.start_delay_seconds ?? 60),
+    room_select_timeout_minutes: Number(project.room_select_timeout_minutes ?? 1.5),
     start_pending_timeout_minutes: Number(project.start_pending_timeout_minutes ?? 5),
     auto_assign_technician_delay_minutes: Number(project.auto_assign_technician_delay_minutes ?? 5),
     delay_tolerance_minutes: Number(project.delay_tolerance_minutes ?? 1),
@@ -275,6 +289,7 @@ const load = async () => {
           bookable_online: p.bookable_online !== false,
           service_gap_minutes: Number(p.service_gap_minutes ?? 3),
           start_delay_seconds: Number(p.start_delay_seconds ?? 60),
+          room_select_timeout_minutes: Number(p.room_select_timeout_seconds ?? 90) / 60,
           start_pending_timeout_minutes: Number(p.start_pending_timeout_seconds ?? 300) / 60,
           auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
           delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),
@@ -301,6 +316,7 @@ const addProject = () => {
     bookable_online: true,
     service_gap_minutes: 3,
     start_delay_seconds: 60,
+    room_select_timeout_minutes: 1.5,
     start_pending_timeout_minutes: 5,
     auto_assign_technician_delay_minutes: 5,
     delay_tolerance_minutes: 1,
@@ -335,6 +351,11 @@ const save = async () => {
     const delaySeconds = Number(project.start_delay_seconds ?? 60)
     if (!Number.isFinite(delaySeconds) || delaySeconds < 0 || delaySeconds > 3600) {
       alert(`项目 ${i + 1} 的服务开始延迟时间必须在 0-3600 秒之间`)
+      return
+    }
+    const roomSelectTimeoutMinutes = Number(project.room_select_timeout_minutes ?? 1.5)
+    if (!Number.isFinite(roomSelectTimeoutMinutes) || roomSelectTimeoutMinutes < 0.5 || roomSelectTimeoutMinutes > 60) {
+      alert(`项目 ${i + 1} 的自动分配房间延迟时间必须在 0.5-60 分钟之间`)
       return
     }
     const startPendingTimeoutMinutes = Number(project.start_pending_timeout_minutes ?? 5)
@@ -388,6 +409,7 @@ const save = async () => {
         bookable_online: p.bookable_online !== false,
         service_gap_minutes: Number(p.service_gap_minutes ?? 3),
         start_delay_seconds: Number(p.start_delay_seconds ?? 60),
+        room_select_timeout_seconds: Math.round(Number(p.room_select_timeout_minutes ?? 1.5) * 60),
         start_pending_timeout_seconds: Number(p.start_pending_timeout_minutes ?? 5) * 60,
         auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
         delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),

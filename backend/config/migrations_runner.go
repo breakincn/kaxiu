@@ -261,6 +261,13 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchant_projects ADD COLUMN start_pending_timeout_seconds INT NOT NULL DEFAULT 300 COMMENT '待开始服务倒计时秒数'",
 		},
 	},
+	{
+		Version: "2026040703",
+		Name:    "add_project_room_select_timeout_seconds",
+		Statements: []string{
+			"ALTER TABLE merchant_projects ADD COLUMN room_select_timeout_seconds INT NOT NULL DEFAULT 90 COMMENT '自动分配房间延迟时间（秒）'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

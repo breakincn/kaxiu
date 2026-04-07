@@ -55,7 +55,7 @@ func TestCreateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 	config.DB = setupProjectHandlerTestDB(t)
 	merchant := seedProjectMerchant(t, config.DB)
 
-	body := `{"name":"肩颈调理","duration":60,"start_pending_timeout_seconds":240,"delay_tolerance_minutes":2,"delay_compensation_mode":"fixed_unit","delay_redeem_threshold_percent":50,"delay_fixed_unit_value":3}`
+	body := `{"name":"肩颈调理","duration":60,"room_select_timeout_seconds":120,"start_pending_timeout_seconds":240,"delay_tolerance_minutes":2,"delay_compensation_mode":"fixed_unit","delay_redeem_threshold_percent":50,"delay_fixed_unit_value":3}`
 	c, rec := newProjectMerchantJSONContext(http.MethodPost, "/merchant/projects", merchant.ID, body)
 	CreateMerchantProject(c)
 	if rec.Code != http.StatusOK {
@@ -68,7 +68,7 @@ func TestCreateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response failed: %v", err)
 	}
-	if resp.Data.StartPendingTimeoutSeconds != 240 || resp.Data.DelayToleranceMinutes != 2 || resp.Data.DelayCompensationMode != "fixed_unit" || resp.Data.DelayRedeemThresholdPercent != 50 || resp.Data.DelayFixedUnitValue != 3 {
+	if resp.Data.RoomSelectTimeoutSeconds != 120 || resp.Data.StartPendingTimeoutSeconds != 240 || resp.Data.DelayToleranceMinutes != 2 || resp.Data.DelayCompensationMode != "fixed_unit" || resp.Data.DelayRedeemThresholdPercent != 50 || resp.Data.DelayFixedUnitValue != 3 {
 		t.Fatalf("unexpected delay config in response: %+v", resp.Data)
 	}
 
@@ -76,7 +76,7 @@ func TestCreateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 	if err := config.DB.First(&got, resp.Data.ID).Error; err != nil {
 		t.Fatalf("load project failed: %v", err)
 	}
-	if got.StartPendingTimeoutSeconds != 240 || got.DelayToleranceMinutes != 2 || got.DelayCompensationMode != "fixed_unit" || got.DelayRedeemThresholdPercent != 50 || got.DelayFixedUnitValue != 3 {
+	if got.RoomSelectTimeoutSeconds != 120 || got.StartPendingTimeoutSeconds != 240 || got.DelayToleranceMinutes != 2 || got.DelayCompensationMode != "fixed_unit" || got.DelayRedeemThresholdPercent != 50 || got.DelayFixedUnitValue != 3 {
 		t.Fatalf("unexpected delay config in db: %+v", got)
 	}
 }
@@ -92,6 +92,7 @@ func TestUpdateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 		MerchantID:                  merchant.ID,
 		Name:                        "肩颈调理",
 		Duration:                    60,
+		RoomSelectTimeoutSeconds:    90,
 		StartPendingTimeoutSeconds:  300,
 		DelayToleranceMinutes:       1,
 		DelayCompensationMode:       "minutes_bucket",
@@ -102,7 +103,7 @@ func TestUpdateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 		t.Fatalf("create project failed: %v", err)
 	}
 
-	body := `{"start_pending_timeout_seconds":180,"delay_tolerance_minutes":5,"delay_compensation_mode":"amount_bucket","delay_redeem_threshold_percent":120,"delay_fixed_unit_value":8}`
+	body := `{"room_select_timeout_seconds":150,"start_pending_timeout_seconds":180,"delay_tolerance_minutes":5,"delay_compensation_mode":"amount_bucket","delay_redeem_threshold_percent":120,"delay_fixed_unit_value":8}`
 	projectID := strconv.Itoa(int(project.ID))
 	c, rec := newProjectMerchantJSONContext(http.MethodPut, "/merchant/projects/"+projectID, merchant.ID, body)
 	c.Params = gin.Params{{Key: "id", Value: projectID}}
@@ -115,7 +116,7 @@ func TestUpdateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 	if err := config.DB.First(&got, project.ID).Error; err != nil {
 		t.Fatalf("load project failed: %v", err)
 	}
-	if got.StartPendingTimeoutSeconds != 180 || got.DelayToleranceMinutes != 5 || got.DelayCompensationMode != "amount_bucket" || got.DelayRedeemThresholdPercent != 120 || got.DelayFixedUnitValue != 8 {
+	if got.RoomSelectTimeoutSeconds != 150 || got.StartPendingTimeoutSeconds != 180 || got.DelayToleranceMinutes != 5 || got.DelayCompensationMode != "amount_bucket" || got.DelayRedeemThresholdPercent != 120 || got.DelayFixedUnitValue != 8 {
 		t.Fatalf("unexpected updated delay config: %+v", got)
 	}
 }

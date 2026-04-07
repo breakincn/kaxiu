@@ -262,7 +262,7 @@ func migrateSessionsAfterDisableCustomerService(tx *gorm.DB, m *models.Merchant,
 			}
 		} else {
 			// 未锁定房间：回到选房（不再选客服）
-			dl := now.Add(90 * time.Second)
+			dl := now.Add(time.Duration(config.GetProjectRoomSelectTimeoutSeconds(tx, s.ProjectID)) * time.Second)
 			updates["status"] = models.ApplyStatusPrefix(s.Status, "room_selecting")
 			updates["room_id"] = nil
 			updates["room_locked_at"] = nil

@@ -34,6 +34,7 @@ func CreateMerchantProject(c *gin.Context) {
 		BookableOnline                   *bool   `json:"bookable_online"`
 		ServiceGapMinutes                *int    `json:"service_gap_minutes"`
 		StartDelaySeconds                *int    `json:"start_delay_seconds"`
+		RoomSelectTimeoutSeconds         *int    `json:"room_select_timeout_seconds"`
 		StartPendingTimeoutSeconds       *int    `json:"start_pending_timeout_seconds"`
 		AutoAssignTechnicianDelayMinutes *int    `json:"auto_assign_technician_delay_minutes"`
 		DelayToleranceMinutes            *int    `json:"delay_tolerance_minutes"`
@@ -78,6 +79,14 @@ func CreateMerchantProject(c *gin.Context) {
 			return
 		}
 		serviceGapMinutes = *input.ServiceGapMinutes
+	}
+	roomSelectTimeoutSeconds := 90
+	if input.RoomSelectTimeoutSeconds != nil {
+		if *input.RoomSelectTimeoutSeconds < 1 || *input.RoomSelectTimeoutSeconds > 3600 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "自动分配房间延迟时间范围应为 1-3600 秒"})
+			return
+		}
+		roomSelectTimeoutSeconds = *input.RoomSelectTimeoutSeconds
 	}
 	startPendingTimeoutSeconds := config.DefaultRoleStartPendingTimeoutSeconds
 	if input.StartPendingTimeoutSeconds != nil {
@@ -152,6 +161,7 @@ func CreateMerchantProject(c *gin.Context) {
 		BookableOnline:                   bookableOnline,
 		ServiceGapMinutes:                serviceGapMinutes,
 		StartDelaySeconds:                startDelaySeconds,
+		RoomSelectTimeoutSeconds:         roomSelectTimeoutSeconds,
 		StartPendingTimeoutSeconds:       startPendingTimeoutSeconds,
 		AutoAssignTechnicianDelayMinutes: autoAssignTechnicianDelayMinutes,
 		DelayToleranceMinutes:            delayToleranceMinutes,
@@ -193,6 +203,7 @@ func UpdateMerchantProject(c *gin.Context) {
 		BookableOnline                   *bool    `json:"bookable_online"`
 		ServiceGapMinutes                *int     `json:"service_gap_minutes"`
 		StartDelaySeconds                *int     `json:"start_delay_seconds"`
+		RoomSelectTimeoutSeconds         *int     `json:"room_select_timeout_seconds"`
 		StartPendingTimeoutSeconds       *int     `json:"start_pending_timeout_seconds"`
 		AutoAssignTechnicianDelayMinutes *int     `json:"auto_assign_technician_delay_minutes"`
 		DelayToleranceMinutes            *int     `json:"delay_tolerance_minutes"`
@@ -238,6 +249,13 @@ func UpdateMerchantProject(c *gin.Context) {
 			return
 		}
 		updates["service_gap_minutes"] = *input.ServiceGapMinutes
+	}
+	if input.RoomSelectTimeoutSeconds != nil {
+		if *input.RoomSelectTimeoutSeconds < 1 || *input.RoomSelectTimeoutSeconds > 3600 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "自动分配房间延迟时间范围应为 1-3600 秒"})
+			return
+		}
+		updates["room_select_timeout_seconds"] = *input.RoomSelectTimeoutSeconds
 	}
 	if input.StartPendingTimeoutSeconds != nil {
 		if *input.StartPendingTimeoutSeconds < 1 || *input.StartPendingTimeoutSeconds > 3600 {
