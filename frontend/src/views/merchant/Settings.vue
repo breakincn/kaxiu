@@ -293,7 +293,7 @@ const handleLogout = () => {
       router.push(`/s/${staffSlug}/login`)
     } else {
       // 商户退出后跳转到商户登录页面
-      router.push('/login')
+      router.push('/merchant/login')
     }
   }
 }

@@ -297,7 +297,7 @@ const fetchMerchantInfo = async () => {
   try {
     const merchantId = getMerchantId()
     if (!merchantId) {
-      router.push('/login')
+      router.push('/merchant/login')
       return
     }
 

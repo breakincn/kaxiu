@@ -9,8 +9,15 @@ import {
   setMerchantPermissionKeys
 } from '../utils/auth'
 
-const defaultApiBaseURL = import.meta.env.DEV ? '/api' : 'https://api.kabao.app'
-const apiBaseURL = import.meta.env.VITE_API_BASE_URL || defaultApiBaseURL
+const resolveDevApiBaseURL = () => {
+  if (typeof window === 'undefined') return 'https://127.0.0.1:8080'
+  const hostname = String(window.location.hostname || '').trim() || '127.0.0.1'
+  return `https://${hostname}:8080`
+}
+
+const configuredApiBaseURL = String(import.meta.env.VITE_API_BASE_URL || '').trim()
+const defaultApiBaseURL = import.meta.env.DEV ? resolveDevApiBaseURL() : 'https://api.kabao.app'
+const apiBaseURL = configuredApiBaseURL || defaultApiBaseURL
 
 const api = axios.create({
   baseURL: apiBaseURL,
@@ -23,7 +30,7 @@ const isMerchantApp = host === 'kabao.shop' || host.endsWith('.kabao.shop')
 const isTechnicianLoginPath = (pathname) => /^\/s\/[^/]+\/login$/.test(pathname)
 const isLoginPagePath = (pathname) => {
   const p = String(pathname || '')
-  return p === '/login' || isTechnicianLoginPath(p) || p.startsWith('/platform-admin/login')
+  return p === '/login' || p === '/merchant/login' || isTechnicianLoginPath(p) || p.startsWith('/platform-admin/login')
 }
 
 const normalizeRequestPath = (config) => {
@@ -159,10 +166,10 @@ api.interceptors.response.use(
               if (staffSlug) {
                 router.replace(`/s/${staffSlug}/login`)
               } else {
-                router.replace('/login')
+                router.replace('/merchant/login')
               }
             } else {
-              router.replace('/login')
+              router.replace('/merchant/login')
             }
           }
         })

@@ -4,9 +4,15 @@ import { getMerchantActiveAuth, getTechnicianPasswordNeedReset } from '../utils/
 const host = typeof window !== 'undefined' ? window.location.host : ''
 const pathname = typeof window !== 'undefined' ? window.location.pathname : ''
 const isTechnicianLoginPath = (p) => /^\/s\/[^/]+\/login$/.test(String(p || ''))
-// 生产环境通过域名判断，开发环境通过路径前缀判断（包含技师登录路径）
-const isMerchantApp = (host === 'kabao.shop' || host.endsWith('.kabao.shop')) ||
-                      (pathname.startsWith('/merchant') || pathname.startsWith('/platform-admin') || isTechnicianLoginPath(pathname))
+const appTarget = String(import.meta.env.VITE_APP_TARGET || '').trim()
+const isDevMerchantTarget = import.meta.env.DEV && (appTarget === 'merchant' || appTarget === 'admin')
+// 生产环境通过域名判断；开发环境优先使用显式的 VITE_APP_TARGET，避免 /login 刷新后上下文漂移
+const isMerchantApp = isDevMerchantTarget ||
+                      host === 'kabao.shop' ||
+                      host.endsWith('.kabao.shop') ||
+                      pathname.startsWith('/merchant') ||
+                      pathname.startsWith('/platform-admin') ||
+                      isTechnicianLoginPath(pathname)
 
 const userRoutes = [
   {
@@ -88,9 +94,13 @@ const merchantRoutes = [
     redirect: '/merchant'
   },
   {
-    path: '/login',
+    path: '/merchant/login',
     name: 'MerchantLogin',
     component: () => import('../views/merchant/Login.vue')
+  },
+  {
+    path: '/login',
+    redirect: '/merchant/login'
   },
   // 技师登录路由（生产环境需要）
   {
@@ -276,7 +286,7 @@ router.beforeEach((to) => {
   if (isPlatformAdmin) return true
 
   const isUserPublic = to.path === '/login' || to.path === '/user/register' || to.path.startsWith('/s/')
-  const isMerchantPublic = to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
+  const isMerchantPublic = to.path === '/merchant/login' || to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
 
   if (!isMerchantApp) {
     if (isUserPublic) return true
@@ -296,11 +306,11 @@ router.beforeEach((to) => {
   if (!(hasMerchantToken || hasTechnicianToken)) {
     const m = to.path.match(/^\/s\/([^/]+)(?:\/.*)?$/)
     if (m && m[1] && !to.path.endsWith('/login')) return `/s/${m[1]}/login`
-    return '/login'
+    return '/merchant/login'
   }
 
   const isTechnician = hasTechnicianToken && getMerchantActiveAuth() === 'staff'
-  const allowWhenNeedReset = to.path === '/merchant/technician-password' || to.path === '/merchant/settings' || to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
+  const allowWhenNeedReset = to.path === '/merchant/technician-password' || to.path === '/merchant/settings' || to.path === '/merchant/login' || to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
   if (isTechnician && getTechnicianPasswordNeedReset() && !allowWhenNeedReset) {
     return '/merchant/technician-password'
   }

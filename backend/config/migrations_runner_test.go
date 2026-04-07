@@ -126,3 +126,152 @@ func TestRunMigrationsSupportsAlterTableCompatibilityGuards(t *testing.T) {
 		t.Fatalf("want predicted_delay_minutes 7, got %d", predictedDelay)
 	}
 }
+
+func TestAcquireMigrationLockSkipsNonMySQLDialectors(t *testing.T) {
+	dsn := "file:config_migrations_runner_lock_test?mode=memory&cache=shared&_loc=auto"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+
+	release, err := acquireMigrationLock(db, 5)
+	if err != nil {
+		t.Fatalf("acquireMigrationLock should skip sqlite, got err: %v", err)
+	}
+	if release != nil {
+		t.Fatalf("acquireMigrationLock should not return release func for sqlite")
+	}
+}
+
+func TestRunMigrationsSkipsPlainAddColumnWhenColumnAlreadyExists(t *testing.T) {
+	oldMigrations := defaultMigrations
+	defaultMigrations = []dbMigration{
+		{
+			Version: "2026030701",
+			Name:    "add_merchant_queue_waiting_start_seconds",
+			Statements: []string{
+				"ALTER TABLE merchants ADD COLUMN queue_waiting_start_seconds INT NOT NULL DEFAULT 180",
+			},
+		},
+	}
+	defer func() { defaultMigrations = oldMigrations }()
+
+	dsn := "file:config_migrations_runner_plain_add_column_test?mode=memory&cache=shared&_loc=auto"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE merchants (id integer primary key, queue_waiting_start_seconds integer not null default 180)").Error; err != nil {
+		t.Fatalf("create merchants failed: %v", err)
+	}
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run migrations failed: %v", err)
+	}
+
+	var count int64
+	if err := db.Table("schema_migrations").Where("version = ?", "2026030701").Count(&count).Error; err != nil {
+		t.Fatalf("count schema_migrations failed: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("want migration version to be recorded once, got %d", count)
+	}
+}
+
+func TestHasAppliedMigrationDoesNotReusePreviousTableContext(t *testing.T) {
+	dsn := "file:config_migrations_runner_has_applied_test?mode=memory&cache=shared&_loc=auto"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE merchants (id integer primary key)").Error; err != nil {
+		t.Fatalf("create merchants failed: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE schema_migrations (version varchar(64) primary key, name varchar(255), applied_at datetime)").Error; err != nil {
+		t.Fatalf("create schema_migrations failed: %v", err)
+	}
+	if err := db.Exec("INSERT INTO schema_migrations(version, name, applied_at) VALUES ('2026030701', 'x', CURRENT_TIMESTAMP)").Error; err != nil {
+		t.Fatalf("seed schema_migrations failed: %v", err)
+	}
+
+	tx := db.Table("merchants")
+	if !hasAppliedMigration(tx, "2026030701") {
+		t.Fatalf("expected hasAppliedMigration to query schema_migrations instead of previous table context")
+	}
+}
+
+func TestHasColumnByTableNameDoesNotReusePreviousTableContext(t *testing.T) {
+	dsn := "file:config_migrations_runner_has_column_test?mode=memory&cache=shared&_loc=auto"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE merchants (id integer primary key, queue_waiting_start_seconds integer not null default 180)").Error; err != nil {
+		t.Fatalf("create merchants failed: %v", err)
+	}
+
+	tx := db.Where("version = ?", "2026030701").Table("schema_migrations")
+	if !hasColumnByTableName(tx, "merchants", "queue_waiting_start_seconds") {
+		t.Fatalf("expected hasColumnByTableName to query merchants columns without leaking previous where clauses")
+	}
+}
+
+func TestRunMigrationsSkipsDuplicateIndexStatements(t *testing.T) {
+	oldMigrations := defaultMigrations
+	defaultMigrations = []dbMigration{
+		{
+			Version: "2026031201",
+			Name:    "add_service_session_source_fields",
+			Statements: []string{
+				"ALTER TABLE service_sessions ADD COLUMN source_id bigint unsigned NULL DEFAULT NULL",
+				"ALTER TABLE service_sessions ADD INDEX idx_service_sessions_source_id (source_id)",
+			},
+		},
+	}
+	defer func() { defaultMigrations = oldMigrations }()
+
+	dsn := "file:config_migrations_runner_duplicate_index_test?mode=memory&cache=shared&_loc=auto"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE service_sessions (id integer primary key, source_id integer)").Error; err != nil {
+		t.Fatalf("create service_sessions failed: %v", err)
+	}
+	if err := db.Exec("CREATE INDEX idx_service_sessions_source_id ON service_sessions(source_id)").Error; err != nil {
+		t.Fatalf("create source_id index failed: %v", err)
+	}
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run migrations failed: %v", err)
+	}
+}
+
+func TestRunMigrationsSkipsPredictedDelayBackfillWhenLegacyColumnMissing(t *testing.T) {
+	oldMigrations := defaultMigrations
+	defaultMigrations = []dbMigration{
+		{
+			Version: "2026031701_cleanup",
+			Name:    "cleanup_appointment_compatibility_columns",
+			Statements: []string{
+				"ALTER TABLE appointments ADD COLUMN IF NOT EXISTS predicted_delay_minutes INT NOT NULL DEFAULT 0",
+				"UPDATE appointments SET predicted_delay_minutes = predicted_wait_minutes WHERE predicted_delay_minutes = 0",
+				"ALTER TABLE appointments DROP COLUMN IF EXISTS predicted_wait_minutes",
+			},
+		},
+	}
+	defer func() { defaultMigrations = oldMigrations }()
+
+	dsn := "file:config_migrations_runner_missing_legacy_column_test?mode=memory&cache=shared&_loc=auto"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE appointments (id integer primary key, predicted_delay_minutes integer not null default 0)").Error; err != nil {
+		t.Fatalf("create appointments failed: %v", err)
+	}
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("run migrations failed: %v", err)
+	}
+}

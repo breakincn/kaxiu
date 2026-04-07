@@ -1,5 +1,9 @@
 // 开发环境缓存清除工具
-if (import.meta.env.DEV) {
+const isDevServer =
+  typeof window !== 'undefined' &&
+  ['3000', '3001', '3002'].includes(window.location.port)
+
+if (isDevServer) {
   // 清除所有缓存
   const clearCache = async () => {
     if ('caches' in window) {

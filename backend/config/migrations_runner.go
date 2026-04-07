@@ -1,6 +1,7 @@
 package config
 
 import (
+	"database/sql"
 	"fmt"
 	"regexp"
 	"strings"
@@ -253,6 +254,25 @@ func RunMigrations(db *gorm.DB) error {
 		return fmt.Errorf("db is nil")
 	}
 
+	if db.Dialector.Name() != "mysql" {
+		return runMigrationsOnDB(db)
+	}
+
+	return db.Connection(func(conn *gorm.DB) error {
+		releaseLock, err := acquireMigrationLock(conn, 30*time.Second)
+		if err != nil {
+			return err
+		}
+		if releaseLock != nil {
+			defer func() {
+				_ = releaseLock()
+			}()
+		}
+		return runMigrationsOnDB(conn)
+	})
+}
+
+func runMigrationsOnDB(db *gorm.DB) error {
 	if err := db.Exec(`
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version varchar(64) NOT NULL PRIMARY KEY,
@@ -280,10 +300,10 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 					return fmt.Errorf("migration %s failed on statement %q: %w", m.Version, stmt, err)
 				}
 			}
-			return tx.Exec(
-				"INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
-				m.Version, m.Name, time.Now(),
-			).Error
+			if err := insertSchemaMigrationRecord(tx, m.Version, m.Name, time.Now()); err != nil {
+				return err
+			}
+			return nil
 		}); err != nil {
 			return err
 		}
@@ -292,9 +312,46 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 	return nil
 }
 
+func acquireMigrationLock(db *gorm.DB, timeout time.Duration) (func() error, error) {
+	if db == nil || db.Dialector.Name() != "mysql" {
+		return nil, nil
+	}
+
+	lockTimeoutSeconds := int(timeout / time.Second)
+	if lockTimeoutSeconds <= 0 {
+		lockTimeoutSeconds = 1
+	}
+
+	var result struct {
+		Acquired sql.NullInt64 `gorm:"column:acquired"`
+	}
+	if err := db.Raw("SELECT GET_LOCK(?, ?) AS acquired", "kabao:schema_migrations", lockTimeoutSeconds).Scan(&result).Error; err != nil {
+		return nil, fmt.Errorf("acquire migration lock failed: %w", err)
+	}
+	if !result.Acquired.Valid || result.Acquired.Int64 != 1 {
+		return nil, fmt.Errorf("acquire migration lock timed out after %ds", lockTimeoutSeconds)
+	}
+
+	return func() error {
+		var release struct {
+			Released sql.NullInt64 `gorm:"column:released"`
+		}
+		if err := db.Raw("SELECT RELEASE_LOCK(?) AS released", "kabao:schema_migrations").Scan(&release).Error; err != nil {
+			return fmt.Errorf("release migration lock failed: %w", err)
+		}
+		if release.Released.Valid && release.Released.Int64 == 0 {
+			return fmt.Errorf("migration lock is not held by current connection")
+		}
+		return nil
+	}, nil
+}
+
 var (
 	alterTableAddColumnIfNotExistsPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+(.+)$`)
+	alterTableAddColumnPattern            = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+COLUMN\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+(.+)$`)
+	alterTableAddIndexPattern             = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+(?:UNIQUE\s+)?INDEX\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s*\(.+\)$`)
 	alterTableDropColumnIfExistsPattern   = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)(.*)$`)
+	appointmentsPredictedDelayBackfillSQL = regexp.MustCompile(`(?i)^UPDATE\s+appointments\s+SET\s+predicted_delay_minutes\s*=\s*predicted_wait_minutes\s+WHERE\s+predicted_delay_minutes\s*=\s*0$`)
 )
 
 func execMigrationStatement(tx *gorm.DB, stmt string) error {
@@ -319,6 +376,22 @@ func rewriteMigrationStatementForCompatibility(tx *gorm.DB, stmt string) (rewrit
 		return fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tableToken, columnToken, definition), false
 	}
 
+	if matches := alterTableAddColumnPattern.FindStringSubmatch(trimmed); len(matches) == 4 {
+		tableToken, columnToken, definition := matches[1], matches[2], matches[3]
+		if hasColumnByTableName(tx, unquoteIdentifier(tableToken), unquoteIdentifier(columnToken)) {
+			return "", true
+		}
+		return fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tableToken, columnToken, definition), false
+	}
+
+	if matches := alterTableAddIndexPattern.FindStringSubmatch(trimmed); len(matches) == 3 {
+		tableToken, indexToken := matches[1], matches[2]
+		if hasIndexByTableName(tx, unquoteIdentifier(tableToken), unquoteIdentifier(indexToken)) {
+			return "", true
+		}
+		return stmt, false
+	}
+
 	if matches := alterTableDropColumnIfExistsPattern.FindStringSubmatch(trimmed); len(matches) == 4 {
 		tableToken, columnToken, suffix := matches[1], matches[2], strings.TrimSpace(matches[3])
 		if !hasColumnByTableName(tx, unquoteIdentifier(tableToken), unquoteIdentifier(columnToken)) {
@@ -329,6 +402,16 @@ func rewriteMigrationStatementForCompatibility(tx *gorm.DB, stmt string) (rewrit
 			rewritten += " " + suffix
 		}
 		return rewritten, false
+	}
+
+	if appointmentsPredictedDelayBackfillSQL.MatchString(trimmed) {
+		if !hasColumnByTableName(tx, "appointments", "predicted_wait_minutes") {
+			return "", true
+		}
+		if !hasColumnByTableName(tx, "appointments", "predicted_delay_minutes") {
+			return "", true
+		}
+		return stmt, false
 	}
 
 	return stmt, false
@@ -342,7 +425,8 @@ func hasColumnByTableName(tx *gorm.DB, tableName, columnName string) bool {
 	if tx == nil || tableName == "" || columnName == "" {
 		return false
 	}
-	columnTypes, err := tx.Migrator().ColumnTypes(tableName)
+	cleanDB := tx.Session(&gorm.Session{NewDB: true})
+	columnTypes, err := cleanDB.Migrator().ColumnTypes(tableName)
 	if err != nil {
 		return false
 	}
@@ -352,6 +436,50 @@ func hasColumnByTableName(tx *gorm.DB, tableName, columnName string) bool {
 		}
 	}
 	return false
+}
+
+func hasIndexByTableName(tx *gorm.DB, tableName, indexName string) bool {
+	if tx == nil || tableName == "" || indexName == "" {
+		return false
+	}
+	cleanDB := tx.Session(&gorm.Session{NewDB: true})
+	return cleanDB.Migrator().HasIndex(tableName, indexName)
+}
+
+func hasAppliedMigration(tx *gorm.DB, version string) bool {
+	if tx == nil || strings.TrimSpace(version) == "" {
+		return false
+	}
+	var count int64
+	query := tx.Session(&gorm.Session{NewDB: true}).Table("schema_migrations")
+	if err := query.Where("version = ?", version).Count(&count).Error; err != nil {
+		return false
+	}
+	return count > 0
+}
+
+func insertSchemaMigrationRecord(tx *gorm.DB, version, name string, appliedAt time.Time) error {
+	if tx == nil {
+		return fmt.Errorf("tx is nil")
+	}
+
+	if tx.Dialector.Name() == "mysql" {
+		return tx.Exec(
+			"INSERT IGNORE INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+			version, name, appliedAt,
+		).Error
+	}
+
+	if err := tx.Exec(
+		"INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)",
+		version, name, appliedAt,
+	).Error; err != nil {
+		if hasAppliedMigration(tx, version) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func isIgnorableMigrationError(err error) bool {

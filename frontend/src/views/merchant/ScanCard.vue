@@ -288,7 +288,7 @@ onMounted(() => {
   const token = getMerchantToken()
   const id = getMerchantId()
   if (!token || !id) {
-    router.replace('/login')
+    router.replace('/merchant/login')
     return
   }
 
