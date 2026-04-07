@@ -402,7 +402,7 @@
         <div class="px-5 py-3 flex-shrink-0 bg-white">
           <button
             @click="openAppointmentConfirmModal"
-            :disabled="!selectedTimeSlot || appointing"
+            :disabled="!canSubmitAppointment"
             class="w-full py-3 bg-primary text-white font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {{ appointing ? '预约中...' : '确认预约' }}
@@ -436,7 +436,7 @@
           <button
             type="button"
             @click="confirmAppointment"
-            :disabled="appointing"
+            :disabled="!canSubmitAppointment"
             class="flex-1 py-3 rounded-lg bg-primary text-white font-medium disabled:opacity-50"
           >
             {{ appointing ? '预约中...' : '确认' }}
@@ -468,6 +468,7 @@ const showVerifyProjectModal = ref(false)
 const showVerifyCodeModal = ref(false)
 const showAppointmentModal = ref(false)
 const showAppointmentConfirmModal = ref(false)
+const skipNextAppointmentProjectReload = ref(false)
 const selectedCard = ref(null)
 const cardQrCanvas = ref(null)
 const pressingCardId = ref(null)
@@ -636,6 +637,12 @@ const selectedAppointmentTimeText = computed(() => {
   const match = raw.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/)
   if (match) return `${match[1]} ${match[2]}`
   return raw.slice(0, 16)
+})
+
+const canSubmitAppointment = computed(() => {
+  if (appointing.value || loadingSlots.value || timeSlotError.value) return false
+  if (!selectedCard.value?.id || !selectedTimeSlot.value) return false
+  return displayedTimeSlots.value.some(slot => slot?.time === selectedTimeSlot.value)
 })
 
 const displayedTimeSlots = computed(() => {
@@ -1253,18 +1260,22 @@ const openAppointmentModalFromAction = async () => {
   selectedDate.value = getTomorrowDate()
   await ensureSelectedCardForAppointment()
   const projects = appointmentProjects.value || []
+  let slotsLoaded = false
   if (projects.length > 0) {
     preparingAppointmentModal.value = true
     try {
+      skipNextAppointmentProjectReload.value = true
       selectedAppointmentProjectId.value = Number(projects[0].id)
-      await loadTimeSlots(selectedDate.value)
+      slotsLoaded = await loadTimeSlots(selectedDate.value)
     } finally {
       preparingAppointmentModal.value = false
     }
   } else {
-    await loadTimeSlots(selectedDate.value)
+    slotsLoaded = await loadTimeSlots(selectedDate.value)
   }
-  showAppointmentModal.value = true
+  if (slotsLoaded) {
+    showAppointmentModal.value = true
+  }
 }
 
 const closeAppointmentModal = () => {
@@ -1273,7 +1284,7 @@ const closeAppointmentModal = () => {
 }
 
 const loadTimeSlots = async (date) => {
-  if (!selectedCard.value?.merchant_id) return
+  if (!selectedCard.value?.merchant_id) return false
   loadingSlots.value = true
   timeSlotError.value = ''
   try {
@@ -1288,11 +1299,15 @@ const loadTimeSlots = async (date) => {
       const stillExists = availableTechnicians.value.some(item => Number(item.id) === Number(selectedTechnicianId.value))
       if (!stillExists) selectedTechnicianId.value = null
     }
+    return true
   } catch (err) {
     timeSlots.value = []
     availableTechnicians.value = []
+    selectedTimeSlot.value = ''
+    showAppointmentConfirmModal.value = false
     timeSlotError.value = `获取可用时间段失败: ${err.response?.data?.error || err.message}`
     alert(timeSlotError.value)
+    return false
   } finally {
     loadingSlots.value = false
   }
@@ -1334,7 +1349,7 @@ const formatSlotTime = (timeStr) => {
 }
 
 const confirmAppointment = async () => {
-  if (!selectedCard.value?.id || !selectedTimeSlot.value || appointing.value) return
+  if (!canSubmitAppointment.value) return
 
   appointing.value = true
   try {
@@ -1370,7 +1385,7 @@ const confirmAppointment = async () => {
 }
 
 const openAppointmentConfirmModal = () => {
-  if (!selectedCard.value?.id || !selectedTimeSlot.value || appointing.value) return
+  if (!canSubmitAppointment.value) return
   showAppointmentConfirmModal.value = true
 }
 
@@ -1457,6 +1472,10 @@ watch(currentStatus, async () => {
 
 watch(selectedAppointmentProjectId, async () => {
   if (preparingAppointmentModal.value) return
+  if (skipNextAppointmentProjectReload.value) {
+    skipNextAppointmentProjectReload.value = false
+    return
+  }
   selectedTimeSlot.value = ''
   timeSlotError.value = ''
   if (!selectedDate.value) return
