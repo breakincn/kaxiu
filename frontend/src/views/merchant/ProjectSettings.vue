@@ -78,6 +78,18 @@
                 />
               </div>
 
+              <div>
+                <div class="text-sm font-medium text-gray-700 mb-2">自动分配客服延迟时间（分钟）</div>
+                <input
+                  v-model.number="project.auto_assign_technician_delay_minutes"
+                  type="number"
+                  min="0"
+                  max="180"
+                  placeholder="如 5"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
               <div class="pt-2 border-t border-gray-100">
                 <div class="text-sm font-medium text-gray-800 mb-2">拖堂补偿设置</div>
                 <div class="text-xs text-gray-400 mb-3">用于预约拖堂账本累计与自动兑现。</div>
@@ -203,6 +215,7 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
     bookable_online: project.bookable_online !== false,
     service_gap_minutes: Number(project.service_gap_minutes ?? 3),
     start_delay_seconds: Number(project.start_delay_seconds ?? 60),
+    auto_assign_technician_delay_minutes: Number(project.auto_assign_technician_delay_minutes ?? 5),
     delay_tolerance_minutes: Number(project.delay_tolerance_minutes ?? 1),
     delay_compensation_mode: String(project.delay_compensation_mode || 'minutes_bucket'),
     delay_redeem_threshold_percent: Number(project.delay_redeem_threshold_percent ?? 100),
@@ -243,6 +256,7 @@ const load = async () => {
           bookable_online: p.bookable_online !== false,
           service_gap_minutes: Number(p.service_gap_minutes ?? 3),
           start_delay_seconds: Number(p.start_delay_seconds ?? 60),
+          auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
           delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),
           delay_compensation_mode: String(p.delay_compensation_mode || 'minutes_bucket'),
           delay_redeem_threshold_percent: Number(p.delay_redeem_threshold_percent ?? 100),
@@ -267,6 +281,7 @@ const addProject = () => {
     bookable_online: true,
     service_gap_minutes: 3,
     start_delay_seconds: 60,
+    auto_assign_technician_delay_minutes: 5,
     delay_tolerance_minutes: 1,
     delay_compensation_mode: 'minutes_bucket',
     delay_redeem_threshold_percent: 100,
@@ -306,6 +321,11 @@ const save = async () => {
       alert(`项目 ${i + 1} 的服务间歇时间必须在 0-60 分钟之间`)
       return
     }
+    const autoAssignDelayMinutes = Number(project.auto_assign_technician_delay_minutes ?? 5)
+    if (!Number.isFinite(autoAssignDelayMinutes) || autoAssignDelayMinutes < 0 || autoAssignDelayMinutes > 180) {
+      alert(`项目 ${i + 1} 的自动分配客服延迟时间必须在 0-180 分钟之间`)
+      return
+    }
     const toleranceMinutes = Number(project.delay_tolerance_minutes ?? 1)
     if (!Number.isFinite(toleranceMinutes) || toleranceMinutes < 0 || toleranceMinutes > 180) {
       alert(`项目 ${i + 1} 的拖堂容忍分钟数必须在 0-180 分钟之间`)
@@ -342,6 +362,7 @@ const save = async () => {
         bookable_online: p.bookable_online !== false,
         service_gap_minutes: Number(p.service_gap_minutes ?? 3),
         start_delay_seconds: Number(p.start_delay_seconds ?? 60),
+        auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
         delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),
         delay_compensation_mode: String(p.delay_compensation_mode || 'minutes_bucket'),
         delay_redeem_threshold_percent: Number(p.delay_redeem_threshold_percent ?? 100),

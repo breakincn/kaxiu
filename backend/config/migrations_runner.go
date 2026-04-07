@@ -247,6 +247,13 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchant_projects ADD COLUMN IF NOT EXISTS bookable_online BOOLEAN NOT NULL DEFAULT 1 COMMENT '是否参与公开预约'",
 		},
 	},
+	{
+		Version: "2026040701",
+		Name:    "add_project_auto_assign_technician_delay_minutes",
+		Statements: []string{
+			"ALTER TABLE merchant_projects ADD COLUMN auto_assign_technician_delay_minutes INT NOT NULL DEFAULT 5 COMMENT '自动分配客服延迟时间（分钟）'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

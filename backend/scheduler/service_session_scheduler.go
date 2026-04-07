@@ -19,12 +19,30 @@ import (
 )
 
 const (
-	schedulerTickInterval = 3 * time.Second
-	schedulerBatchLimit   = 200
-	staffSelectingTimeout = 5 * time.Minute
+	schedulerTickInterval        = 3 * time.Second
+	schedulerBatchLimit          = 200
+	defaultStaffSelectingTimeout = 5 * time.Minute
 	// 房间会话超时时间, 房间会话60分钟内没选技师、没开始服务则超时,自动取消房间锁定
 	sessionAbandonTimeout = 60 * time.Minute
 )
+
+func resolveStaffSelectingTimeout(tx *gorm.DB, s *models.ServiceSession) time.Duration {
+	if s == nil {
+		return defaultStaffSelectingTimeout
+	}
+	if s.ProjectID == nil || *s.ProjectID == 0 {
+		return defaultStaffSelectingTimeout
+	}
+
+	var project models.MerchantProject
+	if err := tx.Select("id, auto_assign_technician_delay_minutes").First(&project, *s.ProjectID).Error; err != nil {
+		return defaultStaffSelectingTimeout
+	}
+	if project.AutoAssignTechnicianDelayMinutes <= 0 {
+		return 0
+	}
+	return time.Duration(project.AutoAssignTechnicianDelayMinutes) * time.Minute
+}
 
 func resolveQueueSessionModeForTimeoutWaiting(s *models.ServiceSession, merchant *models.Merchant) string {
 	if s == nil {
@@ -1158,7 +1176,7 @@ func handleRoomLockedOrStaffSelecting(tx *gorm.DB, s *models.ServiceSession, now
 	if !merchant.SupportCustomerServiceMode || !merchant.SupportRoom {
 		return nil
 	}
-	deadline := s.StaffSelectEnteredAt.Add(staffSelectingTimeout)
+	deadline := s.StaffSelectEnteredAt.Add(resolveStaffSelectingTimeout(tx, s))
 	if now.Before(deadline) {
 		return nil
 	}

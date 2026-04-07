@@ -1481,12 +1481,30 @@ const getUsageStaffSelectCooldownDeadlineAtMs = (usage) => {
   return Number.isFinite(ms) ? ms : 0
 }
 
+const getUsageAutoAssignDelayMinutes = (usage) => {
+  const fromUsageProject = Number(usage?.project?.auto_assign_technician_delay_minutes)
+  if (Number.isFinite(fromUsageProject) && fromUsageProject >= 0) {
+    return fromUsageProject
+  }
+
+  const projectID = Number(usage?.project_id || 0)
+  if (projectID > 0) {
+    const project = (card.value?.projects || []).find((item) => Number(item?.id || 0) === projectID)
+    const fromCardProject = Number(project?.auto_assign_technician_delay_minutes)
+    if (Number.isFinite(fromCardProject) && fromCardProject >= 0) {
+      return fromCardProject
+    }
+  }
+
+  return 5
+}
+
 const getUsageStaffSelectAutoAssignDeadlineAtMs = (usage) => {
   const baseRaw = usage?.staff_select_entered_at || usage?.room_locked_at
   if (!baseRaw) return 0
   const baseMs = new Date(baseRaw).getTime()
   if (!Number.isFinite(baseMs) || baseMs <= 0) return 0
-  return baseMs + 5 * 60 * 1000
+  return baseMs + getUsageAutoAssignDelayMinutes(usage) * 60 * 1000
 }
 
 const getUsageStartTimeoutAutoAssignDeadlineAtMs = (usage) => {
@@ -1494,7 +1512,7 @@ const getUsageStartTimeoutAutoAssignDeadlineAtMs = (usage) => {
   if (!raw) return 0
   const enteredAtMs = new Date(raw).getTime()
   if (!Number.isFinite(enteredAtMs) || enteredAtMs <= 0) return 0
-  return enteredAtMs + 5 * 60 * 1000
+  return enteredAtMs + getUsageAutoAssignDelayMinutes(usage) * 60 * 1000
 }
 
 const getUsageTimeoutWaitingDeadlineAtMs = (usage) => {
@@ -2028,7 +2046,7 @@ const getUsageStatusCountdownText = (usage) => {
       }
     }
 
-    // 自动分配客服倒计时（5分钟）
+    // 自动分配客服倒计时（优先使用项目配置，默认5分钟）
     // 优先使用 staff_select_entered_at（用户进入选择客服页的时间），否则使用 room_locked_at（锁房时间）
     const baseMs = usage?.staff_select_entered_at
       ? new Date(usage.staff_select_entered_at).getTime()
@@ -2036,7 +2054,7 @@ const getUsageStatusCountdownText = (usage) => {
       ? new Date(usage.room_locked_at).getTime()
       : 0
     if (!baseMs || Number.isNaN(baseMs)) return ''
-    const deadline = baseMs + 5 * 60 * 1000
+    const deadline = baseMs + getUsageAutoAssignDelayMinutes(usage) * 60 * 1000
     const diff = deadline - now
     if (diff > 0) {
       const totalSeconds = Math.floor(diff / 1000)
@@ -2051,11 +2069,11 @@ const getUsageStatusCountdownText = (usage) => {
     return ''
   }
 
-  // 上钟超时后重新选择客服：如果已经开始计时（staff_select_entered_at）则展示5分钟自动分配倒计时
+  // 上钟超时后重新选择客服：如果已经开始计时（staff_select_entered_at）则展示自动分配倒计时
   if (supportCS && isUsageStartTimeout(usage)) {
     const enteredAtMs = usage?.staff_select_entered_at ? new Date(usage.staff_select_entered_at).getTime() : 0
     if (!enteredAtMs || Number.isNaN(enteredAtMs)) return ''
-    const deadline = enteredAtMs + 5 * 60 * 1000
+    const deadline = enteredAtMs + getUsageAutoAssignDelayMinutes(usage) * 60 * 1000
     const diff = deadline - now
     if (diff > 0) {
       const totalSeconds = Math.floor(diff / 1000)
@@ -2513,7 +2531,7 @@ const maybeAutoOpenPrecheckQrAfterAssigned = async () => {
     const enteredAtMs = Number(autoAssignCountdownMap.value[key] || 0)
     if (!enteredAtMs) continue
 
-    const deadline = enteredAtMs + 5 * 60 * 1000
+    const deadline = enteredAtMs + getUsageAutoAssignDelayMinutes(u) * 60 * 1000
     // 未到5分钟：即使用户手动选了技师导致回到 start_pending，也不自动弹窗（保持原逻辑）
     if (now < deadline) continue
 

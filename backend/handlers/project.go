@@ -29,19 +29,20 @@ func CreateMerchantProject(c *gin.Context) {
 	}
 
 	var input struct {
-		Name                        string  `json:"name" binding:"required"`
-		Duration                    int     `json:"duration" binding:"required,min=1"`
-		BookableOnline              *bool   `json:"bookable_online"`
-		ServiceGapMinutes           *int    `json:"service_gap_minutes"`
-		StartDelaySeconds           *int    `json:"start_delay_seconds"`
-		DelayToleranceMinutes       *int    `json:"delay_tolerance_minutes"`
-		DelayCompensationMode       *string `json:"delay_compensation_mode"`
-		DelayRedeemThresholdPercent *int    `json:"delay_redeem_threshold_percent"`
-		DelayFixedUnitValue         *int    `json:"delay_fixed_unit_value"`
-		Price                       float64 `json:"price"`
-		Description                 string  `json:"description"`
-		IsActive                    *bool   `json:"is_active"`
-		SortOrder                   *int    `json:"sort_order"`
+		Name                             string  `json:"name" binding:"required"`
+		Duration                         int     `json:"duration" binding:"required,min=1"`
+		BookableOnline                   *bool   `json:"bookable_online"`
+		ServiceGapMinutes                *int    `json:"service_gap_minutes"`
+		StartDelaySeconds                *int    `json:"start_delay_seconds"`
+		AutoAssignTechnicianDelayMinutes *int    `json:"auto_assign_technician_delay_minutes"`
+		DelayToleranceMinutes            *int    `json:"delay_tolerance_minutes"`
+		DelayCompensationMode            *string `json:"delay_compensation_mode"`
+		DelayRedeemThresholdPercent      *int    `json:"delay_redeem_threshold_percent"`
+		DelayFixedUnitValue              *int    `json:"delay_fixed_unit_value"`
+		Price                            float64 `json:"price"`
+		Description                      string  `json:"description"`
+		IsActive                         *bool   `json:"is_active"`
+		SortOrder                        *int    `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -76,6 +77,14 @@ func CreateMerchantProject(c *gin.Context) {
 			return
 		}
 		serviceGapMinutes = *input.ServiceGapMinutes
+	}
+	autoAssignTechnicianDelayMinutes := 5
+	if input.AutoAssignTechnicianDelayMinutes != nil {
+		if *input.AutoAssignTechnicianDelayMinutes < 0 || *input.AutoAssignTechnicianDelayMinutes > 180 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "自动分配客服延迟时间范围应为 0-180 分钟"})
+			return
+		}
+		autoAssignTechnicianDelayMinutes = *input.AutoAssignTechnicianDelayMinutes
 	}
 	delayToleranceMinutes := 1
 	if input.DelayToleranceMinutes != nil {
@@ -128,20 +137,21 @@ func CreateMerchantProject(c *gin.Context) {
 	}
 
 	p := models.MerchantProject{
-		MerchantID:                  merchantID,
-		Name:                        name,
-		Duration:                    input.Duration,
-		BookableOnline:              bookableOnline,
-		ServiceGapMinutes:           serviceGapMinutes,
-		StartDelaySeconds:           startDelaySeconds,
-		DelayToleranceMinutes:       delayToleranceMinutes,
-		DelayCompensationMode:       delayCompensationMode,
-		DelayRedeemThresholdPercent: delayRedeemThresholdPercent,
-		DelayFixedUnitValue:         delayFixedUnitValue,
-		Price:                       input.Price,
-		Description:                 strings.TrimSpace(input.Description),
-		IsActive:                    isActive,
-		SortOrder:                   sortOrder,
+		MerchantID:                       merchantID,
+		Name:                             name,
+		Duration:                         input.Duration,
+		BookableOnline:                   bookableOnline,
+		ServiceGapMinutes:                serviceGapMinutes,
+		StartDelaySeconds:                startDelaySeconds,
+		AutoAssignTechnicianDelayMinutes: autoAssignTechnicianDelayMinutes,
+		DelayToleranceMinutes:            delayToleranceMinutes,
+		DelayCompensationMode:            delayCompensationMode,
+		DelayRedeemThresholdPercent:      delayRedeemThresholdPercent,
+		DelayFixedUnitValue:              delayFixedUnitValue,
+		Price:                            input.Price,
+		Description:                      strings.TrimSpace(input.Description),
+		IsActive:                         isActive,
+		SortOrder:                        sortOrder,
 	}
 	if err := config.DB.Create(&p).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
@@ -168,19 +178,20 @@ func UpdateMerchantProject(c *gin.Context) {
 	}
 
 	var input struct {
-		Name                        *string  `json:"name"`
-		Duration                    *int     `json:"duration"`
-		BookableOnline              *bool    `json:"bookable_online"`
-		ServiceGapMinutes           *int     `json:"service_gap_minutes"`
-		StartDelaySeconds           *int     `json:"start_delay_seconds"`
-		DelayToleranceMinutes       *int     `json:"delay_tolerance_minutes"`
-		DelayCompensationMode       *string  `json:"delay_compensation_mode"`
-		DelayRedeemThresholdPercent *int     `json:"delay_redeem_threshold_percent"`
-		DelayFixedUnitValue         *int     `json:"delay_fixed_unit_value"`
-		Price                       *float64 `json:"price"`
-		Description                 *string  `json:"description"`
-		IsActive                    *bool    `json:"is_active"`
-		SortOrder                   *int     `json:"sort_order"`
+		Name                             *string  `json:"name"`
+		Duration                         *int     `json:"duration"`
+		BookableOnline                   *bool    `json:"bookable_online"`
+		ServiceGapMinutes                *int     `json:"service_gap_minutes"`
+		StartDelaySeconds                *int     `json:"start_delay_seconds"`
+		AutoAssignTechnicianDelayMinutes *int     `json:"auto_assign_technician_delay_minutes"`
+		DelayToleranceMinutes            *int     `json:"delay_tolerance_minutes"`
+		DelayCompensationMode            *string  `json:"delay_compensation_mode"`
+		DelayRedeemThresholdPercent      *int     `json:"delay_redeem_threshold_percent"`
+		DelayFixedUnitValue              *int     `json:"delay_fixed_unit_value"`
+		Price                            *float64 `json:"price"`
+		Description                      *string  `json:"description"`
+		IsActive                         *bool    `json:"is_active"`
+		SortOrder                        *int     `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -216,6 +227,13 @@ func UpdateMerchantProject(c *gin.Context) {
 			return
 		}
 		updates["service_gap_minutes"] = *input.ServiceGapMinutes
+	}
+	if input.AutoAssignTechnicianDelayMinutes != nil {
+		if *input.AutoAssignTechnicianDelayMinutes < 0 || *input.AutoAssignTechnicianDelayMinutes > 180 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "自动分配客服延迟时间范围应为 0-180 分钟"})
+			return
+		}
+		updates["auto_assign_technician_delay_minutes"] = *input.AutoAssignTechnicianDelayMinutes
 	}
 	if input.DelayToleranceMinutes != nil {
 		if *input.DelayToleranceMinutes < 0 || *input.DelayToleranceMinutes > 180 {
