@@ -28,6 +28,13 @@ func TestEffectiveRoleStartPendingTimeoutSeconds(t *testing.T) {
 	})
 }
 
+func TestResolveServiceSessionStartPendingTimeoutSecondsPrefersProject(t *testing.T) {
+	project := &models.MerchantProject{StartPendingTimeoutSeconds: 120}
+	if got := NormalizeRoleStartPendingTimeoutSeconds(project.StartPendingTimeoutSeconds); got != 120 {
+		t.Fatalf("expected normalized project timeout 120, got %d", got)
+	}
+}
+
 func TestRoleStartPendingLabelForMerchant(t *testing.T) {
 	t.Run("queue_mode_uses_calling_term", func(t *testing.T) {
 		merchant := &models.Merchant{

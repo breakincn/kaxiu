@@ -254,6 +254,13 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchant_projects ADD COLUMN auto_assign_technician_delay_minutes INT NOT NULL DEFAULT 5 COMMENT '自动分配客服延迟时间（分钟）'",
 		},
 	},
+	{
+		Version: "2026040702",
+		Name:    "add_project_start_pending_timeout_seconds",
+		Statements: []string{
+			"ALTER TABLE merchant_projects ADD COLUMN start_pending_timeout_seconds INT NOT NULL DEFAULT 300 COMMENT '待开始服务倒计时秒数'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

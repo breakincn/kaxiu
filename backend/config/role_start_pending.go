@@ -44,6 +44,40 @@ func GetMerchantRoleStartPendingTimeoutSeconds(tx *gorm.DB, merchantID uint, ser
 	return EffectiveRoleStartPendingTimeoutSeconds(&role, nil)
 }
 
+func GetProjectStartPendingTimeoutSeconds(tx *gorm.DB, projectID uint) int {
+	if tx == nil || projectID == 0 {
+		return 0
+	}
+	var project struct {
+		StartPendingTimeoutSeconds int `gorm:"column:start_pending_timeout_seconds"`
+	}
+	if err := tx.Table("merchant_projects").
+		Select("start_pending_timeout_seconds").
+		Where("id = ?", projectID).
+		First(&project).Error; err != nil {
+		return 0
+	}
+	return NormalizeRoleStartPendingTimeoutSeconds(project.StartPendingTimeoutSeconds)
+}
+
+func ResolveServiceSessionStartPendingTimeoutSeconds(tx *gorm.DB, merchantID uint, technicianID uint, projectID *uint) int {
+	if projectID != nil && *projectID > 0 {
+		if seconds := GetProjectStartPendingTimeoutSeconds(tx, *projectID); seconds > 0 {
+			return seconds
+		}
+	}
+	return GetMerchantTechnicianStartPendingTimeoutSeconds(tx, merchantID, technicianID)
+}
+
+func ResolveServiceSessionStartPendingTimeoutSecondsByRole(tx *gorm.DB, merchantID uint, serviceRoleID uint, projectID *uint) int {
+	if projectID != nil && *projectID > 0 {
+		if seconds := GetProjectStartPendingTimeoutSeconds(tx, *projectID); seconds > 0 {
+			return seconds
+		}
+	}
+	return GetMerchantRoleStartPendingTimeoutSeconds(tx, merchantID, serviceRoleID)
+}
+
 func GetMerchantTechnicianStartPendingTimeoutSeconds(tx *gorm.DB, merchantID uint, technicianID uint) int {
 	if tx == nil || merchantID == 0 || technicianID == 0 {
 		return DefaultRoleStartPendingTimeoutSeconds

@@ -34,6 +34,7 @@ func CreateMerchantProject(c *gin.Context) {
 		BookableOnline                   *bool   `json:"bookable_online"`
 		ServiceGapMinutes                *int    `json:"service_gap_minutes"`
 		StartDelaySeconds                *int    `json:"start_delay_seconds"`
+		StartPendingTimeoutSeconds       *int    `json:"start_pending_timeout_seconds"`
 		AutoAssignTechnicianDelayMinutes *int    `json:"auto_assign_technician_delay_minutes"`
 		DelayToleranceMinutes            *int    `json:"delay_tolerance_minutes"`
 		DelayCompensationMode            *string `json:"delay_compensation_mode"`
@@ -77,6 +78,14 @@ func CreateMerchantProject(c *gin.Context) {
 			return
 		}
 		serviceGapMinutes = *input.ServiceGapMinutes
+	}
+	startPendingTimeoutSeconds := config.DefaultRoleStartPendingTimeoutSeconds
+	if input.StartPendingTimeoutSeconds != nil {
+		if *input.StartPendingTimeoutSeconds < 1 || *input.StartPendingTimeoutSeconds > 3600 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "待开始服务倒计时时间范围应为 1-3600 秒"})
+			return
+		}
+		startPendingTimeoutSeconds = *input.StartPendingTimeoutSeconds
 	}
 	autoAssignTechnicianDelayMinutes := 5
 	if input.AutoAssignTechnicianDelayMinutes != nil {
@@ -143,6 +152,7 @@ func CreateMerchantProject(c *gin.Context) {
 		BookableOnline:                   bookableOnline,
 		ServiceGapMinutes:                serviceGapMinutes,
 		StartDelaySeconds:                startDelaySeconds,
+		StartPendingTimeoutSeconds:       startPendingTimeoutSeconds,
 		AutoAssignTechnicianDelayMinutes: autoAssignTechnicianDelayMinutes,
 		DelayToleranceMinutes:            delayToleranceMinutes,
 		DelayCompensationMode:            delayCompensationMode,
@@ -183,6 +193,7 @@ func UpdateMerchantProject(c *gin.Context) {
 		BookableOnline                   *bool    `json:"bookable_online"`
 		ServiceGapMinutes                *int     `json:"service_gap_minutes"`
 		StartDelaySeconds                *int     `json:"start_delay_seconds"`
+		StartPendingTimeoutSeconds       *int     `json:"start_pending_timeout_seconds"`
 		AutoAssignTechnicianDelayMinutes *int     `json:"auto_assign_technician_delay_minutes"`
 		DelayToleranceMinutes            *int     `json:"delay_tolerance_minutes"`
 		DelayCompensationMode            *string  `json:"delay_compensation_mode"`
@@ -227,6 +238,13 @@ func UpdateMerchantProject(c *gin.Context) {
 			return
 		}
 		updates["service_gap_minutes"] = *input.ServiceGapMinutes
+	}
+	if input.StartPendingTimeoutSeconds != nil {
+		if *input.StartPendingTimeoutSeconds < 1 || *input.StartPendingTimeoutSeconds > 3600 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "待开始服务倒计时时间范围应为 1-3600 秒"})
+			return
+		}
+		updates["start_pending_timeout_seconds"] = *input.StartPendingTimeoutSeconds
 	}
 	if input.AutoAssignTechnicianDelayMinutes != nil {
 		if *input.AutoAssignTechnicianDelayMinutes < 0 || *input.AutoAssignTechnicianDelayMinutes > 180 {

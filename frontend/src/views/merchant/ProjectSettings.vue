@@ -79,6 +79,18 @@
               </div>
 
               <div>
+                <div class="text-sm font-medium text-gray-700 mb-2">{{ startPendingCountdownLabel }}</div>
+                <input
+                  v-model.number="project.start_pending_timeout_seconds"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  placeholder="如 300"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
                 <div class="text-sm font-medium text-gray-700 mb-2">自动分配客服延迟时间（分钟）</div>
                 <input
                   v-model.number="project.auto_assign_technician_delay_minutes"
@@ -193,19 +205,23 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { merchantProjectApi } from '../../api'
+import { merchantApi, merchantProjectApi } from '../../api'
+import { getStartCountdownLabel } from '../../utils/terms'
 
 const router = useRouter()
 
 const loading = ref(true)
 const saving = ref(false)
 const initialSnapshot = ref('')
+const merchantTerms = ref(null)
 
 const removedProjectIds = ref([])
 
 const form = ref({
   projects: []
 })
+
+const startPendingCountdownLabel = computed(() => `${getStartCountdownLabel(merchantTerms.value)}（秒）`)
 
 const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
   projects: (projects || []).map((project) => ({
@@ -215,6 +231,7 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
     bookable_online: project.bookable_online !== false,
     service_gap_minutes: Number(project.service_gap_minutes ?? 3),
     start_delay_seconds: Number(project.start_delay_seconds ?? 60),
+    start_pending_timeout_seconds: Number(project.start_pending_timeout_seconds ?? 300),
     auto_assign_technician_delay_minutes: Number(project.auto_assign_technician_delay_minutes ?? 5),
     delay_tolerance_minutes: Number(project.delay_tolerance_minutes ?? 1),
     delay_compensation_mode: String(project.delay_compensation_mode || 'minutes_bucket'),
@@ -244,6 +261,8 @@ const goBack = () => {
 const load = async () => {
   loading.value = true
   try {
+    const merchantRes = await merchantApi.getCurrentMerchant()
+    merchantTerms.value = merchantRes.data?.data || null
     const res = await merchantProjectApi.list()
     const list = res.data?.data || []
     removedProjectIds.value = []
@@ -256,6 +275,7 @@ const load = async () => {
           bookable_online: p.bookable_online !== false,
           service_gap_minutes: Number(p.service_gap_minutes ?? 3),
           start_delay_seconds: Number(p.start_delay_seconds ?? 60),
+          start_pending_timeout_seconds: Number(p.start_pending_timeout_seconds ?? 300),
           auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
           delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),
           delay_compensation_mode: String(p.delay_compensation_mode || 'minutes_bucket'),
@@ -281,6 +301,7 @@ const addProject = () => {
     bookable_online: true,
     service_gap_minutes: 3,
     start_delay_seconds: 60,
+    start_pending_timeout_seconds: 300,
     auto_assign_technician_delay_minutes: 5,
     delay_tolerance_minutes: 1,
     delay_compensation_mode: 'minutes_bucket',
@@ -314,6 +335,11 @@ const save = async () => {
     const delaySeconds = Number(project.start_delay_seconds ?? 60)
     if (!Number.isFinite(delaySeconds) || delaySeconds < 0 || delaySeconds > 3600) {
       alert(`项目 ${i + 1} 的服务开始延迟时间必须在 0-3600 秒之间`)
+      return
+    }
+    const startPendingTimeoutSeconds = Number(project.start_pending_timeout_seconds ?? 300)
+    if (!Number.isFinite(startPendingTimeoutSeconds) || startPendingTimeoutSeconds < 1 || startPendingTimeoutSeconds > 3600) {
+      alert(`项目 ${i + 1} 的${getStartCountdownLabel(merchantTerms.value)}必须在 1-3600 秒之间`)
       return
     }
     const gapMinutes = Number(project.service_gap_minutes ?? 3)
@@ -362,6 +388,7 @@ const save = async () => {
         bookable_online: p.bookable_online !== false,
         service_gap_minutes: Number(p.service_gap_minutes ?? 3),
         start_delay_seconds: Number(p.start_delay_seconds ?? 60),
+        start_pending_timeout_seconds: Number(p.start_pending_timeout_seconds ?? 300),
         auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
         delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),
         delay_compensation_mode: String(p.delay_compensation_mode || 'minutes_bucket'),

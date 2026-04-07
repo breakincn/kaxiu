@@ -816,7 +816,7 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		if activeServingCnt > 0 {
 			return apiErr{status: http.StatusBadRequest, msg: "该工作人员当前正在服务中，请先完成当前服务再分配"}
 		}
-		timeoutSeconds := config.GetMerchantTechnicianStartPendingTimeoutSeconds(tx, merchantID, input.TechnicianID)
+		timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, merchantID, input.TechnicianID, s.ProjectID)
 		updates := map[string]interface{}{
 			"technician_id":                 input.TechnicianID,
 			"last_technician_id":            input.TechnicianID,

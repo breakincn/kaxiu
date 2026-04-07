@@ -187,6 +187,8 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `merchants` ADD COLUMN `start_delay_seconds` int NOT NULL DEFAULT 60 COMMENT '核销后开始服务延迟秒数（未开启客服但开启服务结束功能时使用）'")
 	// merchant_projects: 项目级服务开始延迟时间（秒）
 	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `start_delay_seconds` int NOT NULL DEFAULT 60 COMMENT '服务开始延迟时间（秒）'")
+	// merchant_projects: 项目级待开始服务倒计时（秒）
+	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `start_pending_timeout_seconds` int NOT NULL DEFAULT 300 COMMENT '待开始服务倒计时秒数'")
 	// merchant_projects: 项目级自动分配客服延迟时间（分钟）
 	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `auto_assign_technician_delay_minutes` int NOT NULL DEFAULT 5 COMMENT '自动分配客服延迟时间（分钟）'")
 

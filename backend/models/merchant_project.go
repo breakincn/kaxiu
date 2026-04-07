@@ -10,6 +10,7 @@ type MerchantProject struct {
 	BookableOnline                   bool       `json:"bookable_online" gorm:"not null;default:true;comment:是否参与公开预约"`
 	ServiceGapMinutes                int        `json:"service_gap_minutes" gorm:"not null;default:3;comment:服务间歇时间（分钟）"`
 	StartDelaySeconds                int        `json:"start_delay_seconds" gorm:"not null;default:60;comment:服务开始延迟时间（秒）"`
+	StartPendingTimeoutSeconds       int        `json:"start_pending_timeout_seconds" gorm:"not null;default:300;comment:待开始服务倒计时秒数"`
 	AutoAssignTechnicianDelayMinutes int        `json:"auto_assign_technician_delay_minutes" gorm:"not null;default:5;comment:自动分配客服延迟时间（分钟）"`
 	DelayToleranceMinutes            int        `json:"delay_tolerance_minutes" gorm:"not null;default:1;comment:拖堂补偿容忍分钟数"`
 	DelayCompensationMode            string     `json:"delay_compensation_mode" gorm:"size:20;not null;default:'minutes_bucket';comment:拖堂补偿模式（minutes_bucket/amount_bucket/fixed_unit）"`

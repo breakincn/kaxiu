@@ -1388,9 +1388,26 @@ const getUsageServiceDurationMinutes = (usage) => {
   return 50
 }
 
+const getUsageProjectStartPendingTimeoutSeconds = (usage) => {
+  const fromUsageProject = Number(usage?.project?.start_pending_timeout_seconds || 0)
+  if (Number.isFinite(fromUsageProject) && fromUsageProject > 0) return fromUsageProject
+
+  const projectID = Number(usage?.project_id || 0)
+  if (projectID > 0) {
+    const project = (card.value?.projects || []).find((item) => Number(item?.id || 0) === projectID)
+    const fromCardProject = Number(project?.start_pending_timeout_seconds || 0)
+    if (Number.isFinite(fromCardProject) && fromCardProject > 0) return fromCardProject
+  }
+
+  return 0
+}
+
 const getStartPendingTimeoutMs = (usage) => {
   const fromSession = Number(usage?.service_session_start_pending_timeout_seconds || 0)
   if (Number.isFinite(fromSession) && fromSession > 0) return fromSession * 1000
+
+  const fromProject = getUsageProjectStartPendingTimeoutSeconds(usage)
+  if (fromProject > 0) return fromProject * 1000
 
   const fromCard = Number(card.value?.start_pending_timeout_seconds || 0)
   if (!Number.isFinite(fromCard) || fromCard <= 0) return 0

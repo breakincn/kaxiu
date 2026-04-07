@@ -558,7 +558,7 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			return err
 		}
 
-		timeoutSeconds := config.GetMerchantTechnicianStartPendingTimeoutSeconds(tx, s.MerchantID, input.TechnicianID)
+		timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, s.MerchantID, input.TechnicianID, s.ProjectID)
 
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
 			"technician_id":                 input.TechnicianID,

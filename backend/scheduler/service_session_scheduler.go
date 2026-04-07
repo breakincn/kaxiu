@@ -676,7 +676,7 @@ func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now t
 		return false, err
 	}
 
-	timeoutSeconds := config.GetMerchantRoleStartPendingTimeoutSeconds(tx, s.MerchantID, cand.ServiceRoleID)
+	timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSecondsByRole(tx, s.MerchantID, cand.ServiceRoleID, s.ProjectID)
 
 	updates := map[string]interface{}{
 		"technician_id":                 cand.TechnicianID,
