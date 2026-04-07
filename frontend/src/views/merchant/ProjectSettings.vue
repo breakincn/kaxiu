@@ -79,24 +79,24 @@
               </div>
 
               <div>
-                <div class="text-sm font-medium text-gray-700 mb-2">{{ startPendingCountdownLabel }}</div>
-                <input
-                  v-model.number="project.start_pending_timeout_seconds"
-                  type="number"
-                  min="1"
-                  max="3600"
-                  placeholder="如 300"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-
-              <div>
                 <div class="text-sm font-medium text-gray-700 mb-2">自动分配客服延迟时间（分钟）</div>
                 <input
                   v-model.number="project.auto_assign_technician_delay_minutes"
                   type="number"
                   min="0"
                   max="180"
+                  placeholder="如 5"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <div class="text-sm font-medium text-gray-700 mb-2">{{ startPendingCountdownLabel }}</div>
+                <input
+                  v-model.number="project.start_pending_timeout_minutes"
+                  type="number"
+                  min="1"
+                  max="60"
                   placeholder="如 5"
                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -221,7 +221,7 @@ const form = ref({
   projects: []
 })
 
-const startPendingCountdownLabel = computed(() => `${getStartCountdownLabel(merchantTerms.value)}（秒）`)
+const startPendingCountdownLabel = computed(() => `${getStartCountdownLabel(merchantTerms.value)}（分钟）`)
 
 const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
   projects: (projects || []).map((project) => ({
@@ -231,7 +231,7 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
     bookable_online: project.bookable_online !== false,
     service_gap_minutes: Number(project.service_gap_minutes ?? 3),
     start_delay_seconds: Number(project.start_delay_seconds ?? 60),
-    start_pending_timeout_seconds: Number(project.start_pending_timeout_seconds ?? 300),
+    start_pending_timeout_minutes: Number(project.start_pending_timeout_minutes ?? 5),
     auto_assign_technician_delay_minutes: Number(project.auto_assign_technician_delay_minutes ?? 5),
     delay_tolerance_minutes: Number(project.delay_tolerance_minutes ?? 1),
     delay_compensation_mode: String(project.delay_compensation_mode || 'minutes_bucket'),
@@ -275,7 +275,7 @@ const load = async () => {
           bookable_online: p.bookable_online !== false,
           service_gap_minutes: Number(p.service_gap_minutes ?? 3),
           start_delay_seconds: Number(p.start_delay_seconds ?? 60),
-          start_pending_timeout_seconds: Number(p.start_pending_timeout_seconds ?? 300),
+          start_pending_timeout_minutes: Number(p.start_pending_timeout_seconds ?? 300) / 60,
           auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
           delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),
           delay_compensation_mode: String(p.delay_compensation_mode || 'minutes_bucket'),
@@ -301,7 +301,7 @@ const addProject = () => {
     bookable_online: true,
     service_gap_minutes: 3,
     start_delay_seconds: 60,
-    start_pending_timeout_seconds: 300,
+    start_pending_timeout_minutes: 5,
     auto_assign_technician_delay_minutes: 5,
     delay_tolerance_minutes: 1,
     delay_compensation_mode: 'minutes_bucket',
@@ -337,9 +337,9 @@ const save = async () => {
       alert(`项目 ${i + 1} 的服务开始延迟时间必须在 0-3600 秒之间`)
       return
     }
-    const startPendingTimeoutSeconds = Number(project.start_pending_timeout_seconds ?? 300)
-    if (!Number.isFinite(startPendingTimeoutSeconds) || startPendingTimeoutSeconds < 1 || startPendingTimeoutSeconds > 3600) {
-      alert(`项目 ${i + 1} 的${getStartCountdownLabel(merchantTerms.value)}必须在 1-3600 秒之间`)
+    const startPendingTimeoutMinutes = Number(project.start_pending_timeout_minutes ?? 5)
+    if (!Number.isFinite(startPendingTimeoutMinutes) || startPendingTimeoutMinutes < 1 || startPendingTimeoutMinutes > 60) {
+      alert(`项目 ${i + 1} 的${getStartCountdownLabel(merchantTerms.value)}必须在 1-60 分钟之间`)
       return
     }
     const gapMinutes = Number(project.service_gap_minutes ?? 3)
@@ -388,7 +388,7 @@ const save = async () => {
         bookable_online: p.bookable_online !== false,
         service_gap_minutes: Number(p.service_gap_minutes ?? 3),
         start_delay_seconds: Number(p.start_delay_seconds ?? 60),
-        start_pending_timeout_seconds: Number(p.start_pending_timeout_seconds ?? 300),
+        start_pending_timeout_seconds: Number(p.start_pending_timeout_minutes ?? 5) * 60,
         auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
         delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),
         delay_compensation_mode: String(p.delay_compensation_mode || 'minutes_bucket'),
