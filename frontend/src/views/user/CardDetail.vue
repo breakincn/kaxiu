@@ -1403,11 +1403,11 @@ const getUsageProjectStartPendingTimeoutSeconds = (usage) => {
 }
 
 const getStartPendingTimeoutMs = (usage) => {
-  const fromSession = Number(usage?.service_session_start_pending_timeout_seconds || 0)
-  if (Number.isFinite(fromSession) && fromSession > 0) return fromSession * 1000
-
   const fromProject = getUsageProjectStartPendingTimeoutSeconds(usage)
   if (fromProject > 0) return fromProject * 1000
+
+  const fromSession = Number(usage?.service_session_start_pending_timeout_seconds || 0)
+  if (Number.isFinite(fromSession) && fromSession > 0) return fromSession * 1000
 
   const fromCard = Number(card.value?.start_pending_timeout_seconds || 0)
   if (!Number.isFinite(fromCard) || fromCard <= 0) return 0
@@ -1421,6 +1421,21 @@ const getUsageSessionStartPendingRemainingSeconds = (usage) => {
 }
 
 const getQueueStartPendingRemainMs = (usage, nowMs) => {
+  const configuredTimeoutMs = getStartPendingTimeoutMs(usage)
+  const configuredTimeoutSeconds = configuredTimeoutMs > 0 ? Math.floor(configuredTimeoutMs / 1000) : 0
+  const sessionTimeoutSeconds = Number(usage?.service_session_start_pending_timeout_seconds || 0)
+  const shouldRecalculateByProjectTimeout = configuredTimeoutSeconds > 0 &&
+    Number.isFinite(sessionTimeoutSeconds) &&
+    sessionTimeoutSeconds > 0 &&
+    configuredTimeoutSeconds !== Math.floor(sessionTimeoutSeconds)
+
+  const baseMs = getUsageSessionUpdatedAtMs(usage)
+  if (shouldRecalculateByProjectTimeout && baseMs > 0) {
+    const diff = baseMs + configuredTimeoutMs - nowMs
+    if (!Number.isFinite(diff) || diff <= 0) return 0
+    return diff
+  }
+
   const remainSeconds = getUsageSessionStartPendingRemainingSeconds(usage)
   if (remainSeconds > 0) {
     const snapshotAt = Number(usagesSnapshotAtMs.value || 0)
@@ -1429,13 +1444,9 @@ const getQueueStartPendingRemainMs = (usage, nowMs) => {
     if (remain > 0) return remain
     return 0
   }
-
-  const baseMs = getUsageSessionUpdatedAtMs(usage)
   if (!baseMs) return 0
-  const timeoutSeconds = Number(usage?.service_session_start_pending_timeout_seconds || 0) > 0
-    ? Number(usage?.service_session_start_pending_timeout_seconds)
-    : 180
-  const deadlineMs = baseMs + timeoutSeconds * 1000
+  const timeoutMs = configuredTimeoutMs > 0 ? configuredTimeoutMs : 180 * 1000
+  const deadlineMs = baseMs + timeoutMs
   const diff = deadlineMs - nowMs
   if (!Number.isFinite(diff) || diff <= 0) return 0
   return diff
