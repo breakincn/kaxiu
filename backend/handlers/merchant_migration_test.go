@@ -95,6 +95,82 @@ func TestUpdateCurrentMerchantServices_DoesNotMigrateOnHandCardToggle(t *testing
 	}
 }
 
+func TestUpdateCurrentMerchantServices_StoresAppointmentSchedulingMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupMerchantHandlerTestDB(t)
+
+	m := models.Merchant{
+		Name:                       "m",
+		Phone:                      "18800001014",
+		Password:                   "pwd",
+		SupportAppointment:         true,
+		SupportCustomerService:     true,
+		SupportCustomerServiceMode: true,
+		AppointmentSchedulingMode:  appointmentSchedulingModeGrouped,
+	}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"appointment_scheduling_mode": appointmentSchedulingModeMixedTimeline,
+	})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/services", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("merchant_id", m.ID)
+
+	UpdateCurrentMerchantServices(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got models.Merchant
+	if err := config.DB.First(&got, m.ID).Error; err != nil {
+		t.Fatalf("load merchant failed: %v", err)
+	}
+	if got.AppointmentSchedulingMode != appointmentSchedulingModeMixedTimeline {
+		t.Fatalf("want mixed timeline, got %s", got.AppointmentSchedulingMode)
+	}
+}
+
+func TestUpdateCurrentMerchantServices_RejectsMixedTimelineWithoutCustomerServiceMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupMerchantHandlerTestDB(t)
+
+	m := models.Merchant{
+		Name:                       "m",
+		Phone:                      "18800001015",
+		Password:                   "pwd",
+		SupportAppointment:         true,
+		SupportCustomerService:     true,
+		SupportCustomerServiceMode: false,
+		AppointmentSchedulingMode:  appointmentSchedulingModeGrouped,
+	}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"appointment_scheduling_mode": appointmentSchedulingModeMixedTimeline,
+	})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/services", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("merchant_id", m.ID)
+
+	UpdateCurrentMerchantServices(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestUpdateCurrentMerchantServices_MigratesOnlyOnCustomerServiceModeDisable(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

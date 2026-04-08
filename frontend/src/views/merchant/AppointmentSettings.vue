@@ -23,6 +23,39 @@
 
           <div class="space-y-4">
             <div>
+              <label class="text-sm font-medium text-gray-700 mb-2 block">预约排布模式</label>
+              <p class="text-xs text-gray-500 mb-2">混合时间轴会结合全部可预约客服的项目时长一起排布；未开启客服模式时仅可使用按客服分组。</p>
+              <div class="space-y-2">
+                <label class="flex items-start gap-3 px-3 py-3 border border-gray-200 rounded-lg">
+                  <input
+                    v-model="form.appointment_scheduling_mode"
+                    type="radio"
+                    value="technician_grouped"
+                    class="mt-0.5 h-4 w-4"
+                  />
+                  <div>
+                    <div class="text-sm text-gray-700 font-medium">按客服分组</div>
+                    <div class="text-xs text-gray-500 mt-1">沿用传统模式，每位客服独立生成可预约时间。</div>
+                  </div>
+                </label>
+                <label class="flex items-start gap-3 px-3 py-3 border border-gray-200 rounded-lg" :class="!mixedTimelineAvailable ? 'opacity-60' : ''">
+                  <input
+                    v-model="form.appointment_scheduling_mode"
+                    type="radio"
+                    value="technician_mixed_timeline"
+                    class="mt-0.5 h-4 w-4"
+                    :disabled="!mixedTimelineAvailable"
+                  />
+                  <div>
+                    <div class="text-sm text-gray-700 font-medium">混合时间轴</div>
+                    <div class="text-xs text-gray-500 mt-1">按项目混合时长统一排布，适合客服模式下的混合项目预约。</div>
+                    <div v-if="!mixedTimelineAvailable" class="text-xs text-orange-500 mt-1">请先在“开启服务”中开启客服模式，再切换到混合时间轴。</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div>
               <label class="text-sm font-medium text-gray-700 mb-2 block">预约前保留缓冲</label>
               <p class="text-xs text-gray-500 mb-2">预约开始前，预留给预约客户的客服时间</p>
               <div class="relative">
@@ -163,6 +196,7 @@ const saving = ref(false)
 const initialSnapshot = ref('')
 
 const form = ref({
+  appointment_scheduling_mode: 'technician_grouped',
   appointment_reserve_buffer_minutes: 10,
   appointment_grace_window_minutes: 15,
   appointment_prediction_buffer_minutes: 5,
@@ -174,6 +208,7 @@ const form = ref({
 
 // 保存按钮与其他设置页保持一致，只有表单发生实际变化时才允许提交。
 const buildSnapshot = () => JSON.stringify({
+  appointment_scheduling_mode: String(form.value.appointment_scheduling_mode || 'technician_grouped'),
   appointment_reserve_buffer_minutes: Number(form.value.appointment_reserve_buffer_minutes ?? 0),
   appointment_grace_window_minutes: Number(form.value.appointment_grace_window_minutes ?? 0),
   appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes ?? 0),
@@ -184,6 +219,8 @@ const buildSnapshot = () => JSON.stringify({
 })
 
 const isDirty = computed(() => buildSnapshot() !== initialSnapshot.value)
+const mixedTimelineAvailable = computed(() => !!merchantSupportCustomerServiceMode.value)
+const merchantSupportCustomerServiceMode = ref(false)
 
 const goBack = () => {
   if (window.history.length > 1) {
@@ -209,6 +246,7 @@ const load = async () => {
       return
     }
     form.value = {
+      appointment_scheduling_mode: String(m.appointment_scheduling_mode || 'technician_grouped'),
       appointment_reserve_buffer_minutes: Number(m.appointment_reserve_buffer_minutes ?? 10),
       appointment_grace_window_minutes: Number(m.appointment_grace_window_minutes ?? 15),
       appointment_prediction_buffer_minutes: Number(m.appointment_prediction_buffer_minutes ?? 5),
@@ -216,6 +254,10 @@ const load = async () => {
       appointment_reschedule_same_or_next_day_threshold_minutes: Number(m.appointment_reschedule_same_or_next_day_threshold_minutes ?? 180),
       appointment_reschedule_next_day_only_threshold_minutes: Number(m.appointment_reschedule_next_day_only_threshold_minutes ?? 90),
       appointment_reschedule_recommendation_enabled: !!m.appointment_reschedule_recommendation_enabled
+    }
+    merchantSupportCustomerServiceMode.value = !!m.support_customer_service_mode
+    if (!merchantSupportCustomerServiceMode.value && form.value.appointment_scheduling_mode === 'technician_mixed_timeline') {
+      form.value.appointment_scheduling_mode = 'technician_grouped'
     }
     initialSnapshot.value = buildSnapshot()
   } catch (e) {
@@ -230,6 +272,7 @@ const save = async () => {
   saving.value = true
   try {
     await merchantApi.updateCurrentMerchantServices({
+      appointment_scheduling_mode: String(form.value.appointment_scheduling_mode || 'technician_grouped'),
       appointment_reserve_buffer_minutes: Number(form.value.appointment_reserve_buffer_minutes || 0),
       appointment_grace_window_minutes: Number(form.value.appointment_grace_window_minutes || 0),
       appointment_prediction_buffer_minutes: Number(form.value.appointment_prediction_buffer_minutes || 0),

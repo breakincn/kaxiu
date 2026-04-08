@@ -6,6 +6,7 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,32 +16,79 @@ import (
 	"gorm.io/gorm"
 )
 
-func buildMerchantTechnicianResponse(tech models.Technician) gin.H {
+func loadTechnicianAppointmentProjectIDs(tx *gorm.DB, merchantID uint, technicianIDs []uint) (map[uint][]uint, error) {
+	out := make(map[uint][]uint, len(technicianIDs))
+	if tx == nil || merchantID == 0 || len(technicianIDs) == 0 {
+		return out, nil
+	}
+	var rows []models.TechnicianAppointmentProject
+	if err := tx.Where("merchant_id = ? AND technician_id IN ?", merchantID, technicianIDs).
+		Order("project_id asc").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.TechnicianID] = append(out[row.TechnicianID], row.ProjectID)
+	}
+	return out, nil
+}
+
+func buildMerchantTechnicianResponse(tech models.Technician, projectIDs []uint) gin.H {
+	bindingMode := "merchant_default"
+	if len(projectIDs) > 0 {
+		bindingMode = "custom"
+	}
 	return gin.H{
-		"id":                         tech.ID,
-		"merchant_id":                tech.MerchantID,
-		"service_role_id":            tech.ServiceRoleID,
-		"phone":                      tech.Phone,
-		"name":                       tech.Name,
-		"code":                       tech.Code,
-		"account":                    tech.Account,
-		"password_need_reset":        tech.PasswordNeedReset,
-		"window_no":                  tech.WindowNo,
-		"queue_paused":               tech.QueuePaused,
-		"is_active":                  tech.IsActive,
-		"created_at":                 tech.CreatedAt,
-		"updated_at":                 tech.UpdatedAt,
-		"service_role":               tech.ServiceRole,
-		"can_view_original_password": strings.TrimSpace(tech.OriginalPassword) != "",
+		"id":                               tech.ID,
+		"merchant_id":                      tech.MerchantID,
+		"service_role_id":                  tech.ServiceRoleID,
+		"phone":                            tech.Phone,
+		"name":                             tech.Name,
+		"code":                             tech.Code,
+		"account":                          tech.Account,
+		"password_need_reset":              tech.PasswordNeedReset,
+		"window_no":                        tech.WindowNo,
+		"queue_paused":                     tech.QueuePaused,
+		"is_active":                        tech.IsActive,
+		"created_at":                       tech.CreatedAt,
+		"updated_at":                       tech.UpdatedAt,
+		"service_role":                     tech.ServiceRole,
+		"appointment_project_ids":          append([]uint(nil), projectIDs...),
+		"appointment_project_binding_mode": bindingMode,
+		"can_view_original_password":       strings.TrimSpace(tech.OriginalPassword) != "",
 	}
 }
 
 func buildMerchantTechnicianListResponse(list []models.Technician) []gin.H {
+	technicianIDs := make([]uint, 0, len(list))
+	var merchantID uint
+	for _, tech := range list {
+		merchantID = tech.MerchantID
+		technicianIDs = append(technicianIDs, tech.ID)
+	}
+	projectIDsByTech, err := loadTechnicianAppointmentProjectIDs(config.DB, merchantID, technicianIDs)
+	if err != nil {
+		projectIDsByTech = map[uint][]uint{}
+	}
 	out := make([]gin.H, 0, len(list))
 	for _, tech := range list {
-		out = append(out, buildMerchantTechnicianResponse(tech))
+		out = append(out, buildMerchantTechnicianResponse(tech, projectIDsByTech[tech.ID]))
 	}
 	return out
+}
+
+func listMerchantOnlineBookableProjects(tx *gorm.DB, merchantID uint) ([]models.MerchantProject, error) {
+	if tx == nil || merchantID == 0 {
+		return nil, nil
+	}
+	var list []models.MerchantProject
+	if err := tx.
+		Where("merchant_id = ? AND is_active = ? AND bookable_online = ?", merchantID, true, true).
+		Order("sort_order asc, id asc").
+		Find(&list).Error; err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 func nextTechnicianCode4(tx *gorm.DB, merchantID uint, serviceRoleID uint, roleType string) (string, error) {
@@ -348,6 +396,171 @@ func GetMerchantTechnicians(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": buildMerchantTechnicianListResponse(list)})
 }
 
+func GetMerchantTechnicianAppointmentProjects(c *gin.Context) {
+	authType, _ := c.Get("auth_type")
+	if authType == "staff" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
+		return
+	}
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+	technicianID64, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || technicianID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的技师ID"})
+		return
+	}
+
+	var technician models.Technician
+	if err := config.DB.Preload("ServiceRole").
+		Where("id = ? AND merchant_id = ?", uint(technicianID64), merchantID).
+		First(&technician).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "技师不存在"})
+		return
+	}
+
+	projects, err := listMerchantOnlineBookableProjects(config.DB, merchantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取项目失败"})
+		return
+	}
+	projectIDsByTech, err := loadTechnicianAppointmentProjectIDs(config.DB, merchantID, []uint{technician.ID})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取客服可预约项目失败"})
+		return
+	}
+	projectIDs := append([]uint(nil), projectIDsByTech[technician.ID]...)
+	bindingMode := "merchant_default"
+	if len(projectIDs) > 0 {
+		bindingMode = "custom"
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"technician":   buildMerchantTechnicianResponse(technician, projectIDs),
+		"projects":     projects,
+		"project_ids":  projectIDs,
+		"binding_mode": bindingMode,
+		"effective_scope": func() string {
+			if bindingMode == "custom" {
+				return "仅所选项目"
+			}
+			return "未单独配置时，默认继承商户全部线上可预约项目"
+		}(),
+	}})
+}
+
+func SetMerchantTechnicianAppointmentProjects(c *gin.Context) {
+	authType, _ := c.Get("auth_type")
+	if authType == "staff" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
+		return
+	}
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+	technicianID64, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || technicianID64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的技师ID"})
+		return
+	}
+
+	var input struct {
+		ProjectIDs []uint `json:"project_ids"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var technician models.Technician
+	if err := config.DB.Preload("ServiceRole").
+		Where("id = ? AND merchant_id = ?", uint(technicianID64), merchantID).
+		First(&technician).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "技师不存在"})
+		return
+	}
+	if strings.TrimSpace(technician.ServiceRole.RoleType) == "operational" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "运营客服不参与预约项目绑定"})
+		return
+	}
+
+	normalizedIDs := make([]uint, 0, len(input.ProjectIDs))
+	seen := make(map[uint]struct{}, len(input.ProjectIDs))
+	for _, id := range input.ProjectIDs {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		normalizedIDs = append(normalizedIDs, id)
+	}
+	sort.Slice(normalizedIDs, func(i, j int) bool {
+		return normalizedIDs[i] < normalizedIDs[j]
+	})
+
+	if len(normalizedIDs) > 0 {
+		var count int64
+		if err := config.DB.Model(&models.MerchantProject{}).
+			Where("merchant_id = ? AND id IN ? AND is_active = ? AND bookable_online = ?", merchantID, normalizedIDs, true, true).
+			Count(&count).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "校验项目失败"})
+			return
+		}
+		if count != int64(len(normalizedIDs)) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "仅允许绑定启用且开放线上预约的项目"})
+			return
+		}
+	}
+
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("merchant_id = ? AND technician_id = ?", merchantID, technician.ID).
+			Delete(&models.TechnicianAppointmentProject{}).Error; err != nil {
+			return err
+		}
+		if len(normalizedIDs) == 0 {
+			return nil
+		}
+		rows := make([]models.TechnicianAppointmentProject, 0, len(normalizedIDs))
+		for _, projectID := range normalizedIDs {
+			rows = append(rows, models.TechnicianAppointmentProject{
+				MerchantID:   merchantID,
+				TechnicianID: technician.ID,
+				ProjectID:    projectID,
+			})
+		}
+		return tx.Create(&rows).Error
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存客服可预约项目失败"})
+		return
+	}
+
+	projects, err := listMerchantOnlineBookableProjects(config.DB, merchantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取项目失败"})
+		return
+	}
+	bindingMode := "merchant_default"
+	if len(normalizedIDs) > 0 {
+		bindingMode = "custom"
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"technician":   buildMerchantTechnicianResponse(technician, normalizedIDs),
+		"projects":     projects,
+		"project_ids":  normalizedIDs,
+		"binding_mode": bindingMode,
+		"effective_scope": func() string {
+			if bindingMode == "custom" {
+				return "仅所选项目"
+			}
+			return "未单独配置时，默认继承商户全部线上可预约项目"
+		}(),
+	}})
+}
+
 func GetTechnicianMonthlyDisruptions(c *gin.Context) {
 	if !requireAnyMerchantPermissionInHandler(c, "merchant.appointment.view", "merchant.appointment.manage", "merchant.cs.manage") {
 		return
@@ -398,7 +611,7 @@ func GetTechnicianMonthlyDisruptions(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
-		"technician":                  buildMerchantTechnicianResponse(technician),
+		"technician":                  buildMerchantTechnicianResponse(technician, nil),
 		"month":                       monthKey,
 		"leave_disruption_count":      counter.LeaveDisruptionCount,
 		"first_exempt_used":           counter.FirstExemptUsed,
@@ -481,7 +694,8 @@ func UpdateMerchantTechnician(c *gin.Context) {
 
 	var updated models.Technician
 	config.DB.Preload("ServiceRole").First(&updated, tech.ID)
-	c.JSON(http.StatusOK, gin.H{"data": buildMerchantTechnicianResponse(updated)})
+	projectIDsByTech, _ := loadTechnicianAppointmentProjectIDs(config.DB, merchantID, []uint{updated.ID})
+	c.JSON(http.StatusOK, gin.H{"data": buildMerchantTechnicianResponse(updated, projectIDsByTech[updated.ID])})
 }
 
 func DeleteMerchantTechnician(c *gin.Context) {
@@ -630,13 +844,15 @@ func CreateMerchantTechnician(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"id":                  tech.ID,
-			"merchant_id":         tech.MerchantID,
-			"name":                tech.Name,
-			"code":                tech.Code,
-			"account":             tech.Account,
-			"password_need_reset": tech.PasswordNeedReset,
-			"default_password":    defaultPassword,
+			"id":                               tech.ID,
+			"merchant_id":                      tech.MerchantID,
+			"name":                             tech.Name,
+			"code":                             tech.Code,
+			"account":                          tech.Account,
+			"password_need_reset":              tech.PasswordNeedReset,
+			"default_password":                 defaultPassword,
+			"appointment_project_ids":          []uint{},
+			"appointment_project_binding_mode": "merchant_default",
 		},
 	})
 }

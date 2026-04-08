@@ -209,6 +209,8 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.GET("/technicians", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantTechnicians)
 	auth.POST("/technicians", middleware.RequirePermission("merchant.cs.manage"), handlers.CreateMerchantTechnician)
 	auth.PUT("/technicians/:id", middleware.RequirePermission("merchant.cs.manage"), handlers.UpdateMerchantTechnician)
+	auth.GET("/technicians/:id/appointment-projects", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantTechnicianAppointmentProjects)
+	auth.PUT("/technicians/:id/appointment-projects", middleware.RequirePermission("merchant.cs.manage"), handlers.SetMerchantTechnicianAppointmentProjects)
 	auth.GET("/technicians/:id/original-password", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantTechnicianOriginalPassword)
 	auth.POST("/technicians/:id/reset-password", middleware.RequirePermission("merchant.cs.manage"), handlers.ResetMerchantTechnicianPassword)
 	auth.DELETE("/technicians/:id", middleware.RequirePermission("merchant.cs.manage"), handlers.DeleteMerchantTechnician)

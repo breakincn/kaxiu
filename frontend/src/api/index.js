@@ -269,6 +269,8 @@ export const merchantApi = {
   },
   createTechnician: (data) => api.post('/merchant/technicians', data),
   updateTechnician: (id, data) => api.put(`/merchant/technicians/${id}`, data),
+  getTechnicianAppointmentProjects: (id) => api.get(`/merchant/technicians/${id}/appointment-projects`),
+  setTechnicianAppointmentProjects: (id, data) => api.put(`/merchant/technicians/${id}/appointment-projects`, data),
   getTechnicianOriginalPassword: (id) => api.get(`/merchant/technicians/${id}/original-password`),
   resetTechnicianPassword: (id, newPassword) => api.post(`/merchant/technicians/${id}/reset-password`, {
     new_password: newPassword || ''

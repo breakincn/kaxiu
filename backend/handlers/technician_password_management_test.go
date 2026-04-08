@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -24,7 +25,13 @@ func setupTechnicianPasswordTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Merchant{}, &models.ServiceRole{}, &models.Technician{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.Merchant{},
+		&models.ServiceRole{},
+		&models.Technician{},
+		&models.MerchantProject{},
+		&models.TechnicianAppointmentProject{},
+	); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 	return db
@@ -219,5 +226,122 @@ func TestResetMerchantTechnicianPasswordAndSelfChangeClearsOriginalPassword(t *t
 	GetMerchantTechnicianOriginalPassword(c)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("want 404 after self change, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMerchantTechnicianAppointmentProjectsCanBeConfigured(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupTechnicianPasswordTestDB(t)
+
+	merchant := models.Merchant{Name: "m", Phone: "18800002203", Password: "pwd", SupportAppointment: true}
+	if err := config.DB.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	role := createTechnicianPasswordTestRole(t, config.DB, merchant.ID)
+	tech := models.Technician{
+		MerchantID:    merchant.ID,
+		ServiceRoleID: role.ID,
+		Name:          "小美",
+		Code:          "0001",
+		Account:       "js0001",
+		Password:      "pwd",
+		IsActive:      true,
+	}
+	if err := config.DB.Create(&tech).Error; err != nil {
+		t.Fatalf("create technician failed: %v", err)
+	}
+	projectA := models.MerchantProject{MerchantID: merchant.ID, Name: "塑形", Duration: 45, BookableOnline: true, IsActive: true}
+	projectB := models.MerchantProject{MerchantID: merchant.ID, Name: "拉伸", Duration: 60, BookableOnline: true, IsActive: true}
+	if err := config.DB.Create(&projectA).Error; err != nil {
+		t.Fatalf("create projectA failed: %v", err)
+	}
+	if err := config.DB.Create(&projectB).Error; err != nil {
+		t.Fatalf("create projectB failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/merchant/technicians/1/appointment-projects", nil)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(tech.ID))}}
+	c.Set("auth_type", "merchant")
+	c.Set("merchant_id", merchant.ID)
+	GetMerchantTechnicianAppointmentProjects(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var getResp struct {
+		Data struct {
+			BindingMode string `json:"binding_mode"`
+			ProjectIDs  []uint `json:"project_ids"`
+			Projects    []struct {
+				ID uint `json:"id"`
+			} `json:"projects"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("unmarshal get response failed: %v", err)
+	}
+	if getResp.Data.BindingMode != "merchant_default" {
+		t.Fatalf("want merchant_default, got %s", getResp.Data.BindingMode)
+	}
+	if len(getResp.Data.ProjectIDs) != 0 {
+		t.Fatalf("want empty custom project ids, got %+v", getResp.Data.ProjectIDs)
+	}
+	if len(getResp.Data.Projects) != 2 {
+		t.Fatalf("want 2 available projects, got %d", len(getResp.Data.Projects))
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"project_ids": []uint{projectB.ID, projectA.ID, projectA.ID},
+	})
+	rec = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/technicians/1/appointment-projects", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(tech.ID))}}
+	c.Set("auth_type", "merchant")
+	c.Set("merchant_id", merchant.ID)
+	SetMerchantTechnicianAppointmentProjects(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var rows []models.TechnicianAppointmentProject
+	if err := config.DB.Where("merchant_id = ? AND technician_id = ?", merchant.ID, tech.ID).Order("project_id asc").Find(&rows).Error; err != nil {
+		t.Fatalf("load binding rows failed: %v", err)
+	}
+	if len(rows) != 2 || rows[0].ProjectID != projectA.ID || rows[1].ProjectID != projectB.ID {
+		t.Fatalf("unexpected binding rows: %+v", rows)
+	}
+
+	rec = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/merchant/technicians", nil)
+	c.Set("auth_type", "merchant")
+	c.Set("merchant_id", merchant.ID)
+	GetMerchantTechnicians(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var listResp struct {
+		Data []struct {
+			ID                            uint   `json:"id"`
+			AppointmentProjectIDs         []uint `json:"appointment_project_ids"`
+			AppointmentProjectBindingMode string `json:"appointment_project_binding_mode"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("unmarshal list response failed: %v", err)
+	}
+	if len(listResp.Data) != 1 {
+		t.Fatalf("want 1 technician, got %d", len(listResp.Data))
+	}
+	if listResp.Data[0].AppointmentProjectBindingMode != "custom" {
+		t.Fatalf("want custom binding mode, got %s", listResp.Data[0].AppointmentProjectBindingMode)
+	}
+	if len(listResp.Data[0].AppointmentProjectIDs) != 2 {
+		t.Fatalf("want 2 bound project ids, got %+v", listResp.Data[0].AppointmentProjectIDs)
 	}
 }

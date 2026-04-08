@@ -233,11 +233,20 @@
                           </div>
                           <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：{{ t.account }}</div>
                           <div v-if="shouldShowWindowNo && t.window_no" class="text-gray-500 text-sm mt-1">{{ windowTerm }}：{{ t.window_no }}</div>
+                          <div v-if="canConfigureAppointmentProjects(t)" class="text-gray-500 text-sm mt-1">{{ getAppointmentProjectSummary(t) }}</div>
                         </div>
                       </div>
 
                       <div class="mt-3 flex gap-2">
                         <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEdit(t)">编辑</button>
+                        <button
+                          v-if="canConfigureAppointmentProjects(t)"
+                          type="button"
+                          class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
+                          @click="openProjectConfig(t)"
+                        >
+                          预约项目
+                        </button>
                         <button
                           type="button"
                           class="px-3 py-2 rounded-lg text-sm font-medium"
@@ -445,6 +454,98 @@
       </div>
     </div>
 
+    <div v-if="showProjectConfigModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center px-4 z-50" @click.self="closeProjectConfig">
+      <div class="bg-white rounded-2xl w-full max-w-lg overflow-hidden">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+          <div class="font-medium text-gray-800">设置可预约项目</div>
+          <button type="button" class="text-gray-400" @click="closeProjectConfig">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="px-5 py-5 max-h-[75vh] overflow-y-auto">
+          <div class="text-sm text-gray-800 font-medium">{{ projectConfigTech?.name || '-' }}</div>
+          <div class="text-xs text-gray-500 mt-1">未单独配置时，默认继承商户全部线上可预约项目。</div>
+
+          <div class="mt-4 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              class="px-3 py-2 rounded-lg text-sm font-medium border"
+              :class="projectConfigBindingMode === 'merchant_default' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
+              @click="projectConfigBindingMode = 'merchant_default'"
+            >
+              继承商户默认
+            </button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded-lg text-sm font-medium border"
+              :class="projectConfigBindingMode === 'custom' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-200'"
+              @click="enableCustomProjectBinding"
+            >
+              单独指定项目
+            </button>
+          </div>
+
+          <div class="mt-4 flex items-center justify-between text-xs text-gray-500">
+            <div v-if="projectConfigBindingMode === 'merchant_default'">当前生效：全部线上可预约项目</div>
+            <div v-else>当前已选 {{ projectConfigSelectedIds.length }} 项</div>
+            <button
+              v-if="projectConfigBindingMode === 'custom'"
+              type="button"
+              class="text-primary"
+              @click="selectAllProjectConfig"
+            >
+              全选
+            </button>
+          </div>
+
+          <div v-if="projectConfigLoading" class="text-center text-gray-400 py-10">加载中...</div>
+          <div v-else-if="projectConfigProjects.length === 0" class="text-center text-gray-400 py-10">暂无可预约项目</div>
+          <div v-else class="mt-4 space-y-3">
+            <label
+              v-for="project in projectConfigProjects"
+              :key="project.id"
+              class="flex items-start gap-3 px-3 py-3 border border-gray-200 rounded-lg"
+              :class="projectConfigBindingMode === 'merchant_default' ? 'opacity-60' : ''"
+            >
+              <input
+                v-model="projectConfigSelectedIds"
+                type="checkbox"
+                :value="project.id"
+                class="mt-0.5 h-4 w-4"
+                :disabled="projectConfigBindingMode !== 'custom'"
+              />
+              <div class="min-w-0">
+                <div class="text-sm text-gray-800 font-medium">{{ project.name }}</div>
+                <div class="text-xs text-gray-500 mt-1">时长 {{ project.duration }} 分钟</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="px-5 py-4 border-t flex gap-3">
+          <button
+            type="button"
+            class="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium"
+            :disabled="projectConfigSaving"
+            @click="closeProjectConfig"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="flex-1 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
+            :disabled="projectConfigSaving || projectConfigLoading"
+            @click="saveProjectConfig"
+          >
+            {{ projectConfigSaving ? '保存中...' : '保存' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -516,6 +617,10 @@ const shouldShowWindowNo = computed(() => {
 // 窗口自定义名词
 const windowTerm = computed(() => {
   return merchant.value?.queue_window_term || '窗口'
+})
+
+const merchantSupportsAppointmentProjectBinding = computed(() => {
+  return !!merchant.value?.support_appointment
 })
 
 const allRoles = computed(() => {
@@ -635,6 +740,13 @@ const showResetPasswordConfirm = ref(false)
 const resetPasswordForm = ref({
   newPassword: ''
 })
+const showProjectConfigModal = ref(false)
+const projectConfigLoading = ref(false)
+const projectConfigSaving = ref(false)
+const projectConfigTech = ref(null)
+const projectConfigProjects = ref([])
+const projectConfigSelectedIds = ref([])
+const projectConfigBindingMode = ref('merchant_default')
 
 const showAddRole = ref(false)
 const roleForm = ref({
@@ -714,9 +826,20 @@ const closePasswordModal = () => {
   passwordModalPassword.value = ''
 }
 
+const closeProjectConfig = () => {
+  showProjectConfigModal.value = false
+  projectConfigLoading.value = false
+  projectConfigSaving.value = false
+  projectConfigTech.value = null
+  projectConfigProjects.value = []
+  projectConfigSelectedIds.value = []
+  projectConfigBindingMode.value = 'merchant_default'
+}
+
 const closeAllModals = () => {
   closePasswordModal()
   closeResetPasswordModal()
+  closeProjectConfig()
   closeAdd()
   closeAddRole()
 }
@@ -909,6 +1032,76 @@ const removeTech = async (t) => {
     alert(e.response?.data?.error || '删除失败')
   } finally {
     saving.value = false
+  }
+}
+
+const canConfigureAppointmentProjects = (t) => {
+  if (!merchantSupportsAppointmentProjectBinding.value) return false
+  return String(t?.service_role?.role_type || '').trim() !== 'operational'
+}
+
+const getAppointmentProjectSummary = (t) => {
+  const mode = String(t?.appointment_project_binding_mode || 'merchant_default').trim()
+  const projectIds = Array.isArray(t?.appointment_project_ids) ? t.appointment_project_ids : []
+  if (mode !== 'custom') return '预约项目：全部线上项目'
+  return `预约项目：已选 ${projectIds.length} 项`
+}
+
+const enableCustomProjectBinding = () => {
+  projectConfigBindingMode.value = 'custom'
+  if (projectConfigSelectedIds.value.length === 0) {
+    projectConfigSelectedIds.value = projectConfigProjects.value.map((item) => item.id)
+  }
+}
+
+const selectAllProjectConfig = () => {
+  projectConfigSelectedIds.value = projectConfigProjects.value.map((item) => item.id)
+}
+
+const openProjectConfig = async (t) => {
+  if (!t?.id || !canConfigureAppointmentProjects(t)) return
+  showProjectConfigModal.value = true
+  projectConfigLoading.value = true
+  projectConfigTech.value = t
+  projectConfigProjects.value = []
+  projectConfigSelectedIds.value = []
+  projectConfigBindingMode.value = 'merchant_default'
+  try {
+    const res = await merchantApi.getTechnicianAppointmentProjects(t.id)
+    const data = res?.data?.data || {}
+    const projects = Array.isArray(data.projects) ? data.projects : []
+    const bindingMode = String(data.binding_mode || 'merchant_default').trim() || 'merchant_default'
+    const projectIds = Array.isArray(data.project_ids)
+      ? data.project_ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+      : []
+    projectConfigProjects.value = projects
+    projectConfigBindingMode.value = bindingMode
+    projectConfigSelectedIds.value = bindingMode === 'custom'
+      ? projectIds
+      : projects.map((item) => item.id)
+  } catch (e) {
+    closeProjectConfig()
+    alert(e.response?.data?.error || '加载客服可预约项目失败')
+  } finally {
+    projectConfigLoading.value = false
+  }
+}
+
+const saveProjectConfig = async () => {
+  if (!projectConfigTech.value?.id || projectConfigSaving.value) return
+  projectConfigSaving.value = true
+  try {
+    const projectIds = projectConfigBindingMode.value === 'custom'
+      ? [...new Set(projectConfigSelectedIds.value.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))].sort((a, b) => a - b)
+      : []
+    await merchantApi.setTechnicianAppointmentProjects(projectConfigTech.value.id, { project_ids: projectIds })
+    await load()
+    closeProjectConfig()
+    alert('保存成功')
+  } catch (e) {
+    alert(e.response?.data?.error || '保存失败')
+  } finally {
+    projectConfigSaving.value = false
   }
 }
 
