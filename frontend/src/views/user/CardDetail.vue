@@ -3312,7 +3312,8 @@ const buildUserAppointmentMinuteKey = (value) => {
   return normalized.slice(0, 16)
 }
 
-const loadUserRescheduleSlots = async (date) => {
+const loadUserRescheduleSlots = async (date, options = {}) => {
+  const { alertOnError = true } = options
   if (!card.value?.merchant_id || !appointment.value) return
   userRescheduleLoading.value = true
   userRescheduleError.value = ''
@@ -3331,11 +3332,15 @@ const loadUserRescheduleSlots = async (date) => {
     })
     userRescheduleSlots.value = rawSlots
     userRescheduleTechnicians.value = res.data?.data?.technicians || []
+    return true
   } catch (err) {
     userRescheduleSlots.value = []
     userRescheduleTechnicians.value = []
     userRescheduleError.value = err.response?.data?.error || '获取可改签时间失败'
-    alert(userRescheduleError.value)
+    if (alertOnError) {
+      alert(userRescheduleError.value)
+    }
+    return false
   } finally {
     userRescheduleLoading.value = false
   }
@@ -3348,10 +3353,13 @@ const openUserRescheduleModal = async () => {
     const eligibilityRes = await appointmentApi.getUserRescheduleEligibility(appointment.value.id)
     userRescheduleEligibility.value = eligibilityRes.data?.data || null
     userRescheduleDate.value = userRescheduleEligibility.value?.default_date || ''
-    showUserRescheduleModal.value = true
     if (userRescheduleEligibility.value?.allowed && userRescheduleDate.value) {
-      await loadUserRescheduleSlots(userRescheduleDate.value)
+      const loaded = await loadUserRescheduleSlots(userRescheduleDate.value)
+      if (!loaded) {
+        return
+      }
     }
+    showUserRescheduleModal.value = true
     if (appointment.value?.id) {
       try {
         const recRes = await appointmentApi.getUserRescheduleRecommendations(appointment.value.id, userRescheduleDate.value || undefined)
