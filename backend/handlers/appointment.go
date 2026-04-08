@@ -1253,20 +1253,49 @@ func compareAppointmentPlacementScore(currentScore, targetScore int) (string, st
 	}
 }
 
-func filterAppointmentRescheduleSlotsByComparison(slots []appointmentTimeSlot, eligibility appointmentRescheduleEligibility, currentScore int) []appointmentTimeSlot {
+func uintPtrEqual(left, right *uint) bool {
+	if left == nil && right == nil {
+		return true
+	}
+	if left == nil || right == nil {
+		return false
+	}
+	return *left == *right
+}
+
+func resolveAppointmentTargetProjectID(target, fallback *uint) *uint {
+	if target != nil {
+		return target
+	}
+	return fallback
+}
+
+func annotateAppointmentRescheduleSlotsComparison(slots []appointmentTimeSlot, currentScore int) []appointmentTimeSlot {
 	if len(slots) == 0 {
 		return slots
 	}
-	betterOnly := eligibility.RuleMode != appointmentRescheduleTodayOrTomorrow
-	filtered := make([]appointmentTimeSlot, 0, len(slots))
+	annotated := make([]appointmentTimeSlot, 0, len(slots))
 	for _, slot := range slots {
 		kind, label := compareAppointmentPlacementScore(currentScore, slot.PlacementScoreValue)
 		slot.ComparisonKind = kind
 		slot.ComparisonLabel = label
-		if kind == "worse" {
+		annotated = append(annotated, slot)
+	}
+	return annotated
+}
+
+func filterAppointmentRescheduleSlotsByComparison(slots []appointmentTimeSlot, eligibility appointmentRescheduleEligibility, currentScore int) []appointmentTimeSlot {
+	if len(slots) == 0 {
+		return slots
+	}
+	annotated := annotateAppointmentRescheduleSlotsComparison(slots, currentScore)
+	betterOnly := eligibility.RuleMode != appointmentRescheduleTodayOrTomorrow
+	filtered := make([]appointmentTimeSlot, 0, len(annotated))
+	for _, slot := range annotated {
+		if slot.ComparisonKind == "worse" {
 			continue
 		}
-		if betterOnly && kind != "better" {
+		if betterOnly && slot.ComparisonKind != "better" {
 			continue
 		}
 		filtered = append(filtered, slot)
@@ -3434,7 +3463,7 @@ func GetAppointmentRescheduleSlots(c *gin.Context) {
 			return
 		}
 		if slots, ok := payload["time_slots"].([]appointmentTimeSlot); ok {
-			payload["time_slots"] = filterAppointmentRescheduleSlotsByComparison(slots, eligibility, currentScore)
+			payload["time_slots"] = annotateAppointmentRescheduleSlotsComparison(slots, currentScore)
 		}
 	}
 	payload["eligibility"] = eligibility
@@ -3619,6 +3648,17 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "校验改签时间失败"})
 		return
 	}
+	resolvedTechnicianID := appointment.TechnicianID
+	if placementDecision.AssignedTechnicianID != nil {
+		resolvedTechnicianID = placementDecision.AssignedTechnicianID
+	}
+	if appointment.AppointmentTime != nil &&
+		appointment.AppointmentTime.In(appointmentLocation()).Equal(newAppointmentTime.In(appointmentLocation())) &&
+		uintPtrEqual(resolvedTechnicianID, appointment.TechnicianID) &&
+		uintPtrEqual(resolveAppointmentTargetProjectID(input.ProjectID, appointment.ProjectID), appointment.ProjectID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "目标改签内容与当前预约一致"})
+		return
+	}
 
 	actorType, actorID := getAppointmentActor(c)
 	requestStatus := "pending_user"
@@ -3627,6 +3667,8 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 	}
 
 	var proposal models.AppointmentRescheduleRequest
+	var oldAppointment, newAppointment models.Appointment
+	now := time.Now().In(appointmentLocation())
 	err = config.DB.Transaction(func(tx *gorm.DB) error {
 		currentPtr, err := loadAppointmentByID(tx, appointment.ID)
 		if err != nil {
@@ -3669,6 +3711,22 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 		if placementDecision.AssignedTechnicianID != nil {
 			proposal.NewTechnicianID = placementDecision.AssignedTechnicianID
 		}
+		if authType == "user" && !repairEval.AffectedByLeave {
+			proposal.Status = "accepted"
+			proposal.ConfirmedByType = actorType
+			proposal.ConfirmedByID = actorID
+			proposal.ConfirmedAt = &now
+			if err := tx.Create(&proposal).Error; err != nil {
+				return err
+			}
+			oldAppointment, newAppointment, err = executeAppointmentReschedule(tx, current.ID, proposal, actorType, actorID, now)
+			if err != nil {
+				return err
+			}
+			return tx.Model(&models.AppointmentRescheduleRequest{}).Where("id = ?", proposal.ID).Updates(map[string]interface{}{
+				"result_appointment_id": newAppointment.ID,
+			}).Error
+		}
 		return tx.Create(&proposal).Error
 	})
 	if err != nil {
@@ -3680,7 +3738,27 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": proposal})
+	if authType == "user" && !repairEval.AffectedByLeave {
+		if reloadedOld, err := loadAppointmentByID(config.DB, oldAppointment.ID); err == nil && reloadedOld != nil {
+			oldAppointment = *reloadedOld
+			_ = hydrateAppointmentRelations(config.DB, &oldAppointment)
+		}
+		if reloadedNew, err := loadAppointmentByID(config.DB, newAppointment.ID); err == nil && reloadedNew != nil {
+			newAppointment = *reloadedNew
+			_ = hydrateAppointmentRelations(config.DB, &newAppointment)
+		}
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{
+			"mode":            "executed",
+			"request":         proposal,
+			"old_appointment": oldAppointment,
+			"new_appointment": newAppointment,
+		}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{
+		"mode":    "pending",
+		"request": proposal,
+	}})
 }
 
 func AcceptAppointmentRescheduleRequest(c *gin.Context) {

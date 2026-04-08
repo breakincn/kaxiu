@@ -142,7 +142,7 @@
             :class="'bg-orange-50 text-orange-700 border-orange-100'"
           >
             <div class="font-medium">
-              {{ isUserRescheduleConfirmationPending ? '商户发起了改签提议，请确认' : '改签申请已提交，待商户确认' }}
+              {{ isUserRescheduleConfirmationPending ? '商户发起了改签提议，请确认' : '存在待处理的改签提议' }}
             </div>
             <div class="mt-1">提议时间：{{ formatDateTime(latestAppointmentRescheduleRequest.new_appointment_time) }}</div>
             <div v-if="latestAppointmentRescheduleTechnicianText" class="mt-1">改签客服：{{ latestAppointmentRescheduleTechnicianText }}</div>
@@ -2825,13 +2825,7 @@ const userRescheduleDateHint = computed(() => {
 const userRescheduleComparisonHint = computed(() => {
   const eligibility = userRescheduleEligibility.value
   if (!eligibility?.allowed) return ''
-  if (eligibility.rule_mode === 'today_or_tomorrow') {
-    return '当前阶段展示更优于当前和不劣于当前的时段，系统会优先推荐更优时段。'
-  }
-  if (eligibility.rule_mode === 'tomorrow_only') {
-    return '当前阶段只展示更优于当前排布的时段。'
-  }
-  return ''
+  return '当前展示全部可改签时段，系统会优先推荐更优时段。'
 })
 const appointmentRescheduleRecommendationVisible = computed(() => {
   return appointmentRescheduleRecommendationEnabled.value
@@ -2839,7 +2833,6 @@ const appointmentRescheduleRecommendationVisible = computed(() => {
 
 const userDisplayedRescheduleTechnicians = computed(() => {
   const list = userRescheduleTechnicians.value || []
-  const currentTechnicianId = Number(appointment.value?.technician_id || 0)
   if (userRescheduleTime.value) {
     const slot = (userRescheduleSlots.value || []).find(s => s && s.time === userRescheduleTime.value)
     const candidates = Array.isArray(slot?.technician_candidates) ? slot.technician_candidates : []
@@ -2848,7 +2841,7 @@ const userDisplayedRescheduleTechnicians = computed(() => {
       .filter(t => {
         const technicianId = Number(t?.id || 0)
         if (!byId.has(technicianId)) return false
-        return !currentTechnicianId || technicianId !== currentTechnicianId
+        return true
       })
       .map(t => ({
         ...t,
@@ -2856,12 +2849,7 @@ const userDisplayedRescheduleTechnicians = computed(() => {
         predicted_delay_minutes: byId.get(Number(t.id))?.predicted_delay_minutes || 0
       }))
   }
-  return list
-    .filter(t => {
-      const technicianId = Number(t?.id || 0)
-      return !currentTechnicianId || technicianId !== currentTechnicianId
-    })
-    .map(t => ({ ...t, availability_state: 'safe', predicted_delay_minutes: 0 }))
+  return list.map(t => ({ ...t, availability_state: 'safe', predicted_delay_minutes: 0 }))
 })
 
 const visibleUsages = computed(() => displayUsages.value.slice(0, visibleUsageCount.value))
@@ -3332,16 +3320,17 @@ const loadUserRescheduleSlots = async (date) => {
     const res = await appointmentApi.getUserRescheduleSlots(appointment.value.id, date)
     userRescheduleEligibility.value = res.data?.data?.eligibility || userRescheduleEligibility.value
     const currentMinute = buildUserAppointmentMinuteKey(appointment.value?.appointment_time)
+    const currentTechnicianId = Number(appointment.value?.technician_id || 0)
     const rawSlots = (res.data?.data?.time_slots || []).filter(slot => {
       const slotMinute = buildUserAppointmentMinuteKey(slot?.time)
-      return !currentMinute || slotMinute !== currentMinute
+      if (!currentMinute || slotMinute !== currentMinute) {
+        return true
+      }
+      const ids = Array.isArray(slot?.technician_ids) ? slot.technician_ids.map(id => Number(id || 0)) : []
+      return ids.some(id => id > 0 && id !== currentTechnicianId)
     })
     userRescheduleSlots.value = rawSlots
     userRescheduleTechnicians.value = res.data?.data?.technicians || []
-    const currentTechnicianId = Number(appointment.value?.technician_id || 0)
-    if (currentTechnicianId > 0) {
-      userRescheduleTechnicians.value = userRescheduleTechnicians.value.filter(item => Number(item?.id || 0) !== currentTechnicianId)
-    }
   } catch (err) {
     userRescheduleSlots.value = []
     userRescheduleTechnicians.value = []
@@ -3404,14 +3393,19 @@ const submitUserRescheduleRequest = async () => {
   if (!appointment.value || !userRescheduleTime.value || userRescheduleSubmitting.value) return
   userRescheduleSubmitting.value = true
   try {
-    await appointmentApi.createUserRescheduleRequest(appointment.value.id, {
+    const res = await appointmentApi.createUserRescheduleRequest(appointment.value.id, {
       appointment_time: userRescheduleTime.value,
       technician_id: userRescheduleTechnicianId.value ? Number(userRescheduleTechnicianId.value) : null,
       reason: String(userRescheduleReason.value || '').trim() || '用户申请改签'
     })
+    const data = res.data?.data || {}
     closeUserRescheduleModal()
     await fetchAppointment()
-    alert('改签申请已提交，等待商户确认')
+    if (String(data?.mode || '').trim() === 'pending') {
+      alert('改签提议已提交，等待对方确认')
+    } else {
+      alert('改签成功，新的预约已生效')
+    }
   } catch (err) {
     alert(err.response?.data?.error || '提交改签申请失败')
   } finally {
