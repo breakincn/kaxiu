@@ -23,17 +23,17 @@
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
                   <div class="text-sm font-medium text-gray-700">项目 {{ index + 1 }}</div>
-                  <span v-if="project.is_default" class="px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 text-xs font-medium border border-orange-100">默认项目</span>
-                </div>
-                <div class="flex items-center gap-3">
                   <button
+                    v-if="!project.is_default"
                     type="button"
                     @click="setDefaultProject(index)"
-                    :disabled="project.is_default"
-                    class="text-sm font-medium text-primary disabled:text-gray-300 disabled:cursor-not-allowed"
+                    class="text-sm font-medium text-primary"
                   >
-                    {{ project.is_default ? '默认中' : '设为默认' }}
+                    设为默认
                   </button>
+                  <span v-else class="px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 text-xs font-medium border border-orange-100">默认项目</span>
+                </div>
+                <div class="flex items-center gap-3">
                   <button 
                     @click="removeProject(index)"
                     class="text-red-500 hover:text-red-700"
@@ -354,6 +354,10 @@ const removeProject = (index) => {
     return
   }
   const p = form.value.projects[index]
+  const projectName = String(p?.name || '').trim() || `项目 ${index + 1}`
+  if (!window.confirm(`确定删除“${projectName}”吗？`)) {
+    return
+  }
   if (p && p.id) {
     removedProjectIds.value.push(p.id)
   }
