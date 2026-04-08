@@ -61,19 +61,15 @@ func GetProjectStartPendingTimeoutSeconds(tx *gorm.DB, projectID uint) int {
 }
 
 func ResolveServiceSessionStartPendingTimeoutSeconds(tx *gorm.DB, merchantID uint, technicianID uint, projectID *uint) int {
-	if projectID != nil && *projectID > 0 {
-		if seconds := GetProjectStartPendingTimeoutSeconds(tx, *projectID); seconds > 0 {
-			return seconds
-		}
+	if project, err := ResolveMerchantProject(tx, merchantID, projectID); err == nil && project != nil && project.StartPendingTimeoutSeconds > 0 {
+		return NormalizeRoleStartPendingTimeoutSeconds(project.StartPendingTimeoutSeconds)
 	}
 	return GetMerchantTechnicianStartPendingTimeoutSeconds(tx, merchantID, technicianID)
 }
 
 func ResolveServiceSessionStartPendingTimeoutSecondsByRole(tx *gorm.DB, merchantID uint, serviceRoleID uint, projectID *uint) int {
-	if projectID != nil && *projectID > 0 {
-		if seconds := GetProjectStartPendingTimeoutSeconds(tx, *projectID); seconds > 0 {
-			return seconds
-		}
+	if project, err := ResolveMerchantProject(tx, merchantID, projectID); err == nil && project != nil && project.StartPendingTimeoutSeconds > 0 {
+		return NormalizeRoleStartPendingTimeoutSeconds(project.StartPendingTimeoutSeconds)
 	}
 	return GetMerchantRoleStartPendingTimeoutSeconds(tx, merchantID, serviceRoleID)
 }

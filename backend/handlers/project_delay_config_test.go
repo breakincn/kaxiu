@@ -120,3 +120,71 @@ func TestUpdateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 		t.Fatalf("unexpected updated delay config: %+v", got)
 	}
 }
+
+func TestCreateMerchantProjectAssignsDefaultAndSwitchesDefault(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	config.DB = setupProjectHandlerTestDB(t)
+	merchant := seedProjectMerchant(t, config.DB)
+
+	c1, rec1 := newProjectMerchantJSONContext(http.MethodPost, "/merchant/projects", merchant.ID, `{"name":"项目A","duration":45}`)
+	CreateMerchantProject(c1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec1.Code, rec1.Body.String())
+	}
+
+	var first models.MerchantProject
+	if err := config.DB.Where("merchant_id = ? AND name = ?", merchant.ID, "项目A").First(&first).Error; err != nil {
+		t.Fatalf("load first project failed: %v", err)
+	}
+	if !first.IsDefault {
+		t.Fatalf("first project should be default: %+v", first)
+	}
+
+	c2, rec2 := newProjectMerchantJSONContext(http.MethodPost, "/merchant/projects", merchant.ID, `{"name":"项目B","duration":60,"is_default":true}`)
+	CreateMerchantProject(c2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec2.Code, rec2.Body.String())
+	}
+
+	var projects []models.MerchantProject
+	if err := config.DB.Where("merchant_id = ?", merchant.ID).Order("id asc").Find(&projects).Error; err != nil {
+		t.Fatalf("load projects failed: %v", err)
+	}
+	defaultCount := 0
+	secondDefault := false
+	for _, project := range projects {
+		if project.IsDefault {
+			defaultCount++
+			if project.Name == "项目B" {
+				secondDefault = true
+			}
+		}
+	}
+	if defaultCount != 1 || !secondDefault {
+		t.Fatalf("unexpected default projects: %+v", projects)
+	}
+}
+
+func TestDeleteMerchantProjectRejectsLastProject(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	config.DB = setupProjectHandlerTestDB(t)
+	merchant := seedProjectMerchant(t, config.DB)
+	project := models.MerchantProject{MerchantID: merchant.ID, Name: "唯一项目", Duration: 45, IsDefault: true}
+	if err := config.DB.Create(&project).Error; err != nil {
+		t.Fatalf("create project failed: %v", err)
+	}
+
+	projectID := strconv.Itoa(int(project.ID))
+	c, rec := newProjectMerchantJSONContext(http.MethodDelete, "/merchant/projects/"+projectID, merchant.ID, "")
+	c.Params = gin.Params{{Key: "id", Value: projectID}}
+	DeleteMerchantProject(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}

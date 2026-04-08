@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"kabao/models"
+	"kabao/config"
 
 	"gorm.io/gorm"
 )
@@ -32,11 +32,11 @@ func resolveProjectServiceConfig(tx *gorm.DB, merchantID uint, projectID *uint, 
 	delaySeconds := normalizeSessionStartDelaySeconds(defaultDelaySeconds)
 
 	if tx == nil || merchantID == 0 || projectID == nil || *projectID == 0 {
-		return durationMinutes, delaySeconds
+		projectID = nil
 	}
 
-	var project models.MerchantProject
-	if err := tx.Where("id = ? AND merchant_id = ?", *projectID, merchantID).First(&project).Error; err != nil {
+	project, err := config.ResolveMerchantProject(tx, merchantID, projectID)
+	if err != nil {
 		return durationMinutes, delaySeconds
 	}
 
@@ -52,11 +52,11 @@ func resolveProjectBookingConfig(tx *gorm.DB, merchantID uint, projectID *uint, 
 	gapMinutes := normalizeProjectServiceGapMinutes(defaultGapMinutes)
 
 	if tx == nil || merchantID == 0 || projectID == nil || *projectID == 0 {
-		return durationMinutes, gapMinutes
+		projectID = nil
 	}
 
-	var project models.MerchantProject
-	if err := tx.Where("id = ? AND merchant_id = ?", *projectID, merchantID).First(&project).Error; err != nil {
+	project, err := config.ResolveMerchantProject(tx, merchantID, projectID)
+	if err != nil {
 		return durationMinutes, gapMinutes
 	}
 

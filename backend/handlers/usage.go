@@ -234,8 +234,9 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		byUsageID[s.InitialUsageID] = s
 	}
 
-	// 若 usage.Project 为空，尝试用 service_session.project_id 兜底补齐
+	// 若 usage.Project 为空，尝试用 service_session.project_id 或默认项目兜底补齐
 	needProjectIDs := make([]uint, 0, len(sessions))
+	defaultProjectByMerchant := make(map[uint]*models.MerchantProject)
 	for i := range *usages {
 		u := &(*usages)[i]
 		if u.ProjectID != nil || u.Project != nil {
@@ -249,6 +250,21 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 				if u.ID == 77 {
 					fmt.Printf("[DEBUG] usage.id=77 found service_session.project_id=%d, set usage.ProjectID\n", pid)
 				}
+			}
+		}
+		if u.ProjectID == nil && u.MerchantID > 0 {
+			if _, seen := defaultProjectByMerchant[u.MerchantID]; !seen {
+				project, err := config.GetDefaultMerchantProject(config.DB, u.MerchantID)
+				if err == nil && project != nil {
+					defaultProjectByMerchant[u.MerchantID] = project
+				} else {
+					defaultProjectByMerchant[u.MerchantID] = nil
+				}
+			}
+			if project := defaultProjectByMerchant[u.MerchantID]; project != nil {
+				pid := project.ID
+				u.ProjectID = &pid
+				u.Project = project
 			}
 		}
 	}

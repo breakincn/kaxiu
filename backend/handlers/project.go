@@ -41,6 +41,7 @@ func CreateMerchantProject(c *gin.Context) {
 		DelayCompensationMode            *string `json:"delay_compensation_mode"`
 		DelayRedeemThresholdPercent      *int    `json:"delay_redeem_threshold_percent"`
 		DelayFixedUnitValue              *int    `json:"delay_fixed_unit_value"`
+		IsDefault                        *bool   `json:"is_default"`
 		Price                            float64 `json:"price"`
 		Description                      string  `json:"description"`
 		IsActive                         *bool   `json:"is_active"`
@@ -153,6 +154,15 @@ func CreateMerchantProject(c *gin.Context) {
 	if input.SortOrder != nil {
 		sortOrder = *input.SortOrder
 	}
+	var existingCount int64
+	if err := config.DB.Model(&models.MerchantProject{}).Where("merchant_id = ?", merchantID).Count(&existingCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询项目失败"})
+		return
+	}
+	isDefault := existingCount == 0
+	if input.IsDefault != nil {
+		isDefault = *input.IsDefault
+	}
 
 	p := models.MerchantProject{
 		MerchantID:                       merchantID,
@@ -168,12 +178,23 @@ func CreateMerchantProject(c *gin.Context) {
 		DelayCompensationMode:            delayCompensationMode,
 		DelayRedeemThresholdPercent:      delayRedeemThresholdPercent,
 		DelayFixedUnitValue:              delayFixedUnitValue,
+		IsDefault:                        isDefault,
 		Price:                            input.Price,
 		Description:                      strings.TrimSpace(input.Description),
 		IsActive:                         isActive,
 		SortOrder:                        sortOrder,
 	}
-	if err := config.DB.Create(&p).Error; err != nil {
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if p.IsDefault {
+			if err := tx.Model(&models.MerchantProject{}).Where("merchant_id = ?", merchantID).Update("is_default", false).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Create(&p).Error; err != nil {
+			return err
+		}
+		return config.EnsureMerchantDefaultProject(tx, merchantID)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
 		return
 	}
@@ -210,6 +231,7 @@ func UpdateMerchantProject(c *gin.Context) {
 		DelayCompensationMode            *string  `json:"delay_compensation_mode"`
 		DelayRedeemThresholdPercent      *int     `json:"delay_redeem_threshold_percent"`
 		DelayFixedUnitValue              *int     `json:"delay_fixed_unit_value"`
+		IsDefault                        *bool    `json:"is_default"`
 		Price                            *float64 `json:"price"`
 		Description                      *string  `json:"description"`
 		IsActive                         *bool    `json:"is_active"`
@@ -323,13 +345,26 @@ func UpdateMerchantProject(c *gin.Context) {
 	if input.SortOrder != nil {
 		updates["sort_order"] = *input.SortOrder
 	}
+	if input.IsDefault != nil {
+		updates["is_default"] = *input.IsDefault
+	}
 
 	if len(updates) == 0 {
 		c.JSON(http.StatusOK, gin.H{"data": p})
 		return
 	}
 
-	if err := config.DB.Model(&p).Updates(updates).Error; err != nil {
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if nextDefault, ok := updates["is_default"].(bool); ok && nextDefault {
+			if err := tx.Model(&models.MerchantProject{}).Where("merchant_id = ?", merchantID).Update("is_default", false).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&p).Updates(updates).Error; err != nil {
+			return err
+		}
+		return config.EnsureMerchantDefaultProject(tx, merchantID)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
 		return
 	}
@@ -344,13 +379,33 @@ func DeleteMerchantProject(c *gin.Context) {
 	}
 
 	id := c.Param("id")
-	res := config.DB.Where("id = ? AND merchant_id = ?", id, merchantID).Delete(&models.MerchantProject{})
-	if res.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
+	var project models.MerchantProject
+	if err := config.DB.Where("id = ? AND merchant_id = ?", id, merchantID).First(&project).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "项目不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
 		return
 	}
-	if res.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "项目不存在"})
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if err := tx.Model(&models.MerchantProject{}).Where("merchant_id = ?", merchantID).Count(&count).Error; err != nil {
+			return err
+		}
+		if count <= 1 {
+			return errors.New("merchant_project_last_one")
+		}
+		if err := tx.Where("id = ? AND merchant_id = ?", id, merchantID).Delete(&models.MerchantProject{}).Error; err != nil {
+			return err
+		}
+		return config.EnsureMerchantDefaultProject(tx, merchantID)
+	}); err != nil {
+		if err.Error() == "merchant_project_last_one" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "项目列表至少保留一个项目"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})

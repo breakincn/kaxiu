@@ -76,6 +76,9 @@ func InitDB() {
 			log.Fatal("数据库迁移失败:", err)
 		}
 		migrateLegacyMerchantProjects()
+		if err := EnsureAllMerchantsDefaultProjects(DB); err != nil {
+			log.Fatal("补齐默认项目失败:", err)
+		}
 		log.Println("数据库初始化成功")
 
 		// 初始化商户注册邀请码（幂等）
@@ -90,6 +93,9 @@ func InitDB() {
 	}
 
 	migrateLegacyMerchantProjects()
+	if err := EnsureAllMerchantsDefaultProjects(DB); err != nil {
+		log.Fatal("补齐默认项目失败:", err)
+	}
 
 	// 兼容历史数据：为旧用户补充默认 username，避免新增唯一索引导致异常
 	DB.Exec("UPDATE users SET username = CONCAT('u', id) WHERE username IS NULL OR username = ''")

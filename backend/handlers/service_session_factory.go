@@ -53,7 +53,7 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		autoFinishDelaySeconds = 300
 	} else if merchant.SupportRoom {
 		status = "room_selecting"
-		dl := now.Add(time.Duration(config.GetProjectRoomSelectTimeoutSeconds(tx, verifyCode.ProjectID)) * time.Second)
+		dl := now.Add(time.Duration(config.GetProjectRoomSelectTimeoutSeconds(tx, merchant.ID, verifyCode.ProjectID)) * time.Second)
 		roomSelectDeadlineAt = &dl
 		nextStep = "room_select"
 	} else {

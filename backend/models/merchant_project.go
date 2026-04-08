@@ -17,6 +17,7 @@ type MerchantProject struct {
 	DelayCompensationMode            string     `json:"delay_compensation_mode" gorm:"size:20;not null;default:'minutes_bucket';comment:拖堂补偿模式（minutes_bucket/amount_bucket/fixed_unit）"`
 	DelayRedeemThresholdPercent      int        `json:"delay_redeem_threshold_percent" gorm:"not null;default:100;comment:拖堂补偿兑现阈值百分比"`
 	DelayFixedUnitValue              int        `json:"delay_fixed_unit_value" gorm:"not null;default:0;comment:固定单位补偿值"`
+	IsDefault                        bool       `json:"is_default" gorm:"not null;default:false;index:idx_merchant_default,priority:2;comment:是否为商户默认项目"`
 	Price                            float64    `json:"price" gorm:"type:decimal(10,2);default:0.00;comment:项目价格（元）"`
 	Description                      string     `json:"description" gorm:"type:text;comment:项目描述"`
 	IsActive                         bool       `json:"is_active" gorm:"default:true;index:idx_merchant_active,priority:2;comment:是否启用"`

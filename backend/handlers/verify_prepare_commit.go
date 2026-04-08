@@ -125,11 +125,8 @@ func loadVerifyPrepareContext(tx *gorm.DB, merchantID uint, code string, now tim
 	}
 
 	var project *models.MerchantProject
-	if verifyCode.ProjectID != nil {
-		var p models.MerchantProject
-		if err := tx.Where("id = ? AND merchant_id = ?", *verifyCode.ProjectID, merchantID).First(&p).Error; err == nil {
-			project = &p
-		}
+	if p, err := config.ResolveMerchantProject(tx, merchantID, verifyCode.ProjectID); err == nil {
+		project = p
 	}
 
 	return merchant, verifyCode, card, project, nil

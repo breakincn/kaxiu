@@ -142,6 +142,12 @@ func GetCard(c *gin.Context) {
 		WHERE cp.card_id = ? AND p.merchant_id = ?
 		ORDER BY cp.id ASC
 	`, card.ID, card.MerchantID).Scan(&projects)
+	if project, err := config.GetDefaultMerchantProject(config.DB, card.MerchantID); err == nil && project != nil {
+		card.StartPendingTimeoutSeconds = int64(config.NormalizeRoleStartPendingTimeoutSeconds(project.StartPendingTimeoutSeconds))
+		if len(projects) == 0 {
+			projects = []models.MerchantProject{*project}
+		}
+	}
 	card.Projects = projects
 
 	c.JSON(http.StatusOK, gin.H{"data": card})
@@ -188,6 +194,10 @@ func GetCardProjects(c *gin.Context) {
 		First(&purchase).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if project, err2 := config.GetDefaultMerchantProject(config.DB, card.MerchantID); err2 == nil && project != nil {
+				c.JSON(http.StatusOK, gin.H{"data": []models.MerchantProject{*project}})
+				return
+			}
 			c.JSON(http.StatusOK, gin.H{"data": []models.MerchantProject{}})
 			return
 		}
@@ -201,6 +211,10 @@ func GetCardProjects(c *gin.Context) {
 		Order("id asc").
 		Pluck("project_id", &projectIDs)
 	if len(projectIDs) == 0 {
+		if project, err := config.GetDefaultMerchantProject(config.DB, card.MerchantID); err == nil && project != nil {
+			c.JSON(http.StatusOK, gin.H{"data": []models.MerchantProject{*project}})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"data": []models.MerchantProject{}})
 		return
 	}
@@ -210,6 +224,11 @@ func GetCardProjects(c *gin.Context) {
 		Where("merchant_id = ? AND id IN ?", card.MerchantID, projectIDs).
 		Order("sort_order asc, id asc").
 		Find(&projects)
+	if len(projects) == 0 {
+		if project, err := config.GetDefaultMerchantProject(config.DB, card.MerchantID); err == nil && project != nil {
+			projects = []models.MerchantProject{*project}
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{"data": projects})
 }

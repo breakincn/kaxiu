@@ -268,6 +268,14 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchant_projects ADD COLUMN room_select_timeout_seconds INT NOT NULL DEFAULT 90 COMMENT '自动分配房间延迟时间（秒）'",
 		},
 	},
+	{
+		Version: "2026040801",
+		Name:    "add_project_is_default",
+		Statements: []string{
+			"ALTER TABLE merchant_projects ADD COLUMN is_default BOOLEAN NOT NULL DEFAULT 0 COMMENT '是否为商户默认项目'",
+			"ALTER TABLE merchant_projects ADD INDEX idx_merchant_default (merchant_id, is_default)",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

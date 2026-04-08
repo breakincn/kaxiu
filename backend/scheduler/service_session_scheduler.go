@@ -30,12 +30,8 @@ func resolveStaffSelectingTimeout(tx *gorm.DB, s *models.ServiceSession) time.Du
 	if s == nil {
 		return defaultStaffSelectingTimeout
 	}
-	if s.ProjectID == nil || *s.ProjectID == 0 {
-		return defaultStaffSelectingTimeout
-	}
-
-	var project models.MerchantProject
-	if err := tx.Select("id, auto_assign_technician_delay_minutes").First(&project, *s.ProjectID).Error; err != nil {
+	project, err := config.ResolveMerchantProject(tx, s.MerchantID, s.ProjectID)
+	if err != nil || project == nil {
 		return defaultStaffSelectingTimeout
 	}
 	if project.AutoAssignTechnicianDelayMinutes <= 0 {

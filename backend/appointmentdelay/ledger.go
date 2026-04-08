@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"kabao/config"
 	"kabao/models"
 
 	"gorm.io/gorm"
@@ -224,17 +225,15 @@ func parseTimeString(s string) (time.Time, bool) {
 }
 
 func loadProjectDelayConfig(tx *gorm.DB, merchantID uint, projectID *uint) (*models.MerchantProject, error) {
-	if tx == nil || projectID == nil || *projectID == 0 {
+	if tx == nil || merchantID == 0 {
 		return nil, nil
 	}
-	var project models.MerchantProject
-	if err := tx.Select("id", "merchant_id", "duration", "delay_tolerance_minutes", "delay_compensation_mode", "delay_redeem_threshold_percent", "delay_fixed_unit_value").
-		Where("id = ? AND merchant_id = ?", *projectID, merchantID).
-		First(&project).Error; err != nil {
+	project, err := config.ResolveMerchantProject(tx, merchantID, projectID)
+	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
 		return nil, err
 	}
-	return &project, nil
+	return project, nil
 }

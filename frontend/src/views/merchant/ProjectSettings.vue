@@ -21,16 +21,28 @@
           <div class="px-4 py-4 space-y-4">
             <div v-for="(project, index) in form.projects" :key="index" class="border border-gray-200 rounded-lg p-4 space-y-3">
               <div class="flex items-center justify-between">
-                <div class="text-sm font-medium text-gray-700">项目 {{ index + 1 }}</div>
-                <button 
-                  @click="removeProject(index)"
-                  class="text-red-500 hover:text-red-700"
-                  v-if="form.projects.length > 1"
-                >
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                  </svg>
-                </button>
+                <div class="flex items-center gap-2">
+                  <div class="text-sm font-medium text-gray-700">项目 {{ index + 1 }}</div>
+                  <span v-if="project.is_default" class="px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 text-xs font-medium border border-orange-100">默认项目</span>
+                </div>
+                <div class="flex items-center gap-3">
+                  <button
+                    type="button"
+                    @click="setDefaultProject(index)"
+                    :disabled="project.is_default"
+                    class="text-sm font-medium text-primary disabled:text-gray-300 disabled:cursor-not-allowed"
+                  >
+                    {{ project.is_default ? '默认中' : '设为默认' }}
+                  </button>
+                  <button 
+                    @click="removeProject(index)"
+                    class="text-red-500 hover:text-red-700"
+                  >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                  </button>
+                </div>
               </div>
               
               <div>
@@ -250,7 +262,8 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
     delay_tolerance_minutes: Number(project.delay_tolerance_minutes ?? 1),
     delay_compensation_mode: String(project.delay_compensation_mode || 'minutes_bucket'),
     delay_redeem_threshold_percent: Number(project.delay_redeem_threshold_percent ?? 100),
-    delay_fixed_unit_value: Number(project.delay_fixed_unit_value ?? 0)
+    delay_fixed_unit_value: Number(project.delay_fixed_unit_value ?? 0),
+    is_default: project.is_default === true
   })),
   removedProjectIds: [...removedIds].sort((a, b) => Number(a) - Number(b))
 })
@@ -295,7 +308,8 @@ const load = async () => {
           delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),
           delay_compensation_mode: String(p.delay_compensation_mode || 'minutes_bucket'),
           delay_redeem_threshold_percent: Number(p.delay_redeem_threshold_percent ?? 100),
-          delay_fixed_unit_value: Number(p.delay_fixed_unit_value ?? 0)
+          delay_fixed_unit_value: Number(p.delay_fixed_unit_value ?? 0),
+          is_default: p.is_default === true
         }))
         : []
     }
@@ -322,16 +336,34 @@ const addProject = () => {
     delay_tolerance_minutes: 1,
     delay_compensation_mode: 'minutes_bucket',
     delay_redeem_threshold_percent: 100,
-    delay_fixed_unit_value: 0
+    delay_fixed_unit_value: 0,
+    is_default: form.value.projects.length === 0
   })
 }
 
+const setDefaultProject = (index) => {
+  form.value.projects = form.value.projects.map((project, i) => ({
+    ...project,
+    is_default: i === index
+  }))
+}
+
 const removeProject = (index) => {
+  if (form.value.projects.length <= 1) {
+    alert('项目列表至少保留一个项目')
+    return
+  }
   const p = form.value.projects[index]
   if (p && p.id) {
     removedProjectIds.value.push(p.id)
   }
   form.value.projects.splice(index, 1)
+  if (!form.value.projects.some(project => project.is_default)) {
+    form.value.projects = form.value.projects.map((project, i) => ({
+      ...project,
+      is_default: i === 0
+    }))
+  }
 }
 
 const save = async () => {
@@ -389,6 +421,11 @@ const save = async () => {
       return
     }
   }
+  const defaultCount = form.value.projects.filter(project => project.is_default).length
+  if (defaultCount !== 1) {
+    alert('项目列表必须且只能有一个默认项目')
+    return
+  }
 
   saving.value = true
   try {
@@ -415,7 +452,8 @@ const save = async () => {
         delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),
         delay_compensation_mode: String(p.delay_compensation_mode || 'minutes_bucket'),
         delay_redeem_threshold_percent: Number(p.delay_redeem_threshold_percent ?? 100),
-        delay_fixed_unit_value: Number(p.delay_fixed_unit_value ?? 0)
+        delay_fixed_unit_value: Number(p.delay_fixed_unit_value ?? 0),
+        is_default: p.is_default === true
       }
       if (p.id) {
         await merchantProjectApi.update(p.id, payload)
