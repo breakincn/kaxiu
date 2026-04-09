@@ -147,7 +147,7 @@
                           <div v-if="it.next_available_at">下次可服务：{{ formatTime(it.next_available_at) }}（{{ formatDuration(it.next_available_in_seconds) }}）</div>
                         </div>
                       </div>
-                      <div class="shrink-0 self-start rounded-md bg-green-500 px-2.5 py-0.5 text-xs font-medium text-white whitespace-nowrap">
+                      <div class="shrink-0 self-start rounded px-2 py-0.5 text-xs text-green-600 bg-green-50 whitespace-nowrap">
                         今日已完成 {{ Number(it.today_completed_count || 0) }} 单
                       </div>
                     </div>
