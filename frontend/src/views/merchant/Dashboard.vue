@@ -4935,7 +4935,9 @@ const fetchTodayUsages = async () => {
   try {
     const res = await usageApi.getMerchantUsages(merchantId.value)
     const today = new Date().toISOString().split('T')[0]
-    todayUsages.value = (res.data.data || []).filter(u => u.used_at && u.used_at.startsWith(today))
+    todayUsages.value = (res.data.data || []).filter((u) => {
+      return u.used_at && u.used_at.startsWith(today) && u.status === 'success'
+    })
   } catch (err) {
     console.error('获取核销记录失败:', err)
   }
