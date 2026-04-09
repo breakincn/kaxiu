@@ -3306,9 +3306,7 @@ const getAppointmentGroupDateKey = (appt) => {
   return '未知日期'
 }
 
-const technicianAppointmentDateGroups = computed(() => {
-  if (!isTechnicianAuth()) return appointmentFlowGroups.value
-
+const appointmentDateGroups = computed(() => {
   const allItems = appointmentFlowGroups.value.flatMap(group => Array.isArray(group?.items) ? group.items : [])
   const groups = []
   const groupMap = new Map()
@@ -3341,7 +3339,7 @@ const technicianAppointmentDateGroups = computed(() => {
   return groups
 })
 
-const technicianVisibleAppointmentGroupDays = ref(1)
+const visibleAppointmentGroupDays = ref(1)
 const appointmentGroupsLoadingMore = ref(false)
 
 const exceptionGroups = computed(() => {
@@ -3365,20 +3363,16 @@ const displayedAppointmentPanelGroups = computed(() => {
   if (showExceptionStandaloneContent.value || showExceptionContentInTable.value) {
     return appointmentPanelGroups.value
   }
-  if (isTechnicianAuth()) {
-    return technicianAppointmentDateGroups.value.slice(0, technicianVisibleAppointmentGroupDays.value)
-  }
-  return appointmentPanelGroups.value
+  return appointmentDateGroups.value.slice(0, visibleAppointmentGroupDays.value)
 })
 
 const showAppointmentGroupsLoadMore = computed(() => {
   if (showExceptionStandaloneContent.value || showExceptionContentInTable.value) return false
-  if (!isTechnicianAuth()) return false
-  return technicianAppointmentDateGroups.value.length > technicianVisibleAppointmentGroupDays.value
+  return appointmentDateGroups.value.length > visibleAppointmentGroupDays.value
 })
 
 const resetVisibleAppointmentGroups = () => {
-  technicianVisibleAppointmentGroupDays.value = 1
+  visibleAppointmentGroupDays.value = 1
 }
 
 const loadMoreAppointmentGroups = async () => {
@@ -3386,7 +3380,7 @@ const loadMoreAppointmentGroups = async () => {
   if (!showAppointmentGroupsLoadMore.value) return
   appointmentGroupsLoadingMore.value = true
   try {
-    technicianVisibleAppointmentGroupDays.value += 1
+    visibleAppointmentGroupDays.value += 1
   } finally {
     appointmentGroupsLoadingMore.value = false
   }
