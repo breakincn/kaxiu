@@ -89,8 +89,9 @@
                           {{ sessionStatusText(it.status) }}
                         </span>
                       </div>
-                      <div v-if="it.occupied && (it.started_at || it.room_locked_at)" class="text-gray-500 text-sm font-mono">
-                        {{ calculateElapsedTime(it.started_at || it.room_locked_at) }}
+                      <div v-if="it.occupied && (it.started_at || it.room_locked_at)" class="text-gray-500 text-sm text-right">
+                        <div class="text-[11px] leading-none">占用时长</div>
+                        <div class="mt-1 font-mono">{{ calculateElapsedTime(it.started_at || it.room_locked_at) }}</div>
                       </div>
                     </div>
                     <div v-if="it.occupied" class="text-gray-500 text-sm mt-1">
@@ -100,10 +101,10 @@
                       <div v-if="it.finish_at">剩余：{{ calculateRemainTime(it.finish_at) }}</div>
                       <div v-if="it.phase_text" class="mt-1">
                         <span class="font-medium" :class="it.phase_class === 'start_pending' ? 'text-red-500' : (it.phase_class === 'finish_failed' ? 'text-red-500' : 'text-blue-600')">
-                          {{ it.phase_text }}
+                          {{ getPhaseDisplayText(it) }}
                         </span>
                         <span v-if="it.phase_class === 'start_pending'" class="ml-2 text-red-500 font-mono">
-                          {{ formatCountdownSeconds(it.start_remain_seconds) }}
+                          {{ formatCountdownSeconds(getDynamicStartRemainSeconds(it)) }}
                         </span>
                         <span v-else-if="it.phase_class === 'room_selecting'" class="ml-2 text-blue-600 font-mono">
                           {{ calculateRemainTime(it.room_select_deadline_at) }}
@@ -458,6 +459,25 @@ const formatCountdownSeconds = (seconds) => {
   const minutes = Math.floor(remain / 60)
   const secs = remain % 60
   return `${minutes}分${String(secs).padStart(2, '0')}秒`
+}
+
+const getDynamicStartRemainSeconds = (item) => {
+  const baseRemain = Math.max(0, Math.floor(Number(item?.start_remain_seconds || 0)))
+  if (baseRemain <= 0) return 0
+
+  const snapshotMs = item?.now ? new Date(item.now).getTime() : 0
+  if (!Number.isFinite(snapshotMs) || snapshotMs <= 0) return baseRemain
+
+  const elapsedSeconds = Math.max(0, Math.floor((currentTimeMs.value - snapshotMs) / 1000))
+  return Math.max(0, baseRemain - elapsedSeconds)
+}
+
+const getPhaseDisplayText = (item) => {
+  if (!item) return ''
+  if (item.phase_class === 'start_pending') {
+    return `${item.phase_text}剩余`
+  }
+  return item.phase_text || ''
 }
 
 const calculateRemainTime = (endTime, durationSeconds = null) => {
