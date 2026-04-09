@@ -1641,10 +1641,10 @@
                 {{ getStartCountdownLabel(merchant) }}：{{ formatStartCountdownSeconds(getRoomManageStartPendingCountdownSeconds()) }}
               </div>
               <div
-                v-if="getRoomManageServiceCountdownSeconds() !== null"
-                :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getRoomManageServiceCountdownSeconds())]"
+                v-if="getRoomManageOccupancyDurationText()"
+                class="text-sm mt-1 font-medium text-gray-700"
               >
-                服务倒计时：{{ formatServiceCountdownSeconds(getRoomManageServiceCountdownSeconds()) }}
+                房间占用时间：{{ getRoomManageOccupancyDurationText() }}
               </div>
             </template>
           </div>
@@ -3880,6 +3880,29 @@ const getRoomManageServiceCountdownSeconds = () => {
   const status = normalizeSessionStatus(sess.status)
   if (status !== 'serving' && status !== 'auto_finishing') return null
   return getRoomManageSessionRemainingSeconds()
+}
+
+const getSessionOccupancyDurationText = (sess) => {
+  if (!sess) return ''
+  const startRaw = sess.started_at || sess.room_locked_at
+  if (!startRaw) return ''
+  const startAt = new Date(startRaw).getTime()
+  if (!Number.isFinite(startAt) || startAt <= 0) return ''
+  const elapsedSeconds = Math.max(0, Math.floor((currentTime.value - startAt) / 1000))
+  const hours = Math.floor(elapsedSeconds / 3600)
+  const minutes = Math.floor((elapsedSeconds % 3600) / 60)
+  const seconds = elapsedSeconds % 60
+  if (hours === 0) {
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  }
+  if (hours < 10) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  }
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+const getRoomManageOccupancyDurationText = () => {
+  return getSessionOccupancyDurationText(roomManageSession.value)
 }
 
 // 格式化项目名称（加上时长）
