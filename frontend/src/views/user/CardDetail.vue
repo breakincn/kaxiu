@@ -930,8 +930,20 @@ const syntheticAppointmentUsage = computed(() => {
 const displayUsages = computed(() => {
   const list = Array.isArray(usages.value) ? [...usages.value] : []
   if (syntheticAppointmentUsage.value) {
-    list.unshift(syntheticAppointmentUsage.value)
+    list.push(syntheticAppointmentUsage.value)
   }
+  list.sort((left, right) => {
+    const leftUsedAt = getUsageUsedAtMs(left)
+    const rightUsedAt = getUsageUsedAtMs(right)
+    if (leftUsedAt !== rightUsedAt) return rightUsedAt - leftUsedAt
+
+    const leftId = Number(left?.id || 0)
+    const rightId = Number(right?.id || 0)
+    if (Number.isFinite(leftId) && Number.isFinite(rightId) && leftId !== rightId) {
+      return rightId - leftId
+    }
+    return 0
+  })
   return list
 })
 
