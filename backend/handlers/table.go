@@ -183,18 +183,10 @@ func TableRooms(c *gin.Context) {
 			}
 
 			if models.NormalizeSessionStatus(s.Status) == "start_pending" && s.StartConfirmedAt == nil && s.UpdatedAt != nil {
-				timeout := config.StartPendingTimeout()
-				if s.StartPendingTimeoutSeconds > 0 {
-					timeout = time.Duration(s.StartPendingTimeoutSeconds) * time.Second
-				}
-				startDeadline := s.UpdatedAt.Add(timeout)
-				startRemain := int64(startDeadline.Sub(now).Seconds())
-				if startRemain < 0 {
-					startRemain = 0
-				}
+				startRemain := int64(computeStartPendingRemainingSecondsForSession(&s, now))
 				it.StartRemainSeconds = startRemain
 
-				if now.Before(startDeadline) {
+				if startRemain > 0 {
 					it.PhaseText = "待" + startTerm
 					it.PhaseClass = "start_pending"
 				} else {
@@ -356,18 +348,11 @@ func TableStaff(c *gin.Context) {
 			}
 
 			if models.NormalizeSessionStatus(s.Status) == "start_pending" && s.StartConfirmedAt == nil && s.UpdatedAt != nil {
-				timeout := config.StartPendingTimeout()
-				if s.StartPendingTimeoutSeconds > 0 {
-					timeout = time.Duration(s.StartPendingTimeoutSeconds) * time.Second
-				}
-				startDeadline := s.UpdatedAt.Add(timeout)
-				startRemain := int64(startDeadline.Sub(now).Seconds())
-				if startRemain < 0 {
-					startRemain = 0
-				}
+				startRemain := int64(computeStartPendingRemainingSecondsForSession(&s, now))
 				it.StartRemainSeconds = startRemain
+				s.StartPendingRemainingSeconds = int(startRemain)
 
-				if now.Before(startDeadline) {
+				if startRemain > 0 {
 					it.PhaseText = "待" + startTerm
 					it.PhaseClass = "start_pending"
 				} else {

@@ -102,8 +102,8 @@
                         <span class="font-medium" :class="it.phase_class === 'start_pending' ? 'text-red-500' : (it.phase_class === 'finish_failed' ? 'text-red-500' : 'text-blue-600')">
                           {{ it.phase_text }}
                         </span>
-                        <span v-if="it.phase_class === 'start_pending' && config.startPendingTimeoutSeconds" class="ml-2 text-red-500 font-mono">
-                          {{ calculateRemainTime(it.updated_at, config.startPendingTimeoutSeconds) }}
+                        <span v-if="it.phase_class === 'start_pending'" class="ml-2 text-red-500 font-mono">
+                          {{ formatCountdownSeconds(it.start_remain_seconds) }}
                         </span>
                         <span v-else-if="it.phase_class === 'room_selecting'" class="ml-2 text-blue-600 font-mono">
                           {{ calculateRemainTime(it.room_select_deadline_at) }}
@@ -451,6 +451,13 @@ const formatDuration = (secs) => {
   const pad2 = (n) => String(n).padStart(2, '0')
   if (h > 0) return `${h}小时${pad2(m)}分${pad2(ss)}秒`
   return `${m}分${pad2(ss)}秒`
+}
+
+const formatCountdownSeconds = (seconds) => {
+  const remain = Math.max(0, Math.floor(Number(seconds || 0)))
+  const minutes = Math.floor(remain / 60)
+  const secs = remain % 60
+  return `${minutes}分${String(secs).padStart(2, '0')}秒`
 }
 
 const calculateRemainTime = (endTime, durationSeconds = null) => {
