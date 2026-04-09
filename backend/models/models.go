@@ -46,17 +46,16 @@ type Merchant struct {
 	SupportOrderComplete        bool       `json:"support_order_complete" gorm:"default:false;comment:是否开启服务结束功能（0-不开启，1-开启）"`
 	StartDelaySeconds           int        `json:"start_delay_seconds" gorm:"default:60;comment:核销后开始服务延迟秒数（未开启客服但开启服务结束功能时使用）"`
 	// 预约保护参数：confirmed 预约会占用未来产能，客服模式现场派单/预约选人都复用这些阈值。
-	AppointmentReserveBufferMinutes                    int    `json:"appointment_reserve_buffer_minutes" gorm:"default:10;comment:预约前保留缓冲分钟数"`
-	AppointmentGraceWindowMinutes                      int    `json:"appointment_grace_window_minutes" gorm:"default:15;comment:预约后到店宽限分钟数"`
-	AppointmentPredictionBufferMinute                  int    `json:"appointment_prediction_buffer_minutes" gorm:"column:appointment_prediction_buffer_minutes;default:5;comment:预约保护预测缓冲分钟数"`
-	AppointmentSlotGranularityMinutes                  int    `json:"appointment_slot_granularity_minutes" gorm:"default:5;comment:预约时段展示粒度分钟数"`
-	AppointmentSchedulingMode                          string `json:"appointment_scheduling_mode" gorm:"size:40;default:'technician_grouped';comment:预约排布模式（technician_grouped/technician_mixed_timeline）"`
-	AppointmentRescheduleSameOrNextDayThresholdMinutes int    `json:"appointment_reschedule_same_or_next_day_threshold_minutes" gorm:"default:180;comment:昨天预约可改签到今天或明天的剩余分钟阈值"`
-	AppointmentRescheduleNextDayOnlyThresholdMinutes   int    `json:"appointment_reschedule_next_day_only_threshold_minutes" gorm:"default:90;comment:昨天预约仅可改签到明天的剩余分钟阈值"`
-	AppointmentRescheduleRecommendationEnabled         bool   `json:"appointment_reschedule_recommendation_enabled" gorm:"default:false;comment:是否启用系统优化性改签推荐"`
-	TechnicianAlias                                    string `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
-	StartTerm                                          string `json:"start_term" gorm:"size:20;default:'';comment:开始服务显示名词（可为空）"`
-	FinishTerm                                         string `json:"finish_term" gorm:"size:20;default:'';comment:结束服务显示名词（可为空）"`
+	AppointmentReserveBufferMinutes                 int    `json:"appointment_reserve_buffer_minutes" gorm:"default:10;comment:预约前保留缓冲分钟数"`
+	AppointmentGraceWindowMinutes                   int    `json:"appointment_grace_window_minutes" gorm:"default:15;comment:预约后到店宽限分钟数"`
+	AppointmentPredictionBufferMinute               int    `json:"appointment_prediction_buffer_minutes" gorm:"column:appointment_prediction_buffer_minutes;default:5;comment:预约保护预测缓冲分钟数"`
+	AppointmentSlotGranularityMinutes               int    `json:"appointment_slot_granularity_minutes" gorm:"default:5;comment:预约时段展示粒度分钟数"`
+	AppointmentSchedulingMode                       string `json:"appointment_scheduling_mode" gorm:"size:40;default:'technician_grouped';comment:预约排布模式（technician_grouped/technician_mixed_timeline）"`
+	AppointmentRescheduleDeadlineMinutesBeforeStart int    `json:"appointment_reschedule_deadline_minutes_before_start" gorm:"default:60;comment:预约改签截止时间（距服务开始前分钟数）"`
+	AppointmentRescheduleRecommendationEnabled      bool   `json:"appointment_reschedule_recommendation_enabled" gorm:"default:false;comment:是否启用系统优化性改签推荐"`
+	TechnicianAlias                                 string `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
+	StartTerm                                       string `json:"start_term" gorm:"size:20;default:'';comment:开始服务显示名词（可为空）"`
+	FinishTerm                                      string `json:"finish_term" gorm:"size:20;default:'';comment:结束服务显示名词（可为空）"`
 	// 手牌设置
 	HandCardPrefix  string `json:"hand_card_prefix" gorm:"size:20;default:'H';comment:手牌前缀"`
 	HandCardStartNo int    `json:"hand_card_start_no" gorm:"default:1;comment:手牌起始号码"`

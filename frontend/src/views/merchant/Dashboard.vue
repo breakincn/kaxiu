@@ -2961,30 +2961,19 @@ const appointmentRescheduleDateMax = computed(() => {
 const appointmentRescheduleDateHint = computed(() => {
   const eligibility = appointmentRescheduleEligibility.value
   if (!eligibility?.allowed) return ''
-  if (
-    eligibility.rule_mode === 'today_or_tomorrow' &&
-    appointmentRescheduleForm.value.date === appointmentRescheduleDateMin.value &&
-    appointmentRescheduleSlots.value.length === 0 &&
-    !appointmentRescheduleLoading.value
-  ) {
-    return '今天已无可改签时段，可改签到明天'
+  if (eligibility.rule_mode === 'same_day_only' && appointmentRescheduleSlots.value.length === 0 && !appointmentRescheduleLoading.value) {
+    return '原预约日内暂无可改签时段'
   }
-  if (eligibility.rule_mode === 'tomorrow_only') {
-    return '当前规则仅允许改签到明天'
-  }
-  if (eligibility.rule_mode === 'today_or_tomorrow') {
-    return '当前规则允许改签到今天或明天'
+  if (eligibility.rule_mode === 'same_day_only') {
+    return '当前规则仅允许改签到原预约日内的其他营业时段'
   }
   return ''
 })
 const appointmentRescheduleComparisonHint = computed(() => {
   const eligibility = appointmentRescheduleEligibility.value
   if (!eligibility?.allowed) return ''
-  if (eligibility.rule_mode === 'today_or_tomorrow') {
-    return '当前阶段展示更优于当前和不劣于当前的时段，默认已按更优优先排序。'
-  }
-  if (eligibility.rule_mode === 'tomorrow_only') {
-    return '当前阶段只展示更优于当前排布的时段。'
+  if (eligibility.rule_mode === 'same_day_only') {
+    return '当前仅允许处理原预约日内的改签，系统会优先标注排布更优的时段。'
   }
   return ''
 })

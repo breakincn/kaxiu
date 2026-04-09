@@ -298,38 +298,37 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 	oldSupportCustomerServiceMode := merchant.SupportCustomerServiceMode
 
 	var input struct {
-		SupportAppointment                                 *bool   `json:"support_appointment"`
-		SupportQueue                                       *bool   `json:"support_queue"`
-		SupportProject                                     *bool   `json:"support_project"`
-		SupportRoom                                        *bool   `json:"support_room"`
-		SupportTechnicianCheckin                           *bool   `json:"support_technician_checkin"`
-		SupportDirectSale                                  *bool   `json:"support_direct_sale"`
-		SupportCustomerService                             *bool   `json:"support_customer_service"`
-		SupportCustomerServiceMode                         *bool   `json:"support_customer_service_mode"`
-		SupportMultiCustomerService                        *bool   `json:"support_multi_customer_service"`
-		SupportOrderComplete                               *bool   `json:"support_order_complete"`
-		StartDelaySeconds                                  *int    `json:"start_delay_seconds"`
-		SupportHandCard                                    *bool   `json:"support_hand_card"`
-		QueuePrefix                                        *string `json:"queue_prefix"`
-		QueueStartNo                                       *int    `json:"queue_start_no"`
-		QueueMode                                          *string `json:"queue_mode"`
-		QueueWindowTerm                                    *string `json:"queue_window_term"`
-		QueueWaitingStartSeconds                           *int    `json:"queue_waiting_start_seconds"`
-		QueueTimeoutWaitingSeconds                         *int    `json:"queue_timeout_waiting_seconds"`
-		AppointmentReserveBufferMinutes                    *int    `json:"appointment_reserve_buffer_minutes"`
-		AppointmentGraceWindowMinutes                      *int    `json:"appointment_grace_window_minutes"`
-		AppointmentPredictionBufferMinute                  *int    `json:"appointment_prediction_buffer_minutes"`
-		AppointmentSlotGranularityMinutes                  *int    `json:"appointment_slot_granularity_minutes"`
-		AppointmentSchedulingMode                          *string `json:"appointment_scheduling_mode"`
-		AppointmentRescheduleSameOrNextDayThresholdMinutes *int    `json:"appointment_reschedule_same_or_next_day_threshold_minutes"`
-		AppointmentRescheduleNextDayOnlyThresholdMinutes   *int    `json:"appointment_reschedule_next_day_only_threshold_minutes"`
-		AppointmentRescheduleRecommendationEnabled         *bool   `json:"appointment_reschedule_recommendation_enabled"`
-		HandCardPrefix                                     *string `json:"hand_card_prefix"`
-		HandCardStartNo                                    *int    `json:"hand_card_start_no"`
-		HandCardEndNo                                      *int    `json:"hand_card_end_no"`
-		RoomNumberCardPrefix                               *string `json:"room_number_card_prefix"`
-		RoomNumberCardStartNo                              *int    `json:"room_number_card_start_no"`
-		RoomNumberCardEndNo                                *int    `json:"room_number_card_end_no"`
+		SupportAppointment                              *bool   `json:"support_appointment"`
+		SupportQueue                                    *bool   `json:"support_queue"`
+		SupportProject                                  *bool   `json:"support_project"`
+		SupportRoom                                     *bool   `json:"support_room"`
+		SupportTechnicianCheckin                        *bool   `json:"support_technician_checkin"`
+		SupportDirectSale                               *bool   `json:"support_direct_sale"`
+		SupportCustomerService                          *bool   `json:"support_customer_service"`
+		SupportCustomerServiceMode                      *bool   `json:"support_customer_service_mode"`
+		SupportMultiCustomerService                     *bool   `json:"support_multi_customer_service"`
+		SupportOrderComplete                            *bool   `json:"support_order_complete"`
+		StartDelaySeconds                               *int    `json:"start_delay_seconds"`
+		SupportHandCard                                 *bool   `json:"support_hand_card"`
+		QueuePrefix                                     *string `json:"queue_prefix"`
+		QueueStartNo                                    *int    `json:"queue_start_no"`
+		QueueMode                                       *string `json:"queue_mode"`
+		QueueWindowTerm                                 *string `json:"queue_window_term"`
+		QueueWaitingStartSeconds                        *int    `json:"queue_waiting_start_seconds"`
+		QueueTimeoutWaitingSeconds                      *int    `json:"queue_timeout_waiting_seconds"`
+		AppointmentReserveBufferMinutes                 *int    `json:"appointment_reserve_buffer_minutes"`
+		AppointmentGraceWindowMinutes                   *int    `json:"appointment_grace_window_minutes"`
+		AppointmentPredictionBufferMinute               *int    `json:"appointment_prediction_buffer_minutes"`
+		AppointmentSlotGranularityMinutes               *int    `json:"appointment_slot_granularity_minutes"`
+		AppointmentSchedulingMode                       *string `json:"appointment_scheduling_mode"`
+		AppointmentRescheduleDeadlineMinutesBeforeStart *int    `json:"appointment_reschedule_deadline_minutes_before_start"`
+		AppointmentRescheduleRecommendationEnabled      *bool   `json:"appointment_reschedule_recommendation_enabled"`
+		HandCardPrefix                                  *string `json:"hand_card_prefix"`
+		HandCardStartNo                                 *int    `json:"hand_card_start_no"`
+		HandCardEndNo                                   *int    `json:"hand_card_end_no"`
+		RoomNumberCardPrefix                            *string `json:"room_number_card_prefix"`
+		RoomNumberCardStartNo                           *int    `json:"room_number_card_start_no"`
+		RoomNumberCardEndNo                             *int    `json:"room_number_card_end_no"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -585,19 +584,12 @@ func UpdateCurrentMerchantServices(c *gin.Context) {
 		}
 		updates["appointment_scheduling_mode"] = mode
 	}
-	if input.AppointmentRescheduleSameOrNextDayThresholdMinutes != nil {
-		if *input.AppointmentRescheduleSameOrNextDayThresholdMinutes < 0 || *input.AppointmentRescheduleSameOrNextDayThresholdMinutes > 1440 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "昨天预约改签到今天/明天阈值范围应为 0-1440 分钟"})
+	if input.AppointmentRescheduleDeadlineMinutesBeforeStart != nil {
+		if *input.AppointmentRescheduleDeadlineMinutesBeforeStart < 1 || *input.AppointmentRescheduleDeadlineMinutesBeforeStart > 1440 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "预约改签截止时间范围应为 1-1440 分钟"})
 			return
 		}
-		updates["appointment_reschedule_same_or_next_day_threshold_minutes"] = *input.AppointmentRescheduleSameOrNextDayThresholdMinutes
-	}
-	if input.AppointmentRescheduleNextDayOnlyThresholdMinutes != nil {
-		if *input.AppointmentRescheduleNextDayOnlyThresholdMinutes < 0 || *input.AppointmentRescheduleNextDayOnlyThresholdMinutes > 1440 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "昨天预约仅改签到明天阈值范围应为 0-1440 分钟"})
-			return
-		}
-		updates["appointment_reschedule_next_day_only_threshold_minutes"] = *input.AppointmentRescheduleNextDayOnlyThresholdMinutes
+		updates["appointment_reschedule_deadline_minutes_before_start"] = *input.AppointmentRescheduleDeadlineMinutesBeforeStart
 	}
 	if input.AppointmentRescheduleRecommendationEnabled != nil {
 		updates["appointment_reschedule_recommendation_enabled"] = *input.AppointmentRescheduleRecommendationEnabled

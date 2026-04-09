@@ -40,9 +40,8 @@ type appointmentAvailability struct {
 type appointmentRescheduleRuleMode string
 
 const (
-	appointmentRescheduleForbidden       appointmentRescheduleRuleMode = "forbidden"
-	appointmentRescheduleTomorrowOnly    appointmentRescheduleRuleMode = "tomorrow_only"
-	appointmentRescheduleTodayOrTomorrow appointmentRescheduleRuleMode = "today_or_tomorrow"
+	appointmentRescheduleForbidden   appointmentRescheduleRuleMode = "forbidden"
+	appointmentRescheduleSameDayOnly appointmentRescheduleRuleMode = "same_day_only"
 )
 
 type appointmentRescheduleEligibility struct {
@@ -178,18 +177,11 @@ func merchantAppointmentSlotGranularityMinutes(m *models.Merchant) int {
 	return 5
 }
 
-func merchantAppointmentRescheduleSameOrNextDayThresholdMinutes(m *models.Merchant) int {
-	if m != nil && m.AppointmentRescheduleSameOrNextDayThresholdMinutes > 0 {
-		return m.AppointmentRescheduleSameOrNextDayThresholdMinutes
+func merchantAppointmentRescheduleDeadlineMinutesBeforeStart(m *models.Merchant) int {
+	if m != nil && m.AppointmentRescheduleDeadlineMinutesBeforeStart > 0 {
+		return m.AppointmentRescheduleDeadlineMinutesBeforeStart
 	}
-	return 180
-}
-
-func merchantAppointmentRescheduleNextDayOnlyThresholdMinutes(m *models.Merchant) int {
-	if m != nil && m.AppointmentRescheduleNextDayOnlyThresholdMinutes > 0 {
-		return m.AppointmentRescheduleNextDayOnlyThresholdMinutes
-	}
-	return 90
+	return 60
 }
 
 func appointmentProtectedStatuses() []string {
@@ -783,55 +775,30 @@ func computeAppointmentRescheduleEligibility(tx *gorm.DB, appt models.Appointmen
 	appointmentTime := appt.AppointmentTime.In(loc)
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	appointmentDateStart := time.Date(appointmentTime.Year(), appointmentTime.Month(), appointmentTime.Day(), 0, 0, 0, 0, loc)
-	todayDate := todayStart.Format("2006-01-02")
-	tomorrowDate := todayStart.Add(24 * time.Hour).Format("2006-01-02")
-	yesterdayStart := todayStart.Add(-24 * time.Hour)
+	serviceDate := appointmentDateStart.Format("2006-01-02")
+	out.AllowedDates = []string{serviceDate}
+	out.DefaultDate = serviceDate
 
-	switch {
-	case appointmentDateStart.Equal(todayStart):
-		out.Allowed = true
-		out.RuleMode = appointmentRescheduleTomorrowOnly
-		out.AllowedDates = []string{tomorrowDate}
-		out.DefaultDate = tomorrowDate
-		return out, nil
-	case appointmentDateStart.Equal(yesterdayStart):
-		todayAnchorTime := time.Date(now.Year(), now.Month(), now.Day(), appointmentTime.Hour(), appointmentTime.Minute(), appointmentTime.Second(), appointmentTime.Nanosecond(), loc)
-		out.MinutesUntilAnchor = int(math.Ceil(todayAnchorTime.Sub(now).Minutes()))
-		protected, err := hasAppointmentProtectionBlock(tx, appt.ID)
-		if err != nil {
-			return out, err
-		}
-		out.ProtectionConsumed = protected
-		if protected {
-			out.Reason = "该预约已占用门店预约保护资源，当前不可改签"
-			return out, nil
-		}
-		if out.MinutesUntilAnchor <= merchantAppointmentRescheduleNextDayOnlyThresholdMinutes(&merchant) {
-			out.Reason = fmt.Sprintf("距原预约时间不足 %d 分钟，当前不可改签", merchantAppointmentRescheduleNextDayOnlyThresholdMinutes(&merchant))
-			return out, nil
-		}
-		if out.MinutesUntilAnchor > merchantAppointmentRescheduleSameOrNextDayThresholdMinutes(&merchant) {
-			out.Allowed = true
-			out.RuleMode = appointmentRescheduleTodayOrTomorrow
-			out.AllowedDates = []string{todayDate, tomorrowDate}
-			out.DefaultDate = todayDate
-			return out, nil
-		}
-		out.Allowed = true
-		out.RuleMode = appointmentRescheduleTomorrowOnly
-		out.AllowedDates = []string{tomorrowDate}
-		out.DefaultDate = tomorrowDate
-		return out, nil
-	case appointmentDateStart.Before(yesterdayStart):
-		out.Reason = "更早历史预约不支持改签"
-		return out, nil
-	default:
-		out.Allowed = true
-		out.RuleMode = appointmentRescheduleTomorrowOnly
-		out.AllowedDates = []string{tomorrowDate}
-		out.DefaultDate = tomorrowDate
+	if appointmentDateStart.Before(todayStart) {
+		out.AllowedDates = []string{}
+		out.DefaultDate = ""
+		out.Reason = "已过原预约日，当前不可改签"
 		return out, nil
 	}
+
+	deadlineMinutes := merchantAppointmentRescheduleDeadlineMinutesBeforeStart(&merchant)
+	deadlineAt := appointmentTime.Add(-time.Duration(deadlineMinutes) * time.Minute)
+	out.MinutesUntilAnchor = int(math.Ceil(deadlineAt.Sub(now).Minutes()))
+	if !now.Before(deadlineAt) {
+		out.AllowedDates = []string{}
+		out.DefaultDate = ""
+		out.Reason = fmt.Sprintf("距预约开始不足 %d 分钟，当前不可改签", deadlineMinutes)
+		return out, nil
+	}
+
+	out.Allowed = true
+	out.RuleMode = appointmentRescheduleSameDayOnly
+	return out, nil
 }
 
 func detectServiceSessionSource(tx *gorm.DB, merchant models.Merchant, card models.Card, now time.Time) (serviceSessionSource, error) {

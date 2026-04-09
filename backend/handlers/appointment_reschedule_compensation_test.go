@@ -50,29 +50,18 @@ func TestFilterAppointmentRescheduleSlotsByComparison(t *testing.T) {
 		{Time: "2026-03-25 11:00:00", PlacementScoreValue: 140},
 	}
 
-	stageA := filterAppointmentRescheduleSlotsByComparison(slots, appointmentRescheduleEligibility{
+	filtered := filterAppointmentRescheduleSlotsByComparison(slots, appointmentRescheduleEligibility{
 		Allowed:  true,
-		RuleMode: appointmentRescheduleTodayOrTomorrow,
+		RuleMode: appointmentRescheduleSameDayOnly,
 	}, 120)
-	if len(stageA) != 2 {
-		t.Fatalf("stage A should keep better and not_worse slots, got %d", len(stageA))
+	if len(filtered) != 1 {
+		t.Fatalf("same_day_only should keep only better slots, got %d", len(filtered))
 	}
-	if stageA[0].ComparisonKind != "better" || stageA[0].ComparisonLabel != "更优于当前" {
-		t.Fatalf("stage A first slot comparison mismatch: %+v", stageA[0])
+	if filtered[0].ComparisonKind != "better" || filtered[0].Time != "2026-03-25 10:00:00" {
+		t.Fatalf("same_day_only slot mismatch: %+v", filtered[0])
 	}
-	if stageA[1].ComparisonKind != "not_worse" || stageA[1].ComparisonLabel != "不劣于当前" {
-		t.Fatalf("stage A second slot comparison mismatch: %+v", stageA[1])
-	}
-
-	stageBC := filterAppointmentRescheduleSlotsByComparison(slots, appointmentRescheduleEligibility{
-		Allowed:  true,
-		RuleMode: appointmentRescheduleTomorrowOnly,
-	}, 120)
-	if len(stageBC) != 1 {
-		t.Fatalf("stage B/C should keep only better slots, got %d", len(stageBC))
-	}
-	if stageBC[0].ComparisonKind != "better" || stageBC[0].Time != "2026-03-25 10:00:00" {
-		t.Fatalf("stage B/C slot mismatch: %+v", stageBC[0])
+	if filtered[0].ComparisonLabel != "更优于当前" {
+		t.Fatalf("same_day_only comparison label mismatch: %+v", filtered[0])
 	}
 }
 
@@ -917,64 +906,61 @@ func TestComputeAppointmentRescheduleEligibilityForTodayAppointment(t *testing.T
 	if err != nil {
 		t.Fatalf("compute eligibility failed: %v", err)
 	}
-	if !eligibility.Allowed || eligibility.RuleMode != appointmentRescheduleTomorrowOnly {
-		t.Fatalf("want tomorrow_only allowed, got %+v", eligibility)
+	if !eligibility.Allowed || eligibility.RuleMode != appointmentRescheduleSameDayOnly {
+		t.Fatalf("want same_day_only allowed, got %+v", eligibility)
 	}
-	if len(eligibility.AllowedDates) != 1 || eligibility.AllowedDates[0] != "2026-03-19" {
-		t.Fatalf("want only tomorrow allowed, got %+v", eligibility.AllowedDates)
+	if len(eligibility.AllowedDates) != 1 || eligibility.AllowedDates[0] != "2026-03-18" {
+		t.Fatalf("want only same service day allowed, got %+v", eligibility.AllowedDates)
 	}
 }
 
-func TestComputeAppointmentRescheduleEligibilityForYesterdayAppointmentWindows(t *testing.T) {
+func TestComputeAppointmentRescheduleEligibilityUsesSameDayWindowAndDeadline(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
 	setupAppointmentLifecycleTestDB(t)
 
 	merchant, user, tech, _, _, _ := seedAppointmentPermissionFixture(t, config.DB)
-	merchant.AppointmentRescheduleSameOrNextDayThresholdMinutes = 180
-	merchant.AppointmentRescheduleNextDayOnlyThresholdMinutes = 90
+	merchant.AppointmentRescheduleDeadlineMinutesBeforeStart = 60
 	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Updates(map[string]interface{}{
-		"appointment_reschedule_same_or_next_day_threshold_minutes": 180,
-		"appointment_reschedule_next_day_only_threshold_minutes":    90,
+		"appointment_reschedule_deadline_minutes_before_start": 60,
 	}).Error; err != nil {
-		t.Fatalf("update merchant thresholds failed: %v", err)
+		t.Fatalf("update merchant deadline failed: %v", err)
 	}
 	card := models.Card{MerchantID: merchant.ID, UserID: user.ID, CardNo: "R002", CardType: "次卡", TotalTimes: 10, RemainTimes: 10}
 	if err := config.DB.Create(&card).Error; err != nil {
 		t.Fatalf("create card failed: %v", err)
 	}
 	loc := appointmentLocation()
-	apptTime := time.Date(2026, 3, 17, 17, 0, 0, 0, loc)
-	appt := models.Appointment{MerchantID: merchant.ID, UserID: user.ID, CardID: card.ID, TechnicianID: &tech.ID, AppointmentTime: &apptTime, Status: "confirmed"}
-	if err := config.DB.Create(&appt).Error; err != nil {
-		t.Fatalf("create appointment failed: %v", err)
-	}
 
 	cases := []struct {
 		name        string
+		apptTime    time.Time
 		now         time.Time
 		wantAllowed bool
 		wantMode    appointmentRescheduleRuleMode
 		wantDates   []string
 	}{
 		{
-			name:        "more than same or next threshold",
+			name:        "future appointment only allows original service day",
+			apptTime:    time.Date(2026, 3, 19, 17, 0, 0, 0, loc),
 			now:         time.Date(2026, 3, 18, 9, 0, 0, 0, loc),
 			wantAllowed: true,
-			wantMode:    appointmentRescheduleTodayOrTomorrow,
-			wantDates:   []string{"2026-03-18", "2026-03-19"},
-		},
-		{
-			name:        "between thresholds",
-			now:         time.Date(2026, 3, 18, 15, 0, 0, 0, loc),
-			wantAllowed: true,
-			wantMode:    appointmentRescheduleTomorrowOnly,
+			wantMode:    appointmentRescheduleSameDayOnly,
 			wantDates:   []string{"2026-03-19"},
 		},
 		{
-			name:        "inside forbidden threshold",
-			now:         time.Date(2026, 3, 18, 15, 31, 0, 0, loc),
+			name:        "today appointment blocked inside deadline",
+			apptTime:    time.Date(2026, 3, 18, 17, 0, 0, 0, loc),
+			now:         time.Date(2026, 3, 18, 16, 1, 0, 0, loc),
+			wantAllowed: false,
+			wantMode:    appointmentRescheduleForbidden,
+			wantDates:   nil,
+		},
+		{
+			name:        "past appointment day is forbidden",
+			apptTime:    time.Date(2026, 3, 17, 17, 0, 0, 0, loc),
+			now:         time.Date(2026, 3, 18, 9, 0, 0, 0, loc),
 			wantAllowed: false,
 			wantMode:    appointmentRescheduleForbidden,
 			wantDates:   nil,
@@ -983,6 +969,14 @@ func TestComputeAppointmentRescheduleEligibilityForYesterdayAppointmentWindows(t
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			appt := models.Appointment{
+				MerchantID:      merchant.ID,
+				UserID:          user.ID,
+				CardID:          card.ID,
+				TechnicianID:    &tech.ID,
+				AppointmentTime: &tc.apptTime,
+				Status:          "confirmed",
+			}
 			eligibility, err := computeAppointmentRescheduleEligibility(config.DB, appt, merchant, tc.now)
 			if err != nil {
 				t.Fatalf("compute eligibility failed: %v", err)
@@ -1002,13 +996,14 @@ func TestComputeAppointmentRescheduleEligibilityForYesterdayAppointmentWindows(t
 	}
 }
 
-func TestComputeAppointmentRescheduleEligibilityBlockedAfterProtectionConsumed(t *testing.T) {
+func TestComputeAppointmentRescheduleEligibilityBlockedAtDeadline(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
 	setupAppointmentLifecycleTestDB(t)
 
 	merchant, user, tech, _, _, _ := seedAppointmentPermissionFixture(t, config.DB)
+	merchant.AppointmentRescheduleDeadlineMinutesBeforeStart = 60
 	card := models.Card{MerchantID: merchant.ID, UserID: user.ID, CardNo: "R003", CardType: "次卡", TotalTimes: 10, RemainTimes: 10}
 	if err := config.DB.Create(&card).Error; err != nil {
 		t.Fatalf("create card failed: %v", err)
@@ -1019,29 +1014,16 @@ func TestComputeAppointmentRescheduleEligibilityBlockedAfterProtectionConsumed(t
 	if err := config.DB.Create(&appt).Error; err != nil {
 		t.Fatalf("create appointment failed: %v", err)
 	}
-	block := models.AppointmentProtectionBlock{
-		MerchantID:                   merchant.ID,
-		AppointmentID:                appt.ID,
-		TechnicianID:                 tech.ID,
-		BlockedReason:                "为保护预约，拒绝将现场客户派给该客服",
-		PredictedReservedWaitMinutes: 20,
-		AlternativeWaitMinutes:       10,
-		DecisionMode:                 "strict_reservation_lock",
-	}
-	blockedAt := time.Date(2026, 3, 18, 10, 0, 0, 0, loc)
-	block.BlockedAt = &blockedAt
-	if err := config.DB.Create(&block).Error; err != nil {
-		t.Fatalf("create protection block failed: %v", err)
-	}
 
-	eligibility, err := computeAppointmentRescheduleEligibility(config.DB, appt, merchant, time.Date(2026, 3, 18, 11, 0, 0, 0, loc))
+	appt.AppointmentTime = func() *time.Time {
+		tm := time.Date(2026, 3, 18, 17, 0, 0, 0, loc)
+		return &tm
+	}()
+	eligibility, err := computeAppointmentRescheduleEligibility(config.DB, appt, merchant, time.Date(2026, 3, 18, 16, 0, 0, 0, loc))
 	if err != nil {
 		t.Fatalf("compute eligibility failed: %v", err)
 	}
 	if eligibility.Allowed {
-		t.Fatalf("want forbidden after protection consumed, got %+v", eligibility)
-	}
-	if !eligibility.ProtectionConsumed {
-		t.Fatalf("want protection_consumed=true, got %+v", eligibility)
+		t.Fatalf("want forbidden at deadline, got %+v", eligibility)
 	}
 }

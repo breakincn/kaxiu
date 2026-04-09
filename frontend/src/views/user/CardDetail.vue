@@ -2818,19 +2818,11 @@ const userRescheduleDateMax = computed(() => {
 const userRescheduleDateHint = computed(() => {
   const eligibility = userRescheduleEligibility.value
   if (!eligibility?.allowed) return ''
-  if (
-    eligibility.rule_mode === 'today_or_tomorrow' &&
-    userRescheduleDate.value === userRescheduleDateMin.value &&
-    userRescheduleSlots.value.length === 0 &&
-    !userRescheduleLoading.value
-  ) {
-    return '今天已无可改签时段，可改签到明天'
+  if (eligibility.rule_mode === 'same_day_only' && userRescheduleSlots.value.length === 0 && !userRescheduleLoading.value) {
+    return '原预约日内暂无可改签时段'
   }
-  if (eligibility.rule_mode === 'tomorrow_only') {
-    return '当前规则仅允许改签到明天'
-  }
-  if (eligibility.rule_mode === 'today_or_tomorrow') {
-    return '当前规则允许改签到今天或明天'
+  if (eligibility.rule_mode === 'same_day_only') {
+    return '当前规则仅允许改签到原预约日内的其他营业时段'
   }
   return ''
 })

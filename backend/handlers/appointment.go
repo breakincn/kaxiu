@@ -1289,13 +1289,12 @@ func filterAppointmentRescheduleSlotsByComparison(slots []appointmentTimeSlot, e
 		return slots
 	}
 	annotated := annotateAppointmentRescheduleSlotsComparison(slots, currentScore)
-	betterOnly := eligibility.RuleMode != appointmentRescheduleTodayOrTomorrow
 	filtered := make([]appointmentTimeSlot, 0, len(annotated))
 	for _, slot := range annotated {
 		if slot.ComparisonKind == "worse" {
 			continue
 		}
-		if betterOnly && slot.ComparisonKind != "better" {
+		if eligibility.RuleMode == appointmentRescheduleSameDayOnly && slot.ComparisonKind != "better" {
 			continue
 		}
 		filtered = append(filtered, slot)
@@ -3160,7 +3159,7 @@ func buildAppointmentRepairInspection(tx *gorm.DB, merchant models.Merchant, app
 	if slots, ok := payload["time_slots"].([]appointmentTimeSlot); ok {
 		recommendations := buildAppointmentRecommendationSlots(slots, appointmentRescheduleEligibility{
 			Allowed:  true,
-			RuleMode: appointmentRescheduleTodayOrTomorrow,
+			RuleMode: appointmentRescheduleSameDayOnly,
 		}, currentScore)
 		if len(recommendations) > 3 {
 			recommendations = recommendations[:3]
@@ -3217,19 +3216,18 @@ func executeAppointmentReschedule(tx *gorm.DB, appointmentID uint, proposal mode
 		return oldAppointment, newAppointment, err
 	}
 	protectiveByMerchant := repairEval.AffectedByLeave && (proposal.ProposedByType == "merchant" || proposal.ProposedByType == "staff")
-	if !protectiveByMerchant {
-		eligibility, err := computeAppointmentRescheduleEligibility(tx, current, merchant, now.In(appointmentLocation()))
-		if err != nil {
-			return oldAppointment, newAppointment, err
+	eligibility, err := computeAppointmentRescheduleEligibility(tx, current, merchant, now.In(appointmentLocation()))
+	if err != nil {
+		return oldAppointment, newAppointment, err
+	}
+	if !eligibility.Allowed || !appointmentDateAllowed(targetDate, eligibility.AllowedDates) {
+		msg := eligibility.Reason
+		if strings.TrimSpace(msg) == "" {
+			msg = "目标日期不在允许的改签范围内"
 		}
-		if !eligibility.Allowed || !appointmentDateAllowed(targetDate, eligibility.AllowedDates) {
-			msg := eligibility.Reason
-			if strings.TrimSpace(msg) == "" {
-				msg = "目标日期不在允许的改签范围内"
-			}
-			return oldAppointment, newAppointment, apiErr{status: http.StatusBadRequest, msg: msg}
-		}
-	} else if current.AppointmentTime != nil && targetDate != current.AppointmentTime.In(appointmentLocation()).Format("2006-01-02") {
+		return oldAppointment, newAppointment, apiErr{status: http.StatusBadRequest, msg: msg}
+	}
+	if protectiveByMerchant && current.AppointmentTime != nil && targetDate != current.AppointmentTime.In(appointmentLocation()).Format("2006-01-02") {
 		return oldAppointment, newAppointment, apiErr{status: http.StatusBadRequest, msg: "保护性改签当前仅支持原服务日修复"}
 	}
 	intervals, ok := getMerchantBusinessIntervalsForDate(merchant, proposal.NewAppointmentTime.In(appointmentLocation()))
@@ -3377,14 +3375,19 @@ func GetAppointmentRescheduleEligibility(c *gin.Context) {
 			eligibility.Reason = "该预约受请假影响，需由商户发起保护性改签"
 		} else if appointment.AppointmentTime != nil {
 			serviceDate := appointment.AppointmentTime.In(appointmentLocation()).Format("2006-01-02")
-			eligibility.Allowed = repairEval.HasHighQualityCandidate
-			eligibility.AllowedDates = []string{serviceDate}
-			eligibility.DefaultDate = serviceDate
-			if repairEval.HasHighQualityCandidate {
+			if eligibility.Allowed && repairEval.HasHighQualityCandidate {
+				eligibility.RuleMode = appointmentRescheduleSameDayOnly
+				eligibility.AllowedDates = []string{serviceDate}
+				eligibility.DefaultDate = serviceDate
 				eligibility.Reason = ""
 			} else {
+				eligibility.Allowed = false
 				eligibility.RuleMode = appointmentRescheduleForbidden
-				eligibility.Reason = "当前无高质量修复方案，请改走取消分流"
+				eligibility.AllowedDates = []string{}
+				eligibility.DefaultDate = ""
+				if strings.TrimSpace(eligibility.Reason) == "" {
+					eligibility.Reason = "当前无高质量修复方案，请改走取消分流"
+				}
 			}
 		}
 	}
@@ -3415,12 +3418,17 @@ func GetAppointmentRescheduleSlots(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "该预约受请假影响，需由商户发起保护性改签"})
 			return
 		}
+		if !eligibility.Allowed {
+			c.JSON(http.StatusBadRequest, gin.H{"error": eligibility.Reason})
+			return
+		}
 		if !repairEval.HasHighQualityCandidate {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "当前无高质量修复方案，请改走取消分流"})
 			return
 		}
 		if appointment.AppointmentTime != nil {
 			eligibility.Allowed = true
+			eligibility.RuleMode = appointmentRescheduleSameDayOnly
 			eligibility.AllowedDates = []string{appointment.AppointmentTime.In(appointmentLocation()).Format("2006-01-02")}
 			eligibility.DefaultDate = eligibility.AllowedDates[0]
 		}
@@ -3603,12 +3611,20 @@ func CreateAppointmentRescheduleRequest(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "该预约受请假影响，需由商户发起保护性改签"})
 		return
 	}
+	if !eligibility.Allowed {
+		msg := eligibility.Reason
+		if strings.TrimSpace(msg) == "" {
+			msg = "当前预约状态不可改签"
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
 	if repairEval.AffectedByLeave && (authType == "merchant" || authType == "staff") && !repairEval.HasHighQualityCandidate {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "当前无高质量修复方案，请改走取消分流"})
 		return
 	}
 	targetDate := newAppointmentTime.In(appointmentLocation()).Format("2006-01-02")
-	if !repairEval.AffectedByLeave && (!eligibility.Allowed || !appointmentDateAllowed(targetDate, eligibility.AllowedDates)) {
+	if !appointmentDateAllowed(targetDate, eligibility.AllowedDates) {
 		msg := eligibility.Reason
 		if strings.TrimSpace(msg) == "" {
 			msg = "目标日期不在允许的改签范围内"

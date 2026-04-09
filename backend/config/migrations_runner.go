@@ -276,6 +276,13 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchant_projects ADD INDEX idx_merchant_default (merchant_id, is_default)",
 		},
 	},
+	{
+		Version: "2026040901",
+		Name:    "add_merchant_appointment_reschedule_deadline_minutes_before_start",
+		Statements: []string{
+			"ALTER TABLE merchants ADD COLUMN appointment_reschedule_deadline_minutes_before_start INT NOT NULL DEFAULT 60 COMMENT '预约改签截止时间（距服务开始前分钟数）'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {
