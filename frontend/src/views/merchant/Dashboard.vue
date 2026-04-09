@@ -823,6 +823,15 @@
           </div>
         </div>
         </div>
+        <button
+          v-if="showAppointmentGroupsLoadMore"
+          type="button"
+          class="w-full rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-600 disabled:opacity-50"
+          :disabled="appointmentGroupsLoadingMore"
+          @click="loadMoreAppointmentGroups"
+        >
+          {{ appointmentGroupsLoadingMore ? '加载中...' : '更多' }}
+        </button>
       </div>
       <div v-else class="text-center py-12 text-gray-400">
         {{ appointmentPanelEmptyText }}
@@ -3332,6 +3341,9 @@ const technicianAppointmentDateGroups = computed(() => {
   return groups
 })
 
+const technicianVisibleAppointmentGroupDays = ref(1)
+const appointmentGroupsLoadingMore = ref(false)
+
 const exceptionGroups = computed(() => {
   if (!isTechnicianAuth()) {
     return buildExceptionGroups((appointments.value || []).filter(a => isExceptionAppointment(a)))
@@ -3354,10 +3366,31 @@ const displayedAppointmentPanelGroups = computed(() => {
     return appointmentPanelGroups.value
   }
   if (isTechnicianAuth()) {
-    return technicianAppointmentDateGroups.value
+    return technicianAppointmentDateGroups.value.slice(0, technicianVisibleAppointmentGroupDays.value)
   }
   return appointmentPanelGroups.value
 })
+
+const showAppointmentGroupsLoadMore = computed(() => {
+  if (showExceptionStandaloneContent.value || showExceptionContentInTable.value) return false
+  if (!isTechnicianAuth()) return false
+  return technicianAppointmentDateGroups.value.length > technicianVisibleAppointmentGroupDays.value
+})
+
+const resetVisibleAppointmentGroups = () => {
+  technicianVisibleAppointmentGroupDays.value = 1
+}
+
+const loadMoreAppointmentGroups = async () => {
+  if (appointmentGroupsLoadingMore.value) return
+  if (!showAppointmentGroupsLoadMore.value) return
+  appointmentGroupsLoadingMore.value = true
+  try {
+    technicianVisibleAppointmentGroupDays.value += 1
+  } finally {
+    appointmentGroupsLoadingMore.value = false
+  }
+}
 
 const appointmentPanelEmptyText = computed(() => {
   return (showExceptionStandaloneContent.value || showExceptionContentInTable.value) ? '暂无异常单' : '暂无预约'
@@ -4859,6 +4892,7 @@ const fetchAppointments = async () => {
   if (!merchant.value.support_appointment) {
     appointments.value = []
     appointmentTechnicianDirectory.value = []
+    resetVisibleAppointmentGroups()
     return
   }
   try {
@@ -4870,6 +4904,7 @@ const fetchAppointments = async () => {
       .filter(a => a.status !== 'canceled')
       .sort((a, b) => new Date(b?.appointment_time || 0).getTime() - new Date(a?.appointment_time || 0).getTime())
     appointmentTechnicianDirectory.value = techniciansRes.data?.data || []
+    resetVisibleAppointmentGroups()
   } catch (err) {
     console.error('获取预约列表失败:', err)
   }
