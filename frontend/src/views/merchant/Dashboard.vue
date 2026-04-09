@@ -617,7 +617,8 @@
           <div v-for="appt in group.items" :key="appt.id" class="bg-white rounded-xl p-4 shadow-sm">
           <div class="flex justify-between items-start">
             <div>
-              <div class="font-medium text-gray-800">{{ appt.user?.nickname || appt.user_id }} <span class="ml-2 text-gray-500 text-sm font-normal">{{ formatAppointmentTechnicianDisplay(appt) }}</span></div>
+              <div class="font-medium text-gray-800">{{ appt.user?.nickname || appt.user_id }}</div>
+              <div v-if="showAppointmentTechnicianLine(appt)" class="text-gray-500 text-sm mt-1">预约技师：{{ getAppointmentTechnicianLineText(appt) }}</div>
               <div v-if="getAppointmentIdDisplay(appt)" class="text-gray-500 text-sm mt-1">预约号: {{ getAppointmentIdDisplay(appt) }}</div>
               <div v-if="getAppointmentCardTypeDisplay(appt)" class="text-gray-500 text-sm mt-1">预约卡片: {{ getAppointmentCardTypeDisplay(appt) }}</div>
               <div v-if="getAppointmentCardNoDisplay(appt)" class="text-gray-500 text-sm mt-1">预约卡号: {{ getAppointmentCardNoDisplay(appt) }}</div>
@@ -5513,6 +5514,18 @@ const formatAppointmentTechnicianDisplay = (appt) => {
   const right = String(account || '').trim()
   const text = `${left} ${right}`.trim()
   return text || '待分配'
+}
+
+const getAppointmentTechnicianLineText = (appt) => {
+  const account = String(appt?.technician?.account || appt?.technician?.code || '').trim()
+  const name = String(appt?.technician?.name || '').trim()
+  if (account && name) return `${account} - ${name}`
+  return account || name || '待分配'
+}
+
+const showAppointmentTechnicianLine = (appt) => {
+  if (isTechnicianAuth()) return false
+  return !!String(getAppointmentTechnicianLineText(appt) || '').trim() && !!appt?.technician
 }
 
 const getAppointmentCardTypeDisplay = (appt) => {
