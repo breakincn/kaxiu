@@ -91,7 +91,10 @@
                 <h3 class="text-lg font-bold">{{ item.merchant?.name }}</h3>
                 <p class="text-gray-500 text-xs mt-0.5">{{ item.card_type }}</p>
               </div>
-              <div class="bg-gray-100 px-2.5 py-0.5 rounded-full">
+              <div
+                :class="item.hasServingUsage ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'"
+                class="px-2.5 py-0.5 rounded-full"
+              >
                 <span class="text-xs font-medium">NO: {{ item.card_no }}</span>
               </div>
             </div>
@@ -450,8 +453,9 @@
 <script setup>
 import { ref, onMounted, watch, computed, onUnmounted, nextTick, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
-import { appointmentApi, cardApi, noticeApi, shopApi } from '../../api'
+import { appointmentApi, cardApi, noticeApi, shopApi, usageApi } from '../../api'
 import { formatDate } from '../../utils/dateFormat'
+import { normalizeSessionStatus } from '../../utils/sessionStatus'
 import QRCode from 'qrcode'
 import { LOW_PRIORITY_POLL_INTERVAL_MS } from '../../constants/polling'
 
@@ -695,7 +699,7 @@ const fetchCards = async () => {
     }
     
     const enrichedCards = await Promise.all((cardsData || []).map(async (card) => {
-      const enrichedCard = { ...card, pinnedNotice: null, hasAppointment: false }
+      const enrichedCard = { ...card, pinnedNotice: null, hasAppointment: false, hasServingUsage: false }
 
       if (enrichedCard.merchant_id) {
         try {
@@ -717,6 +721,14 @@ const fetchCards = async () => {
           )
         } catch (_) {
           enrichedCard.hasAppointment = false
+        }
+
+        try {
+          const usageRes = await usageApi.getCardUsages(enrichedCard.id)
+          const usages = usageRes?.data?.data || []
+          enrichedCard.hasServingUsage = usages.some(usage => normalizeSessionStatus(usage?.service_session_status) === 'serving')
+        } catch (_) {
+          enrichedCard.hasServingUsage = false
         }
       }
 
