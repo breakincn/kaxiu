@@ -631,7 +631,7 @@ func GetServiceSession(c *gin.Context) {
 
 	id := c.Param("id")
 	var s models.ServiceSession
-	if err := config.DB.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").Preload("Project").Preload("Card").Preload("InitialUsage").Where("id = ? AND merchant_id = ?", id, merchantID).First(&s).Error; err != nil {
+	if err := config.DB.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").Preload("LastTechnician").Preload("LastTechnician.ServiceRole").Preload("Project").Preload("Card").Preload("InitialUsage").Preload("Appointment").Preload("Merchant").Where("id = ? AND merchant_id = ?", id, merchantID).First(&s).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "会话不存在"})
 		return
 	}
@@ -653,7 +653,7 @@ func ListServiceSessions(c *gin.Context) {
 
 	status := c.Query("status")
 	dateText := strings.TrimSpace(c.Query("date"))
-	q := config.DB.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").Preload("Project").Preload("Card").Preload("InitialUsage").Where("merchant_id = ?", merchantID)
+	q := config.DB.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").Preload("LastTechnician").Preload("LastTechnician.ServiceRole").Preload("Project").Preload("Card").Preload("InitialUsage").Preload("Appointment").Preload("Merchant").Where("merchant_id = ?", merchantID)
 	if status != "" {
 		st := strings.TrimSpace(status)
 		if st != "" {

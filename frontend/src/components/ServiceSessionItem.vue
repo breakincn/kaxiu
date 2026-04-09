@@ -27,11 +27,14 @@
       <div v-if="session.room">
         房间：{{ session.room.name }}
       </div>
-      <div v-if="session.technician">
-        技师：{{ technicianDisplayText }}
-      </div>
       <div v-if="isAppointmentSession">
         预约号：#{{ session.source_id }}
+      </div>
+      <div v-if="effectiveTechnicianDisplayText">
+        技师：{{ effectiveTechnicianDisplayText }}
+      </div>
+      <div v-if="cancelReasonText">
+        取消原因：{{ cancelReasonText }}
       </div>
     </div>
 
@@ -43,7 +46,7 @@
       <div v-if="session.scheduled_finish_at">
         预计结束：{{ formatDateTime(session.scheduled_finish_at) }}
       </div>
-      <div v-if="session.duration_minutes > 0">
+      <div v-if="normalizeSessionStatus(session.status) !== 'canceled' && session.duration_minutes > 0">
         服务时长：{{ session.duration_minutes }}分钟
       </div>
       <div v-if="remainingSeconds !== null" class="text-blue-600 font-medium">
@@ -67,7 +70,7 @@
 <script setup>
 import { computed } from 'vue'
 import { formatDateTime } from '../utils/dateFormat'
-import { getAutoFinishLabel, getPendingStartLabel } from '../utils/terms'
+import { getAutoFinishLabel, getPendingStartLabel, replaceTerms } from '../utils/terms'
 import { normalizeSessionStatus } from '../utils/sessionStatus'
 
 const props = defineProps({
@@ -86,16 +89,20 @@ defineEmits(['extend'])
 const hasTimeInfo = computed(() => {
   return props.session.started_at || 
          props.session.scheduled_finish_at || 
-         props.session.duration_minutes > 0
+         (normalizeSessionStatus(props.session.status) !== 'canceled' && props.session.duration_minutes > 0)
 })
 
 const isAppointmentSession = computed(() => {
   return String(props.session?.source_type || '').trim() === 'appointment' && Number(props.session?.source_id || 0) > 0
 })
 
-const technicianDisplayText = computed(() => {
-  const account = String(props.session?.technician?.account || '').trim()
-  const name = String(props.session?.technician?.name || '').trim()
+const effectiveTechnician = computed(() => {
+  return props.session?.technician || props.session?.last_technician || null
+})
+
+const effectiveTechnicianDisplayText = computed(() => {
+  const account = String(effectiveTechnician.value?.account || '').trim()
+  const name = String(effectiveTechnician.value?.name || '').trim()
   if (account && name) return `${account} - ${name}`
   return name || account || ''
 })
@@ -109,6 +116,26 @@ const cardUsageDisplayText = computed(() => {
   const cardPart = `卡号：${cardNo || '-'}`
   const verifyPart = `核销：${totalTimes > 0 ? totalTimes : '-'}\/${usedTimes > 0 ? usedTimes : '-'}`
   return `${cardPart} ${verifyPart}`
+})
+
+const cancelReasonText = computed(() => {
+  if (normalizeSessionStatus(props.session?.status) !== 'canceled') return ''
+
+  const appointment = props.session?.appointment
+  const appointmentStatus = String(appointment?.status || '').trim()
+  const merchantCancelReason = String(appointment?.merchant_cancel_reason || '').trim()
+  const disruptionReason = String(appointment?.disruption_reason || '').trim()
+  const failedReason = String(appointment?.failed_reason || '').trim()
+
+  if (appointmentStatus === 'no_show' || disruptionReason === 'user_no_show') {
+    return '预约用户未到店'
+  }
+  if (merchantCancelReason) return merchantCancelReason
+  if (failedReason) return failedReason
+  if (Number(props.session?.start_timeout_count || 0) > 0) {
+    return replaceTerms('起单超时', props.session?.merchant)
+  }
+  return '已取消'
 })
 
 const canExtend = computed(() => {
