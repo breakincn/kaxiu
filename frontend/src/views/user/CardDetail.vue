@@ -346,6 +346,9 @@
               <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageProjectText(usage) }}
               </div>
+              <div v-if="getUsageFailureReasonText(usage)" class="text-gray-400 text-sm mt-0.5">
+                原因：{{ getUsageFailureReasonText(usage) }}
+              </div>
               <div v-if="card?.merchant?.support_hand_card && !(usage.hand_card_no && !isUsageHandCardReturned(usage))" class="text-gray-400 text-sm mt-0.5">
                 手牌：{{ usage.hand_card_no || '-' }}（<span v-if="!usage.hand_card_no && !isUsageHandCardReturned(usage)" :class="isUsageHandCardPendingAssignment(usage) ? 'text-orange-500' : 'text-red-500'">{{ isUsageHandCardPendingAssignment(usage) ? '待分配' : '未分配' }}</span><span v-else>{{ getHandCardStatusText(usage) }}</span>）
               </div>
@@ -944,7 +947,7 @@ const displayUsages = computed(() => {
     }
     return 0
   })
-  return list
+  return list.filter((usage) => shouldDisplayUsageRecord(usage))
 })
 
 const showUsageQrModal = ref(false)
@@ -1357,6 +1360,31 @@ const getUsageUsedAtMs = (usage) => {
   return Number.isFinite(ms) ? ms : 0
 }
 
+const FAILED_USAGE_VISIBLE_WINDOW_MS = 48 * 60 * 60 * 1000
+
+const getTimeMs = (value) => {
+  if (!value) return 0
+  const ms = new Date(value).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
+const getUsageFailureAtMs = (usage) => {
+  return (
+    getUsageUsedAtMs(usage) ||
+    getTimeMs(usage?.finished_at) ||
+    getTimeMs(usage?.service_session_finished_at) ||
+    getTimeMs(usage?.service_session_updated_at) ||
+    getTimeMs(usage?.created_at)
+  )
+}
+
+const shouldDisplayUsageRecord = (usage) => {
+  if (String(usage?.status || '').trim() !== 'failed') return true
+  const failedAtMs = getUsageFailureAtMs(usage)
+  if (!failedAtMs) return true
+  return nowTick.value - failedAtMs <= FAILED_USAGE_VISIBLE_WINDOW_MS
+}
+
 const getUsageSessionUpdatedAtMs = (usage) => {
   const v = usage?.service_session_updated_at
   if (!v) return 0
@@ -1665,6 +1693,22 @@ const getUsageSyntheticServiceEndText = (usage) => {
   const deadlineMs = getAppointmentArrivalDeadlineMs(appt)
   if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) return ''
   return formatDateTime(new Date(deadlineMs))
+}
+
+const getUsageFailureReasonText = (usage) => {
+  if (String(usage?.status || '').trim() !== 'failed') return ''
+
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
+  const rawReason = String(usage?.failure_reason || usage?.failed_reason || usage?.disruption_reason || '').trim()
+  if (rawReason) return getReasonText(rawReason)
+
+  if (sessStatus === 'timeout_failed' || Number(usage?.start_timeout_count || 0) > 0) {
+    return '客服起单超时'
+  }
+  if (sessStatus === 'canceled') {
+    return '服务已取消'
+  }
+  return '本次核销失败'
 }
 
 const getUsageSequence = (index) => {
@@ -3188,6 +3232,7 @@ const getReasonText = (reason) => {
     service_unclosed_cross_day: '客户已到店但未开始服务，且跨日未完成结案',
     appointment_state_inconsistent: '预约状态与履约事实不一致',
     user_no_show: '用户未到店',
+    merchant_timeout_failed: '客服起单超时',
     risk_released: '风险解除',
     technician_leave: '客服请假',
     force_majeure_relief_accepted: '不可抗力救济已生效'
