@@ -299,6 +299,18 @@
         服务
       </button>
       <button
+        v-if="showTechnicianBoardTab"
+        @click="selectTab('board')"
+        :class="[
+          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          currentTab === 'board'
+            ? 'border-primary text-primary'
+            : 'border-transparent text-gray-500'
+        ]"
+      >
+        看板
+      </button>
+      <button
         v-if="showTableTab"
         @click="selectTab('table')"
         :class="[
@@ -539,6 +551,10 @@
           </div>
         </template>
       </Table>
+    </div>
+
+    <div v-if="currentTab === 'board' && showTechnicianBoardTab" class="py-2">
+      <Table :embedded="true" :service-only="true" :technician-own-only="true" :hide-service-filter="true" />
     </div>
 
     <!-- 预约 / 异常中心 -->
@@ -2398,6 +2414,10 @@ const showServiceTab = computed(() => {
   // 按岗位独立配置签到：不再依赖商户全局开关
   return isTechnicianAuth()
 })
+
+const showTechnicianBoardTab = computed(() => {
+  return isTechnicianAuth()
+})
 const currentTab = ref('appointment')
 const routeUserCode = ref('')
 const userCodeAnchor = ref(null)
@@ -2807,6 +2827,8 @@ const getDefaultTab = () => {
     return 'table'
   } else if (showServiceTab.value) {
     return 'service'
+  } else if (showTechnicianBoardTab.value) {
+    return 'board'
   } else {
     return 'appointment'
   }
@@ -2821,6 +2843,7 @@ const getFirstVisibleTab = () => {
   if (showCardsTab.value) return 'cards'
   if (showTableTab.value) return 'table'
   if (showServiceTab.value) return 'service'
+  if (showTechnicianBoardTab.value) return 'board'
   return 'appointment'
 }
 
@@ -6872,7 +6895,7 @@ onMounted(async () => {
   if (!tabParam) {
     // 如果已经从 localStorage 恢复了 tab，并且该 tab 有权限显示，则保持不变
     const restoredTab = currentTab.value
-      if (restoredTab && ['verify', 'appointment', 'exception', 'start', 'finish', 'notice', 'cards', 'table', 'service'].includes(restoredTab)) {
+      if (restoredTab && ['verify', 'appointment', 'exception', 'start', 'finish', 'notice', 'cards', 'board', 'table', 'service'].includes(restoredTab)) {
         // 检查恢复的 tab 是否有权限显示
       const canShowRestoredTab = 
         (restoredTab === 'appointment' && showAppointmentTab.value) ||
@@ -6881,6 +6904,7 @@ onMounted(async () => {
         (restoredTab === 'finish' && showFinishTab.value) ||
         (restoredTab === 'notice' && showNoticeTab.value) ||
         (restoredTab === 'cards' && showCardsTab.value) ||
+        (restoredTab === 'board' && showTechnicianBoardTab.value) ||
         (restoredTab === 'table' && showTableTab.value) ||
         (restoredTab === 'service' && showServiceTab.value)
       
@@ -6917,6 +6941,7 @@ onMounted(async () => {
       finish: showFinishTab.value,
       notice: showNoticeTab.value,
       cards: showCardsTab.value,
+      board: showTechnicianBoardTab.value,
       table: showTableTab.value,
       service: showServiceTab.value
     }

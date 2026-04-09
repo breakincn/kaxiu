@@ -653,7 +653,17 @@ func ListServiceSessions(c *gin.Context) {
 
 	status := c.Query("status")
 	dateText := strings.TrimSpace(c.Query("date"))
+	selfOnly := strings.TrimSpace(c.Query("self_only")) == "1"
 	q := config.DB.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").Preload("LastTechnician").Preload("LastTechnician.ServiceRole").Preload("Project").Preload("Card").Preload("InitialUsage").Preload("InitialUsage.Technician").Preload("Appointment").Preload("Merchant").Where("merchant_id = ?", merchantID)
+	if selfOnly {
+		authTypeAny, _ := c.Get("auth_type")
+		authType, _ := authTypeAny.(string)
+		technicianIDAny, _ := c.Get("technician_id")
+		technicianID, _ := technicianIDAny.(uint)
+		if authType == "staff" && technicianID > 0 {
+			q = q.Where("(technician_id = ? OR last_technician_id = ?)", technicianID, technicianID)
+		}
+	}
 	if status != "" {
 		st := strings.TrimSpace(status)
 		if st != "" {
