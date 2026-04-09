@@ -143,16 +143,6 @@
         <div class="text-3xl font-bold" :class="exceptionSummaryCount > 0 ? 'text-red-500' : 'text-gray-400'">{{ exceptionSummaryCount }}</div>
         <div class="text-gray-500 text-sm">单</div>
       </button>
-      <button
-        v-if="canVerify && todayVerifyCount > 0"
-        type="button"
-        class="bg-white rounded-xl p-4 text-left border border-gray-100"
-        @click="selectTab('verify')"
-      >
-        <div class="text-gray-600 text-sm mb-1">今日核销</div>
-        <div class="text-3xl font-bold" :class="todayVerifyCount > 0 ? 'text-secondary' : 'text-gray-400'">{{ todayVerifyCount }}</div>
-        <div class="text-gray-500 text-sm">次</div>
-      </button>
     </div>
 
     <div v-if="showMerchantSchedulePublishingPanel" class="px-4 pt-1 pb-3">
@@ -235,7 +225,20 @@
             : 'border-transparent text-gray-500'
         ]"
       >
-        扫码核销
+        <span class="inline-flex items-center gap-1.5">
+          <span>扫码核销</span>
+          <span
+            v-if="todayVerifyCount > 0"
+            :class="[
+              'inline-flex min-w-[18px] h-[18px] px-1 items-center justify-center rounded-full text-[11px] leading-none font-semibold',
+              currentTab === 'verify'
+                ? 'bg-primary text-white'
+                : 'bg-orange-500 text-white'
+            ]"
+          >
+            {{ todayVerifyCount }}
+          </span>
+        </span>
       </button>
       <button
         v-if="showAppointmentTab"
