@@ -4636,8 +4636,8 @@ const getUsageCountColorClass = (usage) => {
     return 'text-gray-700'
   }
   
-  // 其他状态：蓝色
-  return 'text-blue-600'
+  // 其他状态：红色
+  return 'text-red-600'
 }
 
 const getSchedulerItemStatusText = (status) => {
