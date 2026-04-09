@@ -21,6 +21,9 @@
       <div v-if="session.card">
         卡片：{{ session.card.card_type }} (剩余{{ session.card.remain_times }}次)
       </div>
+      <div v-if="cardUsageDisplayText">
+        {{ cardUsageDisplayText }}
+      </div>
       <div v-if="session.room">
         房间：{{ session.room.name }}
       </div>
@@ -29,9 +32,6 @@
       </div>
       <div v-if="isAppointmentSession">
         预约号：#{{ session.source_id }}
-      </div>
-      <div v-if="cardUsageDisplayText">
-        {{ cardUsageDisplayText }}
       </div>
     </div>
 
@@ -103,7 +103,8 @@ const technicianDisplayText = computed(() => {
 const cardUsageDisplayText = computed(() => {
   const cardNo = String(props.session?.card?.card_no || '').trim()
   const totalTimes = Number(props.session?.card?.total_times || 0)
-  const usedTimes = Number(props.session?.initial_usage?.used_times || 0)
+  const remainTimes = Number(props.session?.card?.remain_times || 0)
+  const usedTimes = totalTimes > 0 ? Math.max(0, totalTimes - remainTimes) : 0
   if (!cardNo && totalTimes <= 0 && usedTimes <= 0) return ''
   const cardPart = `卡号：${cardNo || '-'}`
   const verifyPart = `核销：${totalTimes > 0 ? totalTimes : '-'}\/${usedTimes > 0 ? usedTimes : '-'}`
