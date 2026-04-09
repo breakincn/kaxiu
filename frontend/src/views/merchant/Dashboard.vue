@@ -368,6 +368,21 @@
                       {{ getRescheduleRequestTechnicianText(getLatestPendingRescheduleRequest(appt)) }}
                     </div>
                   </div>
+                  <div
+                    v-if="getLatestPendingCancelRequest(appt)"
+                    class="mt-2 rounded-lg px-3 py-2 text-sm border"
+                    :class="isMerchantCancelConfirmationPending(appt) ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-red-50 text-red-700 border-red-100'"
+                  >
+                    <div class="font-medium">
+                      {{ isMerchantCancelConfirmationPending(appt) ? '待商户确认取消' : '已向用户发起取消申请' }}
+                    </div>
+                    <div v-if="getLatestPendingCancelRequest(appt)?.reason" class="mt-1">
+                      取消原因：{{ getLatestPendingCancelRequest(appt)?.reason }}
+                    </div>
+                    <div v-if="getLatestPendingCancelRequest(appt)?.objection_note" class="mt-1">
+                      异议说明：{{ getLatestPendingCancelRequest(appt)?.objection_note }}
+                    </div>
+                  </div>
                   <div v-if="appt.resolution_note" class="mt-2 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 border border-gray-100">
                     处理备注: {{ appt.resolution_note }}
                   </div>
@@ -409,7 +424,7 @@
                     确认预约
                   </button>
                   <button
-                    v-if="appt.status === 'pending' && !isPendingExpired(appt)"
+                    v-if="appt.status === 'pending' && !isPendingExpired(appt) && !getLatestPendingCancelRequest(appt)"
                     @click="cancelAppointment(appt)"
                     class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
                   >
@@ -423,11 +438,25 @@
                     未确认预约
                   </button>
                   <button
-                    v-if="appt.status === 'confirmed'"
+                    v-if="appt.status === 'confirmed' && !getLatestPendingCancelRequest(appt)"
                     @click="cancelAppointment(appt)"
                     class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
                   >
                     取消
+                  </button>
+                  <button
+                    v-if="isMerchantCancelConfirmationPending(appt)"
+                    @click="acceptAppointmentCancelRequest(appt)"
+                    class="flex-1 py-2 bg-red-500 text-white rounded-lg text-sm font-medium"
+                  >
+                    同意取消
+                  </button>
+                  <button
+                    v-if="isMerchantCancelConfirmationPending(appt)"
+                    @click="rejectAppointmentCancelRequest(appt)"
+                    class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+                  >
+                    拒绝取消
                   </button>
                   <button
                     v-if="appt.status === 'arrived' && appt.service_session_id && !isCrossDayUnfinishedAppointment(appt)"
@@ -614,6 +643,21 @@
                   {{ getRescheduleRequestTechnicianText(getLatestPendingRescheduleRequest(appt)) }}
                 </div>
               </div>
+              <div
+                v-if="getLatestPendingCancelRequest(appt)"
+                class="mt-2 rounded-lg px-3 py-2 text-sm border"
+                :class="isMerchantCancelConfirmationPending(appt) ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-red-50 text-red-700 border-red-100'"
+              >
+                <div class="font-medium">
+                  {{ isMerchantCancelConfirmationPending(appt) ? '待商户确认取消' : '已向用户发起取消申请' }}
+                </div>
+                <div v-if="getLatestPendingCancelRequest(appt)?.reason" class="mt-1">
+                  取消原因：{{ getLatestPendingCancelRequest(appt)?.reason }}
+                </div>
+                <div v-if="getLatestPendingCancelRequest(appt)?.objection_note" class="mt-1">
+                  异议说明：{{ getLatestPendingCancelRequest(appt)?.objection_note }}
+                </div>
+              </div>
               <div v-if="appt.resolution_note" class="mt-2 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700 border border-gray-100">
                 处理备注: {{ appt.resolution_note }}
               </div>
@@ -655,7 +699,7 @@
                 确认预约
               </button>
               <button
-                v-if="appt.status === 'pending' && !isPendingExpired(appt)"
+                v-if="appt.status === 'pending' && !isPendingExpired(appt) && !getLatestPendingCancelRequest(appt)"
                 @click="cancelAppointment(appt)"
                 class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
               >
@@ -669,11 +713,25 @@
                 未确认预约
               </button>
               <button
-                v-if="appt.status === 'confirmed'"
+                v-if="appt.status === 'confirmed' && !getLatestPendingCancelRequest(appt)"
                 @click="cancelAppointment(appt)"
                 class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
               >
                 取消
+              </button>
+              <button
+                v-if="isMerchantCancelConfirmationPending(appt)"
+                @click="acceptAppointmentCancelRequest(appt)"
+                class="flex-1 py-2 bg-red-500 text-white rounded-lg text-sm font-medium"
+              >
+                同意取消
+              </button>
+              <button
+                v-if="isMerchantCancelConfirmationPending(appt)"
+                @click="rejectAppointmentCancelRequest(appt)"
+                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm"
+              >
+                拒绝取消
               </button>
               <button
                 v-if="appt.status === 'arrived' && appt.service_session_id && !isCrossDayUnfinishedAppointment(appt)"
@@ -5499,6 +5557,11 @@ const getLatestPendingRescheduleRequest = (appt) => {
   return list.find(item => item?.status === 'pending_user' || item?.status === 'pending_merchant') || null
 }
 
+const getLatestPendingCancelRequest = (appt) => {
+  const list = Array.isArray(appt?.cancel_requests) ? appt.cancel_requests : []
+  return list.find(item => item?.status === 'pending_user' || item?.status === 'pending_merchant') || null
+}
+
 const getLatestForceMajeureReliefRequest = (appt) => {
   const list = Array.isArray(appt?.force_majeure_relief_requests) ? appt.force_majeure_relief_requests : []
   if (list.length === 0) return null
@@ -5517,6 +5580,11 @@ const getRescheduleRequestTechnicianText = (req) => {
 
 const isMerchantConfirmationPending = (appt) => {
   const req = getLatestPendingRescheduleRequest(appt)
+  return req?.status === 'pending_merchant'
+}
+
+const isMerchantCancelConfirmationPending = (appt) => {
+  const req = getLatestPendingCancelRequest(appt)
   return req?.status === 'pending_merchant'
 }
 
@@ -5850,6 +5918,39 @@ const rejectAppointmentRescheduleRequest = async (appt) => {
     await fetchAppointments()
   } catch (err) {
     alert(err.response?.data?.error || '拒绝改签失败')
+  }
+}
+
+const acceptAppointmentCancelRequest = async (appt) => {
+  const req = getLatestPendingCancelRequest(appt)
+  if (!req) return
+  try {
+    await appointmentApi.acceptMerchantCancelRequest(appt.id, req.id)
+    alert('已同意用户取消申请，预约已取消')
+    await fetchAppointments()
+  } catch (err) {
+    if (isHandledAuthRedirectError(err)) return
+    alert(err.response?.data?.error || '同意取消失败')
+  }
+}
+
+const rejectAppointmentCancelRequest = async (appt) => {
+  const req = getLatestPendingCancelRequest(appt)
+  if (!req) return
+  const note = window.prompt('请输入拒绝取消的说明', String(req?.objection_note || '').trim())
+  if (note == null) return
+  const trimmedNote = String(note || '').trim()
+  if (!trimmedNote) {
+    alert('拒绝说明不能为空')
+    return
+  }
+  try {
+    await appointmentApi.rejectMerchantCancelRequest(appt.id, req.id, { objection_note: trimmedNote })
+    alert('已拒绝该取消申请')
+    await fetchAppointments()
+  } catch (err) {
+    if (isHandledAuthRedirectError(err)) return
+    alert(err.response?.data?.error || '拒绝取消失败')
   }
 }
 
