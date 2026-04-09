@@ -652,12 +652,24 @@ func ListServiceSessions(c *gin.Context) {
 	}
 
 	status := c.Query("status")
+	dateText := strings.TrimSpace(c.Query("date"))
 	q := config.DB.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").Preload("Project").Where("merchant_id = ?", merchantID)
 	if status != "" {
 		st := strings.TrimSpace(status)
 		if st != "" {
 			q = q.Where("status IN ?", models.ExpandStatusWithKnownPrefixes(st))
 		}
+	}
+	if dateText != "" {
+		loc := appointmentLocation()
+		targetDate, err := time.ParseInLocation("2006-01-02", dateText, loc)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "日期格式错误"})
+			return
+		}
+		dayStart := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, loc)
+		dayEnd := dayStart.Add(24 * time.Hour)
+		q = q.Where("created_at >= ? AND created_at < ?", dayStart, dayEnd)
 	}
 
 	var list []models.ServiceSession

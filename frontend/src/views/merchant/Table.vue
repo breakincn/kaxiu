@@ -162,7 +162,7 @@
               <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
                 <div class="flex items-center gap-3">
                   <label class="text-sm font-medium text-gray-700">状态筛选：</label>
-                  <select v-model="statusFilter" @change="fetchServiceSessions" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                  <select v-model="statusFilter" @change="resetServiceSessions" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
                     <option value="">全部</option>
                     <option value="created">已创建</option>
                     <option value="room_selecting">选房中</option>
@@ -200,20 +200,31 @@
 
                 <!-- 其他会话 -->
                 <div>
-                  <div class="font-medium text-gray-800 mb-3">
-                    {{ isTechnicianAuth() ? '其他服务单' : '全部服务单' }}
-                    <span class="text-gray-500 text-sm font-normal">({{ filteredOtherSessions.length }})</span>
-                  </div>
-                  
                   <div v-if="filteredOtherSessions.length === 0" class="text-center text-gray-400 py-10">
                     {{ statusFilter ? '暂无符合条件的服务单' : '暂无服务单' }}
                   </div>
                   
-                  <div v-else class="space-y-2">
-                    <div v-for="session in filteredOtherSessions" :key="session.id" class="border border-gray-100 rounded-lg p-3">
-                      <ServiceSessionItem :session="session" :currentTime="currentTimeMs" @extend="openExtendModal" />
+                  <div v-else class="space-y-4">
+                    <div v-for="group in groupedOtherSessions" :key="group.date" class="space-y-2">
+                      <div class="font-medium text-gray-800">
+                        {{ group.title }}
+                        <span class="text-gray-500 text-sm font-normal">({{ group.items.length }})</span>
+                      </div>
+                      <div v-for="session in group.items" :key="session.id" class="border border-gray-100 rounded-lg p-3">
+                        <ServiceSessionItem :session="session" :currentTime="currentTimeMs" @extend="openExtendModal" />
+                      </div>
                     </div>
                   </div>
+
+                  <button
+                    v-if="canLoadMoreServiceSessions"
+                    type="button"
+                    class="w-full rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-medium text-orange-600 disabled:opacity-50"
+                    :disabled="serviceSessionsLoadingMore"
+                    @click="loadMoreServiceSessions"
+                  >
+                    {{ serviceSessionsLoadingMore ? '加载中...' : '更多' }}
+                  </button>
                 </div>
               </div>
             </div>
@@ -299,10 +310,15 @@ const roleAttendanceMap = ref({})
 // 服务单看板相关状态
 const statusFilter = ref('')
 const serviceSessions = ref([])
+const loadedServiceSessionDates = ref([])
+const serviceSessionCursorDate = ref('')
+const serviceSessionsLoadingMore = ref(false)
 const extendSession = ref(null)
 const extendMinutes = ref(null)
 const showExtendModal = ref(false)
 const extendLoading = ref(false)
+
+const canLoadMoreServiceSessions = computed(() => activeTab.value === 'service' && loadedServiceSessionDates.value.length > 0)
 
 // 技师视角：我的服务中会话
 const myServingSessions = computed(() => {
@@ -326,6 +342,26 @@ const filteredOtherSessions = computed(() => {
   }
   
   return sessions
+})
+
+const groupedOtherSessions = computed(() => {
+  const groups = []
+  const map = new Map()
+
+  for (const session of filteredOtherSessions.value) {
+    const dateKey = getSessionDateKey(session)
+    if (!map.has(dateKey)) {
+      const group = {
+        date: dateKey,
+        title: `${formatDisplayServiceSessionDate(dateKey)}服务单`,
+        items: []
+      }
+      map.set(dateKey, group)
+      groups.push(group)
+    }
+    map.get(dateKey).items.push(session)
+  }
+  return groups
 })
 
 const groupedStaff = computed(() => {
@@ -562,7 +598,7 @@ const load = async () => {
       const res = await merchantApi.getTableStaff(type)
       staff.value = res.data?.data || []
     } else if (activeTab.value === 'service') {
-      await fetchServiceSessions()
+      await resetServiceSessions()
     }
   } catch (e) {
     if (activeTab.value === 'rooms') rooms.value = []
@@ -574,15 +610,103 @@ const load = async () => {
   }
 }
 
-const fetchServiceSessions = async () => {
+const formatServiceSessionDate = (date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+const getTodayServiceSessionDate = () => formatServiceSessionDate(new Date())
+
+const getPreviousServiceSessionDate = (dateText) => {
+  const [y, m, d] = String(dateText || '').split('-').map(Number)
+  if (!y || !m || !d) return getTodayServiceSessionDate()
+  const date = new Date(y, m - 1, d)
+  date.setDate(date.getDate() - 1)
+  return formatServiceSessionDate(date)
+}
+
+const formatDisplayServiceSessionDate = (dateText) => {
+  const [y, m, d] = String(dateText || '').split('-').map(Number)
+  if (!y || !m || !d) return '未知日期'
+  return `${m}月${d}日`
+}
+
+const getSessionDateKey = (session) => {
+  const raw = session?.created_at || session?.updated_at
+  if (!raw) return '未知日期'
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return '未知日期'
+  return formatServiceSessionDate(date)
+}
+
+const mergeServiceSessions = (sessions, append = false) => {
+  const merged = append ? [...serviceSessions.value] : []
+  const seen = new Set(merged.map(s => s.id))
+  for (const session of sessions) {
+    if (!seen.has(session.id)) {
+      merged.push(session)
+      seen.add(session.id)
+    }
+  }
+  merged.sort((a, b) => b.id - a.id)
+  serviceSessions.value = merged
+}
+
+const fetchServiceSessionsByDate = async (dateText, append = false) => {
   try {
-    const params = {}
+    const params = { date: dateText }
     if (statusFilter.value) params.status = statusFilter.value
     const res = await serviceSessionApi.listSessions(params)
-    serviceSessions.value = res.data?.data || []
+    const items = res.data?.data || []
+    mergeServiceSessions(items, append)
+    if (items.length > 0 && !append) {
+      loadedServiceSessionDates.value = [dateText]
+      serviceSessionCursorDate.value = dateText
+    } else if (items.length > 0 && !loadedServiceSessionDates.value.includes(dateText)) {
+      loadedServiceSessionDates.value = [...loadedServiceSessionDates.value, dateText]
+      serviceSessionCursorDate.value = dateText
+    }
+    return items
   } catch (e) {
     console.error('获取服务单列表失败:', e)
-    serviceSessions.value = []
+    if (!append) {
+      serviceSessions.value = []
+      loadedServiceSessionDates.value = []
+      serviceSessionCursorDate.value = ''
+    }
+    return []
+  }
+}
+
+const findPreviousNonEmptyServiceSessionDate = async (startDateText, append = false) => {
+  let dateText = startDateText
+  for (let i = 0; i < 365; i += 1) {
+    const items = await fetchServiceSessionsByDate(dateText, append)
+    if (items.length > 0) {
+      return { dateText, items }
+    }
+    dateText = getPreviousServiceSessionDate(dateText)
+  }
+  return { dateText: '', items: [] }
+}
+
+const resetServiceSessions = async () => {
+  serviceSessions.value = []
+  loadedServiceSessionDates.value = []
+  serviceSessionCursorDate.value = ''
+  await findPreviousNonEmptyServiceSessionDate(getTodayServiceSessionDate(), false)
+}
+
+const loadMoreServiceSessions = async () => {
+  if (serviceSessionsLoadingMore.value) return
+  if (!serviceSessionCursorDate.value) return
+  serviceSessionsLoadingMore.value = true
+  try {
+    await findPreviousNonEmptyServiceSessionDate(getPreviousServiceSessionDate(serviceSessionCursorDate.value), true)
+  } finally {
+    serviceSessionsLoadingMore.value = false
   }
 }
 
