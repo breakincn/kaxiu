@@ -18,13 +18,16 @@
       <div v-if="session.user">
         用户：{{ session.user.nickname || session.user.phone || `ID:${session.user.id}` }}
       </div>
+      <div v-if="trackingNumber">
+        单号：{{ trackingNumber }}
+      </div>
       <div v-if="session.card">
         卡片：{{ session.card.card_type }} (剩余{{ session.card.remain_times }}次)
       </div>
       <div v-if="cardUsageDisplayText">
         {{ cardUsageDisplayText }}
       </div>
-      <div v-if="session.room">
+      <div v-if="shouldShowRoom">
         房间：{{ session.room.name }}
       </div>
       <div v-if="isAppointmentSession">
@@ -105,6 +108,18 @@ const effectiveTechnicianDisplayText = computed(() => {
   const name = String(effectiveTechnician.value?.name || '').trim()
   if (account && name) return `${account} - ${name}`
   return name || account || ''
+})
+
+const trackingNumber = computed(() => {
+  const usageId = Number(props.session?.initial_usage_id || 0)
+  if (usageId > 0) {
+    return String(usageId).padStart(9, '0')
+  }
+  return String(props.session?.id || '')
+})
+
+const shouldShowRoom = computed(() => {
+  return normalizeSessionStatus(props.session?.status) !== 'finished' && !!props.session?.room
 })
 
 const cardUsageDisplayText = computed(() => {
