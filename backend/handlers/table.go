@@ -240,6 +240,7 @@ func TableStaff(c *gin.Context) {
 	// 签到/状态 - 和选择工作人员条件一致：当天签到且未下班
 	now := time.Now()
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	end := start.Add(24 * time.Hour)
 	var atts []models.TechnicianAttendance
 	qAtt := config.DB.
 		Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
@@ -274,6 +275,50 @@ func TableStaff(c *gin.Context) {
 		}
 	}
 
+	techIDs := make([]uint, 0, len(techs))
+	for _, t := range techs {
+		techIDs = append(techIDs, t.ID)
+	}
+
+	completedCountByTech := map[uint]int64{}
+	if len(techIDs) > 0 {
+		type completedSessionLite struct {
+			TechnicianID     *uint `gorm:"column:technician_id"`
+			LastTechnicianID *uint `gorm:"column:last_technician_id"`
+		}
+
+		var completedSessions []completedSessionLite
+		config.DB.
+			Model(&models.ServiceSession{}).
+			Select("technician_id, last_technician_id").
+			Where("merchant_id = ? AND status IN ? AND finished_at >= ? AND finished_at < ?", merchantID, models.ExpandStatusWithKnownPrefixes("finished"), start, end).
+			Where("(technician_id IN ? OR last_technician_id IN ?)", techIDs, techIDs).
+			Find(&completedSessions)
+
+		techIDSet := make(map[uint]struct{}, len(techIDs))
+		for _, techID := range techIDs {
+			techIDSet[techID] = struct{}{}
+		}
+
+		for _, session := range completedSessions {
+			var ownerTechID uint
+			if session.TechnicianID != nil {
+				if _, ok := techIDSet[*session.TechnicianID]; ok {
+					ownerTechID = *session.TechnicianID
+				}
+			}
+			if ownerTechID == 0 && session.LastTechnicianID != nil {
+				if _, ok := techIDSet[*session.LastTechnicianID]; ok {
+					ownerTechID = *session.LastTechnicianID
+				}
+			}
+			if ownerTechID == 0 {
+				continue
+			}
+			completedCountByTech[ownerTechID]++
+		}
+	}
+
 	var merchant models.Merchant
 	if err := config.DB.Select("id", "start_term").First(&merchant, merchantID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取商户信息失败"})
@@ -286,6 +331,7 @@ func TableStaff(c *gin.Context) {
 		Attendance          *models.TechnicianAttendance `json:"attendance"`
 		CurrentSession      *models.ServiceSession       `json:"current_session"`
 		Room                *models.Room                 `json:"room"`
+		TodayCompletedCount int64                        `json:"today_completed_count"`
 		ServiceStatus       string                       `json:"service_status"`
 		PhaseText           string                       `json:"phase_text"`
 		PhaseClass          string                       `json:"phase_class"`
@@ -303,7 +349,7 @@ func TableStaff(c *gin.Context) {
 
 	out := make([]staffItem, 0, len(techs))
 	for _, t := range techs {
-		it := staffItem{Technician: t, Attendance: nil, CurrentSession: nil, Room: nil, ServiceStatus: "not_checked_in", PhaseText: "", PhaseClass: "", StartRemainSeconds: 0, CheckedIn: false, CheckedInAt: nil, ServiceStartAt: nil, ServiceFinishAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, NextAvailableAt: nil, NextAvailableInSecs: 0, Now: now}
+		it := staffItem{Technician: t, Attendance: nil, CurrentSession: nil, Room: nil, TodayCompletedCount: completedCountByTech[t.ID], ServiceStatus: "not_checked_in", PhaseText: "", PhaseClass: "", StartRemainSeconds: 0, CheckedIn: false, CheckedInAt: nil, ServiceStartAt: nil, ServiceFinishAt: nil, ElapsedSeconds: 0, RemainSeconds: 0, NextAvailableAt: nil, NextAvailableInSecs: 0, Now: now}
 
 		if a, ok := attByTech[t.ID]; ok {
 			it.Attendance = &a

@@ -130,7 +130,7 @@
                 <div class="space-y-3">
                   <div v-for="it in g.items" :key="it.technician.id" class="border border-gray-100 rounded-xl p-4 bg-white">
                     <div class="flex items-start justify-between gap-3">
-                      <div>
+                      <div class="min-w-0 flex-1">
                         <div class="flex items-center gap-2">
                           <div class="text-gray-800 font-medium">{{ it.technician.name }}</div>
                           <span v-if="shouldShowStaffBadge(it)" class="px-2 py-0.5 rounded text-xs" :class="badgeClass(it)">
@@ -146,6 +146,9 @@
                           <div v-if="it.service_finish_at">剩余：{{ calculateRemainTime(it.service_finish_at) }}</div>
                           <div v-if="it.next_available_at">下次可服务：{{ formatTime(it.next_available_at) }}（{{ formatDuration(it.next_available_in_seconds) }}）</div>
                         </div>
+                      </div>
+                      <div class="shrink-0 self-start rounded-md bg-green-500 px-2.5 py-0.5 text-xs font-medium text-white whitespace-nowrap">
+                        今日已完成 {{ Number(it.today_completed_count || 0) }} 单
                       </div>
                     </div>
                   </div>
