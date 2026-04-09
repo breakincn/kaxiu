@@ -2164,7 +2164,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, onActivated, watch, nextTick, computed } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
-import { ensureMerchantPermissionsLoaded, merchantApi, appointmentApi, shopApi, attendanceApi, serviceSessionApi, usageApi, noticeApi, cardApi, queueApi } from '../../api'
+import { ensureMerchantPermissionsLoaded, merchantApi, appointmentApi, shopApi, attendanceApi, serviceSessionApi, usageApi, noticeApi, cardApi, queueApi, isHandledAuthRedirectError } from '../../api'
 import { clearMerchantAuth, clearMerchantPermissionKeys, hasMerchantPermission, getMerchantActiveAuth, getMerchantId, getTechnicianShopSlug } from '../../utils/auth'
 import {
   getAutoFinishLabel,
@@ -4946,6 +4946,7 @@ const cancelAppointment = async (appt) => {
     fetchAppointments()
     fetchQueueStatus()
   } catch (err) {
+    if (isHandledAuthRedirectError(err)) return
     alert(err.response?.data?.error || '取消失败')
   }
 }

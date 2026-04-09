@@ -24,6 +24,8 @@ const api = axios.create({
   timeout: 10000
 })
 
+export const isHandledAuthRedirectError = (error) => error?.__authRedirectHandled === true
+
 const host = typeof window !== 'undefined' ? window.location.host : ''
 const isMerchantApp = host === 'kabao.shop' || host.endsWith('.kabao.shop')
 
@@ -148,6 +150,7 @@ api.interceptors.response.use(
       
       // 其他 401 错误（如 token 过期、无效 token 等）需要清空登录态
       console.log('会话过期或无效token，清除登录态并跳转登录页')
+      error.__authRedirectHandled = true
       // 根据当前路径判断跳转到哪个登录页
       const pathname = window.location.pathname
       const isMerchant = isMerchantContextPath(pathname)

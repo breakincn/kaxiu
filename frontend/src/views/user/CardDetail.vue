@@ -151,10 +151,10 @@
           <div
             v-if="latestAppointmentCancelRequest"
             class="rounded-lg px-3 py-3 text-sm border"
-            :class="isUserCancelConfirmationPending ? 'bg-red-50 text-red-700 border-red-100' : 'bg-gray-50 text-gray-700 border-gray-200'"
+            :class="isUserCancelConfirmationPending ? 'bg-red-50 text-red-700 border-red-100' : (isMerchantReviewingUserCancelRequest ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-gray-50 text-gray-700 border-gray-200')"
           >
             <div class="font-medium">
-              {{ isUserCancelConfirmationPending ? '商户发起了取消申请，请确认' : '取消申请记录' }}
+              {{ isUserCancelConfirmationPending ? '商户发起了取消申请，请确认' : (isMerchantReviewingUserCancelRequest ? '你已发起取消申请，待商户判定' : '取消申请记录') }}
             </div>
             <div v-if="latestAppointmentCancelRequest.reason" class="mt-1">取消原因：{{ latestAppointmentCancelRequest.reason }}</div>
             <div v-if="latestAppointmentCancelRequest.objection_note" class="mt-1">抗辩说明：{{ latestAppointmentCancelRequest.objection_note }}</div>
@@ -738,7 +738,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { cardApi, usageApi, noticeApi, appointmentApi } from '../../api'
+import { cardApi, usageApi, noticeApi, appointmentApi, isHandledAuthRedirectError } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
 import { FAST_POLL_INTERVAL_MS, DATA_POLL_INTERVAL_MS } from '../../constants/polling'
@@ -2752,7 +2752,7 @@ const latestAppointmentRescheduleRequest = computed(() => {
 
 const latestAppointmentCancelRequest = computed(() => {
   const list = Array.isArray(appointment.value?.cancel_requests) ? appointment.value.cancel_requests : []
-  return [...list].reverse().find(item => item?.status === 'pending_user' || item?.status === 'accepted' || item?.status === 'rejected') || null
+  return [...list].reverse().find(item => item?.status === 'pending_user' || item?.status === 'pending_merchant' || item?.status === 'accepted' || item?.status === 'rejected') || null
 })
 
 const latestAppointmentRescheduleTechnicianText = computed(() => {
@@ -2765,6 +2765,7 @@ const latestAppointmentRescheduleTechnicianText = computed(() => {
 
 const isUserRescheduleConfirmationPending = computed(() => latestAppointmentRescheduleRequest.value?.status === 'pending_user')
 const isUserCancelConfirmationPending = computed(() => latestAppointmentCancelRequest.value?.status === 'pending_user')
+const isMerchantReviewingUserCancelRequest = computed(() => latestAppointmentCancelRequest.value?.status === 'pending_merchant')
 const canCancelUserRescheduleRequest = computed(() => {
   return String(latestAppointmentRescheduleRequest.value?.proposed_by_type || '').trim() === 'user'
 })
@@ -2777,7 +2778,7 @@ const showUserRescheduleAction = computed(() => {
 
 const showCancelAppointmentAction = computed(() => {
   if (!appointment.value) return false
-  if (isUserCancelConfirmationPending.value) return false
+  if (isUserCancelConfirmationPending.value || isMerchantReviewingUserCancelRequest.value) return false
   return appointment.value.status === 'pending' || appointment.value.status === 'confirmed' || isAppointmentFailed.value
 })
 
@@ -3727,6 +3728,7 @@ const cancelAppointment = async () => {
     stopCountdownTimer()
     alert('已取消预约')
   } catch (err) {
+    if (isHandledAuthRedirectError(err)) return
     alert(err.response?.data?.error || '取消预约失败')
   } finally {
     canceling.value = false

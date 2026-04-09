@@ -447,14 +447,14 @@ type AppointmentCancelRequest struct {
 	AppointmentID   uint       `json:"appointment_id" gorm:"index;comment:关联预约ID"`
 	MerchantID      uint       `json:"merchant_id" gorm:"index;comment:商户ID"`
 	UserID          uint       `json:"user_id" gorm:"index;comment:用户ID"`
-	Status          string     `json:"status" gorm:"size:30;default:pending_user;comment:状态（pending_user/accepted/rejected/canceled）"`
+	Status          string     `json:"status" gorm:"size:30;default:pending_user;comment:状态（pending_user/pending_merchant/accepted/rejected/canceled）"`
 	Reason          string     `json:"reason" gorm:"size:255;default:'';comment:取消原因"`
-	ProposedByType  string     `json:"proposed_by_type" gorm:"size:20;default:'';comment:申请发起方类型（merchant/staff）"`
+	ProposedByType  string     `json:"proposed_by_type" gorm:"size:20;default:'';comment:申请发起方类型（merchant/staff/user）"`
 	ProposedByID    *uint      `json:"proposed_by_id" gorm:"index;comment:申请发起方ID"`
 	ConfirmedByType string     `json:"confirmed_by_type" gorm:"size:20;default:'';comment:确认/拒绝方类型（user/merchant/staff）"`
 	ConfirmedByID   *uint      `json:"confirmed_by_id" gorm:"index;comment:确认/拒绝方ID"`
 	ConfirmedAt     *time.Time `json:"confirmed_at" gorm:"type:datetime(3);comment:确认/拒绝时间"`
-	ObjectionNote   string     `json:"objection_note" gorm:"size:255;default:'';comment:用户抗辩说明"`
+	ObjectionNote   string     `json:"objection_note" gorm:"size:255;default:'';comment:异议说明"`
 	CreatedAt       *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 }
 

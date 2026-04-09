@@ -3990,11 +3990,24 @@ func CreateAppointmentCancelRequest(c *gin.Context) {
 		return
 	}
 	authType := strings.TrimSpace(c.GetString("auth_type"))
-	if authType != "merchant" && authType != "staff" {
+	requestStatus := "pending_user"
+	switch authType {
+	case "merchant", "staff":
+		if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+			return
+		}
+	case "user":
+		authUserID, ok := mustUserID(c)
+		if !ok {
+			return
+		}
+		if appointment.UserID != authUserID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此预约"})
+			return
+		}
+		requestStatus = "pending_merchant"
+	default:
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
-	if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
 		return
 	}
 	if appointment.Status != "pending" && appointment.Status != "confirmed" {
@@ -4039,7 +4052,7 @@ func CreateAppointmentCancelRequest(c *gin.Context) {
 			AppointmentID:  current.ID,
 			MerchantID:     current.MerchantID,
 			UserID:         current.UserID,
-			Status:         "pending_user",
+			Status:         requestStatus,
 			Reason:         reason,
 			ProposedByType: actorType,
 			ProposedByID:   actorID,
@@ -4074,16 +4087,31 @@ func AcceptAppointmentCancelRequest(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
 		return
 	}
-	authUserID, ok := mustUserID(c)
-	if !ok {
-		return
-	}
-	if appointment.UserID != authUserID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此取消申请"})
-		return
-	}
-	if req.Status != "pending_user" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "当前取消申请无需用户确认"})
+	authType := strings.TrimSpace(c.GetString("auth_type"))
+	switch authType {
+	case "merchant", "staff":
+		if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+			return
+		}
+		if req.Status != "pending_merchant" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前取消申请无需商户确认"})
+			return
+		}
+	case "user":
+		authUserID, ok := mustUserID(c)
+		if !ok {
+			return
+		}
+		if appointment.UserID != authUserID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此取消申请"})
+			return
+		}
+		if req.Status != "pending_user" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前取消申请无需用户确认"})
+			return
+		}
+	default:
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
 		return
 	}
 	actorType, actorID := getAppointmentActor(c)
@@ -4160,16 +4188,31 @@ func RejectAppointmentCancelRequest(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "预约不存在"})
 		return
 	}
-	authUserID, ok := mustUserID(c)
-	if !ok {
-		return
-	}
-	if appointment.UserID != authUserID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此取消申请"})
-		return
-	}
-	if req.Status != "pending_user" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "当前取消申请无需用户处理"})
+	authType := strings.TrimSpace(c.GetString("auth_type"))
+	switch authType {
+	case "merchant", "staff":
+		if _, _, ok := checkMerchantAppointmentOwnership(c, *appointment); !ok {
+			return
+		}
+		if req.Status != "pending_merchant" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前取消申请无需商户处理"})
+			return
+		}
+	case "user":
+		authUserID, ok := mustUserID(c)
+		if !ok {
+			return
+		}
+		if appointment.UserID != authUserID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权操作此取消申请"})
+			return
+		}
+		if req.Status != "pending_user" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前取消申请无需用户处理"})
+			return
+		}
+	default:
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
 		return
 	}
 	var input struct {
