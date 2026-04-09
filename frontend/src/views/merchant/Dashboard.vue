@@ -995,8 +995,8 @@
               <div v-if="merchant?.support_hand_card" class="text-gray-500 text-sm mt-1">手牌：{{ usage.hand_card_no || '-' }} (<span v-if="!usage.hand_card_no && !isUsageHandCardReturned(usage)" class="text-red-500">未分配</span><span v-else-if="isUsageHandCardReturned(usage)">{{ getHandCardStatusText(usage) }}</span><span v-else-if="normalizeSessionStatus(usage.service_session_status) === 'serving'">{{ getHandCardStatusText(usage) }}</span><span v-else class="text-red-500">未归还</span>)</div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
-              <div v-if="usage.service_technician?.name" class="text-gray-500 text-sm mt-1">
-                当前{{ replaceTerms('客服', merchant) }}：{{ usage.service_technician.name }}
+              <div v-if="getUsageServiceTechnicianLabel(usage)" class="text-gray-500 text-sm mt-1">
+                {{ getUsageServiceTechnicianLabel(usage) }}
               </div>
               <div v-if="shouldShowUsagePendingReassign(usage)" class="text-amber-600 text-sm mt-1">
                 {{ usage.service_technician_unavailable_reason || ('当前' + replaceTerms('客服', merchant) + '不可服务') }}
@@ -1011,10 +1011,7 @@
                 核销次数：<span class="text-gray-700">{{ getUsageCountDisplayText(usage).totalTimes }}</span> / <span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage).usedTimes }}</span> 次
               </div>
               <div class="text-gray-500 text-xs mt-1">
-                {{ getVerifyOperatorInfo(usage).split(' / ')[0] }}
-              </div>
-              <div v-if="getVerifyOperatorInfo(usage).includes(' / ')" class="text-gray-500 text-xs mt-1">
-                {{ getVerifyOperatorInfo(usage).split(' / ')[1] }}
+                {{ getVerifyOperatorPrimaryInfo(usage) }}
               </div>
               <button
                 v-if="shouldShowUsagePendingReassign(usage)"
@@ -4460,6 +4457,24 @@ const getVerifyOperatorInfo = (usage) => {
   return operatorInfo.join(' / ')
 }
 
+const getVerifyOperatorPrimaryInfo = (usage) => {
+  const fullText = getVerifyOperatorInfo(usage)
+  if (!fullText) return '-'
+  return fullText.split(' / ')[0]
+}
+
+const getUsageServiceTechnicianLabel = (usage) => {
+  const technician = usage?.service_technician
+  if (!technician) return ''
+  const roleName = String(technician?.service_role?.name || '').trim() || replaceTerms('客服', merchant.value)
+  const account = String(technician?.account || technician?.code || '').trim()
+  const name = String(technician?.name || '').trim()
+  if (account && name) return `${roleName}：${account} - ${name}`
+  if (account) return `${roleName}：${account}`
+  if (name) return `${roleName}：${name}`
+  return ''
+}
+
 const getUsageTrackingNumber = (usage) => {
   if (!usage?.id) return ''
   return String(usage.id).padStart(9, '0')
@@ -4888,7 +4903,6 @@ const cleanupScanQuery = async () => {
 const fetchQueueStatus = async () => {
   try {
     const res = await merchantApi.getQueueStatus(merchantId.value)
-    todayVerifyCount.value = res.data.data.today_verify_count || 0
     pendingAppointments.value = res.data.data.pending_appointments || 0
   } catch (err) {
     console.error('获取队列状态失败:', err)
@@ -4938,6 +4952,7 @@ const fetchTodayUsages = async () => {
     todayUsages.value = (res.data.data || []).filter((u) => {
       return u.used_at && u.used_at.startsWith(today) && u.status === 'success'
     })
+    todayVerifyCount.value = todayUsages.value.length
   } catch (err) {
     console.error('获取核销记录失败:', err)
   }
