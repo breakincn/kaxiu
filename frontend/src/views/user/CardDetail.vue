@@ -1702,9 +1702,6 @@ const getUsageFailureReasonText = (usage) => {
   const rawReason = String(usage?.failure_reason || usage?.failed_reason || usage?.disruption_reason || '').trim()
   if (rawReason) return getReasonText(rawReason)
 
-  if (sessStatus === 'timeout_failed' || Number(usage?.start_timeout_count || 0) > 0) {
-    return '客服起单超时'
-  }
   if (sessStatus === 'canceled') {
     return '服务已取消'
   }
@@ -3232,10 +3229,12 @@ const getReasonText = (reason) => {
     service_unclosed_cross_day: '客户已到店但未开始服务，且跨日未完成结案',
     appointment_state_inconsistent: '预约状态与履约事实不一致',
     user_no_show: '用户未到店',
-    merchant_timeout_failed: '客服起单超时',
     risk_released: '风险解除',
     technician_leave: '客服请假',
     force_majeure_relief_accepted: '不可抗力救济已生效'
+  }
+  if (value === 'merchant_timeout_failed') {
+    return `客服${replaceTerms('起单', card.value?.merchant)}超时`
   }
   return map[value] || value
 }
