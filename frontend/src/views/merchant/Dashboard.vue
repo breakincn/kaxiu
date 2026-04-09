@@ -611,8 +611,8 @@
       >
         集中处理超时待处理、异常结案、履约争议、脏数据收口、补偿处理，以及改签/改派异常。
       </div>
-      <div v-if="appointmentPanelGroups.length > 0" class="space-y-4">
-        <div v-for="group in appointmentPanelGroups" :key="group.key" class="space-y-4">
+      <div v-if="displayedAppointmentPanelGroups.length > 0" class="space-y-4">
+        <div v-for="group in displayedAppointmentPanelGroups" :key="group.key" class="space-y-4">
           <div v-if="group.title" class="px-1 text-sm font-medium text-gray-500">{{ group.title }}</div>
           <div v-for="appt in group.items" :key="appt.id" class="bg-white rounded-xl p-4 shadow-sm">
           <div class="flex justify-between items-start">
@@ -3270,6 +3270,68 @@ const appointmentFlowGroups = computed(() => {
   return groups
 })
 
+const formatAppointmentDateKey = (date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const formatAppointmentGroupDate = (dateText) => {
+  const [year, month, day] = String(dateText || '').split('-').map(Number)
+  if (!year || !month || !day) return '未知日期预约'
+  return `${month}月${day}日预约`
+}
+
+const getAppointmentGroupDateKey = (appt) => {
+  const appointmentTimeMs = getAppointmentTimeMs(appt)
+  if (appointmentTimeMs !== null) {
+    return formatAppointmentDateKey(new Date(appointmentTimeMs))
+  }
+  if (appt?.created_at) {
+    const createdAt = new Date(appt.created_at)
+    if (!Number.isNaN(createdAt.getTime())) {
+      return formatAppointmentDateKey(createdAt)
+    }
+  }
+  return '未知日期'
+}
+
+const technicianAppointmentDateGroups = computed(() => {
+  if (!isTechnicianAuth()) return appointmentFlowGroups.value
+
+  const allItems = appointmentFlowGroups.value.flatMap(group => Array.isArray(group?.items) ? group.items : [])
+  const groups = []
+  const groupMap = new Map()
+
+  for (const appt of allItems) {
+    const dateKey = getAppointmentGroupDateKey(appt)
+    if (!groupMap.has(dateKey)) {
+      const group = {
+        key: `date-${dateKey}`,
+        title: `${formatAppointmentGroupDate(dateKey)} (${0})`,
+        date: dateKey,
+        items: []
+      }
+      groupMap.set(dateKey, group)
+      groups.push(group)
+    }
+    groupMap.get(dateKey).items.push(appt)
+  }
+
+  groups.sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')))
+  groups.forEach((group) => {
+    group.items.sort((left, right) => {
+      const leftMs = getAppointmentTimeMs(left) ?? 0
+      const rightMs = getAppointmentTimeMs(right) ?? 0
+      return rightMs - leftMs
+    })
+    group.title = `${formatAppointmentGroupDate(group.date)} (${group.items.length})`
+  })
+
+  return groups
+})
+
 const exceptionGroups = computed(() => {
   if (!isTechnicianAuth()) {
     return buildExceptionGroups((appointments.value || []).filter(a => isExceptionAppointment(a)))
@@ -3285,6 +3347,16 @@ const exceptionGroups = computed(() => {
 
 const appointmentPanelGroups = computed(() => {
   return (showExceptionStandaloneContent.value || showExceptionContentInTable.value) ? exceptionGroups.value : appointmentFlowGroups.value
+})
+
+const displayedAppointmentPanelGroups = computed(() => {
+  if (showExceptionStandaloneContent.value || showExceptionContentInTable.value) {
+    return appointmentPanelGroups.value
+  }
+  if (isTechnicianAuth()) {
+    return technicianAppointmentDateGroups.value
+  }
+  return appointmentPanelGroups.value
 })
 
 const appointmentPanelEmptyText = computed(() => {
