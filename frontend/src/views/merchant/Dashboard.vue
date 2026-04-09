@@ -225,7 +225,7 @@
             : 'border-transparent text-gray-500'
         ]"
       >
-        <span class="inline-flex items-center gap-1.5">
+        <span class="inline-flex items-center gap-[4px]">
           <span>扫码核销</span>
           <span
             v-if="todayVerifyCount > 0"
