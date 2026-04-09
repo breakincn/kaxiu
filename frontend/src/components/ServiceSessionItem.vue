@@ -126,11 +126,20 @@ const cancelReasonText = computed(() => {
   const merchantCancelReason = String(appointment?.merchant_cancel_reason || '').trim()
   const disruptionReason = String(appointment?.disruption_reason || '').trim()
   const failedReason = String(appointment?.failed_reason || '').trim()
+  const reasonCode = failedReason || disruptionReason
+
+  const reasonTextMap = {
+    service_unclosed_cross_day: '客户已到店但未开始服务，且跨日未完成结案',
+    user_no_show: '预约用户未到店',
+    appointment_state_inconsistent: '预约状态异常，已按失约处理',
+    merchant_timeout_failed: replaceTerms('起单超时', props.session?.merchant)
+  }
 
   if (appointmentStatus === 'no_show' || disruptionReason === 'user_no_show') {
     return '预约用户未到店'
   }
   if (merchantCancelReason) return merchantCancelReason
+  if (reasonCode && reasonTextMap[reasonCode]) return reasonTextMap[reasonCode]
   if (failedReason) return failedReason
   if (Number(props.session?.start_timeout_count || 0) > 0) {
     return replaceTerms('起单超时', props.session?.merchant)
@@ -209,8 +218,8 @@ const getStatusClass = (status) => {
     timeout_failed: 'bg-red-100 text-red-600',
     serving: 'bg-green-100 text-green-600',
     auto_finishing: 'bg-purple-100 text-purple-600',
-    finished: 'bg-gray-100 text-gray-600',
-    canceled: 'bg-gray-100 text-gray-600'
+    finished: 'bg-green-100 text-green-600',
+    canceled: 'bg-red-100 text-red-600'
   }
   return statusClassMap[s] || 'bg-gray-100 text-gray-600'
 }
