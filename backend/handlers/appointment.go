@@ -1879,6 +1879,9 @@ func cancelUnstartedAppointmentArrival(tx *gorm.DB, appt *models.Appointment, no
 		"start_confirmed_at":      nil,
 		"predicted_ready_at":      nil,
 	}
+	if session.TechnicianID != nil && *session.TechnicianID > 0 {
+		updates["last_technician_id"] = *session.TechnicianID
+	}
 	if err := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND status NOT IN ?", session.ID, models.ExpandStatusesWithKnownPrefixes([]string{"finished", "canceled"})).
 		Updates(updates).Error; err != nil {

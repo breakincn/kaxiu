@@ -97,7 +97,7 @@ const isAppointmentSession = computed(() => {
 })
 
 const effectiveTechnician = computed(() => {
-  return props.session?.technician || props.session?.last_technician || null
+  return props.session?.technician || props.session?.last_technician || props.session?.initial_usage?.technician || null
 })
 
 const effectiveTechnicianDisplayText = computed(() => {

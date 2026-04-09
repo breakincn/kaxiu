@@ -117,6 +117,9 @@ func UserRevokeUsage(c *gin.Context) {
 			"room_locked_at":          nil,
 			"room_select_deadline_at": nil,
 		}
+		if s.TechnicianID != nil && *s.TechnicianID > 0 {
+			updates["last_technician_id"] = *s.TechnicianID
+		}
 		return tx.Model(&models.ServiceSession{}).
 			Where("id = ? AND status NOT IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"finished", "canceled"})).
 			Updates(updates).Error

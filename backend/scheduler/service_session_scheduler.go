@@ -908,6 +908,9 @@ func failStartPendingAndAssignNext(tx *gorm.DB, s *models.ServiceSession, mercha
 		"start_timeout_count":           gorm.Expr("start_timeout_count + ?", 1),
 		"start_timeout_last_at":         now,
 	}
+	if techID > 0 {
+		updates["last_technician_id"] = techID
+	}
 	if err := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusWithKnownPrefixes("start_pending")).
 		Updates(updates).Error; err != nil {
