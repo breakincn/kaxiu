@@ -25,7 +25,13 @@
         房间：{{ session.room.name }}
       </div>
       <div v-if="session.technician">
-        技师：{{ session.technician.name || session.technician.account }}
+        技师：{{ technicianDisplayText }}
+      </div>
+      <div v-if="isAppointmentSession">
+        预约号：#{{ session.source_id }}
+      </div>
+      <div v-if="cardUsageDisplayText">
+        {{ cardUsageDisplayText }}
       </div>
     </div>
 
@@ -81,6 +87,27 @@ const hasTimeInfo = computed(() => {
   return props.session.started_at || 
          props.session.scheduled_finish_at || 
          props.session.duration_minutes > 0
+})
+
+const isAppointmentSession = computed(() => {
+  return String(props.session?.source_type || '').trim() === 'appointment' && Number(props.session?.source_id || 0) > 0
+})
+
+const technicianDisplayText = computed(() => {
+  const account = String(props.session?.technician?.account || '').trim()
+  const name = String(props.session?.technician?.name || '').trim()
+  if (account && name) return `${account} - ${name}`
+  return name || account || ''
+})
+
+const cardUsageDisplayText = computed(() => {
+  const cardNo = String(props.session?.card?.card_no || '').trim()
+  const totalTimes = Number(props.session?.card?.total_times || 0)
+  const usedTimes = Number(props.session?.initial_usage?.used_times || 0)
+  if (!cardNo && totalTimes <= 0 && usedTimes <= 0) return ''
+  const cardPart = `卡号：${cardNo || '-'}`
+  const verifyPart = `核销：${totalTimes > 0 ? totalTimes : '-'}\/${usedTimes > 0 ? usedTimes : '-'}`
+  return `${cardPart} ${verifyPart}`
 })
 
 const canExtend = computed(() => {
