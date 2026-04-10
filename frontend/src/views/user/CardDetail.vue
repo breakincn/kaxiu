@@ -111,11 +111,11 @@
               {{ formatDateTime(appointment.appointment_time) }}
             </div>
             <div class="text-right">
-              <div v-if="appointment.status === 'confirmed'" class="text-sm text-gray-600 mb-1">{{ getAppointmentCountdownLabel() }}</div>
-              <div v-if="!isAppointmentPassed()" :class="getCountdownClass()" class="text-sm font-medium">
+              <div v-if="shouldShowAppointmentCountdownLabel" class="text-sm text-gray-600 mb-1">{{ getAppointmentCountdownLabel() }}</div>
+              <div v-if="shouldShowAppointmentCountdownValue" :class="getCountdownClass()" class="text-sm font-medium">
                 {{ getCountdownText() }}
               </div>
-              <div v-else class="text-sm text-gray-400">
+              <div v-else-if="shouldShowAppointmentPassedText" class="text-sm text-gray-400">
                 预约已过
               </div>
             </div>
@@ -3957,13 +3957,25 @@ const getCountdownText = () => {
 
 const getAppointmentCountdownLabel = () => {
   const appt = appointment.value
-  if (String(appt?.status || '').trim() !== 'confirmed') return '距待开始'
+  if (String(appt?.status || '').trim() !== 'confirmed') return ''
   const appointmentTimeMs = appt?.appointment_time ? new Date(appt.appointment_time).getTime() : 0
   if (appointmentTimeMs > 0 && Date.now() > appointmentTimeMs && canArriveNow.value) {
-    return '距最晚到店'
+    return '最晚到店剩余'
   }
-  return '距待开始'
+  return '距预约开始'
 }
+
+const shouldShowAppointmentCountdownLabel = computed(() => {
+  return String(appointment.value?.status || '').trim() === 'confirmed'
+})
+
+const shouldShowAppointmentCountdownValue = computed(() => {
+  return String(appointment.value?.status || '').trim() === 'confirmed' && !isAppointmentPassed()
+})
+
+const shouldShowAppointmentPassedText = computed(() => {
+  return String(appointment.value?.status || '').trim() === 'confirmed' && isAppointmentPassed()
+})
 
 const getAppointmentProjectDisplay = (appt) => {
   const name = appt?.project?.name || ''
