@@ -611,7 +611,10 @@ const badgeText = (item) => {
   const session = item.current_session
   if (session) {
     const sessionStatus = normalizeSessionStatus(session.status)
-    if (sessionStatus === 'start_pending' && !session.start_confirmed_at) {
+    if (['room_selecting', 'room_locked', 'staff_selecting'].includes(sessionStatus)) {
+      return getServicePendingStartLabel(merchant.value, { queueMode: isQueueModeMerchant(merchant.value) })
+    }
+    if ((sessionStatus === 'start_pending' || sessionStatus === 'delay_pending') && !session.start_confirmed_at) {
       return getServicePendingStartLabel(merchant.value, { queueMode: isQueueModeMerchant(merchant.value) })
     }
     if (sessionStatus === 'auto_finishing') return getAutoFinishLabel(merchant.value)

@@ -3939,12 +3939,14 @@ const technicianCurrentStatus = computed(() => {
   if (!isTechnicianAuth()) return null
   const techId = getTechnicianId()
   if (!techId) return null
-  const sess = serviceSessions.value.find(s => s.technician_id === techId && ['start_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(normalizeSessionStatus(s.status)))
+  const sess = serviceSessions.value.find(s => s.technician_id === techId && ['room_selecting', 'room_locked', 'staff_selecting', 'start_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(normalizeSessionStatus(s.status)))
   if (!sess) {
     // 没有活跃会话，返回服务器中的签到状态 idle/paused
     return serverAttendanceStatus.value
   }
-  if (normalizeSessionStatus(sess.status) === 'start_pending' && !sess.start_confirmed_at) return 'service_pending_presettlement'
+  const baseStatus = normalizeSessionStatus(sess.status)
+  if (['room_selecting', 'room_locked', 'staff_selecting'].includes(baseStatus)) return 'service_pending_presettlement'
+  if ((baseStatus === 'start_pending' || baseStatus === 'delay_pending') && !sess.start_confirmed_at) return 'service_pending_presettlement'
   return 'service_pending_settlement'
 })
 
