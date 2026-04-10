@@ -1128,6 +1128,9 @@ const getUsageStatusText = (usage) => {
       if (isQueueSession) {
         return '待叫号'
       }
+      if (usage?.service_technician) {
+        return getCardStartPendingLabel()
+      }
       // 若客服模式已关闭：走不开启客服模式的流程，不允许再进入"待选客服"
       const supportCSMode = Boolean(merchant?.support_customer_service_mode)
       if (!supportCSMode) {

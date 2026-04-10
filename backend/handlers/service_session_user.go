@@ -330,22 +330,7 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 
 		lockedAt := now
 
-		updates := map[string]interface{}{
-			"room_id":        chosenRoomID,
-			"room_locked_at": lockedAt,
-		}
-		if merchant.SupportCustomerServiceMode {
-			updates["status"] = models.ApplyStatusPrefix(s.Status, "staff_selecting")
-		} else {
-			delaySeconds := s.StartDelaySeconds
-			if delaySeconds <= 0 {
-				delaySeconds = 60
-			}
-			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
-			updates["status"] = models.ApplyStatusPrefix(s.Status, "delay_pending")
-			updates["start_confirmed_at"] = now
-			updates["scheduled_start_at"] = startAt
-		}
+		updates := buildServiceSessionRoomSelectionUpdates(tx, merchant, s, chosenRoomID, lockedAt)
 
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND user_id = ? AND status IN ?", s.ID, userID, models.ExpandStatusWithKnownPrefixes("room_selecting")).Updates(updates).Error; err != nil {
 			return err
@@ -373,6 +358,35 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 		resp["message"] = "房间已占用，系统已自动调整"
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+func buildServiceSessionRoomSelectionUpdates(tx *gorm.DB, merchant models.Merchant, s models.ServiceSession, chosenRoomID uint, lockedAt time.Time) map[string]interface{} {
+	updates := map[string]interface{}{
+		"room_id":        chosenRoomID,
+		"room_locked_at": lockedAt,
+	}
+	if merchant.SupportCustomerServiceMode {
+		if s.TechnicianID != nil && *s.TechnicianID > 0 {
+			timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, s.MerchantID, *s.TechnicianID, s.ProjectID)
+			updates["status"] = models.ApplyStatusPrefix(s.Status, "start_pending")
+			updates["staff_select_entered_at"] = nil
+			updates["staff_select_cooldown_until"] = nil
+			updates["start_pending_timeout_seconds"] = timeoutSeconds
+		} else {
+			updates["status"] = models.ApplyStatusPrefix(s.Status, "staff_selecting")
+		}
+		return updates
+	}
+
+	delaySeconds := s.StartDelaySeconds
+	if delaySeconds <= 0 {
+		delaySeconds = 60
+	}
+	startAt := lockedAt.Add(time.Duration(delaySeconds) * time.Second)
+	updates["status"] = models.ApplyStatusPrefix(s.Status, "delay_pending")
+	updates["start_confirmed_at"] = lockedAt
+	updates["scheduled_start_at"] = startAt
+	return updates
 }
 
 func UserListAvailableTechnicians(c *gin.Context) {
