@@ -375,6 +375,9 @@
             <div v-if="getUsageOperatorInfo(usage)" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
               <span v-if="getUsageOperatorInfo(usage)">{{ getUsageOperatorInfo(usage) }}</span>
             </div>
+            <div v-if="getUsageServiceStaffInfo(usage)" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
+              <span v-if="getUsageServiceStaffInfo(usage)">{{ getUsageServiceStaffInfo(usage) }}</span>
+            </div>
             <div v-if="isSyntheticAppointmentUsage(usage) && showAppointmentSettlementButton" class="col-span-2 mt-2">
               <button
                 type="button"
@@ -890,8 +893,33 @@ const shouldArchiveAppointmentToUsage = computed(() => {
   if (!appt) return false
   return String(appt.status || '').trim() === 'no_show' && isAppointmentServiceWindowExpired.value
 })
+const appointmentLinkedUsage = computed(() => {
+  const appt = appointment.value
+  if (!appt) return null
+  const appointmentID = Number(appt.id || 0)
+  const usageID = Number(appt.usage_id || 0)
+  const sessionID = Number(appt.service_session_id || 0)
+  return (usages.value || []).find(item => {
+    const itemUsageID = Number(item?.id || 0)
+    const itemAppointmentID = Number(item?.appointment_id || 0)
+    const itemSessionID = Number(item?.service_session_id || 0)
+    if (usageID > 0 && itemUsageID === usageID) return true
+    if (sessionID > 0 && itemSessionID === sessionID) return true
+    if (appointmentID > 0 && itemAppointmentID === appointmentID) return true
+    return false
+  }) || null
+})
+const shouldHideAppointmentStatusCardAfterStart = computed(() => {
+  const linkedUsage = appointmentLinkedUsage.value
+  if (!linkedUsage) return false
+  const sessStatus = normalizeSessionStatus(linkedUsage?.service_session_status)
+  if (['serving', 'auto_finishing', 'finished'].includes(sessStatus)) return true
+  if (linkedUsage?.service_session_start_confirmed_at) return true
+  if (String(linkedUsage?.status || '').trim() === 'success') return true
+  return false
+})
 const shouldShowAppointmentStatusCard = computed(() => {
-  return Boolean(appointment.value) && !shouldArchiveAppointmentToUsage.value
+  return Boolean(appointment.value) && !shouldArchiveAppointmentToUsage.value && !shouldHideAppointmentStatusCardAfterStart.value
 })
 const hasAppointmentSettlementContent = computed(() => {
   const appt = appointment.value
@@ -2921,25 +2949,30 @@ const hasMoreUsages = computed(() => {
 const getUsageOperatorInfo = (usage) => {
   if (isSyntheticAppointmentUsage(usage)) return ''
 
-  // 如果已结单，只显示服务人员
-  if (usage.status === 'success' && usage.finished_at) {
-    if (usage.technician) {
-      return `服务人员：${usage.technician.name || usage.technician.account || '技师'}`
-    }
-    // 结单完成且没有技师信息（商户老板操作），不显示任何信息
-    return ''
-  }
-  
-  // 结单前，显示核销人员信息
+  // 结单前后都保留核销人员，服务人员单独展示，避免信息混用。
   if (usage.technician) {
-    // 技师操作：显示技师姓名或账号
     return `核销人员：${usage.technician.name || usage.technician.account || '技师'}`
   } else if (usage.merchant) {
-    // 商户老板操作：显示店名
     return `核销人员：${usage.merchant.name || '店铺'}`
   }
-  
+
   return ''
+}
+
+const formatUsageStaffIdentity = (staff) => {
+  if (!staff) return ''
+  const account = String(staff?.account || '').trim()
+  const name = String(staff?.name || '').trim()
+  if (account && name) return `${account} - ${name}`
+  return account || name || ''
+}
+
+const getUsageServiceStaffInfo = (usage) => {
+  if (isSyntheticAppointmentUsage(usage)) return ''
+  const staff = usage?.service_technician || null
+  const identity = formatUsageStaffIdentity(staff)
+  if (!identity) return ''
+  return `服务人员：${identity}`
 }
 
 const getUsageRoomInfo = (usage) => {
@@ -2981,7 +3014,18 @@ const isSyntheticAppointmentUsage = (usage) => {
 
 const getUsageAppointmentNumber = (usage) => {
   const appointmentID = Number(usage?.appointment_id || 0)
-  return appointmentID > 0 ? appointmentID : ''
+  if (appointmentID > 0) return appointmentID
+  const appt = appointment.value
+  if (!appt) return ''
+  const currentAppointmentID = Number(appt.id || 0)
+  const currentUsageID = Number(appt.usage_id || 0)
+  const currentSessionID = Number(appt.service_session_id || 0)
+  const usageID = Number(usage?.id || 0)
+  const sessionID = Number(usage?.service_session_id || 0)
+  if (currentAppointmentID <= 0) return ''
+  if (currentUsageID > 0 && usageID === currentUsageID) return currentAppointmentID
+  if (currentSessionID > 0 && sessionID === currentSessionID) return currentAppointmentID
+  return ''
 }
 
 const openAppointmentSettlementModal = () => {
