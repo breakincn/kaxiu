@@ -179,11 +179,15 @@ const canExtend = computed(() => {
 
 const nextStepText = computed(() => {
   const step = route.query.next_step
-  const map = {
-    room_select: '请先选择房间',
-    staff_select: '请选择工作人员'
+  if (!step || !session.value) return ''
+  const status = normalizeSessionStatus(session.value.status)
+  if (step === 'room_select') {
+    return status === 'room_selecting' ? '请先选择房间' : ''
   }
-  return step ? map[step] : ''
+  if (step === 'staff_select') {
+    return status === 'staff_selecting' || status === 'room_locked' ? '请选择工作人员' : ''
+  }
+  return ''
 })
 
 const statusText = (s) => {
