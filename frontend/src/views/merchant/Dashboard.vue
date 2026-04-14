@@ -4606,6 +4606,8 @@ const getUsageRoomText = (usage) => {
 
 const getUsageRoomOccupancyDurationText = (usage) => {
   if (!usage?.service_room) return ''
+  const status = normalizeSessionStatus(usage.service_session_status)
+  if (!['start_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(status)) return ''
   return getSessionOccupancyDurationText({
     started_at: usage.service_session_started_at,
     room_locked_at: usage.room_locked_at
