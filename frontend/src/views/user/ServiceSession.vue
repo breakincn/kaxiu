@@ -29,8 +29,9 @@
           房间：{{ session?.room?.name || '-' }} / 工作人员：{{ session?.technician?.name || session?.technician?.account || '-' }}
         </div>
 
-        <div v-if="nextStepText" class="mt-3 p-3 bg-primary-light border border-gray-100 rounded-lg text-sm text-primary">
-          {{ nextStepText }}
+        <div v-if="session?.room && canChooseTechnician" class="mt-3 p-3 bg-primary-light border border-gray-100 rounded-lg">
+          <div class="text-sm text-primary font-medium mb-1">已选择房间</div>
+          <div class="text-lg font-bold text-primary">{{ session.room.name }}</div>
         </div>
       </div>
 
@@ -56,19 +57,13 @@
         </div>
       </div>
 
-      <!-- 已选择的房间 -->
-      <div v-if="session?.room && canChooseTechnician" class="bg-primary-light border border-gray-100 rounded-2xl p-4">
-        <div class="text-sm text-primary font-medium mb-1">已选择房间</div>
-        <div class="text-lg font-bold text-primary">{{ session.room.name }}</div>
-      </div>
-
       <div v-if="isStaffSelectCooling" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
-        <div class="font-medium text-gray-800 mb-3">选择工作人员</div>
+        <div class="font-medium text-gray-800 mb-3">请选择工作人员</div>
         <div class="text-gray-500 text-sm">{{ staffSelectCooldownText }}</div>
       </div>
 
       <div v-else-if="canChooseTechnician" class="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
-        <div class="font-medium text-gray-800 mb-3">选择工作人员</div>
+        <div class="font-medium text-gray-800 mb-3">请选择工作人员</div>
 
         <div v-if="techLoading" class="text-gray-500 text-sm">加载工作人员中...</div>
         <div v-else-if="technicians.length === 0" class="text-gray-500 text-sm">暂无可选工作人员（需今日上班签到且未下班且可服务）</div>
@@ -77,7 +72,7 @@
             v-for="t in technicians"
             :key="t.technician_id"
             class="w-full px-4 py-3 border border-gray-200 rounded-lg text-left hover:bg-gray-50"
-            @click="chooseTechnician(t.technician_id)"
+            @click="confirmChooseTechnician(t)"
             :disabled="actionLoading"
           >
             {{ t.technician?.name || t.technician?.account || ('ID:' + t.technician_id) }}
@@ -175,19 +170,6 @@ const canChooseTechnician = computed(() => {
 
 const canExtend = computed(() => {
   return normalizeSessionStatus(session.value?.status) === 'serving'
-})
-
-const nextStepText = computed(() => {
-  const step = route.query.next_step
-  if (!step || !session.value) return ''
-  const status = normalizeSessionStatus(session.value.status)
-  if (step === 'room_select') {
-    return status === 'room_selecting' ? '请先选择房间' : ''
-  }
-  if (step === 'staff_select') {
-    return status === 'staff_selecting' || status === 'room_locked' ? '请选择工作人员' : ''
-  }
-  return ''
 })
 
 const statusText = (s) => {
@@ -322,6 +304,20 @@ const chooseRoom = async (roomId) => {
   } finally {
     actionLoading.value = false
   }
+}
+
+const getTechnicianDisplayName = (item) => {
+  const tech = item?.technician || {}
+  return tech.name || tech.account || `ID:${item?.technician_id || ''}`
+}
+
+const confirmChooseTechnician = async (item) => {
+  if (!item || actionLoading.value) return
+  const name = getTechnicianDisplayName(item)
+  if (!window.confirm(`确认选择工作人员「${name}」吗？`)) {
+    return
+  }
+  await chooseTechnician(item.technician_id)
 }
 
 const chooseTechnician = async (technicianId) => {
