@@ -1603,7 +1603,7 @@
       </div>
 
       <!-- 房间管理入口 -->
-      <div class="bg-white rounded-xl p-4 shadow-sm">
+      <div v-if="showRoomManageCard" class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-center justify-between">
           <div>
             <div class="font-medium text-gray-800">{{ (isQueueModeView && isTechnicianAuth()) ? '叫号信息' : '房间管理' }}</div>
@@ -1682,16 +1682,28 @@
           <div v-for="usage in todayStartUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
             <div class="flex-1">
               <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
-              <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
+              <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
+              <div v-if="getUsageRoomText(usage)" class="text-gray-500 text-sm mt-1">
+                {{ getUsageRoomText(usage) }}
+              </div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ formatProjectNameWithDuration(usage.project) }}</div>
-              <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
               <div
                 v-if="getUsageServiceRemainingSeconds(usage) !== null"
                 :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getUsageServiceRemainingSeconds(usage))]"
               >
                 服务剩余：{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}
               </div>
+              <div
+                v-if="getUsageStartPendingCountdownSeconds(usage) !== null"
+                :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getUsageStartPendingCountdownSeconds(usage))]"
+              >
+                {{ getStartCountdownLabel(merchant, { queueMode: isQueueModeMerchant(merchant) }) }}：{{ formatStartCountdownSeconds(getUsageStartPendingCountdownSeconds(usage)) }}
+              </div>
+              <div v-if="getUsageRoomOccupancyDurationText(usage)" class="text-gray-500 text-sm mt-1">
+                房间占用时间：{{ getUsageRoomOccupancyDurationText(usage) }}
+              </div>
+              <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             </div>
             <div class="text-right">
@@ -3814,6 +3826,21 @@ const roomManageSession = computed(() => {
   return sess || null
 })
 
+const roomManageUsage = computed(() => {
+  const usageID = Number(roomManageSession.value?.initial_usage_id || 0)
+  if (!usageID) return null
+  return (todayStartUsages.value || []).find(usage => Number(usage?.id || 0) === usageID) || null
+})
+
+const showRoomManageCard = computed(() => {
+  if (isQueueModeView.value && isTechnicianAuth()) {
+    return !queueBlockedByAttendance.value || !!queueCallInfo.value
+  }
+  if (!isTechnicianAuth()) return false
+  if (roomManageSession.value && !roomManageUsage.value) return true
+  return !!canRoomManage.value && !!merchant.value?.support_room && todayStartUsages.value.length === 0
+})
+
 const pendingStartServiceCount = computed(() => {
   if (!isTechnicianAuth()) return 0
   const techId = getTechnicianId()
@@ -4536,6 +4563,34 @@ const getUsageServiceRemainingSeconds = (usage) => {
   const remain = Math.floor((finishAt - currentTime.value) / 1000)
   if (!Number.isFinite(remain)) return null
   return Math.max(0, remain)
+}
+
+const getUsageStartPendingCountdownSeconds = (usage) => {
+  if (!usage) return null
+  return getStartPendingRemainingSeconds({
+    status: usage.service_session_status,
+    start_confirmed_at: usage.service_session_start_confirmed_at,
+    start_pending_timeout_seconds: usage.service_session_start_pending_timeout_seconds,
+    start_pending_remaining_seconds: usage.service_session_start_pending_remaining_seconds,
+    updated_at: usage.service_session_updated_at,
+    created_at: usage.service_session_created_at,
+    _countdown_fetched_at: usage._countdown_fetched_at
+  })
+}
+
+const getUsageRoomText = (usage) => {
+  const room = usage?.service_room
+  if (!room) return ''
+  const label = String(room.name || room.code || '').trim()
+  return label ? `房间号：${label}` : ''
+}
+
+const getUsageRoomOccupancyDurationText = (usage) => {
+  if (!usage?.service_room) return ''
+  return getSessionOccupancyDurationText({
+    started_at: usage.service_session_started_at,
+    room_locked_at: usage.room_locked_at
+  })
 }
 
 const getQueueCallSessionRemainingSeconds = () => {
@@ -7380,11 +7435,20 @@ const collectStartTabCountdowns = () => {
   for (const usage of todayStartUsages.value || []) {
     const usageId = Number(usage?.id || 0)
     if (!usageId) continue
-    const remain = getUsageServiceRemainingSeconds(usage)
-    if (remain === null || remain === undefined) continue
-    const normalizedRemain = Number(remain)
-    if (!Number.isFinite(normalizedRemain)) continue
-    items.push({ key: `start_usage:serving:${usageId}`, remain: normalizedRemain })
+    const servingRemain = getUsageServiceRemainingSeconds(usage)
+    if (servingRemain !== null && servingRemain !== undefined) {
+      const normalizedRemain = Number(servingRemain)
+      if (Number.isFinite(normalizedRemain)) {
+        items.push({ key: `start_usage:serving:${usageId}`, remain: normalizedRemain })
+      }
+    }
+    const startRemain = getUsageStartPendingCountdownSeconds(usage)
+    if (startRemain !== null && startRemain !== undefined) {
+      const normalizedRemain = Number(startRemain)
+      if (Number.isFinite(normalizedRemain)) {
+        items.push({ key: `start_usage:start_pending:${usageId}`, remain: normalizedRemain })
+      }
+    }
   }
   return items
 }
