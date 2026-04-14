@@ -2425,7 +2425,7 @@ const canAccessAppointmentTab = computed(() => {
 })
 
 const showAppointmentTab = computed(() => {
-  return canAccessAppointmentTab.value && todayAppointmentCount.value > 0
+  return canAccessAppointmentTab.value && (todayAppointmentCount.value > 0 || showTechnicianSchedulePublishingTab.value)
 })
 
 const showAppointmentSummaryCard = computed(() => {
@@ -3219,6 +3219,10 @@ const getSchedulePublishingWindowStateForDate = (target, now = schedulePublishin
 }
 const technicianSchedulePublishingWindowState = computed(() => {
   return getSchedulePublishingWindowStateForDate(currentSchedulePublishingDate.value, schedulePublishingNow.value)
+})
+const showTechnicianSchedulePublishingTab = computed(() => {
+  if (!isTechnicianAuth() || !canAccessAppointmentTab.value) return false
+  return !!technicianSchedulePublishingWindowState.value.canPublish || !!technicianSchedulePublishingWindowState.value.canWithdraw
 })
 const technicianSchedulePublishingSubtitle = computed(() => {
   return isTodaySchedulePublishingTarget.value
