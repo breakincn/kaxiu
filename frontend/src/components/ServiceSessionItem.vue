@@ -21,11 +21,11 @@
       <div v-if="trackingNumber">
         单号：{{ trackingNumber }}
       </div>
-      <div v-if="session.card">
-        卡片：{{ session.card.card_type }} (剩余{{ session.card.remain_times }}次)
-      </div>
       <div v-if="cardUsageDisplayText">
         {{ cardUsageDisplayText }}
+      </div>
+      <div v-if="session.card">
+        卡片：{{ session.card.card_type }} (剩余{{ session.card.remain_times }}次)
       </div>
       <div v-if="shouldShowRoom">
         房间：{{ session.room.name }}
