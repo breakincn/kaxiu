@@ -25,3 +25,19 @@ func TestResolveSessionStartConfirmedAtKeepsNilOutsideServingStages(t *testing.T
 		t.Fatalf("want nil for non-serving stages, got %v", got)
 	}
 }
+
+func TestShouldFallbackServiceTechnicianToLastSkipsStaffSelectingTimeout(t *testing.T) {
+	got := shouldFallbackServiceTechnicianToLast("cs_staff_selecting", nil, nil, nil)
+	if got {
+		t.Fatalf("want historical technician hidden while waiting for reassignment")
+	}
+}
+
+func TestShouldFallbackServiceTechnicianToLastKeepsStartedSessionHistory(t *testing.T) {
+	startedAt := time.Now().Add(-3 * time.Minute)
+
+	got := shouldFallbackServiceTechnicianToLast("cs_finished", nil, &startedAt, nil)
+	if !got {
+		t.Fatalf("want historical technician kept after service has started")
+	}
+}

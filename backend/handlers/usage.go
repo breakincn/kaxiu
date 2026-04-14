@@ -51,6 +51,18 @@ func resolveSessionStartConfirmedAt(status string, startConfirmedAt *time.Time, 
 	return nil
 }
 
+func shouldFallbackServiceTechnicianToLast(status string, startConfirmedAt *time.Time, startedAt *time.Time, finishedAt *time.Time) bool {
+	if startConfirmedAt != nil || startedAt != nil || finishedAt != nil {
+		return true
+	}
+	switch models.NormalizeSessionStatus(status) {
+	case "timeout_waiting", "serving", "auto_finishing", "finished":
+		return true
+	default:
+		return false
+	}
+}
+
 func GetMerchantUsages(c *gin.Context) {
 	merchantID, ok := ensureMerchantScope(c, "id")
 	if !ok {
@@ -368,7 +380,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 				if t, okT := byTechID[*s.TechnicianID]; okT {
 					u.ServiceTechnician = t
 				}
-			} else if s.LastTechnicianID != nil {
+			} else if s.LastTechnicianID != nil && shouldFallbackServiceTechnicianToLast(s.Status, startConfirmedAt, s.StartedAt, s.FinishedAt) {
 				if t, okT := byTechID[*s.LastTechnicianID]; okT {
 					u.ServiceTechnician = t
 				}
