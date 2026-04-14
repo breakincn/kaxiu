@@ -110,8 +110,8 @@ func loadAppointmentDelayTarget(tx *gorm.DB, appointmentID uint) (*appointmentDe
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	if !rows.Next() {
+		rows.Close()
 		return nil, nil
 	}
 	var (
@@ -123,6 +123,10 @@ func loadAppointmentDelayTarget(tx *gorm.DB, appointmentID uint) (*appointmentDe
 		actualStartAtRaw   interface{}
 	)
 	if err := rows.Scan(&appt.ID, &appt.MerchantID, &appt.UserID, &appt.CardID, &bookingRootIDRaw, &projectIDRaw, &technicianIDRaw, &appt.Status, &reservedStartAtRaw, &actualStartAtRaw); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
 		return nil, err
 	}
 	if v, ok := rawUint(bookingRootIDRaw); ok {
