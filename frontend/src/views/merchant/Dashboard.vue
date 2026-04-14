@@ -299,7 +299,20 @@
             : 'border-transparent text-gray-500'
         ]"
       >
-        服务
+        <span class="inline-flex items-center gap-[4px]">
+          <span>服务</span>
+          <span
+            v-if="pendingStartServiceCount > 0"
+            :class="[
+              'inline-flex min-w-[18px] h-[18px] px-1 items-center justify-center rounded-full text-[11px] leading-none font-semibold',
+              currentTab === 'service'
+                ? 'bg-primary text-white'
+                : 'bg-orange-500 text-white'
+            ]"
+          >
+            {{ pendingStartServiceCount }}
+          </span>
+        </span>
       </button>
       <button
         v-if="showTechnicianBoardTab"
@@ -3801,6 +3814,18 @@ const roomManageSession = computed(() => {
   return sess || null
 })
 
+const pendingStartServiceCount = computed(() => {
+  if (!isTechnicianAuth()) return 0
+  const techId = getTechnicianId()
+  if (!techId) return 0
+  return (serviceSessions.value || []).filter((session) => {
+    if (Number(session?.technician_id || 0) !== Number(techId)) return false
+    if (session?.start_confirmed_at) return false
+    const status = normalizeSessionStatus(session?.status)
+    return status === 'start_pending' || status === 'delay_pending'
+  }).length
+})
+
 const roomManagePhaseText = computed(() => {
   const s = roomManageSession.value
   if (!s) return ''
@@ -7160,6 +7185,9 @@ onMounted(async () => {
     startCountdownTimer()
     startServiceSessionTimer()
   }
+  if (currentTab.value !== 'service' && showServiceTab.value) {
+    fetchServiceSessions()
+  }
 })
 
 const copyText = async (text) => {
@@ -7477,6 +7505,9 @@ onActivated(() => {
     refreshServiceTabPartialData({ silent: false, force: true })
     startCountdownTimer()
     startServiceSessionTimer()
+  }
+  if (currentTab.value !== 'service' && showServiceTab.value) {
+    fetchServiceSessions()
   }
   if (currentTab.value !== 'verify' && showVerifyTab.value) {
     fetchTodayUsages()
