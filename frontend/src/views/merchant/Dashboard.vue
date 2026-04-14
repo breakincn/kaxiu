@@ -1363,7 +1363,7 @@
               上班签到
             </button>
             <button
-              v-else
+              v-else-if="showCheckOutButton"
               :disabled="attendanceLoading"
               @click="doCheckOut"
               class="px-4 py-2 rounded-lg text-sm font-medium"
@@ -4050,6 +4050,10 @@ const hasActiveServingSession = computed(() => {
 })
 
 const showScanStartButton = computed(() => {
+  return isTechnicianAuth() && !isTechnicianNotCheckedIn.value && !hasActiveServingSession.value
+})
+
+const showCheckOutButton = computed(() => {
   return isTechnicianAuth() && !isTechnicianNotCheckedIn.value && !hasActiveServingSession.value
 })
 
@@ -7300,6 +7304,10 @@ const doCheckIn = async () => {
 
 const doCheckOut = async () => {
   if (!isTechnicianAuth()) return
+  if (hasActiveServingSession.value) {
+    alert('当前服务完成后，才可以下班签到')
+    return
+  }
   
   // 添加确认弹窗
   const confirmed = confirm('确认要下班签到吗？')
