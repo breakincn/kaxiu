@@ -1427,7 +1427,7 @@
             {{ attendanceBlockedHint }}
           </div>
           <button
-            v-else
+            v-else-if="showScanStartButton"
             @click="goScanStart"
             class="w-full py-3 bg-primary text-white rounded-lg font-medium"
           >
@@ -4038,6 +4038,21 @@ const canManualUpdateStatus = computed(() => {
   return currentStatus === 'idle' || currentStatus === 'paused'
 })
 
+const hasActiveServingSession = computed(() => {
+  if (!isTechnicianAuth()) return false
+  const techId = Number(getTechnicianId() || 0)
+  if (!techId) return false
+  return (serviceSessions.value || []).some((session) => {
+    if (Number(session?.technician_id || 0) !== techId) return false
+    const status = normalizeSessionStatus(session?.status)
+    return status === 'serving' || status === 'auto_finishing'
+  })
+})
+
+const showScanStartButton = computed(() => {
+  return isTechnicianAuth() && !isTechnicianNotCheckedIn.value && !hasActiveServingSession.value
+})
+
 const applyAttendanceStatusFromServer = (status) => {
   const nextStatus = String(status || 'not_checked_in')
   serverAttendanceStatus.value = nextStatus
@@ -4193,6 +4208,7 @@ const goScanVerify = () => {
 }
 
 const goScanStart = () => {
+  if (hasActiveServingSession.value) return
   router.push({
     path: '/merchant/scan-verify',
     query: {
