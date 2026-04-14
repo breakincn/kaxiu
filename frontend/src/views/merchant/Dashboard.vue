@@ -277,19 +277,6 @@
         通知
       </button>
       <button
-        v-if="showCardsTab"
-        @click="selectTab('cards')"
-        :class="[
-          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
-          currentTab === 'cards'
-            ? 'border-primary text-primary'
-            : 'border-transparent text-gray-500'
-        ]"
-      >
-        {{ canVerify ? '卡片' : '售卡' }}
-      </button>
-
-      <button
         v-if="showServiceTab"
         @click="selectTab('service')"
         :class="[
@@ -313,6 +300,18 @@
             {{ pendingStartServiceCount }}
           </span>
         </span>
+      </button>
+      <button
+        v-if="showCardsTab"
+        @click="selectTab('cards')"
+        :class="[
+          'shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+          currentTab === 'cards'
+            ? 'border-primary text-primary'
+            : 'border-transparent text-gray-500'
+        ]"
+      >
+        {{ canVerify ? '卡片' : '售卡' }}
       </button>
       <button
         v-if="showTechnicianBoardTab"

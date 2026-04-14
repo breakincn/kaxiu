@@ -223,8 +223,8 @@
                         </div>
                         <div class="mt-3 space-y-1 text-sm leading-6 text-gray-600">
                           <div v-if="getServiceBoardTrackingNumber(session)">单号：{{ getServiceBoardTrackingNumber(session) }}</div>
-                          <div v-if="getServiceBoardCardText(session)">卡片：{{ getServiceBoardCardText(session) }}</div>
                           <div v-if="getServiceBoardUsageText(session)">卡号：{{ getServiceBoardUsageText(session) }}</div>
+                          <div v-if="getServiceBoardCardText(session)">卡片：{{ getServiceBoardCardText(session) }}</div>
                           <div v-if="shouldShowServiceBoardRoom(session)">房间：{{ getServiceBoardRoomText(session) }}</div>
                           <div v-if="getServiceBoardCancelReason(session)">取消原因：{{ getServiceBoardCancelReason(session) }}</div>
                         </div>
