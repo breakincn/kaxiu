@@ -2299,6 +2299,13 @@ const getPendingStartLeavePromptLabel = () => {
   return getMerchantServicePendingStartLabel({ queueMode: isQueueModeMerchant(merchant.value) })
 }
 
+const getLocalDateKey = (date = new Date()) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 const canBusinessStatusUpdate = computed(() => hasMerchantPermission('merchant.business_status.manage'))
 const canDirectSaleManage = computed(() => hasMerchantPermission('merchant.direct_sale.manage'))
 const canCardIssue = computed(() => hasMerchantPermission('merchant.card.issue'))
@@ -4949,10 +4956,13 @@ const fetchAppointments = async () => {
 
 const fetchTodayUsages = async () => {
   try {
-    const res = await usageApi.getMerchantUsages(merchantId.value)
-    const today = new Date().toISOString().split('T')[0]
+    const today = getLocalDateKey()
+    const res = await usageApi.getMerchantUsages(merchantId.value, {
+      date: today,
+      limit: 200
+    })
     todayUsages.value = (res.data.data || []).filter((u) => {
-      return u.used_at && u.used_at.startsWith(today) && u.status === 'success'
+      return u.used_at && u.used_at.startsWith(today) && u.status !== 'failed'
     })
     todayVerifyCount.value = todayUsages.value.length
   } catch (err) {
@@ -4967,7 +4977,7 @@ const fetchTodayStartUsages = async ({ silent = false } = {}) => {
     startUsagesLoading.value = true
   }
   try {
-    const today = new Date().toISOString().split('T')[0]
+    const today = getLocalDateKey()
     const currentTechnicianId = getTechnicianId()
     if (!currentTechnicianId) {
       // 非技师账号/无法获取技师ID：保持旧数据不闪烁，但结束 loading
@@ -5001,8 +5011,8 @@ const fetchTodayStartUsages = async ({ silent = false } = {}) => {
 
 const fetchTodayFinishedUsages = async () => {
   try {
+    const today = getLocalDateKey()
     const res = await usageApi.getMerchantUsages(merchantId.value)
-    const today = new Date().toISOString().split('T')[0]
     const currentTechnicianId = getTechnicianId()
     const isTechnician = isTechnicianAuth()
     
