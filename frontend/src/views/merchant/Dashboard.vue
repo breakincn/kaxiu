@@ -7122,6 +7122,9 @@ onMounted(async () => {
   fetchQueueStatus()
   fetchPendingDirectPurchases()
   fetchAppointments()
+  if (showVerifyTab.value) {
+    fetchTodayUsages()
+  }
   loadCardTemplates() // 加载卡片模板
   
   // 如果是技师登录，获取当前签到状态
@@ -7474,6 +7477,9 @@ onActivated(() => {
     refreshServiceTabPartialData({ silent: false, force: true })
     startCountdownTimer()
     startServiceSessionTimer()
+  }
+  if (currentTab.value !== 'verify' && showVerifyTab.value) {
+    fetchTodayUsages()
   }
 })
 
