@@ -250,7 +250,20 @@
             : 'border-transparent text-gray-500'
         ]"
       >
-        预约
+        <span class="inline-flex items-center gap-[4px]">
+          <span>预约</span>
+          <span
+            v-if="todayAppointmentCount > 0"
+            :class="[
+              'inline-flex min-w-[18px] h-[18px] px-1 items-center justify-center rounded-full text-[11px] leading-none font-semibold',
+              currentTab === 'appointment'
+                ? 'bg-primary text-white'
+                : 'bg-orange-500 text-white'
+            ]"
+          >
+            {{ todayAppointmentCount }}
+          </span>
+        </span>
       </button>
       <button
         v-if="showFinishTab"
@@ -2407,8 +2420,12 @@ const showStartTab = computed(() => {
   return false
 })
 
-const showAppointmentTab = computed(() => {
+const canAccessAppointmentTab = computed(() => {
   return !!merchant.value?.support_appointment && (canAppointmentView.value || canAppointmentManage.value)
+})
+
+const showAppointmentTab = computed(() => {
+  return canAccessAppointmentTab.value && todayAppointmentCount.value > 0
 })
 
 const showAppointmentSummaryCard = computed(() => {
@@ -2416,7 +2433,7 @@ const showAppointmentSummaryCard = computed(() => {
 })
 
 const showExceptionTab = computed(() => {
-  return showAppointmentTab.value
+  return canAccessAppointmentTab.value
 })
 const showExceptionStandaloneTab = computed(() => {
   return showExceptionTab.value && !showTableTab.value
@@ -3369,6 +3386,21 @@ const appointmentDateGroups = computed(() => {
   })
 
   return groups
+})
+
+const isTodayAppointment = (appt) => {
+  const appointmentTimeMs = getAppointmentTimeMs(appt)
+  if (appointmentTimeMs === null) return false
+  const todayKey = formatAppointmentDateKey(new Date(currentTime.value || Date.now()))
+  return getAppointmentGroupDateKey(appt) === todayKey
+}
+
+const todayAppointmentCount = computed(() => {
+  if (!canAccessAppointmentTab.value) return 0
+  return appointmentFlowGroups.value
+    .flatMap(group => Array.isArray(group?.items) ? group.items : [])
+    .filter(appt => isTodayAppointment(appt))
+    .length
 })
 
 const visibleAppointmentGroupDays = ref(1)
@@ -5038,6 +5070,9 @@ const fetchAppointments = async () => {
     appointments.value = []
     appointmentTechnicianDirectory.value = []
     resetVisibleAppointmentGroups()
+    if (currentTab.value === 'appointment' && !showAppointmentTab.value) {
+      selectTab(getFirstVisibleTab())
+    }
     return
   }
   try {
@@ -5050,6 +5085,9 @@ const fetchAppointments = async () => {
       .sort((a, b) => new Date(b?.appointment_time || 0).getTime() - new Date(a?.appointment_time || 0).getTime())
     appointmentTechnicianDirectory.value = techniciansRes.data?.data || []
     resetVisibleAppointmentGroups()
+    if (currentTab.value === 'appointment' && !showAppointmentTab.value) {
+      selectTab(getFirstVisibleTab())
+    }
   } catch (err) {
     console.error('获取预约列表失败:', err)
   }
