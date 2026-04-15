@@ -1018,6 +1018,9 @@
               <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
               <div v-if="merchant?.support_hand_card" class="text-gray-500 text-sm mt-1">手牌：{{ usage.hand_card_no || '-' }} (<span v-if="!usage.hand_card_no && !isUsageHandCardReturned(usage)" class="text-red-500">未分配</span><span v-else-if="isUsageHandCardReturned(usage)">{{ getHandCardStatusText(usage) }}</span><span v-else-if="normalizeSessionStatus(usage.service_session_status) === 'serving'">{{ getHandCardStatusText(usage) }}</span><span v-else class="text-red-500">未归还</span>)</div>
+              <div v-if="getUsageAppointmentNumber(usage)" class="text-gray-500 text-sm mt-1">
+                预约号：#{{ getUsageAppointmentNumber(usage) }}
+              </div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
               <div v-if="getUsageServiceTechnicianLabel(usage)" class="text-gray-500 text-sm mt-1">
@@ -3475,9 +3478,10 @@ const appointmentSummaryCount = computed(() => {
 
 const isAppointmentAlreadyInService = (appt) => {
   if (!appt) return false
-  if (appt.actual_start_at) return true
   const sessionStatus = normalizeSessionStatus(appt.service_session?.status || appt.session_status)
-  return sessionStatus === 'serving' || sessionStatus === 'auto_finishing'
+  if (sessionStatus === 'serving' || sessionStatus === 'auto_finishing') return true
+  if (isAppointmentSettled(appt)) return false
+  return !!appt.actual_start_at && appt.status === 'arrived'
 }
 
 const serviceTabUpcomingAppointments = computed(() => {
@@ -5767,6 +5771,10 @@ const getAppointmentNormalizedStatus = (appt) => {
 }
 
 const isAppointmentSettled = (appt) => {
+  const sessionStatus = normalizeSessionStatus(appt?.service_session?.status || appt?.session_status)
+  if (sessionStatus === 'finished') return true
+  if (appt?.completed_at) return true
+  if (getAppointmentDisruptionReason(appt) === 'service_completed' && !hasAppointmentLiabilityIssue(appt)) return true
   return ['completed', 'failed', 'no_show', 'canceled'].includes(getAppointmentNormalizedStatus(appt))
 }
 
@@ -5825,7 +5833,9 @@ const isPlainUserNoShowAppointment = (appt) => {
 
 const hasAppointmentDisruptionFlag = (appt) => {
   if (isPlainUserNoShowAppointment(appt)) return false
-  return !!getAppointmentDisruptionReason(appt) || hasAppointmentLiabilityIssue(appt)
+  const reason = getAppointmentDisruptionReason(appt)
+  if (reason === 'service_completed') return hasAppointmentLiabilityIssue(appt)
+  return !!reason || hasAppointmentLiabilityIssue(appt)
 }
 
 const hasAppointmentDisputeIssue = (appt) => {
