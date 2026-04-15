@@ -3227,7 +3227,7 @@ const showTechnicianSchedulePublishingTab = computed(() => {
 const technicianSchedulePublishingSubtitle = computed(() => {
   return isTodaySchedulePublishingTarget.value
     ? '请在今天 10:00 前发布今天的预约安排，10:30 前可撤销。'
-    : '请在前一日 16:00 后至次日 10:00 前发布次日安排，10:30 前可撤销。'
+    : '请在今日 16:00 后至明日 10:00 前发布后日预约排班，明日 10:30 前可撤销。'
 })
 const technicianSchedulePublishingHint = computed(() => {
   if (!isTechnicianAuth()) return ''
