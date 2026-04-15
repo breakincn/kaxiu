@@ -3470,6 +3470,20 @@ const appointmentSummaryCount = computed(() => {
   return (appointments.value || []).filter(a => !isExceptionAppointment(a) && a?.status === 'pending').length
 })
 
+const normalizeServiceSessionStatus = (status) => {
+  const value = String(status || '').trim()
+  const prefixes = ['cs_', 'qs_', 'qm_', 'qms_', 'qmm_']
+  const prefix = prefixes.find(item => value.startsWith(item))
+  return prefix ? value.slice(prefix.length) : value
+}
+
+const isAppointmentAlreadyInService = (appt) => {
+  if (!appt) return false
+  if (appt.actual_start_at) return true
+  const sessionStatus = normalizeServiceSessionStatus(appt.service_session?.status || appt.session_status)
+  return sessionStatus === 'serving' || sessionStatus === 'auto_finishing'
+}
+
 const serviceTabUpcomingAppointments = computed(() => {
   if (!isTechnicianAuth()) return []
   const now = currentTime.value
@@ -3477,6 +3491,7 @@ const serviceTabUpcomingAppointments = computed(() => {
   return assignedAppointments.value
     .filter(appt => {
       if (isExceptionAppointment(appt) || isAppointmentSettled(appt)) return false
+      if (isAppointmentAlreadyInService(appt)) return false
       const appointmentTimeMs = getAppointmentTimeMs(appt)
       if (appointmentTimeMs === null) return false
       return Math.abs(appointmentTimeMs - now) <= windowMs
