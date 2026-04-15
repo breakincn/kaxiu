@@ -60,6 +60,30 @@ func TestDecorateAppointmentDisplayKeepsActiveWaiting(t *testing.T) {
 	}
 }
 
+func TestDecorateAppointmentDisplayMarksStartedService(t *testing.T) {
+	loc := appointmentLocation()
+	appointmentTime := time.Date(2026, 3, 25, 10, 45, 0, 0, loc)
+	now := time.Date(2026, 3, 25, 10, 50, 0, 0, loc)
+	sessionID := uint(12)
+	startedAt := time.Date(2026, 3, 25, 10, 49, 0, 0, loc)
+
+	appt := models.Appointment{
+		Status:           "arrived",
+		AppointmentTime:  &appointmentTime,
+		ServiceSessionID: &sessionID,
+		ActualStartAt:    &startedAt,
+	}
+
+	decorateAppointmentDisplay(&appt, now)
+
+	if appt.DisplayWaitState != appointmentDisplayWaitStateArrivedBound {
+		t.Fatalf("want display_wait_state=%q, got %q", appointmentDisplayWaitStateArrivedBound, appt.DisplayWaitState)
+	}
+	if appt.DisplayWaitMessage != "客户已到店，已在服务中" {
+		t.Fatalf("want started service message, got %q", appt.DisplayWaitMessage)
+	}
+}
+
 func TestCanArriveForAppointmentUsesRemainingServiceThreshold(t *testing.T) {
 	loc := appointmentLocation()
 	merchant := &models.Merchant{

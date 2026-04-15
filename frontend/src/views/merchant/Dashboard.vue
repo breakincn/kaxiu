@@ -499,7 +499,7 @@
                     拒绝取消
                   </button>
                   <button
-                    v-if="appt.status === 'arrived' && appt.service_session_id && !isCrossDayUnfinishedAppointment(appt)"
+                    v-if="appt.status === 'arrived' && appt.service_session_id && !isCrossDayUnfinishedAppointment(appt) && !isAppointmentAlreadyInService(appt)"
                     @click="reassignAppointmentService(appt)"
                     class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
                   >
@@ -779,7 +779,7 @@
                 拒绝取消
               </button>
               <button
-                v-if="appt.status === 'arrived' && appt.service_session_id && !isCrossDayUnfinishedAppointment(appt)"
+                v-if="appt.status === 'arrived' && appt.service_session_id && !isCrossDayUnfinishedAppointment(appt) && !isAppointmentAlreadyInService(appt)"
                 @click="reassignAppointmentService(appt)"
                 class="flex-1 py-2 bg-primary text-white rounded-lg text-sm font-medium"
               >
@@ -1696,6 +1696,9 @@
               <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
+              <div v-if="getUsageAppointmentNumber(usage)" class="text-gray-500 text-sm mt-1">
+                预约号：#{{ getUsageAppointmentNumber(usage) }}
+              </div>
               <div v-if="getUsageRoomText(usage)" class="text-gray-500 text-sm mt-1">
                 {{ getUsageRoomText(usage) }}
               </div>
@@ -3470,17 +3473,10 @@ const appointmentSummaryCount = computed(() => {
   return (appointments.value || []).filter(a => !isExceptionAppointment(a) && a?.status === 'pending').length
 })
 
-const normalizeServiceSessionStatus = (status) => {
-  const value = String(status || '').trim()
-  const prefixes = ['cs_', 'qs_', 'qm_', 'qms_', 'qmm_']
-  const prefix = prefixes.find(item => value.startsWith(item))
-  return prefix ? value.slice(prefix.length) : value
-}
-
 const isAppointmentAlreadyInService = (appt) => {
   if (!appt) return false
   if (appt.actual_start_at) return true
-  const sessionStatus = normalizeServiceSessionStatus(appt.service_session?.status || appt.session_status)
+  const sessionStatus = normalizeSessionStatus(appt.service_session?.status || appt.session_status)
   return sessionStatus === 'serving' || sessionStatus === 'auto_finishing'
 }
 
@@ -4609,6 +4605,11 @@ const getUsageServiceTechnicianLabel = (usage) => {
 const getUsageTrackingNumber = (usage) => {
   if (!usage?.id) return ''
   return String(usage.id).padStart(9, '0')
+}
+
+const getUsageAppointmentNumber = (usage) => {
+  const appointmentID = Number(usage?.appointment_id || 0)
+  return appointmentID > 0 ? appointmentID : ''
 }
 
 const getUsageServiceRemainingSeconds = (usage) => {
@@ -5867,6 +5868,9 @@ const canOperateAppointment = (appt) => {
 }
 
 const getAppointmentRiskHint = (appt) => {
+  if (isAppointmentAlreadyInService(appt)) {
+    return '客户已到店，已在服务中'
+  }
   const displayMessage = getAppointmentDisplayWaitMessage(appt)
   if (displayMessage) {
     return displayMessage
@@ -5887,6 +5891,7 @@ const getAppointmentRiskHintClass = (appt) => {
 const shouldShowAppointmentReschedule = (appt) => {
   if (!appt) return false
   if (isCrossDayUnfinishedAppointment(appt)) return false
+  if (isAppointmentAlreadyInService(appt)) return false
   // 改签是重新安排预约，只有“还没彻底结束”的预约才允许改到新时间。
   return (appt.status === 'confirmed' || appt.status === 'arrived') && !getLatestPendingRescheduleRequest(appt)
 }
@@ -5952,6 +5957,7 @@ const canRejectForceMajeureRelief = (appt) => canAcceptForceMajeureRelief(appt)
 
 const shouldShowAppointmentCompensation = (appt) => {
   if (!appt) return false
+  if (isAppointmentAlreadyInService(appt)) return false
   // 补偿不是常驻动作，只在门店承诺已经受损或服务异常结束后开放。
   if (appt.status === 'arrived') {
     return Number(appt?.predicted_delay_minutes || 0) > 0 || !!appt?.service_session_id

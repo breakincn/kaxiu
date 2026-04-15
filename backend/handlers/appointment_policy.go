@@ -145,6 +145,10 @@ func decorateAppointmentDisplay(appt *models.Appointment, now time.Time) {
 
 	if appt.ServiceSessionID != nil && *appt.ServiceSessionID > 0 {
 		appt.DisplayWaitState = appointmentDisplayWaitStateArrivedBound
+		if appt.ActualStartAt != nil {
+			appt.DisplayWaitMessage = "客户已到店，已在服务中"
+			return
+		}
 		appt.DisplayWaitMessage = "客户已到店，服务会话已绑定到本次预约"
 	}
 }

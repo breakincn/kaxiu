@@ -176,6 +176,7 @@ type Usage struct {
 	StartTimeoutCount                          int         `json:"start_timeout_count" gorm:"-"`
 	RevokeDeadlineAt                           *time.Time  `json:"revoke_deadline_at" gorm:"-"`
 	CanRevoke                                  bool        `json:"can_revoke" gorm:"-"`
+	AppointmentID                              *uint       `json:"appointment_id" gorm:"-"`
 
 	Card       Card             `json:"card" gorm:"foreignKey:CardID"`
 	Merchant   Merchant         `json:"merchant" gorm:"foreignKey:MerchantID"`

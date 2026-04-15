@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"kabao/config"
+	"kabao/models"
 	"testing"
 	"time"
 )
@@ -39,5 +41,38 @@ func TestShouldFallbackServiceTechnicianToLastKeepsStartedSessionHistory(t *test
 	got := shouldFallbackServiceTechnicianToLast("cs_finished", nil, &startedAt, nil)
 	if !got {
 		t.Fatalf("want historical technician kept after service has started")
+	}
+}
+
+func TestEnrichUsagesWithServiceSessionAddsAppointmentID(t *testing.T) {
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupServiceSessionFactoryTestDB(t)
+
+	now := time.Now()
+	usage := models.Usage{MerchantID: 1, CardID: 1, UsedTimes: 1, UsedAt: &now, Status: "in_progress"}
+	if err := config.DB.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+	appointmentID := uint(92)
+	session := models.ServiceSession{
+		MerchantID:      1,
+		UserID:          1,
+		CardID:          1,
+		InitialUsageID:  usage.ID,
+		SourceType:      "appointment",
+		SourceID:        &appointmentID,
+		Status:          "serving",
+		DurationMinutes: 30,
+	}
+	if err := config.DB.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	usages := []models.Usage{usage}
+	enrichUsagesWithServiceSession(&usages)
+
+	if usages[0].AppointmentID == nil || *usages[0].AppointmentID != appointmentID {
+		t.Fatalf("want appointment_id=%d, got %+v", appointmentID, usages[0].AppointmentID)
 	}
 }

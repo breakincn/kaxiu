@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -202,6 +203,8 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		ID                         uint       `gorm:"column:id"`
 		InitialUsageID             uint       `gorm:"column:initial_usage_id"`
 		ProjectID                  *uint      `gorm:"column:project_id"`
+		SourceType                 string     `gorm:"column:source_type"`
+		SourceID                   *uint      `gorm:"column:source_id"`
 		Status                     string     `gorm:"column:status"`
 		RoomID                     *uint      `gorm:"column:room_id"`
 		TechnicianID               *uint      `gorm:"column:technician_id"`
@@ -225,7 +228,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions").
-		Select("id, initial_usage_id, project_id, status, room_id, technician_id, last_technician_id, start_timeout_count, start_confirmed_at, scheduled_start_at, started_at, scheduled_finish_at, finished_at, duration_minutes, created_at, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until, staff_select_entered_at").
+		Select("id, initial_usage_id, project_id, source_type, source_id, status, room_id, technician_id, last_technician_id, start_timeout_count, start_confirmed_at, scheduled_start_at, started_at, scheduled_finish_at, finished_at, duration_minutes, created_at, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until, staff_select_entered_at").
 		Where("initial_usage_id IN ?", ids).
 		Order("id desc").
 		Find(&sessions).Error; err != nil {
@@ -357,6 +360,10 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 			u.ServiceSessionFinishedAt = s.FinishedAt
 			u.ServiceSessionDurationMinutes = s.DurationMinutes
 			u.ServiceSessionUpdatedAt = s.UpdatedAt
+			if strings.TrimSpace(s.SourceType) == "appointment" && s.SourceID != nil && *s.SourceID > 0 {
+				appointmentID := *s.SourceID
+				u.AppointmentID = &appointmentID
+			}
 			u.ServiceSessionStartPendingTimeoutSeconds = s.StartPendingTimeoutSeconds
 			sessForRemain := models.ServiceSession{
 				Status:                     s.Status,
