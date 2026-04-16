@@ -1714,7 +1714,7 @@
                 </div>
               </div>
             </div>
-            <div v-if="getUsageApprovedExtendInfoLines(usage).length > 0" class="text-green-700 text-sm mt-1 rounded-lg bg-green-50 px-2 py-1 leading-6 inline-block max-w-full">
+            <div v-if="getUsageApprovedExtendInfoLines(usage).length > 0" class="w-full text-green-700 text-sm mt-1 rounded-lg bg-green-50 px-2 py-1 leading-6">
               <div v-for="line in getUsageApprovedExtendInfoLines(usage)" :key="line" class="whitespace-nowrap">{{ line }}</div>
             </div>
             <div
