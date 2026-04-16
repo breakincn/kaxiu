@@ -97,7 +97,7 @@
                 />
               </div>
 
-              <div>
+              <div v-if="isRoomServiceEnabled">
                 <div class="text-sm font-medium text-gray-700 mb-2">自动分配房间延迟时间（分钟）</div>
                 <input
                   v-model.number="project.room_select_timeout_minutes"
@@ -254,6 +254,7 @@ const form = ref({
 })
 
 const startPendingCountdownLabel = computed(() => `${getStartCountdownLabel(merchantTerms.value)}（分钟）`)
+const isRoomServiceEnabled = computed(() => !!merchantTerms.value?.support_room)
 
 const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
   projects: (projects || []).map((project) => ({
@@ -397,10 +398,12 @@ const save = async () => {
       alert(`项目 ${i + 1} 的服务开始延迟时间必须在 0-3600 秒之间`)
       return
     }
-    const roomSelectTimeoutMinutes = Number(project.room_select_timeout_minutes ?? 1.5)
-    if (!Number.isFinite(roomSelectTimeoutMinutes) || roomSelectTimeoutMinutes < 0.5 || roomSelectTimeoutMinutes > 60) {
-      alert(`项目 ${i + 1} 的自动分配房间延迟时间必须在 0.5-60 分钟之间`)
-      return
+    if (isRoomServiceEnabled.value) {
+      const roomSelectTimeoutMinutes = Number(project.room_select_timeout_minutes ?? 1.5)
+      if (!Number.isFinite(roomSelectTimeoutMinutes) || roomSelectTimeoutMinutes < 0.5 || roomSelectTimeoutMinutes > 60) {
+        alert(`项目 ${i + 1} 的自动分配房间延迟时间必须在 0.5-60 分钟之间`)
+        return
+      }
     }
     const startPendingTimeoutMinutes = Number(project.start_pending_timeout_minutes ?? 5)
     if (!Number.isFinite(startPendingTimeoutMinutes) || startPendingTimeoutMinutes < 1 || startPendingTimeoutMinutes > 60) {
