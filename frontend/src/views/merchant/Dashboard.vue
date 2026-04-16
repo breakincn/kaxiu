@@ -1710,7 +1710,7 @@
                 <div v-for="line in getUsageApprovedExtendInfoLines(usage)" :key="line">{{ line }}</div>
               </div>
               <div
-                v-if="getUsageServiceRemainingSeconds(usage) !== null"
+                v-if="shouldShowUsageServiceRemainingSeconds(usage)"
                 :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getUsageServiceRemainingSeconds(usage))]"
               >
                 服务剩余：{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}
@@ -4335,6 +4335,14 @@ const getUsageApprovedExtendInfoLines = (usage) => {
   const firstLine = `已加钟${projectText}`
   if (!beforeText || !afterText) return [firstLine]
   return [firstLine, `加钟前剩余 ${beforeText}`, `加钟后剩余 ${afterText}`]
+}
+
+const hasUsageApprovedExtendAfterRemaining = (usage) => {
+  return getUsageApprovedExtendInfoLines(usage).some(line => String(line || '').startsWith('加钟后剩余'))
+}
+
+const shouldShowUsageServiceRemainingSeconds = (usage) => {
+  return getUsageServiceRemainingSeconds(usage) !== null && !hasUsageApprovedExtendAfterRemaining(usage)
 }
 
 const getCardTypeLabel = (type) => {
