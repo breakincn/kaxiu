@@ -144,6 +144,54 @@ func TestBuildMerchantLiveServiceStatusCustomerServiceMode(t *testing.T) {
 	}
 }
 
+func TestBuildMerchantLiveServiceStatusRequiresOpenAttendanceForIdleStaff(t *testing.T) {
+	oldDB := config.DB
+	oldQueue := queue.Default
+	defer func() {
+		config.DB = oldDB
+		queue.Default = oldQueue
+	}()
+
+	config.DB = setupLiveServiceStatusTestDB(t)
+	queue.Default = nil
+
+	now := time.Date(2026, 3, 26, 15, 30, 0, 0, time.Local)
+	role := models.ServiceRole{Name: "专业客服", Key: "hair_stylist", RoleType: "professional"}
+	if err := config.DB.Create(&role).Error; err != nil {
+		t.Fatalf("create role failed: %v", err)
+	}
+
+	merchant := models.Merchant{
+		Name:                       "未签到门店",
+		Phone:                      "18810000009",
+		Password:                   "pwd",
+		IsOpen:                     true,
+		SupportCustomerService:     true,
+		SupportCustomerServiceMode: true,
+		SupportTechnicianCheckin:   false,
+	}
+	if err := config.DB.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+
+	tech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "Tony老师", Code: "sty001", Account: "sty001", Password: "pwd", IsActive: true}
+	if err := config.DB.Create(&tech).Error; err != nil {
+		t.Fatalf("create tech failed: %v", err)
+	}
+
+	got, err := buildMerchantLiveServiceStatus(&merchant, now)
+	if err != nil {
+		t.Fatalf("build live status failed: %v", err)
+	}
+
+	if got.Counts.CheckedInStaffCount != 0 || got.Counts.ServiceableStaffCount != 0 || got.Counts.IdleStaffCount != 0 {
+		t.Fatalf("unsigned technician must not be counted as idle staff: %+v", got.Counts)
+	}
+	if got.StatusLevel != "unavailable" {
+		t.Fatalf("unexpected status without signed-in staff: %+v", got)
+	}
+}
+
 func TestBuildMerchantLiveServiceStatusManualQueueSingle(t *testing.T) {
 	oldDB := config.DB
 	oldQueue := queue.Default

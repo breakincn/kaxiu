@@ -467,10 +467,7 @@ func liveServiceBuildTechSnapshot(merchant *models.Merchant, mode string, techs 
 
 	for _, tech := range techs {
 		att, hasAttendance := attMap[tech.ID]
-		checkedIn := true
-		if merchant.SupportTechnicianCheckin {
-			checkedIn = hasAttendance && att.CheckedOutAt == nil
-		}
+		checkedIn := hasAttendance && att.CheckedInAt != nil && att.CheckedOutAt == nil
 		if checkedIn {
 			out.CheckedInCount++
 		}
@@ -481,9 +478,7 @@ func liveServiceBuildTechSnapshot(merchant *models.Merchant, mode string, techs 
 		}
 		nextPaused := hasAttendance && att.NextStatus != nil && strings.TrimSpace(*att.NextStatus) == "paused"
 		paused := false
-		if merchant.SupportTechnicianCheckin {
-			paused = attendanceStatus == "paused" || attendanceStatus == "rest"
-		}
+		paused = attendanceStatus == "paused" || attendanceStatus == "rest"
 		if nextPaused {
 			paused = true
 		}
@@ -502,7 +497,7 @@ func liveServiceBuildTechSnapshot(merchant *models.Merchant, mode string, techs 
 		out.ServiceableCount++
 		busySessions := busySessionsByTech[tech.ID]
 		if len(busySessions) == 0 {
-			if merchant.SupportTechnicianCheckin && attendanceStatus == "busy" {
+			if attendanceStatus == "busy" {
 				out.AnomalyCount++
 			}
 			out.SlotAvailableAt = append(out.SlotAvailableAt, now)
