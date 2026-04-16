@@ -27,6 +27,9 @@
       <div v-if="session.card">
         卡片：{{ session.card.card_type }} (剩余{{ session.card.remain_times }}次)
       </div>
+      <div v-if="serviceClockLines.length > 0" class="rounded-lg bg-green-50 px-2 py-1 text-green-700 leading-6">
+        <div v-for="line in serviceClockLines" :key="line">{{ line }}</div>
+      </div>
       <div v-if="shouldShowRoom">
         房间：{{ session.room.name }}
       </div>
@@ -121,6 +124,34 @@ const cardUsageDisplayText = computed(() => {
   const cardPart = `卡号：${cardNo || '-'}`
   const verifyPart = `核销：${totalTimes > 0 ? totalTimes : '-'}\/${usedTimes > 0 ? usedTimes : '-'}`
   return `${cardPart} ${verifyPart}`
+})
+
+const approvedExtendRequest = computed(() => {
+  const req = props.session?.latest_extend_request
+  return req && String(req.status || '').trim() === 'approved' ? req : null
+})
+
+const formatProjectDurationText = (projectName, minutes) => {
+  const name = String(projectName || '').trim() || '-'
+  const duration = Number(minutes || 0)
+  return duration > 0 ? `${name}（${duration}分钟）` : name
+}
+
+const firstClockMinutes = computed(() => {
+  const projectDuration = Number(props.session?.project?.duration || 0)
+  if (projectDuration > 0) return projectDuration
+  const totalDuration = Number(props.session?.duration_minutes || 0)
+  const extendMinutes = Number(approvedExtendRequest.value?.minutes || 0)
+  if (totalDuration > extendMinutes) return totalDuration - extendMinutes
+  return totalDuration
+})
+
+const serviceClockLines = computed(() => {
+  const req = approvedExtendRequest.value
+  if (!req) return []
+  const firstLine = `第一个钟：${formatProjectDurationText(props.session?.project?.name, firstClockMinutes.value)}`
+  const secondLine = `第二个钟：${formatProjectDurationText(req.project?.name, req.minutes)}`
+  return [firstLine, secondLine]
 })
 
 const cancelReasonText = computed(() => {

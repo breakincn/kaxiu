@@ -225,6 +225,9 @@
                           <div v-if="getServiceBoardTrackingNumber(session)">单号：{{ getServiceBoardTrackingNumber(session) }}</div>
                           <div v-if="getServiceBoardUsageText(session)">卡号：{{ getServiceBoardUsageText(session) }}</div>
                           <div v-if="getServiceBoardCardText(session)">卡片：{{ getServiceBoardCardText(session) }}</div>
+                          <div v-if="getServiceBoardClockLines(session).length > 0" class="rounded-lg bg-green-50 px-2 py-1 text-green-700 leading-6">
+                            <div v-for="line in getServiceBoardClockLines(session)" :key="line">{{ line }}</div>
+                          </div>
                           <div v-if="shouldShowServiceBoardRoom(session)">房间：{{ getServiceBoardRoomText(session) }}</div>
                           <div v-if="getServiceBoardCancelReason(session)">取消原因：{{ getServiceBoardCancelReason(session) }}</div>
                         </div>
@@ -543,6 +546,35 @@ const getServiceBoardTrackingNumber = (session) => {
   const usageId = Number(session?.initial_usage_id || 0)
   if (usageId > 0) return String(usageId).padStart(9, '0')
   return ''
+}
+
+const getApprovedServiceBoardExtendRequest = (session) => {
+  const req = session?.latest_extend_request
+  return req && String(req.status || '').trim() === 'approved' ? req : null
+}
+
+const formatServiceBoardProjectDurationText = (projectName, minutes) => {
+  const name = String(projectName || '').trim() || '-'
+  const duration = Number(minutes || 0)
+  return duration > 0 ? `${name}（${duration}分钟）` : name
+}
+
+const getServiceBoardFirstClockMinutes = (session) => {
+  const projectDuration = Number(session?.project?.duration || 0)
+  if (projectDuration > 0) return projectDuration
+  const totalDuration = Number(session?.duration_minutes || 0)
+  const extendMinutes = Number(getApprovedServiceBoardExtendRequest(session)?.minutes || 0)
+  if (totalDuration > extendMinutes) return totalDuration - extendMinutes
+  return totalDuration
+}
+
+const getServiceBoardClockLines = (session) => {
+  const req = getApprovedServiceBoardExtendRequest(session)
+  if (!req) return []
+  return [
+    `第一个钟：${formatServiceBoardProjectDurationText(session?.project?.name, getServiceBoardFirstClockMinutes(session))}`,
+    `第二个钟：${formatServiceBoardProjectDurationText(req.project?.name, req.minutes)}`
+  ]
 }
 
 const getServiceBoardRoomText = (session) => {
