@@ -19,7 +19,14 @@
           </div>
           
           <div class="px-4 py-4 space-y-4">
-            <div v-for="(project, index) in form.projects" :key="index" class="border border-gray-200 rounded-lg p-4 space-y-3">
+            <div
+              v-for="(project, index) in form.projects"
+              :key="index"
+              :class="[
+                'border rounded-lg p-4 space-y-3',
+                project._isNewUnsaved ? 'border-blue-500 bg-blue-50/40' : 'border-gray-200'
+              ]"
+            >
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
                   <div class="text-sm font-medium text-gray-700">项目 {{ index + 1 }}</div>
@@ -337,7 +344,8 @@ const addProject = () => {
     delay_compensation_mode: 'minutes_bucket',
     delay_redeem_threshold_percent: 100,
     delay_fixed_unit_value: 0,
-    is_default: form.value.projects.length === 0
+    is_default: form.value.projects.length === 0,
+    _isNewUnsaved: true
   })
 }
 
