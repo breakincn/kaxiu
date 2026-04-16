@@ -72,7 +72,7 @@
       >
         <template v-if="item._type === 'card'">
           <div
-            @click="onCardClick($event, item.id)"
+            @click="onCardClick($event, item)"
             @touchstart="onCardTouchStart($event, item)"
             @touchmove="onCardTouchMove"
             @touchend="onCardTouchEnd($event, item)"
@@ -780,7 +780,18 @@ const hasTouchMovedPastThreshold = (touch, startX, startY) => {
   return Math.abs(dy) >= TAP_MOVE_THRESHOLD_PX || Math.abs(dx) >= TAP_MOVE_THRESHOLD_PX || (dx * dx + dy * dy >= TAP_MOVE_THRESHOLD_SQ)
 }
 
-const goToDetail = (id) => {
+const goToDetail = (card) => {
+  const id = Number(card?.id || card || 0)
+  if (!id) return
+  if (card?.hasServingUsage) {
+    router.push({
+      path: `/user/cards/${id}`,
+      query: {
+        scrollToUsages: '1'
+      }
+    })
+    return
+  }
   router.push(`/user/cards/${id}`)
 }
 
@@ -795,9 +806,9 @@ const goToDetailWithNotice = (id) => {
   })
 }
 
-const onCardClick = (_event, id) => {
+const onCardClick = (_event, card) => {
   if (Date.now() < suppressClickUntil.value) return
-  goToDetail(id)
+  goToDetail(card)
 }
 
 const onCardTouchStart = (event, card) => {
@@ -851,7 +862,7 @@ const onCardTouchEnd = (_event, card) => {
     return
   }
   setSuppressClick(TAP_OPEN_CLICK_SUPPRESS_MS)
-  goToDetail(card.id)
+  goToDetail(card)
 }
 
 const onCardTouchCancel = () => {

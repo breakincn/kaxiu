@@ -4206,6 +4206,8 @@ const scrollToNotice = async () => {
 }
 
 const scrollToUsages = async () => {
+  usageRecordsCollapsed.value = false
+  await waitForScrollLayout()
   const previousSection = appointmentAnchor.value || cardSummarySection.value
   if (previousSection) {
     await scrollToAfterElementBottom(previousSection, 2)
