@@ -409,7 +409,7 @@
               <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageProjectText(usage) }}
               </div>
-              <div v-if="getUsageApprovedExtendInfoLines(usage).length > 0" class="text-gray-500 text-sm mt-1 rounded-lg bg-green-50 px-2 py-1 leading-6">
+              <div v-if="getUsageApprovedExtendInfoLines(usage).length > 0" class="text-green-700 text-sm mt-1 rounded-lg bg-green-50 px-2 py-1 leading-6">
                 <div v-for="line in getUsageApprovedExtendInfoLines(usage)" :key="line">{{ line }}</div>
               </div>
               <div v-if="getUsageFailureReasonText(usage)" class="text-gray-400 text-sm mt-0.5">
