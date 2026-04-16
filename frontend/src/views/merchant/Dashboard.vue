@@ -1694,52 +1694,54 @@
           加载中...
         </div>
         <div v-else-if="todayStartUsages.length > 0" class="space-y-3">
-          <div v-for="usage in todayStartUsages" :key="usage.id" class="flex justify-between items-start py-3 border-b last:border-0">
-            <div class="flex-1">
-              <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
-              <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
-              <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
-              <div v-if="getUsageAppointmentNumber(usage)" class="text-gray-500 text-sm mt-1">
-                预约号：#{{ getUsageAppointmentNumber(usage) }}
+          <div v-for="usage in todayStartUsages" :key="usage.id" class="py-3 border-b last:border-0">
+            <div class="flex justify-between items-start">
+              <div class="flex-1 min-w-0">
+                <div class="text-gray-800 font-medium">{{ usage.card?.user?.nickname || '用户' }}</div>
+                <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
+                <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
+                <div v-if="getUsageAppointmentNumber(usage)" class="text-gray-500 text-sm mt-1">
+                  预约号：#{{ getUsageAppointmentNumber(usage) }}
+                </div>
+                <div v-if="getUsageRoomText(usage)" class="text-gray-500 text-sm mt-1">
+                  {{ getUsageRoomText(usage) }}
+                </div>
+                <div class="text-gray-500 text-sm mt-1">项目：{{ formatProjectNameWithDuration(usage.project) }}</div>
               </div>
-              <div v-if="getUsageRoomText(usage)" class="text-gray-500 text-sm mt-1">
-                {{ getUsageRoomText(usage) }}
-              </div>
-              <div class="text-gray-500 text-sm mt-1">项目：{{ formatProjectNameWithDuration(usage.project) }}</div>
-              <div v-if="getUsageApprovedExtendInfoLines(usage).length > 0" class="text-green-700 text-sm mt-1 rounded-lg bg-green-50 px-2 py-1 leading-6">
-                <div v-for="line in getUsageApprovedExtendInfoLines(usage)" :key="line">{{ line }}</div>
-              </div>
-              <div
-                v-if="shouldShowUsageServiceRemainingSeconds(usage)"
-                :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getUsageServiceRemainingSeconds(usage))]"
-              >
-                服务剩余：{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}
-              </div>
-              <div
-                v-if="getUsageStartPendingCountdownSeconds(usage) !== null"
-                :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getUsageStartPendingCountdownSeconds(usage))]"
-              >
-                {{ getStartCountdownLabel(merchant, { queueMode: isQueueModeMerchant(merchant) }) }}：{{ formatStartCountdownSeconds(getUsageStartPendingCountdownSeconds(usage)) }}
-              </div>
-              <div v-if="getUsageRoomOccupancyDurationText(usage)" class="text-gray-500 text-sm mt-1">
-                房间占用时间：{{ getUsageRoomOccupancyDurationText(usage) }}
-              </div>
-              <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
-              <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
-              <button
-                v-if="hasPendingExtendRequest(usage)"
-                type="button"
-                class="mt-3 px-3 py-1.5 rounded bg-orange-500 text-white text-xs font-medium"
-                @click="openExtendRequestReview(usage)"
-              >
-                加钟申请
-              </button>
-            </div>
-            <div class="text-right">
-              <div class="text-sm">
-                核销次数：<span class="text-gray-700">{{ getUsageCountDisplayText(usage).totalTimes }}</span> / <span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage).usedTimes }}</span> 次
+              <div class="text-right flex-shrink-0 ml-3">
+                <div class="text-sm">
+                  核销次数：<span class="text-gray-700">{{ getUsageCountDisplayText(usage).totalTimes }}</span> / <span :class="getUsageCountColorClass(usage)">{{ getUsageCountDisplayText(usage).usedTimes }}</span> 次
+                </div>
               </div>
             </div>
+            <div v-if="getUsageApprovedExtendInfoLines(usage).length > 0" class="text-green-700 text-sm mt-1 rounded-lg bg-green-50 px-2 py-1 leading-6 inline-block max-w-full">
+              <div v-for="line in getUsageApprovedExtendInfoLines(usage)" :key="line" class="whitespace-nowrap">{{ line }}</div>
+            </div>
+            <div
+              v-if="shouldShowUsageServiceRemainingSeconds(usage)"
+              :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getUsageServiceRemainingSeconds(usage))]"
+            >
+              服务剩余：{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}
+            </div>
+            <div
+              v-if="getUsageStartPendingCountdownSeconds(usage) !== null"
+              :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getUsageStartPendingCountdownSeconds(usage))]"
+            >
+              {{ getStartCountdownLabel(merchant, { queueMode: isQueueModeMerchant(merchant) }) }}：{{ formatStartCountdownSeconds(getUsageStartPendingCountdownSeconds(usage)) }}
+            </div>
+            <div v-if="getUsageRoomOccupancyDurationText(usage)" class="text-gray-500 text-sm mt-1">
+              房间占用时间：{{ getUsageRoomOccupancyDurationText(usage) }}
+            </div>
+            <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
+            <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
+            <button
+              v-if="hasPendingExtendRequest(usage)"
+              type="button"
+              class="mt-3 px-3 py-1.5 rounded bg-orange-500 text-white text-xs font-medium"
+              @click="openExtendRequestReview(usage)"
+            >
+              加钟申请
+            </button>
           </div>
         </div>
         <div v-else class="text-center text-gray-400 py-4">
