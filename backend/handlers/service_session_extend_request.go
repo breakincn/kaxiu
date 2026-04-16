@@ -4,6 +4,7 @@ import (
 	"errors"
 	"kabao/config"
 	"kabao/models"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -171,6 +172,9 @@ func handleServiceSessionExtendRequest(c *gin.Context, approve bool) {
 		if approve {
 			beforeRemainingSeconds = computeServiceSessionRemainingSeconds(&s, now)
 			afterRemainingSeconds = beforeRemainingSeconds + req.Minutes*60
+			if err := deductServiceSessionExtendCard(tx, &req, now); err != nil {
+				return err
+			}
 			if err := applyServiceSessionExtension(tx, &s, req.Minutes); err != nil {
 				return err
 			}
@@ -261,6 +265,58 @@ func loadCardOwnedExtendProject(tx *gorm.DB, cardID uint, merchantID uint, proje
 		return nil, err
 	}
 	return &project, nil
+}
+
+func deductServiceSessionExtendCard(tx *gorm.DB, req *models.ServiceSessionExtendRequest, now time.Time) error {
+	if tx == nil || req == nil || req.CardID == 0 || req.ProjectID == 0 {
+		return apiErr{status: http.StatusBadRequest, msg: "加钟扣卡信息不完整"}
+	}
+
+	var card models.Card
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND merchant_id = ? AND user_id = ?", req.CardID, req.MerchantID, req.UserID).
+		First(&card).Error; err != nil {
+		return err
+	}
+	var project models.MerchantProject
+	if err := tx.Where("id = ? AND merchant_id = ?", req.ProjectID, req.MerchantID).First(&project).Error; err != nil {
+		return err
+	}
+
+	if card.TotalTimes > 0 {
+		res := tx.Model(&models.Card{}).
+			Where("id = ? AND remain_times > 0", card.ID).
+			Updates(map[string]interface{}{
+				"remain_times": gorm.Expr("remain_times - ?", 1),
+				"used_times":   gorm.Expr("used_times + ?", 1),
+				"last_used_at": now,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return apiErr{status: http.StatusBadRequest, msg: "加钟失败，卡片剩余次数不足"}
+		}
+		return nil
+	}
+
+	amount := int(math.Ceil(project.Price))
+	if amount <= 0 {
+		return apiErr{status: http.StatusBadRequest, msg: "加钟项目价格未配置，无法扣减额度"}
+	}
+	res := tx.Model(&models.Card{}).
+		Where("id = ? AND recharge_amount >= ?", card.ID, amount).
+		Updates(map[string]interface{}{
+			"recharge_amount": gorm.Expr("recharge_amount - ?", amount),
+			"last_used_at":    now,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return apiErr{status: http.StatusBadRequest, msg: "加钟失败，卡片额度不足"}
+	}
+	return nil
 }
 
 func applyServiceSessionExtension(tx *gorm.DB, s *models.ServiceSession, minutes int) error {

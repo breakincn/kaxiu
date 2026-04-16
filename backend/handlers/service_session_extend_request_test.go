@@ -77,6 +77,7 @@ func seedExtendRequestFixture(t *testing.T) (models.Merchant, models.User, model
 		CardType:    "活力次卡",
 		TotalTimes:  10,
 		RemainTimes: 7,
+		UsedTimes:   3,
 	}
 	if err := config.DB.Create(&card).Error; err != nil {
 		t.Fatalf("create card failed: %v", err)
@@ -146,7 +147,7 @@ func TestApproveServiceSessionExtendRequestExtendsServingSession(t *testing.T) {
 	defer func() { config.DB = oldDB }()
 	config.DB = setupServiceSessionExtendRequestTestDB(t)
 
-	merchant, user, _, ownedProject, _, session := seedExtendRequestFixture(t)
+	merchant, user, card, ownedProject, _, session := seedExtendRequestFixture(t)
 
 	sessionID := strconv.Itoa(int(session.ID))
 	createBody := `{"project_id":` + strconv.Itoa(int(ownedProject.ID)) + `}`
@@ -186,6 +187,16 @@ func TestApproveServiceSessionExtendRequestExtendsServingSession(t *testing.T) {
 	if gotSession.AutoFinishDelaySeconds != wantAutoFinishDelaySeconds {
 		t.Fatalf("want auto finish delay %d, got %d", wantAutoFinishDelaySeconds, gotSession.AutoFinishDelaySeconds)
 	}
+	var gotCard struct {
+		RemainTimes int
+		UsedTimes   int
+	}
+	if err := config.DB.Table("cards").Select("remain_times, used_times").Where("id = ?", card.ID).Scan(&gotCard).Error; err != nil {
+		t.Fatalf("load card failed: %v", err)
+	}
+	if gotCard.RemainTimes != card.RemainTimes-1 || gotCard.UsedTimes != card.UsedTimes+1 {
+		t.Fatalf("want card deducted to remain=%d used=%d, got remain=%d used=%d", card.RemainTimes-1, card.UsedTimes+1, gotCard.RemainTimes, gotCard.UsedTimes)
+	}
 	var gotReq struct {
 		Status                 string
 		HandledAt              *string
@@ -200,5 +211,103 @@ func TestApproveServiceSessionExtendRequestExtendsServingSession(t *testing.T) {
 	}
 	if gotReq.BeforeRemainingSeconds != 0 || gotReq.AfterRemainingSeconds != ownedProject.Duration*60 {
 		t.Fatalf("unexpected remaining snapshots: %+v", gotReq)
+	}
+}
+
+func TestApproveServiceSessionExtendRequestDeductsBalanceCardAmount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupServiceSessionExtendRequestTestDB(t)
+
+	now := time.Now().Truncate(time.Second)
+	merchant := models.Merchant{Name: "额度门店", Phone: "18800002222", Password: "pwd"}
+	if err := config.DB.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	userPhone := "17700002222"
+	user := models.User{Phone: &userPhone}
+	if err := config.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user failed: %v", err)
+	}
+	card := models.Card{
+		UserID:         user.ID,
+		MerchantID:     merchant.ID,
+		CardNo:         "B001",
+		CardType:       "储值卡",
+		RechargeAmount: 100,
+	}
+	if err := config.DB.Create(&card).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+	project := models.MerchantProject{MerchantID: merchant.ID, Name: "精油护理", Duration: 30, Price: 35, IsActive: true}
+	if err := config.DB.Create(&project).Error; err != nil {
+		t.Fatalf("create project failed: %v", err)
+	}
+	if err := config.DB.Create(&models.CardProject{CardID: card.ID, ProjectID: project.ID}).Error; err != nil {
+		t.Fatalf("create card project failed: %v", err)
+	}
+	usage := models.Usage{
+		CardID:     card.ID,
+		MerchantID: merchant.ID,
+		ProjectID:  &project.ID,
+		UsedTimes:  1,
+		UsedAt:     &now,
+		Status:     "in_progress",
+	}
+	if err := config.DB.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+	session := models.ServiceSession{
+		MerchantID:      merchant.ID,
+		UserID:          user.ID,
+		CardID:          card.ID,
+		ProjectID:       &project.ID,
+		InitialUsageID:  usage.ID,
+		Status:          "serving",
+		DurationMinutes: 30,
+	}
+	if err := config.DB.Create(&session).Error; err != nil {
+		t.Fatalf("create service session failed: %v", err)
+	}
+
+	sessionID := strconv.Itoa(int(session.ID))
+	createBody := `{"project_id":` + strconv.Itoa(int(project.ID)) + `}`
+	createCtx, createRec := newExtendRequestUserContext(http.MethodPost, "/user/service-sessions/"+sessionID+"/extend-requests", user.ID, createBody)
+	createCtx.Params = gin.Params{{Key: "id", Value: sessionID}}
+	CreateServiceSessionExtendRequest(createCtx)
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("want create 200, got %d body=%s", createRec.Code, createRec.Body.String())
+	}
+	var createResp struct {
+		Data models.ServiceSessionExtendRequest `json:"data"`
+	}
+	if err := json.Unmarshal(createRec.Body.Bytes(), &createResp); err != nil {
+		t.Fatalf("decode create response failed: %v", err)
+	}
+
+	requestID := strconv.Itoa(int(createResp.Data.ID))
+	approveCtx, approveRec := newExtendRequestMerchantContext(http.MethodPost, "/merchant/service-session-extend-requests/"+requestID+"/approve", merchant.ID, `{}`)
+	approveCtx.Params = gin.Params{{Key: "id", Value: requestID}}
+	ApproveServiceSessionExtendRequest(approveCtx)
+	if approveRec.Code != http.StatusOK {
+		t.Fatalf("want approve 200, got %d body=%s", approveRec.Code, approveRec.Body.String())
+	}
+
+	var gotCard struct {
+		RechargeAmount int
+	}
+	if err := config.DB.Table("cards").Select("recharge_amount").Where("id = ?", card.ID).Scan(&gotCard).Error; err != nil {
+		t.Fatalf("load card failed: %v", err)
+	}
+	if gotCard.RechargeAmount != 65 {
+		t.Fatalf("want recharge amount 65, got %d", gotCard.RechargeAmount)
+	}
+	var gotSession models.ServiceSession
+	if err := config.DB.First(&gotSession, session.ID).Error; err != nil {
+		t.Fatalf("load service session failed: %v", err)
+	}
+	if gotSession.DurationMinutes != 60 {
+		t.Fatalf("want duration 60, got %d", gotSession.DurationMinutes)
 	}
 }
