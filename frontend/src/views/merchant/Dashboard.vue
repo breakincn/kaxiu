@@ -1706,8 +1706,8 @@
                 {{ getUsageRoomText(usage) }}
               </div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ formatProjectNameWithDuration(usage.project) }}</div>
-              <div v-if="getUsageApprovedExtendInfo(usage)" class="text-gray-600 text-sm mt-1 rounded-lg bg-green-50 px-2 py-1 leading-6">
-                {{ getUsageApprovedExtendInfo(usage) }}
+              <div v-if="getUsageApprovedExtendInfoLines(usage).length > 0" class="text-gray-600 text-sm mt-1 rounded-lg bg-green-50 px-2 py-1 leading-6">
+                <div v-for="line in getUsageApprovedExtendInfoLines(usage)" :key="line">{{ line }}</div>
               </div>
               <div
                 v-if="getUsageServiceRemainingSeconds(usage) !== null"
@@ -4315,9 +4315,9 @@ const hasPendingExtendRequest = (usage) => {
   return usage?.latest_extend_request?.status === 'pending'
 }
 
-const getUsageApprovedExtendInfo = (usage) => {
+const getUsageApprovedExtendInfoLines = (usage) => {
   const req = usage?.latest_extend_request
-  if (!req || String(req.status || '').trim() !== 'approved') return ''
+  if (!req || String(req.status || '').trim() !== 'approved') return []
   const minutes = Number(req.minutes || 0)
   const projectName = String(req.project?.name || '').trim()
   let before = Number(req.before_remaining_seconds || 0)
@@ -4331,9 +4331,10 @@ const getUsageApprovedExtendInfo = (usage) => {
   }
   const beforeText = formatRemainingSeconds(before)
   const afterText = formatRemainingSeconds(after)
-  if (!beforeText || !afterText) return projectName ? `已加钟：${projectName} ${minutes}分钟` : `已加钟：${minutes}分钟`
   const projectText = projectName ? `（${projectName} ${minutes}分钟）` : `（${minutes}分钟）`
-  return `已加钟${projectText}：加钟前剩余 ${beforeText}，加钟后剩余 ${afterText}`
+  const firstLine = `已加钟${projectText}`
+  if (!beforeText || !afterText) return [firstLine]
+  return [firstLine, `加钟前剩余 ${beforeText}`, `加钟后剩余 ${afterText}`]
 }
 
 const getCardTypeLabel = (type) => {
