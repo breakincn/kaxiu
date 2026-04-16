@@ -3104,6 +3104,27 @@ const selectedExtendFailureReason = computed(() => {
 
 const getUsageLatestExtendRequest = (usage) => usage?.latest_extend_request || null
 
+const isUsageServiceClosed = (usage) => {
+  if (!usage) return false
+  if (String(usage.status || '').trim() === 'success') return true
+  return normalizeSessionStatus(usage.service_session_status) === 'finished'
+}
+
+const formatExtendClockProjectDurationText = (projectName, minutes) => {
+  const name = String(projectName || '').trim() || '-'
+  const duration = Number(minutes || 0)
+  return duration > 0 ? `${name}（${duration}分钟）` : name
+}
+
+const getUsageFirstClockMinutes = (usage, req) => {
+  const projectDuration = Number(usage?.project?.duration || 0)
+  if (projectDuration > 0) return projectDuration
+  const totalDuration = Number(usage?.service_session_duration_minutes || 0)
+  const extendMinutes = Number(req?.minutes || 0)
+  if (totalDuration > extendMinutes) return totalDuration - extendMinutes
+  return totalDuration
+}
+
 const getUsageCurrentRemainingSeconds = (usage) => {
   const finishAtMs = getUsageServiceFinishAtMs(usage)
   if (!finishAtMs) return null
@@ -3123,6 +3144,12 @@ const getUsageApprovedExtendInfoLines = (usage) => {
   if (!req || String(req.status || '').trim() !== 'approved') return []
   const minutes = Number(req.minutes || 0)
   const projectName = String(req.project?.name || '').trim()
+  if (isUsageServiceClosed(usage)) {
+    return [
+      `第一个钟：${formatExtendClockProjectDurationText(usage?.project?.name, getUsageFirstClockMinutes(usage, req))}`,
+      `第二个钟：${formatExtendClockProjectDurationText(projectName, minutes)}`
+    ]
+  }
   let before = Number(req.before_remaining_seconds || 0)
   let after = Number(req.after_remaining_seconds || 0)
   if (after <= 0 && minutes > 0) {
