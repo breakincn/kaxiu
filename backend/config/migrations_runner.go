@@ -298,6 +298,14 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE service_session_extend_requests ADD COLUMN after_remaining_seconds INT NOT NULL DEFAULT 0 COMMENT '确认加钟后服务剩余秒数'",
 		},
 	},
+	{
+		Version: "2026041603",
+		Name:    "repair_service_session_auto_finish_delay_after_extension",
+		Statements: []string{
+			"UPDATE service_sessions s JOIN merchants m ON m.id = s.merchant_id SET s.auto_finish_delay_seconds = CASE WHEN m.support_customer_service_mode = 0 AND m.support_queue = 1 AND m.queue_mode IN ('auto','manual') THEN 300 ELSE 60 END WHERE s.auto_finish_delay_seconds > CASE WHEN m.support_customer_service_mode = 0 AND m.support_queue = 1 AND m.queue_mode IN ('auto','manual') THEN 300 ELSE 60 END",
+			"UPDATE service_sessions s JOIN merchants m ON m.id = s.merchant_id SET s.finished_at = DATE_ADD(s.scheduled_finish_at, INTERVAL CASE WHEN m.support_customer_service_mode = 0 AND m.support_queue = 1 AND m.queue_mode IN ('auto','manual') THEN 300 ELSE 60 END SECOND) WHERE s.status IN ('auto_finishing','cs_auto_finishing','qs_auto_finishing','qm_auto_finishing','qms_auto_finishing','qmm_auto_finishing') AND s.scheduled_finish_at IS NOT NULL AND s.finished_at IS NOT NULL AND s.finished_at > DATE_ADD(s.scheduled_finish_at, INTERVAL CASE WHEN m.support_customer_service_mode = 0 AND m.support_queue = 1 AND m.queue_mode IN ('auto','manual') THEN 300 ELSE 60 END SECOND)",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {
@@ -403,6 +411,7 @@ var (
 	alterTableAddIndexPattern             = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+(?:UNIQUE\s+)?INDEX\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s*\(.+\)$`)
 	alterTableDropColumnIfExistsPattern   = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)(.*)$`)
 	appointmentsPredictedDelayBackfillSQL = regexp.MustCompile(`(?i)^UPDATE\s+appointments\s+SET\s+predicted_delay_minutes\s*=\s*predicted_wait_minutes\s+WHERE\s+predicted_delay_minutes\s*=\s*0$`)
+	serviceSessionAutoFinishRepairSQL     = regexp.MustCompile(`(?i)^UPDATE\s+service_sessions\s+s\s+JOIN\s+merchants\s+m\s+ON\s+m\.id\s*=\s*s\.merchant_id\s+SET\s+`)
 )
 
 func execMigrationStatement(tx *gorm.DB, stmt string) error {
@@ -463,6 +472,10 @@ func rewriteMigrationStatementForCompatibility(tx *gorm.DB, stmt string) (rewrit
 			return "", true
 		}
 		return stmt, false
+	}
+
+	if serviceSessionAutoFinishRepairSQL.MatchString(trimmed) && tx.Dialector.Name() != "mysql" {
+		return "", true
 	}
 
 	return stmt, false

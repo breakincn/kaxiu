@@ -636,10 +636,15 @@ func ExtendServiceSessionUser(c *gin.Context) {
 			return apiErr{status: http.StatusBadRequest, msg: "仅服务中可加钟"}
 		}
 
-		// 延长服务时长与自动结单延迟
+		// 加钟只延长服务时长；自动下钟缓冲仍使用服务单创建时的默认值。
 		updates := map[string]interface{}{
-			"duration_minutes":          gorm.Expr("duration_minutes + ?", input.Minutes),
-			"auto_finish_delay_seconds": gorm.Expr("auto_finish_delay_seconds + ?", input.Minutes*60),
+			"duration_minutes": gorm.Expr("duration_minutes + ?", input.Minutes),
+		}
+		if s.ScheduledFinishAt != nil {
+			updates["scheduled_finish_at"] = s.ScheduledFinishAt.Add(time.Duration(input.Minutes) * time.Minute)
+		} else if s.StartedAt != nil {
+			newDuration := s.DurationMinutes + int(input.Minutes)
+			updates["scheduled_finish_at"] = s.StartedAt.Add(time.Duration(newDuration) * time.Minute)
 		}
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err

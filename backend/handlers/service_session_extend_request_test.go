@@ -183,9 +183,8 @@ func TestApproveServiceSessionExtendRequestExtendsServingSession(t *testing.T) {
 	if gotSession.DurationMinutes != session.DurationMinutes+ownedProject.Duration {
 		t.Fatalf("want duration %d, got %d", session.DurationMinutes+ownedProject.Duration, gotSession.DurationMinutes)
 	}
-	wantAutoFinishDelaySeconds := session.AutoFinishDelaySeconds + ownedProject.Duration*60
-	if gotSession.AutoFinishDelaySeconds != wantAutoFinishDelaySeconds {
-		t.Fatalf("want auto finish delay %d, got %d", wantAutoFinishDelaySeconds, gotSession.AutoFinishDelaySeconds)
+	if gotSession.AutoFinishDelaySeconds != session.AutoFinishDelaySeconds {
+		t.Fatalf("want auto finish delay unchanged %d, got %d", session.AutoFinishDelaySeconds, gotSession.AutoFinishDelaySeconds)
 	}
 	var gotCard struct {
 		RemainTimes int

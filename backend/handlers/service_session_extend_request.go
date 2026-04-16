@@ -327,11 +327,13 @@ func applyServiceSessionExtension(tx *gorm.DB, s *models.ServiceSession, minutes
 		return apiErr{status: http.StatusBadRequest, msg: "minutes 范围应为 5-180"}
 	}
 	updates := map[string]interface{}{
-		"duration_minutes":          gorm.Expr("duration_minutes + ?", minutes),
-		"auto_finish_delay_seconds": gorm.Expr("auto_finish_delay_seconds + ?", minutes*60),
+		"duration_minutes": gorm.Expr("duration_minutes + ?", minutes),
 	}
 	if s.ScheduledFinishAt != nil {
 		updates["scheduled_finish_at"] = s.ScheduledFinishAt.Add(time.Duration(minutes) * time.Minute)
+	} else if s.StartedAt != nil {
+		newDuration := s.DurationMinutes + minutes
+		updates["scheduled_finish_at"] = s.StartedAt.Add(time.Duration(newDuration) * time.Minute)
 	}
 	return tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error
 }
