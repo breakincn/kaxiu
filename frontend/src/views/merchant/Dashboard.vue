@@ -3203,9 +3203,9 @@ const getSchedulePublishingWindowStateForDate = (target, now = schedulePublishin
     if (now < nextDayOpenAt) {
       return {
         canPublish: false,
-        canWithdraw: true,
+        canWithdraw: false,
         publishBlockedReason: '次日预约排班需在前一日 16:00 后才能发布',
-        withdrawBlockedReason: ''
+        withdrawBlockedReason: '次日预约排班尚未开放发布，当前不可撤销'
       }
     }
     return {
@@ -3228,7 +3228,12 @@ const technicianSchedulePublishingWindowState = computed(() => {
 })
 const showTechnicianSchedulePublishingTab = computed(() => {
   if (!isTechnicianAuth() || !canAccessAppointmentTab.value) return false
-  return !!technicianSchedulePublishingWindowState.value.canPublish || !!technicianSchedulePublishingWindowState.value.canWithdraw
+  if (schedulePublishingLoading.value || schedulePublishingError.value) return true
+  const rows = visibleSchedulePublishings.value || []
+  const hasPublishableRows = rows.some(row => ['unpublished', 'canceled'].includes(getEffectiveSchedulePublishingStatus(row)))
+  const hasPublishedRows = rows.some(row => getEffectiveSchedulePublishingStatus(row) === 'published')
+  return (technicianSchedulePublishingWindowState.value.canPublish && hasPublishableRows) ||
+    (technicianSchedulePublishingWindowState.value.canWithdraw && hasPublishedRows)
 })
 const technicianSchedulePublishingSubtitle = computed(() => {
   return isTodaySchedulePublishingTarget.value
@@ -3413,6 +3418,12 @@ const todayAppointmentCount = computed(() => {
     .length
 })
 
+const appointmentDisplayDateGroups = computed(() => {
+  if (!isTechnicianAuth()) return appointmentDateGroups.value
+  const todayKey = formatAppointmentDateKey(new Date(currentTime.value || Date.now()))
+  return appointmentDateGroups.value.filter(group => group?.date === todayKey)
+})
+
 const visibleAppointmentGroupDays = ref(1)
 const appointmentGroupsLoadingMore = ref(false)
 
@@ -3437,12 +3448,12 @@ const displayedAppointmentPanelGroups = computed(() => {
   if (showExceptionStandaloneContent.value || showExceptionContentInTable.value) {
     return appointmentPanelGroups.value
   }
-  return appointmentDateGroups.value.slice(0, visibleAppointmentGroupDays.value)
+  return appointmentDisplayDateGroups.value.slice(0, visibleAppointmentGroupDays.value)
 })
 
 const showAppointmentGroupsLoadMore = computed(() => {
   if (showExceptionStandaloneContent.value || showExceptionContentInTable.value) return false
-  return appointmentDateGroups.value.length > visibleAppointmentGroupDays.value
+  return appointmentDisplayDateGroups.value.length > visibleAppointmentGroupDays.value
 })
 
 const resetVisibleAppointmentGroups = () => {
