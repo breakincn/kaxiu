@@ -77,6 +77,69 @@
           </div>
           <div class="text-sm leading-relaxed text-gray-500" v-html="getMerchantBusinessHours()"></div>
         </div>
+
+        <div class="pt-4 mt-4 border-t border-gray-100">
+          <div class="live-service-card" :class="`is-${getLiveServiceStatusLevel(liveServiceStatus)}`">
+            <div class="live-service-header">
+              <div class="min-w-0">
+                <div class="flex items-center gap-2 mb-1">
+                  <svg class="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                  </svg>
+                  <span class="font-medium text-gray-800">门店实时服务状态</span>
+                </div>
+                <div class="live-service-title">
+                  {{ liveServiceStatus?.status_text || '正在读取门店实时状态' }}
+                </div>
+                <div class="live-service-summary">
+                  {{ liveServiceStatus?.summary_text || liveServiceError || '根据当前服务进度进行估算' }}
+                </div>
+              </div>
+              <button class="live-service-refresh" :disabled="liveServiceLoading" @click="refreshLiveServiceStatus">
+                {{ liveServiceLoading ? '刷新中' : '刷新' }}
+              </button>
+            </div>
+
+            <div v-if="liveServiceStatus" class="mt-3">
+              <div class="live-service-metrics">
+                <div>
+                  <span>待服务</span>
+                  <strong>{{ liveServiceStatus.counts?.waiting_count || 0 }}</strong>
+                </div>
+                <div>
+                  <span>服务中</span>
+                  <strong>{{ liveServiceStatus.counts?.serving_count || 0 }}</strong>
+                </div>
+                <div>
+                  <span>空闲客服</span>
+                  <strong>{{ liveServiceStatus.counts?.idle_staff_count || 0 }}</strong>
+                </div>
+              </div>
+
+              <div v-if="liveServiceStatus.queue" class="live-service-inline">
+                <span>当前叫到 {{ formatLiveQueueCurrentNo(liveServiceStatus) }}</span>
+                <span>待叫号 {{ liveServiceStatus.queue.waiting_queue_count || 0 }} 人</span>
+              </div>
+
+              <div class="live-service-estimate">
+                <div>
+                  <span>预计等待</span>
+                  <strong>{{ formatLiveServiceWait(liveServiceStatus) }}</strong>
+                </div>
+                <p>{{ formatLiveServiceRecommendation(liveServiceStatus) }}</p>
+              </div>
+
+              <div class="live-service-footer">
+                <span>{{ liveServiceStatus.confidence_text || '结果仅供参考' }}</span>
+                <span v-if="liveServiceStatus.generated_at">{{ formatLiveServiceGeneratedAt(liveServiceStatus.generated_at) }}</span>
+              </div>
+            </div>
+
+            <div v-else class="live-service-empty">
+              {{ liveServiceError || '正在读取门店实时状态...' }}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -744,7 +807,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { cardApi, usageApi, noticeApi, appointmentApi, isHandledAuthRedirectError } from '../../api'
+import { cardApi, usageApi, noticeApi, appointmentApi, shopApi, isHandledAuthRedirectError } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
 import { FAST_POLL_INTERVAL_MS, DATA_POLL_INTERVAL_MS } from '../../constants/polling'
@@ -776,6 +839,10 @@ const usageRecordsCollapsed = ref(false)
 const visibleUsageCount = ref(10)
 const showAppointmentSettlementModal = ref(false)
 let countdownTimer = null
+const liveServiceStatus = ref(null)
+const liveServiceLoading = ref(false)
+const liveServiceError = ref('')
+let liveServicePollTimer = null
 
 const getAppointmentDisplayWaitState = (appt) => String(appt?.display_wait_state || '').trim()
 
@@ -1866,8 +1933,10 @@ const startUsageLivePollIfNeeded = () => {
 
 const handleVisibilityRefresh = () => {
   if (document.hidden) return
-  if (!shouldLivePollUsages()) return
-  fetchUsages()
+  refreshLiveServiceStatus()
+  if (shouldLivePollUsages()) {
+    fetchUsages()
+  }
 }
 
 const usageDeadlineTriggeredKeys = new Set()
@@ -3094,6 +3163,12 @@ const fetchCard = async () => {
     
     if (card.value.merchant_id) {
       fetchNotices(card.value.merchant_id)
+      await loadLiveServiceStatus(card.value.merchant_id)
+      startLiveServicePolling()
+    } else {
+      stopLiveServicePolling()
+      liveServiceStatus.value = null
+      liveServiceError.value = ''
     }
 
     fetchUsages()
@@ -3101,6 +3176,57 @@ const fetchCard = async () => {
   } catch (err) {
     console.error('获取卡片详情失败:', err)
   }
+}
+
+const loadLiveServiceStatus = async (merchantId, options = {}) => {
+  if (!merchantId) {
+    liveServiceStatus.value = null
+    return
+  }
+
+  const { silent = false } = options
+  liveServiceLoading.value = true
+  if (!silent) {
+    liveServiceError.value = ''
+  }
+
+  try {
+    const res = await shopApi.getLiveServiceStatus(merchantId)
+    liveServiceStatus.value = res.data?.data || null
+    liveServiceError.value = ''
+  } catch (err) {
+    console.error('加载门店实时状态失败:', err)
+    liveServiceError.value = err.response?.data?.error || '门店实时状态获取失败'
+    if (!silent) {
+      liveServiceStatus.value = null
+    }
+  } finally {
+    liveServiceLoading.value = false
+  }
+}
+
+const stopLiveServicePolling = () => {
+  if (liveServicePollTimer) {
+    clearInterval(liveServicePollTimer)
+    liveServicePollTimer = null
+  }
+}
+
+const startLiveServicePolling = () => {
+  stopLiveServicePolling()
+  const merchantId = card.value?.merchant_id || card.value?.merchant?.id
+  if (!merchantId) return
+
+  liveServicePollTimer = setInterval(() => {
+    if (document.hidden) return
+    loadLiveServiceStatus(merchantId, { silent: true })
+  }, DATA_POLL_INTERVAL_MS)
+}
+
+const refreshLiveServiceStatus = async () => {
+  const merchantId = card.value?.merchant_id || card.value?.merchant?.id
+  if (!merchantId || liveServiceLoading.value) return
+  await loadLiveServiceStatus(merchantId)
 }
 
 const fetchUsages = async () => {
@@ -4125,6 +4251,37 @@ const getBusinessStatusColor = () => {
   return isMerchantOpen() ? 'text-green-500' : 'text-red-500'
 }
 
+const getLiveServiceStatusLevel = (status) => {
+  return status?.status_level || 'default'
+}
+
+const formatLiveServiceWait = (status) => {
+  if (!status) return '读取中'
+  if (status.estimate?.wait_text) return status.estimate.wait_text
+  if (typeof status.estimate?.wait_minutes === 'number') return `${status.estimate.wait_minutes} 分钟`
+  return '暂无法估算'
+}
+
+const formatLiveServiceRecommendation = (status) => {
+  if (!status) return '正在根据门店当前服务进度估算'
+  return status.recommendation_text || status.estimate?.recommended_arrival_text || '请以门店现场安排为准'
+}
+
+const formatLiveQueueCurrentNo = (status) => {
+  const no = status?.queue?.current_called_no || 0
+  const prefix = status?.queue?.queue_prefix || ''
+  return no > 0 ? `${prefix}${no}` : '暂无'
+}
+
+const formatLiveServiceGeneratedAt = (value) => {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm} 更新`
+}
+
 const waitForScrollLayout = async () => {
   await nextTick()
   await new Promise(resolve => requestAnimationFrame(() => resolve()))
@@ -4241,6 +4398,7 @@ onMounted(async () => {
 onUnmounted(() => {
   stopAutoAssignPoll()
   stopUsageLivePoll()
+  stopLiveServicePolling()
   stopNowTickTimer()
   stopCountdownTimer()
   stopVerifyStatusPoll()
@@ -4255,3 +4413,157 @@ onUnmounted(() => {
   bottomSpacerHeight.value = 0
 })
 </script>
+
+<style scoped>
+.live-service-card {
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+  padding: 14px;
+}
+
+.live-service-card.is-smooth {
+  border-color: #bbf7d0;
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+}
+
+.live-service-card.is-busy {
+  border-color: #fed7aa;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+}
+
+.live-service-card.is-paused,
+.live-service-card.is-closed,
+.live-service-card.is-unavailable,
+.live-service-card.is-disabled {
+  border-color: #e5e7eb;
+  background: #f9fafb;
+}
+
+.live-service-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.live-service-title {
+  color: #111827;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.live-service-summary {
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-top: 2px;
+}
+
+.live-service-refresh {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #2563eb;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 10px;
+}
+
+.live-service-refresh:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.live-service-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.live-service-metrics > div {
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #eef2f7;
+  padding: 9px 8px;
+}
+
+.live-service-metrics span,
+.live-service-estimate span {
+  display: block;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.live-service-metrics strong {
+  display: block;
+  color: #111827;
+  font-size: 20px;
+  line-height: 1.1;
+  margin-top: 5px;
+}
+
+.live-service-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.live-service-inline span {
+  border-radius: 8px;
+  background: #eef2ff;
+  color: #4b5563;
+  font-size: 12px;
+  padding: 5px 8px;
+}
+
+.live-service-estimate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 10px;
+  background: #1d4ed8;
+  color: #ffffff;
+  margin-top: 10px;
+  padding: 12px;
+}
+
+.live-service-estimate strong {
+  display: block;
+  font-size: 20px;
+  line-height: 1.1;
+  margin-top: 5px;
+}
+
+.live-service-estimate p {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+  text-align: right;
+}
+
+.live-service-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #9ca3af;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 10px;
+}
+
+.live-service-empty {
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-top: 10px;
+}
+</style>
