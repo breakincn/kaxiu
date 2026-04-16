@@ -409,6 +409,9 @@
               <div v-if="getUsageProjectText(usage)" class="text-gray-400 text-sm mt-0.5">
                 {{ getUsageProjectText(usage) }}
               </div>
+              <div v-if="getUsageApprovedExtendInfo(usage)" class="text-gray-500 text-sm mt-1 rounded-lg bg-green-50 px-2 py-1 leading-6">
+                {{ getUsageApprovedExtendInfo(usage) }}
+              </div>
               <div v-if="getUsageFailureReasonText(usage)" class="text-gray-400 text-sm mt-0.5">
                 原因：{{ getUsageFailureReasonText(usage) }}
               </div>
@@ -3100,6 +3103,41 @@ const selectedExtendFailureReason = computed(() => {
 })
 
 const getUsageLatestExtendRequest = (usage) => usage?.latest_extend_request || null
+
+const getUsageCurrentRemainingSeconds = (usage) => {
+  const finishAtMs = getUsageServiceFinishAtMs(usage)
+  if (!finishAtMs) return null
+  const remain = Math.floor((finishAtMs - nowTick.value) / 1000)
+  if (!Number.isFinite(remain)) return null
+  return Math.max(0, remain)
+}
+
+const formatExtendRemainingSeconds = (seconds) => {
+  const n = Number(seconds)
+  if (!Number.isFinite(n) || n < 0) return ''
+  return formatCountdownSeconds(Math.floor(n))
+}
+
+const getUsageApprovedExtendInfo = (usage) => {
+  const req = getUsageLatestExtendRequest(usage)
+  if (!req || String(req.status || '').trim() !== 'approved') return ''
+  const minutes = Number(req.minutes || 0)
+  const projectName = String(req.project?.name || '').trim()
+  let before = Number(req.before_remaining_seconds || 0)
+  let after = Number(req.after_remaining_seconds || 0)
+  if (after <= 0 && minutes > 0) {
+    const currentRemain = getUsageCurrentRemainingSeconds(usage)
+    if (currentRemain !== null) {
+      after = currentRemain
+      before = Math.max(0, currentRemain - minutes * 60)
+    }
+  }
+  const beforeText = formatExtendRemainingSeconds(before)
+  const afterText = formatExtendRemainingSeconds(after)
+  if (!beforeText || !afterText) return projectName ? `已加钟：${projectName} ${minutes}分钟` : `已加钟：${minutes}分钟`
+  const projectText = projectName ? `（${projectName} ${minutes}分钟）` : `（${minutes}分钟）`
+  return `已加钟${projectText}：加钟前剩余 ${beforeText}，加钟后剩余 ${afterText}`
+}
 
 const shouldShowUsageExtendButton = (usage) => {
   if (!usage || isSyntheticAppointmentUsage(usage)) return false

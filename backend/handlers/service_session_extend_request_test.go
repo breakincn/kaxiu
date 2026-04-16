@@ -187,13 +187,18 @@ func TestApproveServiceSessionExtendRequestExtendsServingSession(t *testing.T) {
 		t.Fatalf("want auto finish delay %d, got %d", wantAutoFinishDelaySeconds, gotSession.AutoFinishDelaySeconds)
 	}
 	var gotReq struct {
-		Status    string
-		HandledAt *string
+		Status                 string
+		HandledAt              *string
+		BeforeRemainingSeconds int
+		AfterRemainingSeconds  int
 	}
-	if err := config.DB.Table("service_session_extend_requests").Select("status, handled_at").Where("id = ?", createResp.Data.ID).Scan(&gotReq).Error; err != nil {
+	if err := config.DB.Table("service_session_extend_requests").Select("status, handled_at, before_remaining_seconds, after_remaining_seconds").Where("id = ?", createResp.Data.ID).Scan(&gotReq).Error; err != nil {
 		t.Fatalf("load extend request failed: %v", err)
 	}
 	if gotReq.Status != "approved" || gotReq.HandledAt == nil {
 		t.Fatalf("request not approved: %+v", gotReq)
+	}
+	if gotReq.BeforeRemainingSeconds != 0 || gotReq.AfterRemainingSeconds != ownedProject.Duration*60 {
+		t.Fatalf("unexpected remaining snapshots: %+v", gotReq)
 	}
 }

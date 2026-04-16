@@ -151,6 +151,8 @@ func handleServiceSessionExtendRequest(c *gin.Context, approve bool) {
 		}
 
 		now := time.Now()
+		beforeRemainingSeconds := 0
+		afterRemainingSeconds := 0
 		updates := map[string]interface{}{
 			"status":          "rejected",
 			"reject_reason":   strings.TrimSpace(input.RejectReason),
@@ -167,11 +169,15 @@ func handleServiceSessionExtendRequest(c *gin.Context, approve bool) {
 		}
 
 		if approve {
+			beforeRemainingSeconds = computeServiceSessionRemainingSeconds(&s, now)
+			afterRemainingSeconds = beforeRemainingSeconds + req.Minutes*60
 			if err := applyServiceSessionExtension(tx, &s, req.Minutes); err != nil {
 				return err
 			}
 			updates["status"] = "approved"
 			updates["reject_reason"] = ""
+			updates["before_remaining_seconds"] = beforeRemainingSeconds
+			updates["after_remaining_seconds"] = afterRemainingSeconds
 		} else if strings.TrimSpace(input.RejectReason) == "" {
 			updates["reject_reason"] = "客服拒绝加钟申请"
 		}
@@ -184,6 +190,8 @@ func handleServiceSessionExtendRequest(c *gin.Context, approve bool) {
 		req.RejectReason = updates["reject_reason"].(string)
 		req.HandledByType = updates["handled_by_type"].(string)
 		req.HandledAt = &now
+		req.BeforeRemainingSeconds = beforeRemainingSeconds
+		req.AfterRemainingSeconds = afterRemainingSeconds
 		if handledByID, ok := updates["handled_by_id"].(uint); ok {
 			req.HandledByID = &handledByID
 		}
@@ -200,6 +208,25 @@ func handleServiceSessionExtendRequest(c *gin.Context, approve bool) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": out})
+}
+
+func computeServiceSessionRemainingSeconds(s *models.ServiceSession, now time.Time) int {
+	if s == nil {
+		return 0
+	}
+	var finishAt time.Time
+	if s.ScheduledFinishAt != nil {
+		finishAt = *s.ScheduledFinishAt
+	} else if s.StartedAt != nil && s.DurationMinutes > 0 {
+		finishAt = s.StartedAt.Add(time.Duration(s.DurationMinutes) * time.Minute)
+	} else {
+		return 0
+	}
+	remain := int(finishAt.Sub(now).Seconds())
+	if remain < 0 {
+		return 0
+	}
+	return remain
 }
 
 func loadCardOwnedExtendProject(tx *gorm.DB, cardID uint, merchantID uint, projectID uint) (*models.MerchantProject, error) {
