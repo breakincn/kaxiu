@@ -78,7 +78,7 @@
           <div class="text-sm leading-relaxed text-gray-500" v-html="getMerchantBusinessHours()"></div>
         </div>
 
-        <div class="pt-4 mt-4 border-t border-gray-100">
+        <div class="live-service-section pt-4 mt-4 border-t border-gray-100">
           <div class="live-service-card" :class="`is-${getLiveServiceStatusLevel(liveServiceStatus)}`">
             <div class="live-service-header">
               <div class="min-w-0">
@@ -121,12 +121,12 @@
                 <span>待叫号 {{ liveServiceStatus.queue.waiting_queue_count || 0 }} 人</span>
               </div>
 
-              <div class="live-service-estimate">
+              <div class="live-service-estimate" :class="getLiveServiceEstimateClass(liveServiceStatus)">
                 <div>
-                  <span>预计等待</span>
+                  <span v-if="shouldShowLiveServiceWaitLabel(liveServiceStatus)">预计等待</span>
                   <strong>{{ formatLiveServiceWait(liveServiceStatus) }}</strong>
+                  <p>{{ formatLiveServiceRecommendation(liveServiceStatus) }}</p>
                 </div>
-                <p>{{ formatLiveServiceRecommendation(liveServiceStatus) }}</p>
               </div>
 
               <div class="live-service-footer">
@@ -843,6 +843,7 @@ const liveServiceStatus = ref(null)
 const liveServiceLoading = ref(false)
 const liveServiceError = ref('')
 let liveServicePollTimer = null
+const LIVE_SERVICE_POLL_INTERVAL_MS = 30000
 
 const getAppointmentDisplayWaitState = (appt) => String(appt?.display_wait_state || '').trim()
 
@@ -3220,7 +3221,7 @@ const startLiveServicePolling = () => {
   liveServicePollTimer = setInterval(() => {
     if (document.hidden) return
     loadLiveServiceStatus(merchantId, { silent: true })
-  }, DATA_POLL_INTERVAL_MS)
+  }, LIVE_SERVICE_POLL_INTERVAL_MS)
 }
 
 const refreshLiveServiceStatus = async () => {
@@ -4267,6 +4268,18 @@ const formatLiveServiceRecommendation = (status) => {
   return status.recommendation_text || status.estimate?.recommended_arrival_text || '请以门店现场安排为准'
 }
 
+const shouldShowLiveServiceWaitLabel = (status) => {
+  const waitMinutes = Number(status?.estimate?.wait_minutes)
+  return Number.isFinite(waitMinutes) ? waitMinutes >= 1 : true
+}
+
+const getLiveServiceEstimateClass = (status) => {
+  const waitMinutes = Number(status?.estimate?.wait_minutes)
+  if (Number.isFinite(waitMinutes) && waitMinutes > 0) return 'is-waiting'
+  if (status?.status_level === 'busy') return 'is-waiting'
+  return 'is-smooth'
+}
+
 const formatLiveQueueCurrentNo = (status) => {
   const no = status?.queue?.current_called_no || 0
   const prefix = status?.queue?.queue_prefix || ''
@@ -4415,11 +4428,16 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.live-service-section {
+  margin-left: -10px;
+  margin-right: -10px;
+}
+
 .live-service-card {
   border: 1px solid #dbeafe;
   border-radius: 12px;
   background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
-  padding: 14px;
+  padding: 12px;
 }
 
 .live-service-card.is-smooth {
@@ -4525,13 +4543,19 @@ onUnmounted(() => {
 .live-service-estimate {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-radius: 10px;
-  background: #1d4ed8;
+  border-radius: 8px;
+  background: #22c55e;
   color: #ffffff;
   margin-top: 10px;
-  padding: 12px;
+  padding: 10px 12px;
+}
+
+.live-service-estimate.is-smooth {
+  background: #22c55e;
+}
+
+.live-service-estimate.is-waiting {
+  background: #f59e0b;
 }
 
 .live-service-estimate strong {
@@ -4542,11 +4566,17 @@ onUnmounted(() => {
 }
 
 .live-service-estimate p {
-  flex: 1;
-  font-size: 13px;
-  line-height: 1.5;
-  margin: 0;
-  text-align: right;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 10px 0 0;
+  padding: 5px 10px;
+  white-space: nowrap;
 }
 
 .live-service-footer {
