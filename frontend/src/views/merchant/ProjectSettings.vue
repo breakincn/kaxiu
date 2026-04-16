@@ -110,7 +110,7 @@
                 />
               </div>
 
-              <div>
+              <div v-if="isCustomerServiceModeEnabled">
                 <div class="text-sm font-medium text-gray-700 mb-2">自动分配客服延迟时间（分钟）</div>
                 <input
                   v-model.number="project.auto_assign_technician_delay_minutes"
@@ -122,7 +122,7 @@
                 />
               </div>
 
-              <div>
+              <div v-if="isCustomerServiceModeEnabled">
                 <div class="text-sm font-medium text-gray-700 mb-2">{{ startPendingCountdownLabel }}</div>
                 <input
                   v-model.number="project.start_pending_timeout_minutes"
@@ -255,6 +255,7 @@ const form = ref({
 
 const startPendingCountdownLabel = computed(() => `${getStartCountdownLabel(merchantTerms.value)}（分钟）`)
 const isRoomServiceEnabled = computed(() => !!merchantTerms.value?.support_room)
+const isCustomerServiceModeEnabled = computed(() => !!merchantTerms.value?.support_customer_service_mode)
 
 const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
   projects: (projects || []).map((project) => ({
@@ -405,20 +406,24 @@ const save = async () => {
         return
       }
     }
-    const startPendingTimeoutMinutes = Number(project.start_pending_timeout_minutes ?? 5)
-    if (!Number.isFinite(startPendingTimeoutMinutes) || startPendingTimeoutMinutes < 1 || startPendingTimeoutMinutes > 60) {
-      alert(`项目 ${i + 1} 的${getStartCountdownLabel(merchantTerms.value)}必须在 1-60 分钟之间`)
-      return
+    if (isCustomerServiceModeEnabled.value) {
+      const startPendingTimeoutMinutes = Number(project.start_pending_timeout_minutes ?? 5)
+      if (!Number.isFinite(startPendingTimeoutMinutes) || startPendingTimeoutMinutes < 1 || startPendingTimeoutMinutes > 60) {
+        alert(`项目 ${i + 1} 的${getStartCountdownLabel(merchantTerms.value)}必须在 1-60 分钟之间`)
+        return
+      }
     }
     const gapMinutes = Number(project.service_gap_minutes ?? 3)
     if (!Number.isFinite(gapMinutes) || gapMinutes < 0 || gapMinutes > 60) {
       alert(`项目 ${i + 1} 的服务间歇时间必须在 0-60 分钟之间`)
       return
     }
-    const autoAssignDelayMinutes = Number(project.auto_assign_technician_delay_minutes ?? 5)
-    if (!Number.isFinite(autoAssignDelayMinutes) || autoAssignDelayMinutes < 0 || autoAssignDelayMinutes > 180) {
-      alert(`项目 ${i + 1} 的自动分配客服延迟时间必须在 0-180 分钟之间`)
-      return
+    if (isCustomerServiceModeEnabled.value) {
+      const autoAssignDelayMinutes = Number(project.auto_assign_technician_delay_minutes ?? 5)
+      if (!Number.isFinite(autoAssignDelayMinutes) || autoAssignDelayMinutes < 0 || autoAssignDelayMinutes > 180) {
+        alert(`项目 ${i + 1} 的自动分配客服延迟时间必须在 0-180 分钟之间`)
+        return
+      }
     }
     const toleranceMinutes = Number(project.delay_tolerance_minutes ?? 1)
     if (!Number.isFinite(toleranceMinutes) || toleranceMinutes < 0 || toleranceMinutes > 180) {
