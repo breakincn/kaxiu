@@ -4270,7 +4270,7 @@ const formatLiveServiceRecommendation = (status) => {
 
 const shouldShowLiveServiceWaitLabel = (status) => {
   const waitMinutes = Number(status?.estimate?.wait_minutes)
-  return Number.isFinite(waitMinutes) ? waitMinutes >= 1 : true
+  return Number.isFinite(waitMinutes) && waitMinutes >= 1
 }
 
 const getLiveServiceEstimateClass = (status) => {
