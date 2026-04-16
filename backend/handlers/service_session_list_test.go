@@ -63,6 +63,120 @@ func TestListServiceSessionsFiltersByDate(t *testing.T) {
 	}
 }
 
+func TestListServiceSessionsReturnsInitialUsageCardSnapshots(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupMerchantHandlerTestDB(t)
+	if err := config.DB.AutoMigrate(&models.Card{}, &models.Usage{}); err != nil {
+		t.Fatalf("migrate card usage failed: %v", err)
+	}
+	config.DB.Exec("DELETE FROM service_sessions")
+	config.DB.Exec("DELETE FROM usages")
+	config.DB.Exec("DELETE FROM cards")
+
+	merchant := models.Merchant{Name: "测试门店", Phone: "13800000002", Password: "secret"}
+	if err := config.DB.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	card := models.Card{MerchantID: merchant.ID, UserID: 1, CardNo: "0012", CardType: "活力成长单车卡", TotalTimes: 32, UsedTimes: 19, RemainTimes: 13}
+	if err := config.DB.Create(&card).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+
+	loc := appointmentLocation()
+	firstAt := time.Date(2026, 4, 16, 15, 40, 0, 0, loc)
+	secondAt := time.Date(2026, 4, 16, 16, 22, 0, 0, loc)
+	total := 32
+	firstUsed := 22
+	firstRemain := 10
+	secondUsed := 23
+	secondRemain := 9
+	firstUsage := models.Usage{
+		MerchantID:              merchant.ID,
+		CardID:                  card.ID,
+		UsedTimes:               1,
+		Status:                  "success",
+		CreatedAt:               &firstAt,
+		CardNoSnapshot:          "0012",
+		CardTypeSnapshot:        "活力成长单车卡",
+		CardTotalTimesSnapshot:  &total,
+		CardUsedTimesSnapshot:   &firstUsed,
+		CardRemainTimesSnapshot: &firstRemain,
+	}
+	secondUsage := models.Usage{
+		MerchantID:              merchant.ID,
+		CardID:                  card.ID,
+		UsedTimes:               1,
+		Status:                  "success",
+		CreatedAt:               &secondAt,
+		CardNoSnapshot:          "0012",
+		CardTypeSnapshot:        "活力成长单车卡",
+		CardTotalTimesSnapshot:  &total,
+		CardUsedTimesSnapshot:   &secondUsed,
+		CardRemainTimesSnapshot: &secondRemain,
+	}
+	if err := config.DB.Create(&firstUsage).Error; err != nil {
+		t.Fatalf("create first usage failed: %v", err)
+	}
+	if err := config.DB.Create(&secondUsage).Error; err != nil {
+		t.Fatalf("create second usage failed: %v", err)
+	}
+	if err := config.DB.Model(&models.Usage{}).Where("id = ?", firstUsage.ID).Update("created_at", firstAt).Error; err != nil {
+		t.Fatalf("update first usage time failed: %v", err)
+	}
+	if err := config.DB.Model(&models.Usage{}).Where("id = ?", secondUsage.ID).Update("created_at", secondAt).Error; err != nil {
+		t.Fatalf("update second usage time failed: %v", err)
+	}
+
+	sessions := []models.ServiceSession{
+		{MerchantID: merchant.ID, UserID: 1, CardID: card.ID, InitialUsageID: firstUsage.ID, Status: "finished", CreatedAt: &firstAt},
+		{MerchantID: merchant.ID, UserID: 1, CardID: card.ID, InitialUsageID: secondUsage.ID, Status: "finished", CreatedAt: &secondAt},
+	}
+	if err := config.DB.Create(&sessions).Error; err != nil {
+		t.Fatalf("create sessions failed: %v", err)
+	}
+
+	c, rec := newMerchantContext(http.MethodGet, "/merchant/service-sessions?date=2026-04-16", merchant.ID)
+	c.Request = httptest.NewRequest(http.MethodGet, "/merchant/service-sessions?date=2026-04-16", nil)
+	ListServiceSessions(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data []models.ServiceSession `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response failed: %v", err)
+	}
+	byUsageID := make(map[uint]models.ServiceSession, len(resp.Data))
+	for _, session := range resp.Data {
+		byUsageID[session.InitialUsageID] = session
+	}
+
+	firstSession, ok := byUsageID[firstUsage.ID]
+	if !ok {
+		t.Fatalf("missing first usage session")
+	}
+	secondSession, ok := byUsageID[secondUsage.ID]
+	if !ok {
+		t.Fatalf("missing second usage session")
+	}
+	if firstSession.Card == nil || firstSession.Card.UsedTimes != 22 || firstSession.Card.RemainTimes != 10 {
+		t.Fatalf("want first session card snapshot 22/10, got %+v", firstSession.Card)
+	}
+	if firstSession.InitialUsage == nil || firstSession.InitialUsage.CardUsedTimesSnapshot == nil || *firstSession.InitialUsage.CardUsedTimesSnapshot != 22 {
+		t.Fatalf("want first usage snapshot used 22, got %+v", firstSession.InitialUsage)
+	}
+	if secondSession.Card == nil || secondSession.Card.UsedTimes != 23 || secondSession.Card.RemainTimes != 9 {
+		t.Fatalf("want second session card snapshot 23/9, got %+v", secondSession.Card)
+	}
+	if secondSession.InitialUsage == nil || secondSession.InitialUsage.CardRemainTimesSnapshot == nil || *secondSession.InitialUsage.CardRemainTimesSnapshot != 9 {
+		t.Fatalf("want second usage snapshot remain 9, got %+v", secondSession.InitialUsage)
+	}
+}
+
 func TestListServiceSessionsSelfOnlyForStaff(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

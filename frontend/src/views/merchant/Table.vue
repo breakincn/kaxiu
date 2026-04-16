@@ -525,19 +525,21 @@ const getServiceBoardStatusClass = (status) => {
 }
 
 const getServiceBoardCardText = (session) => {
-  const cardType = String(session?.card?.card_type || '').trim()
-  const totalTimes = Number(session?.card?.total_times || 0)
-  const remainTimes = Number(session?.card?.remain_times || 0)
+  const usage = session?.initial_usage || {}
+  const cardType = String(usage.card_type_snapshot || session?.card?.card_type || '').trim()
+  const totalTimes = Number(usage.card_total_times_snapshot ?? session?.card?.total_times ?? 0)
+  const remainTimes = Number(usage.card_remain_times_snapshot ?? session?.card?.remain_times ?? 0)
   if (!cardType && totalTimes <= 0) return ''
   if (totalTimes > 0) return `${cardType || '-'}（剩余${remainTimes}次）`
   return cardType
 }
 
 const getServiceBoardUsageText = (session) => {
-  const cardNo = String(session?.card?.card_no || '').trim()
-  const totalTimes = Number(session?.card?.total_times || 0)
-  const remainTimes = Number(session?.card?.remain_times || 0)
-  const usedTimes = totalTimes > 0 ? Math.max(0, totalTimes - remainTimes) : 0
+  const usage = session?.initial_usage || {}
+  const cardNo = String(usage.card_no_snapshot || session?.card?.card_no || '').trim()
+  const totalTimes = Number(usage.card_total_times_snapshot ?? session?.card?.total_times ?? 0)
+  const remainTimes = Number(usage.card_remain_times_snapshot ?? session?.card?.remain_times ?? 0)
+  const usedTimes = Number(usage.card_used_times_snapshot ?? (totalTimes > 0 ? Math.max(0, totalTimes - remainTimes) : 0))
   if (!cardNo && totalTimes <= 0 && usedTimes <= 0) return ''
   return `${cardNo || '-'} 核销：${totalTimes > 0 ? totalTimes : '-'}\/${usedTimes > 0 ? usedTimes : '-'}`
 }

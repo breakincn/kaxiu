@@ -251,6 +251,7 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 		VerifyCodeExpireAt: verifyCode.ExpireAt,
 		Status:             usageStatus,
 	}
+	applyUsageCardSnapshotFromCard(&usage, card)
 	if handCardNo != "" {
 		usage.HandCardNo = &handCardNo
 		usage.HandCardAssignedAt = &now
@@ -379,6 +380,7 @@ func performAppointmentCheckInWithVerifyCode(tx *gorm.DB, merchant models.Mercha
 		VerifyCodeExpireAt: verifyCode.ExpireAt,
 		Status:             "in_progress",
 	}
+	applyUsageCardSnapshotFromCard(&usage, card)
 	if err := tx.Create(&usage).Error; err != nil {
 		return result, err
 	}

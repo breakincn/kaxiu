@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,12 +19,12 @@ import (
 
 func setupMerchantHandlerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := "file:handlers_merchant_migration_test?mode=memory&cache=shared&_loc=auto"
+	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared&_loc=auto"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Merchant{}, &models.ServiceSession{}, &models.TechnicianAttendance{}); err != nil {
+	if err := db.AutoMigrate(&models.Merchant{}, &models.ServiceSession{}, &models.TechnicianAttendance{}, &models.ServiceSessionExtendRequest{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 	return db

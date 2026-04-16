@@ -306,6 +306,19 @@ var defaultMigrations = []dbMigration{
 			"UPDATE service_sessions s JOIN merchants m ON m.id = s.merchant_id SET s.finished_at = DATE_ADD(s.scheduled_finish_at, INTERVAL CASE WHEN m.support_customer_service_mode = 0 AND m.support_queue = 1 AND m.queue_mode IN ('auto','manual') THEN 300 ELSE 60 END SECOND) WHERE s.status IN ('auto_finishing','cs_auto_finishing','qs_auto_finishing','qm_auto_finishing','qms_auto_finishing','qmm_auto_finishing') AND s.scheduled_finish_at IS NOT NULL AND s.finished_at IS NOT NULL AND s.finished_at > DATE_ADD(s.scheduled_finish_at, INTERVAL CASE WHEN m.support_customer_service_mode = 0 AND m.support_queue = 1 AND m.queue_mode IN ('auto','manual') THEN 300 ELSE 60 END SECOND)",
 		},
 	},
+	{
+		Version: "2026041604",
+		Name:    "add_usage_card_snapshots",
+		Statements: []string{
+			"ALTER TABLE usages ADD COLUMN card_no_snapshot varchar(50) NOT NULL DEFAULT '' COMMENT '核销时卡号快照'",
+			"ALTER TABLE usages ADD COLUMN card_type_snapshot varchar(100) NOT NULL DEFAULT '' COMMENT '核销时卡片类型快照'",
+			"ALTER TABLE usages ADD COLUMN card_total_times_snapshot INT NULL DEFAULT NULL COMMENT '核销后卡片总次数快照'",
+			"ALTER TABLE usages ADD COLUMN card_used_times_snapshot INT NULL DEFAULT NULL COMMENT '核销后卡片已用次数快照'",
+			"ALTER TABLE usages ADD COLUMN card_remain_times_snapshot INT NULL DEFAULT NULL COMMENT '核销后卡片剩余次数快照'",
+			"UPDATE usages u JOIN cards c ON c.id = u.card_id SET u.card_no_snapshot = c.card_no, u.card_type_snapshot = c.card_type WHERE u.card_no_snapshot = '' OR u.card_type_snapshot = ''",
+			"UPDATE usages u JOIN cards c ON c.id = u.card_id LEFT JOIN (SELECT older.id AS usage_id, COALESCE(SUM(CASE WHEN later.used_times > 0 THEN later.used_times ELSE 0 END), 0) AS later_used FROM usages older LEFT JOIN usages later ON later.card_id = older.card_id AND later.status <> 'failed' AND later.id <> older.id AND ((older.used_at IS NOT NULL AND later.used_at IS NOT NULL AND later.used_at > older.used_at) OR (older.used_at IS NOT NULL AND later.used_at = older.used_at AND later.id > older.id) OR (older.used_at IS NULL AND later.id > older.id)) WHERE older.status <> 'failed' GROUP BY older.id) x ON x.usage_id = u.id SET u.card_total_times_snapshot = c.total_times, u.card_used_times_snapshot = GREATEST(c.used_times - COALESCE(x.later_used, 0), 0), u.card_remain_times_snapshot = c.remain_times + COALESCE(x.later_used, 0) WHERE u.status <> 'failed' AND (u.card_total_times_snapshot IS NULL OR u.card_used_times_snapshot IS NULL OR u.card_remain_times_snapshot IS NULL)",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

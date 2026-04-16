@@ -2752,6 +2752,7 @@ func CheckInAppointment(c *gin.Context) {
 			VerifyCodeExpireAt: verifyCode.ExpireAt,
 			Status:             "in_progress",
 		}
+		applyUsageCardSnapshotFromCard(&usage, card)
 		if err := tx.Create(&usage).Error; err != nil {
 			return err
 		}

@@ -33,6 +33,7 @@ func GetCardUsages(c *gin.Context) {
 	}
 	var usages []models.Usage
 	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Preload("Project").Where("card_id = ?", cardID).Order("used_at DESC").Find(&usages)
+	enrichUsagesWithCardSnapshots(usages)
 	enrichUsagesWithServiceSession(&usages)
 	attachLatestExtendRequestsToUsages(usages)
 	enrichUsagesWithQueue(&usages)
@@ -122,6 +123,7 @@ func GetMerchantUsages(c *gin.Context) {
 
 	query = query.Preload("Card").Preload("Card.User").Preload("Technician").Preload("Technician.ServiceRole").Preload("Merchant").Preload("Project")
 	query.Find(&usages)
+	enrichUsagesWithCardSnapshots(usages)
 	enrichUsagesWithServiceSession(&usages)
 	attachLatestExtendRequestsToUsages(usages)
 	enrichUsagesWithQueue(&usages)

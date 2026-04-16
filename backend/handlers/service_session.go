@@ -635,6 +635,9 @@ func GetServiceSession(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "会话不存在"})
 		return
 	}
+	snapshotSessions := []models.ServiceSession{s}
+	enrichServiceSessionsWithCardSnapshots(snapshotSessions)
+	s = snapshotSessions[0]
 	s.StartPendingRemainingSeconds = computeStartPendingRemainingSecondsForSession(&s, time.Now())
 	attachLatestExtendRequestToSession(&s)
 	c.JSON(http.StatusOK, gin.H{"data": s})
@@ -685,6 +688,7 @@ func ListServiceSessions(c *gin.Context) {
 
 	var list []models.ServiceSession
 	q.Order("id desc").Limit(200).Find(&list)
+	enrichServiceSessionsWithCardSnapshots(list)
 	now := time.Now()
 	for i := range list {
 		list[i].StartPendingRemainingSeconds = computeStartPendingRemainingSecondsForSession(&list[i], now)
@@ -927,6 +931,7 @@ func ExtendServiceSession(c *gin.Context) {
 			Status:     "success",
 			FinishedAt: &now,
 		}
+		applyUsageCardSnapshotFromCard(&u, card)
 		if err := tx.Create(&u).Error; err != nil {
 			return err
 		}

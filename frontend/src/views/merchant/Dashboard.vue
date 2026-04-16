@@ -4942,8 +4942,12 @@ const getUsageCountDisplayText = (usage) => {
   if (!usage || !usage.card) return { totalTimes: '-', usedTimes: '-' }
   
   const card = usage.card
-  const totalTimes = card.total_times || 0
-  const currentRemainTimes = card.remain_times || 0
+  const totalTimes = Number(usage.card_total_times_snapshot ?? card.total_times ?? 0)
+  if (usage.card_used_times_snapshot !== undefined && usage.card_used_times_snapshot !== null) {
+    return { totalTimes, usedTimes: Number(usage.card_used_times_snapshot || 0) }
+  }
+
+  const currentRemainTimes = Number(card.remain_times || 0)
   
   // 计算该usage在其所属卡片的核销序号
   // 需要找出同一卡片在todayUsages中的所有记录，按时间排序后计算序号

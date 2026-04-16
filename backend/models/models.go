@@ -154,6 +154,12 @@ type Usage struct {
 	HandCardReturnedAt *time.Time `json:"hand_card_returned_at" gorm:"type:datetime(3);comment:手牌归还时间"`
 	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
+	CardNoSnapshot          string `json:"card_no_snapshot" gorm:"size:50;default:'';comment:核销时卡号快照"`
+	CardTypeSnapshot        string `json:"card_type_snapshot" gorm:"size:100;default:'';comment:核销时卡片类型快照"`
+	CardTotalTimesSnapshot  *int   `json:"card_total_times_snapshot" gorm:"comment:核销后卡片总次数快照"`
+	CardUsedTimesSnapshot   *int   `json:"card_used_times_snapshot" gorm:"comment:核销后卡片已用次数快照"`
+	CardRemainTimesSnapshot *int   `json:"card_remain_times_snapshot" gorm:"comment:核销后卡片剩余次数快照"`
+
 	ServiceSessionID                           *uint                        `json:"service_session_id" gorm:"-"`
 	ServiceSessionStatus                       string                       `json:"service_session_status" gorm:"-"`
 	ServiceSessionStartConfirmedAt             *time.Time                   `json:"service_session_start_confirmed_at" gorm:"-"`

@@ -108,12 +108,17 @@ func TestCommitPreparedVerifyCreatesUsageWithHandCardAtomically(t *testing.T) {
 	}
 
 	var usage struct {
-		HandCardNo         *string `gorm:"column:hand_card_no"`
-		HandCardAssignedAt string  `gorm:"column:hand_card_assigned_at"`
-		UsedAt             string  `gorm:"column:used_at"`
+		HandCardNo              *string `gorm:"column:hand_card_no"`
+		HandCardAssignedAt      string  `gorm:"column:hand_card_assigned_at"`
+		UsedAt                  string  `gorm:"column:used_at"`
+		CardNoSnapshot          string  `gorm:"column:card_no_snapshot"`
+		CardTypeSnapshot        string  `gorm:"column:card_type_snapshot"`
+		CardTotalTimesSnapshot  *int    `gorm:"column:card_total_times_snapshot"`
+		CardUsedTimesSnapshot   *int    `gorm:"column:card_used_times_snapshot"`
+		CardRemainTimesSnapshot *int    `gorm:"column:card_remain_times_snapshot"`
 	}
 	if err := config.DB.Model(&models.Usage{}).
-		Select("hand_card_no, hand_card_assigned_at, used_at").
+		Select("hand_card_no, hand_card_assigned_at, used_at, card_no_snapshot, card_type_snapshot, card_total_times_snapshot, card_used_times_snapshot, card_remain_times_snapshot").
 		Where("card_id = ?", card.ID).
 		Order("id asc").
 		Take(&usage).Error; err != nil {
@@ -127,6 +132,18 @@ func TestCommitPreparedVerifyCreatesUsageWithHandCardAtomically(t *testing.T) {
 	}
 	if strings.TrimSpace(usage.UsedAt) == "" {
 		t.Fatalf("want used_at set")
+	}
+	if usage.CardNoSnapshot != card.CardNo || usage.CardTypeSnapshot != card.CardType {
+		t.Fatalf("unexpected card snapshots no=%q type=%q", usage.CardNoSnapshot, usage.CardTypeSnapshot)
+	}
+	if usage.CardTotalTimesSnapshot == nil || *usage.CardTotalTimesSnapshot != 10 {
+		t.Fatalf("want card total snapshot 10, got %+v", usage.CardTotalTimesSnapshot)
+	}
+	if usage.CardUsedTimesSnapshot == nil || *usage.CardUsedTimesSnapshot != 1 {
+		t.Fatalf("want card used snapshot 1, got %+v", usage.CardUsedTimesSnapshot)
+	}
+	if usage.CardRemainTimesSnapshot == nil || *usage.CardRemainTimesSnapshot != 9 {
+		t.Fatalf("want card remain snapshot 9, got %+v", usage.CardRemainTimesSnapshot)
 	}
 
 	var refreshedVerifyCode struct {
