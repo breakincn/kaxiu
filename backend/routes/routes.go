@@ -58,6 +58,7 @@ func SetupUserRoutes(r *gin.Engine) {
 	auth.GET("/service-sessions/:id/technicians", handlers.UserListAvailableTechnicians)
 	auth.POST("/service-sessions/:id/technician", handlers.UserChooseServiceSessionTechnician)
 	auth.POST("/service-sessions/:id/extend", handlers.ExtendServiceSessionUser)
+	auth.POST("/service-sessions/:id/extend-requests", handlers.CreateServiceSessionExtendRequest)
 
 	// 用户预约/履约
 	auth.GET("/users/:id/appointments", handlers.GetUserAppointments)
@@ -270,6 +271,8 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.POST("/service-sessions/:id/technician", handlers.ChooseServiceSessionTechnician)
 	auth.POST("/service-sessions/:id/extend", handlers.ExtendServiceSession)
 	auth.POST("/service-sessions/:id/extend-duration", handlers.ExtendServiceSessionDuration)
+	auth.POST("/service-session-extend-requests/:id/approve", handlers.ApproveServiceSessionExtendRequest)
+	auth.POST("/service-session-extend-requests/:id/reject", handlers.RejectServiceSessionExtendRequest)
 
 	// 商户端：角色权限微调
 	auth.GET("/role-permissions/:roleKey", handlers.GetMerchantRolePermissionOverrides)

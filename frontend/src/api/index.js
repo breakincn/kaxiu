@@ -357,7 +357,8 @@ export const userServiceSessionApi = {
   chooseRoom: (id, data) => api.post(`/user/service-sessions/${id}/room`, data),
   listTechnicians: (id) => api.get(`/user/service-sessions/${id}/technicians`),
   chooseTechnician: (id, data) => api.post(`/user/service-sessions/${id}/technician`, data),
-  extend: (id, data) => api.post(`/user/service-sessions/${id}/extend`, data)
+  extend: (id, data) => api.post(`/user/service-sessions/${id}/extend`, data),
+  createExtendRequest: (id, data) => api.post(`/user/service-sessions/${id}/extend-requests`, data)
 }
 
 export const roomApi = {
@@ -413,7 +414,9 @@ export const serviceSessionApi = {
   chooseRoom: (id, data) => api.post(`/merchant/service-sessions/${id}/room`, data),
   chooseTechnician: (id, data) => api.post(`/merchant/service-sessions/${id}/technician`, data),
   extend: (id, data) => api.post(`/merchant/service-sessions/${id}/extend`, data),
-  extendDuration: (id, data) => api.post(`/merchant/service-sessions/${id}/extend-duration`, data)
+  extendDuration: (id, data) => api.post(`/merchant/service-sessions/${id}/extend-duration`, data),
+  approveExtendRequest: (id) => api.post(`/merchant/service-session-extend-requests/${id}/approve`),
+  rejectExtendRequest: (id, data) => api.post(`/merchant/service-session-extend-requests/${id}/reject`, data)
 }
 
 export const noticeApi = {

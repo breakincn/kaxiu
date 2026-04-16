@@ -434,6 +434,15 @@
               <div v-if="getUsageStatusCountdownText(usage)" class="text-xs mt-0.5 font-mono" :class="getUsageStatusCountdownClass(usage)">
                 {{ getUsageStatusCountdownText(usage) }}
               </div>
+              <button
+                v-if="shouldShowUsageExtendButton(usage)"
+                class="mt-2 px-2 py-1 text-xs rounded font-medium disabled:opacity-60"
+                :class="getUsageExtendButtonClass(usage)"
+                :disabled="isUsageExtendButtonDisabled(usage) || extendRequestSubmitting"
+                @click.stop="handleUsageExtendClick(usage)"
+              >
+                {{ getUsageExtendButtonText(usage) }}
+              </button>
             </div>
             <div v-if="getUsageOperatorInfo(usage)" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
               <span v-if="getUsageOperatorInfo(usage)">{{ getUsageOperatorInfo(usage) }}</span>
@@ -654,6 +663,60 @@
       </div>
     </div>
 
+    <div v-if="showExtendRequestModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[55]" @click.self="closeExtendRequestModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-sm overflow-hidden">
+        <div class="px-5 py-4 border-b flex items-center justify-between">
+          <div class="font-medium text-gray-800">申请加钟</div>
+          <button class="text-gray-500 text-sm" @click="closeExtendRequestModal">关闭</button>
+        </div>
+        <div class="px-5 py-4">
+          <div class="text-sm text-gray-600 mb-3">选择本卡包含的加钟项目</div>
+          <div class="space-y-2 max-h-[45vh] overflow-y-auto">
+            <label
+              v-for="project in availableExtendProjects"
+              :key="project.id"
+              class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-3 text-sm"
+              :class="Number(selectedExtendProjectId || 0) === Number(project.id) ? 'border-primary bg-primary-light' : 'bg-white'"
+            >
+              <span class="flex items-center gap-2">
+                <input type="radio" name="extend_project" :value="project.id" v-model="selectedExtendProjectId" />
+                <span class="text-gray-800">{{ project.name }}</span>
+              </span>
+              <span class="text-gray-500">{{ project.duration }}分钟</span>
+            </label>
+          </div>
+          <div v-if="selectedExtendProject" class="mt-4 rounded-lg bg-orange-50 text-orange-700 px-3 py-3 text-sm">
+            确认申请加钟「{{ selectedExtendProject.name }}」{{ selectedExtendProject.duration }}分钟？
+          </div>
+        </div>
+        <div class="px-5 pb-5 flex gap-3">
+          <button class="flex-1 py-3 rounded-lg bg-gray-100 text-gray-700 font-medium" @click="closeExtendRequestModal">取消</button>
+          <button
+            class="flex-1 py-3 rounded-lg bg-primary text-white font-medium disabled:opacity-50"
+            :disabled="!selectedExtendProjectId || extendRequestSubmitting"
+            @click="submitExtendRequest"
+          >
+            {{ extendRequestSubmitting ? '申请中...' : '确认申请' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showExtendFailureModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[55]" @click.self="closeExtendFailureModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-sm overflow-hidden">
+        <div class="px-5 py-4 border-b">
+          <div class="font-medium text-gray-800">加钟失败</div>
+        </div>
+        <div class="px-5 py-4 text-sm text-gray-700">
+          {{ selectedExtendFailureReason || '客服拒绝加钟申请' }}
+        </div>
+        <div class="px-5 pb-5 flex gap-3">
+          <button class="flex-1 py-3 rounded-lg bg-gray-100 text-gray-700 font-medium" @click="closeExtendFailureModal">取消</button>
+          <button class="flex-1 py-3 rounded-lg bg-primary text-white font-medium" @click="reapplyExtendRequest">重新申请</button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="showProjectModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[55]" @click.self="closeProjectModal">
       <div class="bg-white rounded-xl w-[90%] max-w-sm overflow-hidden">
         <div class="px-4 py-3 border-b flex items-center justify-between">
@@ -807,7 +870,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { cardApi, usageApi, noticeApi, appointmentApi, shopApi, isHandledAuthRedirectError } from '../../api'
+import { cardApi, usageApi, noticeApi, appointmentApi, shopApi, userServiceSessionApi, isHandledAuthRedirectError } from '../../api'
 import { formatDateTime, formatDate } from '../../utils/dateFormat'
 import QRCode from 'qrcode'
 import { FAST_POLL_INTERVAL_MS, DATA_POLL_INTERVAL_MS } from '../../constants/polling'
@@ -844,6 +907,11 @@ const liveServiceLoading = ref(false)
 const liveServiceError = ref('')
 let liveServicePollTimer = null
 const LIVE_SERVICE_POLL_INTERVAL_MS = 30000
+const showExtendRequestModal = ref(false)
+const showExtendFailureModal = ref(false)
+const selectedExtendUsage = ref(null)
+const selectedExtendProjectId = ref(null)
+const extendRequestSubmitting = ref(false)
 
 const getAppointmentDisplayWaitState = (appt) => String(appt?.display_wait_state || '').trim()
 
@@ -3015,6 +3083,103 @@ const visibleUsages = computed(() => displayUsages.value.slice(0, visibleUsageCo
 const hasMoreUsages = computed(() => {
   return visibleUsageCount.value < displayUsages.value.length
 })
+
+const availableExtendProjects = computed(() => {
+  const projects = Array.isArray(card.value?.projects) ? card.value.projects : []
+  return projects.filter(project => Number(project?.id || 0) > 0 && Number(project?.duration || 0) >= 5)
+})
+
+const selectedExtendProject = computed(() => {
+  const projectID = Number(selectedExtendProjectId.value || 0)
+  if (!projectID) return null
+  return availableExtendProjects.value.find(project => Number(project.id) === projectID) || null
+})
+
+const selectedExtendFailureReason = computed(() => {
+  return String(selectedExtendUsage.value?.latest_extend_request?.reject_reason || '').trim()
+})
+
+const getUsageLatestExtendRequest = (usage) => usage?.latest_extend_request || null
+
+const shouldShowUsageExtendButton = (usage) => {
+  if (!usage || isSyntheticAppointmentUsage(usage)) return false
+  if (!usage?.service_session_id) return false
+  if (String(usage?.status || '').trim() !== 'in_progress') return false
+  if (normalizeSessionStatus(usage?.service_session_status) !== 'serving') return false
+  return availableExtendProjects.value.length > 0
+}
+
+const getUsageExtendStatus = (usage) => String(getUsageLatestExtendRequest(usage)?.status || '').trim()
+
+const getUsageExtendButtonText = (usage) => {
+  const status = getUsageExtendStatus(usage)
+  if (status === 'pending') return '加钟已申请'
+  if (status === 'approved') return '已加钟'
+  if (status === 'rejected') return '加钟失败'
+  return '申请加钟'
+}
+
+const getUsageExtendButtonClass = (usage) => {
+  const status = getUsageExtendStatus(usage)
+  if (status === 'pending') return 'bg-orange-50 text-orange-600'
+  if (status === 'approved') return 'bg-green-50 text-green-600'
+  if (status === 'rejected') return 'bg-red-50 text-red-600'
+  return 'bg-blue-500 text-white'
+}
+
+const isUsageExtendButtonDisabled = (usage) => {
+  const status = getUsageExtendStatus(usage)
+  return status === 'pending' || status === 'approved'
+}
+
+const handleUsageExtendClick = (usage) => {
+  const status = getUsageExtendStatus(usage)
+  selectedExtendUsage.value = usage
+  if (status === 'rejected') {
+    showExtendFailureModal.value = true
+    return
+  }
+  openExtendRequestModal(usage)
+}
+
+const openExtendRequestModal = (usage) => {
+  selectedExtendUsage.value = usage
+  selectedExtendProjectId.value = availableExtendProjects.value[0]?.id || null
+  showExtendRequestModal.value = true
+}
+
+const closeExtendRequestModal = () => {
+  showExtendRequestModal.value = false
+  selectedExtendProjectId.value = null
+}
+
+const closeExtendFailureModal = () => {
+  showExtendFailureModal.value = false
+}
+
+const reapplyExtendRequest = () => {
+  const usage = selectedExtendUsage.value
+  showExtendFailureModal.value = false
+  if (usage) openExtendRequestModal(usage)
+}
+
+const submitExtendRequest = async () => {
+  const usage = selectedExtendUsage.value
+  const sessionID = Number(usage?.service_session_id || 0)
+  const projectID = Number(selectedExtendProjectId.value || 0)
+  if (!sessionID || !projectID || extendRequestSubmitting.value) return
+
+  extendRequestSubmitting.value = true
+  try {
+    await userServiceSessionApi.createExtendRequest(sessionID, { project_id: projectID })
+    closeExtendRequestModal()
+    await fetchUsages()
+  } catch (e) {
+    alert(e.response?.data?.error || '申请加钟失败')
+  } finally {
+    extendRequestSubmitting.value = false
+  }
+}
 
 const getUsageOperatorInfo = (usage) => {
   if (isSyntheticAppointmentUsage(usage)) return ''

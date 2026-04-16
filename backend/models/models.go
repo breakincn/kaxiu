@@ -154,29 +154,30 @@ type Usage struct {
 	HandCardReturnedAt *time.Time `json:"hand_card_returned_at" gorm:"type:datetime(3);comment:手牌归还时间"`
 	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
-	ServiceSessionID                           *uint       `json:"service_session_id" gorm:"-"`
-	ServiceSessionStatus                       string      `json:"service_session_status" gorm:"-"`
-	ServiceSessionStartConfirmedAt             *time.Time  `json:"service_session_start_confirmed_at" gorm:"-"`
-	ServiceSessionScheduledStartAt             *time.Time  `json:"service_session_scheduled_start_at" gorm:"-"`
-	ServiceSessionStartedAt                    *time.Time  `json:"service_session_started_at" gorm:"-"`
-	ServiceSessionScheduledFinishAt            *time.Time  `json:"service_session_scheduled_finish_at" gorm:"-"`
-	ServiceSessionFinishedAt                   *time.Time  `json:"service_session_finished_at" gorm:"-"`
-	ServiceSessionDurationMinutes              int         `json:"service_session_duration_minutes" gorm:"-"`
-	ServiceSessionUpdatedAt                    *time.Time  `json:"service_session_updated_at" gorm:"-"`
-	ServiceSessionStartPendingTimeoutSeconds   int         `json:"service_session_start_pending_timeout_seconds" gorm:"-"`
-	ServiceSessionStartPendingRemainingSeconds int         `json:"service_session_start_pending_remaining_seconds" gorm:"-"`
-	RoomSelectDeadlineAt                       *time.Time  `json:"room_select_deadline_at" gorm:"-"`
-	RoomLockedAt                               *time.Time  `json:"room_locked_at" gorm:"-"`
-	StaffSelectCooldownUntil                   *time.Time  `json:"staff_select_cooldown_until" gorm:"-"`
-	StaffSelectEnteredAt                       *time.Time  `json:"staff_select_entered_at" gorm:"-"`
-	ServiceRoom                                *Room       `json:"service_room" gorm:"-"`
-	ServiceTechnician                          *Technician `json:"service_technician" gorm:"-"`
-	ServiceTechnicianAvailable                 bool        `json:"service_technician_available" gorm:"-"`
-	ServiceTechnicianUnavailableReason         string      `json:"service_technician_unavailable_reason" gorm:"-"`
-	StartTimeoutCount                          int         `json:"start_timeout_count" gorm:"-"`
-	RevokeDeadlineAt                           *time.Time  `json:"revoke_deadline_at" gorm:"-"`
-	CanRevoke                                  bool        `json:"can_revoke" gorm:"-"`
-	AppointmentID                              *uint       `json:"appointment_id" gorm:"-"`
+	ServiceSessionID                           *uint                        `json:"service_session_id" gorm:"-"`
+	ServiceSessionStatus                       string                       `json:"service_session_status" gorm:"-"`
+	ServiceSessionStartConfirmedAt             *time.Time                   `json:"service_session_start_confirmed_at" gorm:"-"`
+	ServiceSessionScheduledStartAt             *time.Time                   `json:"service_session_scheduled_start_at" gorm:"-"`
+	ServiceSessionStartedAt                    *time.Time                   `json:"service_session_started_at" gorm:"-"`
+	ServiceSessionScheduledFinishAt            *time.Time                   `json:"service_session_scheduled_finish_at" gorm:"-"`
+	ServiceSessionFinishedAt                   *time.Time                   `json:"service_session_finished_at" gorm:"-"`
+	ServiceSessionDurationMinutes              int                          `json:"service_session_duration_minutes" gorm:"-"`
+	ServiceSessionUpdatedAt                    *time.Time                   `json:"service_session_updated_at" gorm:"-"`
+	ServiceSessionStartPendingTimeoutSeconds   int                          `json:"service_session_start_pending_timeout_seconds" gorm:"-"`
+	ServiceSessionStartPendingRemainingSeconds int                          `json:"service_session_start_pending_remaining_seconds" gorm:"-"`
+	RoomSelectDeadlineAt                       *time.Time                   `json:"room_select_deadline_at" gorm:"-"`
+	RoomLockedAt                               *time.Time                   `json:"room_locked_at" gorm:"-"`
+	StaffSelectCooldownUntil                   *time.Time                   `json:"staff_select_cooldown_until" gorm:"-"`
+	StaffSelectEnteredAt                       *time.Time                   `json:"staff_select_entered_at" gorm:"-"`
+	ServiceRoom                                *Room                        `json:"service_room" gorm:"-"`
+	ServiceTechnician                          *Technician                  `json:"service_technician" gorm:"-"`
+	ServiceTechnicianAvailable                 bool                         `json:"service_technician_available" gorm:"-"`
+	ServiceTechnicianUnavailableReason         string                       `json:"service_technician_unavailable_reason" gorm:"-"`
+	StartTimeoutCount                          int                          `json:"start_timeout_count" gorm:"-"`
+	RevokeDeadlineAt                           *time.Time                   `json:"revoke_deadline_at" gorm:"-"`
+	CanRevoke                                  bool                         `json:"can_revoke" gorm:"-"`
+	AppointmentID                              *uint                        `json:"appointment_id" gorm:"-"`
+	LatestExtendRequest                        *ServiceSessionExtendRequest `json:"latest_extend_request" gorm:"-"`
 
 	Card       Card             `json:"card" gorm:"foreignKey:CardID"`
 	Merchant   Merchant         `json:"merchant" gorm:"foreignKey:MerchantID"`

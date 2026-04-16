@@ -47,14 +47,15 @@ type ServiceSession struct {
 	CreatedAt *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt *time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
-	Room           *Room            `json:"room" gorm:"foreignKey:RoomID"`
-	Technician     *Technician      `json:"technician" gorm:"foreignKey:TechnicianID"`
-	LastTechnician *Technician      `json:"last_technician" gorm:"foreignKey:LastTechnicianID"`
-	Project        *MerchantProject `json:"project" gorm:"foreignKey:ProjectID"`
-	Card           *Card            `json:"card" gorm:"foreignKey:CardID"`
-	InitialUsage   *Usage           `json:"initial_usage" gorm:"foreignKey:InitialUsageID"`
-	Appointment    *Appointment     `json:"appointment" gorm:"foreignKey:SourceID"`
-	Merchant       *Merchant        `json:"merchant" gorm:"foreignKey:MerchantID"`
+	Room                *Room                        `json:"room" gorm:"foreignKey:RoomID"`
+	Technician          *Technician                  `json:"technician" gorm:"foreignKey:TechnicianID"`
+	LastTechnician      *Technician                  `json:"last_technician" gorm:"foreignKey:LastTechnicianID"`
+	Project             *MerchantProject             `json:"project" gorm:"foreignKey:ProjectID"`
+	Card                *Card                        `json:"card" gorm:"foreignKey:CardID"`
+	InitialUsage        *Usage                       `json:"initial_usage" gorm:"foreignKey:InitialUsageID"`
+	Appointment         *Appointment                 `json:"appointment" gorm:"foreignKey:SourceID"`
+	Merchant            *Merchant                    `json:"merchant" gorm:"foreignKey:MerchantID"`
+	LatestExtendRequest *ServiceSessionExtendRequest `json:"latest_extend_request" gorm:"-"`
 }
 
 func (ServiceSession) TableName() string {

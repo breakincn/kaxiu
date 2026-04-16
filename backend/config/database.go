@@ -57,6 +57,7 @@ func InitDB() {
 			&models.Usage{},
 			&models.Room{},
 			&models.ServiceSession{},
+			&models.ServiceSessionExtendRequest{},
 			&models.Notice{},
 			&models.Appointment{},
 			&models.MerchantProject{},

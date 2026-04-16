@@ -283,6 +283,13 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchants ADD COLUMN appointment_reschedule_deadline_minutes_before_start INT NOT NULL DEFAULT 60 COMMENT '预约改签截止时间（距服务开始前分钟数）'",
 		},
 	},
+	{
+		Version: "2026041601",
+		Name:    "create_service_session_extend_requests",
+		Statements: []string{
+			"CREATE TABLE IF NOT EXISTS service_session_extend_requests (\n  id bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '服务加钟申请ID',\n  merchant_id bigint unsigned NOT NULL COMMENT '商户ID',\n  user_id bigint unsigned NOT NULL COMMENT '用户ID',\n  card_id bigint unsigned NOT NULL COMMENT '卡片ID',\n  service_session_id bigint unsigned NOT NULL COMMENT '服务会话ID',\n  initial_usage_id bigint unsigned NOT NULL COMMENT '首次核销使用记录ID',\n  project_id bigint unsigned NOT NULL COMMENT '申请加钟项目ID',\n  minutes int NOT NULL COMMENT '申请加钟时长分钟',\n  status varchar(20) NOT NULL DEFAULT 'pending' COMMENT '状态（pending/approved/rejected/canceled）',\n  reject_reason varchar(255) NOT NULL DEFAULT '' COMMENT '拒绝原因',\n  handled_by_type varchar(20) NOT NULL DEFAULT '' COMMENT '处理人类型',\n  handled_by_id bigint unsigned NULL DEFAULT NULL COMMENT '处理人ID',\n  handled_at datetime(3) NULL DEFAULT NULL COMMENT '处理时间',\n  created_at datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',\n  updated_at datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',\n  PRIMARY KEY (id),\n  KEY idx_sser_merchant_id (merchant_id),\n  KEY idx_sser_user_id (user_id),\n  KEY idx_sser_card_id (card_id),\n  KEY idx_sser_service_session_id (service_session_id),\n  KEY idx_sser_initial_usage_id (initial_usage_id),\n  KEY idx_sser_project_id (project_id),\n  KEY idx_sser_status (status),\n  KEY idx_sser_handled_by_id (handled_by_id)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='服务加钟申请表'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

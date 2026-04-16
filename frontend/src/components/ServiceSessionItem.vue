@@ -57,16 +57,6 @@
       </div>
     </div>
 
-    <!-- 操作按钮 -->
-    <div class="flex gap-2 pt-2">
-      <button 
-        v-if="canExtend" 
-        @click="$emit('extend', session)"
-        class="px-3 py-1 bg-blue-500 text-white rounded text-xs font-medium"
-      >
-        加钟
-      </button>
-    </div>
   </div>
 </template>
 
@@ -160,10 +150,6 @@ const cancelReasonText = computed(() => {
     return replaceTerms('起单超时', props.session?.merchant)
   }
   return '已取消'
-})
-
-const canExtend = computed(() => {
-  return normalizeSessionStatus(props.session.status) === 'serving'
 })
 
 const remainingSeconds = computed(() => {

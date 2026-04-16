@@ -636,6 +636,7 @@ func GetServiceSession(c *gin.Context) {
 		return
 	}
 	s.StartPendingRemainingSeconds = computeStartPendingRemainingSecondsForSession(&s, time.Now())
+	attachLatestExtendRequestToSession(&s)
 	c.JSON(http.StatusOK, gin.H{"data": s})
 }
 
@@ -688,6 +689,7 @@ func ListServiceSessions(c *gin.Context) {
 	for i := range list {
 		list[i].StartPendingRemainingSeconds = computeStartPendingRemainingSecondsForSession(&list[i], now)
 	}
+	attachLatestExtendRequestsToSessions(list)
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
 
@@ -997,14 +999,7 @@ func ExtendServiceSessionDuration(c *gin.Context) {
 			return apiErr{status: http.StatusBadRequest, msg: "仅服务中可延长"}
 		}
 
-		updates := map[string]interface{}{
-			"duration_minutes":          gorm.Expr("duration_minutes + ?", addMinutes),
-			"auto_finish_delay_seconds": gorm.Expr("auto_finish_delay_seconds + ?", addMinutes*60),
-		}
-		if s.ScheduledFinishAt != nil {
-			updates["scheduled_finish_at"] = s.ScheduledFinishAt.Add(time.Duration(addMinutes) * time.Minute)
-		}
-		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
+		if err := applyServiceSessionExtension(tx, &s, addMinutes); err != nil {
 			return err
 		}
 		return tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error

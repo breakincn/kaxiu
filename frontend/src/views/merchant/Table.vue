@@ -189,7 +189,7 @@
                     </div>
                     <div class="space-y-2">
                       <div v-for="session in myServingSessions" :key="session.id" class="border border-blue-100 rounded-lg p-3 bg-blue-50">
-                        <ServiceSessionItem :session="session" :currentTime="currentTimeMs" @extend="openExtendModal" />
+                        <ServiceSessionItem :session="session" :currentTime="currentTimeMs" />
                       </div>
                     </div>
                   </div>
@@ -229,7 +229,7 @@
                           <div v-if="getServiceBoardCancelReason(session)">取消原因：{{ getServiceBoardCancelReason(session) }}</div>
                         </div>
                       </template>
-                      <ServiceSessionItem v-else :session="session" :currentTime="currentTimeMs" @extend="openExtendModal" />
+                      <ServiceSessionItem v-else :session="session" :currentTime="currentTimeMs" />
                     </div>
                   </div>
                 </div>
@@ -254,29 +254,6 @@
       </div>
     </div>
 
-    <div v-if="showExtendModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div class="bg-white w-full max-w-sm rounded-2xl p-4">
-        <div class="flex items-center justify-between mb-3">
-          <div class="font-medium text-gray-800">加钟</div>
-          <button class="text-gray-500" @click="closeExtendModal">关闭</button>
-        </div>
-
-        <div class="text-gray-600 text-sm mb-3">延长服务时间（5~180分钟）</div>
-        <div class="mb-4">
-          <input v-model.number="extendMinutes" type="number" min="5" max="180" placeholder="分钟" class="w-full px-4 py-3 border border-gray-200 rounded-lg">
-        </div>
-        <div class="flex gap-2">
-          <button @click="closeExtendModal" class="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium">取消</button>
-          <button
-            :disabled="!extendMinutes || extendMinutes < 5 || extendMinutes > 180 || extendLoading"
-            @click="doExtendSession"
-            class="flex-1 px-4 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
-          >
-            {{ extendLoading ? '加钟中...' : '确认' }}
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -333,10 +310,6 @@ const serviceSessions = ref([])
 const loadedServiceSessionDates = ref([])
 const serviceSessionCursorDate = ref('')
 const serviceSessionsLoadingMore = ref(false)
-const extendSession = ref(null)
-const extendMinutes = ref(null)
-const showExtendModal = ref(false)
-const extendLoading = ref(false)
 
 const canLoadMoreServiceSessions = computed(() => activeTab.value === 'service' && loadedServiceSessionDates.value.length > 0)
 
@@ -817,40 +790,6 @@ const loadMoreServiceSessions = async () => {
     await findPreviousNonEmptyServiceSessionDate(getPreviousServiceSessionDate(serviceSessionCursorDate.value), true)
   } finally {
     serviceSessionsLoadingMore.value = false
-  }
-}
-
-const openExtendModal = (session) => {
-  extendSession.value = session
-  extendMinutes.value = null
-  showExtendModal.value = true
-}
-
-const closeExtendModal = () => {
-  showExtendModal.value = false
-  extendSession.value = null
-  extendMinutes.value = null
-}
-
-const doExtendSession = async () => {
-  if (!extendMinutes.value || extendMinutes.value < 5 || extendMinutes.value > 180) {
-    alert('请输入5~180分钟的加钟时长')
-    return
-  }
-
-  extendLoading.value = true
-  try {
-    const res = await serviceSessionApi.extendDuration(extendSession.value.id, { minutes: extendMinutes.value })
-    const updated = res.data?.data
-    if (updated) {
-      const idx = serviceSessions.value.findIndex((session) => session.id === updated.id)
-      if (idx !== -1) serviceSessions.value[idx] = updated
-    }
-    closeExtendModal()
-  } catch (e) {
-    alert(e.response?.data?.error || '加钟失败')
-  } finally {
-    extendLoading.value = false
   }
 }
 

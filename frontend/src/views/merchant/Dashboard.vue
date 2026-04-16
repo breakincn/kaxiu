@@ -1723,6 +1723,14 @@
               </div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
+              <button
+                v-if="hasPendingExtendRequest(usage)"
+                type="button"
+                class="mt-3 px-3 py-1.5 rounded bg-orange-500 text-white text-xs font-medium"
+                @click="openExtendRequestReview(usage)"
+              >
+                加钟申请
+              </button>
             </div>
             <div class="text-right">
               <div class="text-sm">
@@ -1737,6 +1745,45 @@
       </div>
 
       
+    </div>
+
+    <div v-if="showExtendRequestReviewModal && selectedExtendRequest" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4" @click.self="closeExtendRequestReview">
+      <div class="bg-white w-full max-w-sm rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div class="font-medium text-gray-800">加钟申请</div>
+          <button class="text-gray-500" @click="closeExtendRequestReview">关闭</button>
+        </div>
+
+        <div class="text-gray-700 text-sm space-y-2 mb-4">
+          <div>用户：{{ selectedExtendUsage?.card?.user?.nickname || '用户' }}</div>
+          <div>单号：{{ getUsageTrackingNumber(selectedExtendUsage) }}</div>
+          <div>项目：{{ selectedExtendRequest.project?.name || '-' }}</div>
+          <div>加钟时长：{{ selectedExtendRequest.minutes || 0 }} 分钟</div>
+          <div>申请时间：{{ formatDateTime(selectedExtendRequest.created_at) }}</div>
+        </div>
+        <textarea
+          v-model="extendRejectReason"
+          rows="3"
+          placeholder="拒绝原因（拒绝时选填）"
+          class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-4"
+        ></textarea>
+        <div class="flex gap-2">
+          <button
+            @click="rejectExtendRequest"
+            :disabled="extendReviewLoading"
+            class="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium disabled:opacity-50"
+          >
+            拒绝
+          </button>
+          <button
+            :disabled="extendReviewLoading"
+            @click="approveExtendRequest"
+            class="flex-1 px-4 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
+          >
+            {{ extendReviewLoading ? '处理中...' : '确定' }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- 技师加钟弹窗 -->
@@ -4254,6 +4301,16 @@ const extendLoadingIds = ref(new Set())
 const showExtendModalVisible = ref(false)
 const extendSession = ref(null)
 const extendMinutes = ref(null)
+const showExtendRequestReviewModal = ref(false)
+const selectedExtendUsage = ref(null)
+const extendReviewLoading = ref(false)
+const extendRejectReason = ref('')
+
+const selectedExtendRequest = computed(() => selectedExtendUsage.value?.latest_extend_request || null)
+
+const hasPendingExtendRequest = (usage) => {
+  return usage?.latest_extend_request?.status === 'pending'
+}
 
 const getCardTypeLabel = (type) => {
   const labels = { times: '次数卡', lesson: '课时卡', balance: '充值卡' }
@@ -4443,6 +4500,55 @@ const closeExtendModal = () => {
   showExtendModalVisible.value = false
   extendSession.value = null
   extendMinutes.value = null
+}
+
+const openExtendRequestReview = (usage) => {
+  if (!hasPendingExtendRequest(usage)) return
+  selectedExtendUsage.value = usage
+  extendRejectReason.value = ''
+  showExtendRequestReviewModal.value = true
+}
+
+const closeExtendRequestReview = () => {
+  showExtendRequestReviewModal.value = false
+  selectedExtendUsage.value = null
+  extendRejectReason.value = ''
+}
+
+const refreshAfterExtendReview = async () => {
+  closeExtendRequestReview()
+  await Promise.all([
+    fetchTodayStartUsages({ silent: true }),
+    fetchServiceSessions()
+  ])
+}
+
+const approveExtendRequest = async () => {
+  const requestID = Number(selectedExtendRequest.value?.id || 0)
+  if (!requestID || extendReviewLoading.value) return
+  extendReviewLoading.value = true
+  try {
+    await serviceSessionApi.approveExtendRequest(requestID)
+    await refreshAfterExtendReview()
+  } catch (e) {
+    alert(e.response?.data?.error || '确认加钟失败')
+  } finally {
+    extendReviewLoading.value = false
+  }
+}
+
+const rejectExtendRequest = async () => {
+  const requestID = Number(selectedExtendRequest.value?.id || 0)
+  if (!requestID || extendReviewLoading.value) return
+  extendReviewLoading.value = true
+  try {
+    await serviceSessionApi.rejectExtendRequest(requestID, { reject_reason: extendRejectReason.value })
+    await refreshAfterExtendReview()
+  } catch (e) {
+    alert(e.response?.data?.error || '拒绝加钟失败')
+  } finally {
+    extendReviewLoading.value = false
+  }
 }
 
 const doExtendSession = async () => {
