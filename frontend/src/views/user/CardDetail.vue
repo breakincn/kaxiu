@@ -4543,7 +4543,7 @@ onUnmounted(() => {
 .live-service-estimate {
   display: flex;
   align-items: center;
-  border-radius: 8px;
+  border-radius: 14px;
   background: #22c55e;
   color: #ffffff;
   margin-top: 10px;
@@ -4568,7 +4568,7 @@ onUnmounted(() => {
 .live-service-estimate p {
   display: inline-flex;
   align-items: center;
-  border-radius: 8px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.18);
   color: #ffffff;
   font-size: 12px;
