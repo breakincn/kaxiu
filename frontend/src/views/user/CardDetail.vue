@@ -2343,6 +2343,10 @@ const getUsageStatusCountdownText = (usage) => {
 
   // 待选客服倒计时
   if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) {
+    if (!isUsageProjectServiceTimeAllowed(usage, new Date(now))) {
+      return '当前不在卡片服务时间'
+    }
+
     // 冷却期提示（无空闲客服）
     if (usage?.staff_select_cooldown_until) {
       const dl = new Date(usage.staff_select_cooldown_until).getTime()
@@ -2380,6 +2384,10 @@ const getUsageStatusCountdownText = (usage) => {
 
   // 上钟超时后重新选择客服：如果已经开始计时（staff_select_entered_at）则展示自动分配倒计时
   if (supportCS && isUsageStartTimeout(usage)) {
+    if (!isUsageProjectServiceTimeAllowed(usage, new Date(now))) {
+      return '当前不在卡片服务时间'
+    }
+
     const enteredAtMs = usage?.staff_select_entered_at ? new Date(usage.staff_select_entered_at).getTime() : 0
     if (!enteredAtMs || Number.isNaN(enteredAtMs)) return ''
     const deadline = enteredAtMs + getUsageAutoAssignDelayMinutes(usage) * 60 * 1000
@@ -2476,6 +2484,9 @@ const getUsageStatusCountdownClass = (usage) => {
 
   // 待选客服倒计时（橙色）
   if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') && usage?.room_locked_at) {
+    if (!isUsageProjectServiceTimeAllowed(usage, new Date(nowTick.value))) {
+      return 'text-gray-500'
+    }
     return 'text-orange-500'
   }
 
