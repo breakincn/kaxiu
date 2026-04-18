@@ -32,6 +32,7 @@
               class="min-w-0 flex-1 px-3 py-2 text-sm focus:outline-none"
             />
           </div>
+          <p class="mt-2 text-xs text-gray-500">只能包含字母、数字、下划线和连字符，2-30个字符</p>
         </div>
       </div>
     </div>
