@@ -144,7 +144,17 @@
                               {{ t.is_active ? '启用' : '禁用' }}
                             </span>
                           </div>
-                          <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：{{ t.account }}</div>
+                          <div class="text-gray-500 text-sm mt-1 flex items-center gap-2 flex-wrap">
+                            <span>编号：{{ t.code }}　账号：{{ t.account }}</span>
+                            <button
+                              v-if="t.can_view_original_password"
+                              type="button"
+                              class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium"
+                              @click="viewOriginalPassword(t)"
+                            >
+                              查看原始密码
+                            </button>
+                          </div>
                         </div>
                       </div>
 
@@ -157,14 +167,6 @@
                           @click="toggleActive(t)"
                         >
                           {{ t.is_active ? '禁用' : '启用' }}
-                        </button>
-                        <button
-                          v-if="t.can_view_original_password"
-                          type="button"
-                          class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
-                          @click="viewOriginalPassword(t)"
-                        >
-                          查看原始密码
                         </button>
                         <div class="flex-1"></div>
                         <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
@@ -250,8 +252,26 @@
                             <span class="px-2 py-0.5 rounded text-xs" :class="t.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'">
                               {{ t.is_active ? '启用' : '禁用' }}
                             </span>
+                            <button
+                              v-if="canConfigureAppointmentProjects(t)"
+                              type="button"
+                              class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium"
+                              @click="openProjectConfig(t)"
+                            >
+                              预约项目
+                            </button>
                           </div>
-                          <div class="text-gray-500 text-sm mt-1">编号：{{ t.code }}　账号：{{ t.account }}</div>
+                          <div class="text-gray-500 text-sm mt-1 flex items-center gap-2 flex-wrap">
+                            <span>编号：{{ t.code }}　账号：{{ t.account }}</span>
+                            <button
+                              v-if="t.can_view_original_password"
+                              type="button"
+                              class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium"
+                              @click="viewOriginalPassword(t)"
+                            >
+                              查看原始密码
+                            </button>
+                          </div>
                           <div v-if="shouldShowWindowNo && t.window_no" class="text-gray-500 text-sm mt-1">{{ windowTerm }}：{{ t.window_no }}</div>
                           <div v-if="canConfigureAppointmentProjects(t)" class="text-gray-500 text-sm mt-1">{{ getAppointmentProjectSummary(t) }}</div>
                         </div>
@@ -260,28 +280,12 @@
                       <div class="mt-3 flex gap-2">
                         <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEdit(t)">编辑</button>
                         <button
-                          v-if="canConfigureAppointmentProjects(t)"
-                          type="button"
-                          class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
-                          @click="openProjectConfig(t)"
-                        >
-                          预约项目
-                        </button>
-                        <button
                           type="button"
                           class="px-3 py-2 rounded-lg text-sm font-medium"
                           :class="t.is_active ? 'bg-orange-50 text-orange-600' : 'bg-green-50 text-green-600'"
                           @click="toggleActive(t)"
                         >
                           {{ t.is_active ? '禁用' : '启用' }}
-                        </button>
-                        <button
-                          v-if="t.can_view_original_password"
-                          type="button"
-                          class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
-                          @click="viewOriginalPassword(t)"
-                        >
-                          查看原始密码
                         </button>
                         <div class="flex-1"></div>
                         <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
