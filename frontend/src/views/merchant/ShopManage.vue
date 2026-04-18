@@ -146,28 +146,16 @@
       <div class="qrcode-section">
         <div class="form-group">
           <label>店铺短链接</label>
-          <div class="slug-input">
+          <div v-if="shopSlug" class="slug-display">
             <span class="prefix">kabao.shop/s/</span>
-            <input 
-              v-model="shopSlug" 
-              type="text" 
-              placeholder="yourshop"
-              @input="slugChanged = true"
-            />
+            <span class="slug-value">{{ shopSlug }}</span>
           </div>
-          <p class="slug-tip">只能包含字母、数字、下划线和连字符，2-30个字符</p>
+          <div v-else class="slug-empty">
+            请到商家信息设置中配置店铺短链接
+          </div>
         </div>
         
-        <button 
-          v-if="slugChanged" 
-          class="save-btn" 
-          @click="saveShopSlug"
-          :disabled="saving"
-        >
-          {{ saving ? '保存中...' : '保存短链接' }}
-        </button>
-        
-        <div v-if="shopSlug && !slugChanged" class="qrcode-preview">
+        <div v-if="shopSlug" class="qrcode-preview">
           <h3>您的售卡二维码</h3>
           <div class="qrcode-box">
             <img :src="qrcodeUrl" alt="售卡二维码" v-if="qrcodeUrl" />
@@ -368,7 +356,6 @@ async function loadMerchantProjects() {
 
 // 店铺短链接
 const shopSlug = ref('')
-const slugChanged = ref(false)
 
 // 直购订单
 const orders = ref([])
@@ -385,7 +372,7 @@ const shopFullUrl = computed(() => {
 })
 
 const qrcodeUrl = computed(() => {
-  if (!shopSlug.value || slugChanged.value) return ''
+  if (!shopSlug.value) return ''
   return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(shopFullUrl.value)}`
 })
 
@@ -528,10 +515,8 @@ async function loadShopSlug() {
     const res = await shopApi.getShopSlug()
     if (res.data.data) {
       shopSlug.value = res.data.data.slug
-      slugChanged.value = false
     } else {
       shopSlug.value = ''
-      slugChanged.value = false
     }
   } catch (e) {
     console.error('加载店铺短链接失败', e)
@@ -686,28 +671,6 @@ async function savePaymentConfig() {
         default_method: saved.default_method || ''
       }
     }
-    alert('保存成功')
-  } catch (e) {
-    alert(e.response?.data?.error || '保存失败')
-  } finally {
-    saving.value = false
-  }
-}
-
-async function saveShopSlug() {
-  if (!shopSlug.value) {
-    alert('请输入店铺短链接')
-    return
-  }
-  
-  saving.value = true
-  try {
-    const res = await shopApi.saveShopSlug(shopSlug.value)
-    const saved = res?.data?.data
-    if (saved?.slug) {
-      shopSlug.value = saved.slug
-    }
-    slugChanged.value = false
     alert('保存成功')
   } catch (e) {
     alert(e.response?.data?.error || '保存失败')
@@ -994,7 +957,7 @@ function downloadQrcode() {
   padding: 20px;
 }
 
-.slug-input {
+.slug-display {
   display: flex;
   align-items: center;
   border: 1px solid var(--kb-border);
@@ -1002,23 +965,27 @@ function downloadQrcode() {
   overflow: hidden;
 }
 
-.slug-input .prefix {
+.slug-display .prefix {
   padding: 10px 12px;
   background: var(--kb-surface-muted);
   color: var(--kb-text-muted);
   font-size: 14px;
 }
 
-.slug-input input {
+.slug-display .slug-value {
   flex: 1;
   padding: 10px 12px;
-  border: none;
   font-size: 14px;
+  color: var(--kb-text);
+  word-break: break-all;
 }
 
-.slug-tip {
-  margin-top: 6px;
-  font-size: 12px;
+.slug-empty {
+  padding: 10px 12px;
+  border: 1px solid var(--kb-border);
+  border-radius: 8px;
+  background: var(--kb-surface-muted);
+  font-size: 14px;
   color: var(--kb-text-muted);
 }
 

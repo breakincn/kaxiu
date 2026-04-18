@@ -10,6 +10,32 @@
       <span class="font-medium text-gray-800">商家信息设置</span>
     </header>
 
+    <!-- 店铺短链接设置 -->
+    <div v-if="showShopSlugSetting" class="px-4 mt-4">
+      <div class="bg-white rounded-xl p-4 shadow-sm">
+        <div class="flex items-center gap-2 mb-4">
+          <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 010 5.656l-1.414 1.414a4 4 0 01-5.656-5.656l1.414-1.414"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.172 13.828a4 4 0 010-5.656l1.414-1.414a4 4 0 015.656 5.656l-1.414 1.414"/>
+          </svg>
+          <span class="font-medium text-gray-800">店铺短链接</span>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-500 mb-1 block">短链接</label>
+          <div class="flex overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:border-primary">
+            <span class="shrink-0 bg-gray-50 px-3 py-2 text-sm text-gray-500">kabao.shop/s/</span>
+            <input
+              v-model="shopSlug"
+              type="text"
+              placeholder="yourshop"
+              class="min-w-0 flex-1 px-3 py-2 text-sm focus:outline-none"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 营业时间设置 -->
     <div class="px-4 mt-4">
       <div class="bg-white rounded-xl p-4 shadow-sm">
@@ -234,7 +260,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { merchantApi } from '../../api'
+import { merchantApi, shopApi } from '../../api'
 
 import { getMerchantId } from '../../utils/auth'
 
@@ -243,6 +269,8 @@ const loading = ref(true)
 const saving = ref(false)
 const useAllDay = ref(false)
 const initialSnapshot = ref('')
+const shopSlug = ref('')
+const showShopSlugSetting = ref(false)
 
 const form = ref({
   morning_start: '',
@@ -263,6 +291,7 @@ const form = ref({
 })
 
 const buildSnapshot = () => JSON.stringify({
+  shopSlug: showShopSlugSetting.value ? (shopSlug.value || '') : '',
   useAllDay: !!useAllDay.value,
   morning_start: form.value.morning_start || '',
   morning_end: form.value.morning_end || '',
@@ -314,6 +343,13 @@ const fetchMerchantInfo = async () => {
 
     const res = await merchantApi.getMerchant(merchantId)
     const data = res.data.data
+    showShopSlugSetting.value = !!data.support_direct_sale
+    if (showShopSlugSetting.value) {
+      const slugRes = await shopApi.getShopSlug()
+      shopSlug.value = slugRes.data?.data?.slug || ''
+    } else {
+      shopSlug.value = ''
+    }
 
     form.value = {
       morning_start: '',
@@ -357,9 +393,18 @@ const fetchMerchantInfo = async () => {
 
 const saveInfo = async () => {
   if (saving.value) return
+  const normalizedShopSlug = shopSlug.value.trim()
+  if (showShopSlugSetting.value && !normalizedShopSlug) {
+    alert('请输入店铺短链接')
+    return
+  }
 
   saving.value = true
   try {
+    if (showShopSlugSetting.value) {
+      await shopApi.saveShopSlug(normalizedShopSlug)
+      shopSlug.value = normalizedShopSlug
+    }
     const payload = {
       ...form.value,
       show_province: !!form.value.show_province
