@@ -150,29 +150,41 @@
               <div>
                 <div class="flex items-center justify-between mb-2">
                   <div class="text-sm font-medium text-gray-700">服务时间</div>
-                  <button
-                    type="button"
-                    @click="addServiceTimeSlot(project)"
-                    class="text-sm font-medium text-primary"
-                  >
-                    + 添加时间
-                  </button>
+                  <div class="flex items-center gap-3">
+                    <label class="flex items-center gap-1 text-sm text-gray-700">
+                      <input
+                        v-model="project.service_time_slot_mode"
+                        type="radio"
+                        value="weekly"
+                        class="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      周
+                    </label>
+                    <label class="flex items-center gap-1 text-sm text-gray-700">
+                      <input
+                        v-model="project.service_time_slot_mode"
+                        type="radio"
+                        value="monthly"
+                        class="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      月
+                    </label>
+                    <button
+                      type="button"
+                      @click="addServiceTimeSlot(project)"
+                      class="text-sm font-medium text-primary"
+                    >
+                      + 添加时间
+                    </button>
+                  </div>
                 </div>
                 <div v-if="!project.service_time_slots || project.service_time_slots.length === 0" class="text-xs text-gray-400">未设置固定服务时间。</div>
                 <div v-else class="space-y-2">
                   <div
                     v-for="(slot, slotIndex) in project.service_time_slots"
                     :key="slotIndex"
-                    class="grid grid-cols-[0.75fr_1fr_1fr_auto] gap-2 items-center"
+                    class="grid grid-cols-[1fr_1fr_auto] gap-2 items-center"
                   >
-                    <select
-                      v-model="slot.recurrence_type"
-                      class="min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      @change="normalizeServiceTimeSlotType(slot)"
-                    >
-                      <option value="weekly">周</option>
-                      <option value="monthly">月</option>
-                    </select>
                     <select
                       v-if="slot.recurrence_type !== 'monthly'"
                       v-model.number="slot.weekday"
@@ -447,6 +459,7 @@ const load = async () => {
           room_select_timeout_minutes: Number(p.room_select_timeout_seconds ?? 90) / 60,
           start_pending_timeout_minutes: Number(p.start_pending_timeout_seconds ?? 300) / 60,
           service_capacity: Number(p.service_capacity ?? 1),
+          service_time_slot_mode: 'weekly',
           service_time_slots: normalizeServiceTimeSlots(p.service_time_slots),
           auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
           delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),
@@ -477,6 +490,7 @@ const addProject = () => {
     room_select_timeout_minutes: 1.5,
     start_pending_timeout_minutes: 5,
     service_capacity: 1,
+    service_time_slot_mode: 'weekly',
     service_time_slots: [],
     auto_assign_technician_delay_minutes: 5,
     delay_tolerance_minutes: 1,
@@ -492,22 +506,20 @@ const addServiceTimeSlot = (project) => {
   if (!Array.isArray(project.service_time_slots)) {
     project.service_time_slots = []
   }
+  if (project.service_time_slot_mode === 'monthly') {
+    project.service_time_slots.push({
+      recurrence_type: 'monthly',
+      month_day: 1,
+      start_time: '18:00'
+    })
+    return
+  }
+  project.service_time_slot_mode = 'weekly'
   project.service_time_slots.push({
     recurrence_type: 'weekly',
     weekday: 7,
     start_time: '18:00'
   })
-}
-
-const normalizeServiceTimeSlotType = (slot) => {
-  if (slot.recurrence_type === 'monthly') {
-    slot.month_day = Number(slot.month_day || 1)
-    delete slot.weekday
-    return
-  }
-  slot.recurrence_type = 'weekly'
-  slot.weekday = Number(slot.weekday || 7)
-  delete slot.month_day
 }
 
 const removeServiceTimeSlot = (project, slotIndex) => {
