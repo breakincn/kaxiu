@@ -4473,6 +4473,9 @@ const getMerchantBusinessHours = () => {
 
 // 判断商户是否营业中
 const isMerchantOpen = () => {
+  if (typeof liveServiceStatus.value?.business_open === 'boolean') {
+    return liveServiceStatus.value.business_open
+  }
   if (!card.value || !card.value.merchant) return true
   // 默认为true，如果明确为false才显示打烊
   return card.value.merchant.is_open !== false
