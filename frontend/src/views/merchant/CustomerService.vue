@@ -158,7 +158,7 @@
                         </div>
                       </div>
 
-                      <div class="mt-3 flex gap-2">
+                      <div class="mt-3 flex items-center gap-2 flex-wrap">
                         <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEdit(t)">编辑</button>
                         <button
                           type="button"
@@ -168,7 +168,6 @@
                         >
                           {{ t.is_active ? '禁用' : '启用' }}
                         </button>
-                        <div class="flex-1"></div>
                         <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
                       </div>
                     </div>
@@ -277,7 +276,7 @@
                         </div>
                       </div>
 
-                      <div class="mt-3 flex gap-2">
+                      <div class="mt-3 flex items-center gap-2 flex-wrap">
                         <button type="button" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium" @click="openEdit(t)">编辑</button>
                         <button
                           type="button"
@@ -287,7 +286,6 @@
                         >
                           {{ t.is_active ? '禁用' : '启用' }}
                         </button>
-                        <div class="flex-1"></div>
                         <button type="button" class="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium" @click="removeTech(t)">删除</button>
                       </div>
                     </div>
