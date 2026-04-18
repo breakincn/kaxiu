@@ -134,6 +134,87 @@
                 />
               </div>
 
+              <div>
+                <div class="text-sm font-medium text-gray-700 mb-2">服务人数</div>
+                <input
+                  v-model.number="project.service_capacity"
+                  type="number"
+                  min="1"
+                  max="999"
+                  placeholder="如 1"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <div class="mt-1 text-xs text-gray-400">同一项目单次可服务的人数，如舞蹈课可设置为 15。</div>
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <div class="text-sm font-medium text-gray-700">服务时间</div>
+                  <button
+                    type="button"
+                    @click="addServiceTimeSlot(project)"
+                    class="text-sm font-medium text-primary"
+                  >
+                    + 添加时间
+                  </button>
+                </div>
+                <div v-if="!project.service_time_slots || project.service_time_slots.length === 0" class="text-xs text-gray-400">未设置固定服务时间。</div>
+                <div v-else class="space-y-2">
+                  <div
+                    v-for="(slot, slotIndex) in project.service_time_slots"
+                    :key="slotIndex"
+                    class="grid grid-cols-[0.75fr_1fr_1fr_auto] gap-2 items-center"
+                  >
+                    <select
+                      v-model="slot.recurrence_type"
+                      class="min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      @change="normalizeServiceTimeSlotType(slot)"
+                    >
+                      <option value="weekly">周</option>
+                      <option value="monthly">月</option>
+                    </select>
+                    <select
+                      v-if="slot.recurrence_type !== 'monthly'"
+                      v-model.number="slot.weekday"
+                      class="min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option
+                        v-for="day in weekdayOptions"
+                        :key="day.value"
+                        :value="day.value"
+                      >
+                        {{ day.label }}
+                      </option>
+                    </select>
+                    <select
+                      v-else
+                      v-model.number="slot.month_day"
+                      class="min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option
+                        v-for="day in monthDayOptions"
+                        :key="day"
+                        :value="day"
+                      >
+                        {{ day }}日
+                      </option>
+                    </select>
+                    <input
+                      v-model="slot.start_time"
+                      type="time"
+                      class="min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <button
+                      type="button"
+                      @click="removeServiceTimeSlot(project, slotIndex)"
+                      class="px-2 py-2 text-red-500"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div class="pt-2 border-t border-gray-100">
                 <div class="text-sm font-medium text-gray-800 mb-2">拖堂补偿设置</div>
                 <div class="text-xs text-gray-400 mb-3">用于预约拖堂账本累计与自动兑现。</div>
@@ -253,6 +334,56 @@ const form = ref({
   projects: []
 })
 
+const weekdayOptions = [
+  { value: 1, label: '周一' },
+  { value: 2, label: '周二' },
+  { value: 3, label: '周三' },
+  { value: 4, label: '周四' },
+  { value: 5, label: '周五' },
+  { value: 6, label: '周六' },
+  { value: 7, label: '周日' }
+]
+
+const monthDayOptions = Array.from({ length: 31 }, (_, index) => index + 1)
+
+const normalizeServiceTimeSlots = (slots) => (Array.isArray(slots) ? slots : [])
+  .map(slot => ({
+    recurrence_type: String(slot?.recurrence_type || 'weekly'),
+    weekday: Number(slot?.weekday || 0),
+    month_day: Number(slot?.month_day || 0),
+    start_time: String(slot?.start_time || '').trim()
+  }))
+  .map(slot => {
+    if (slot.recurrence_type === 'monthly') {
+      return {
+        recurrence_type: 'monthly',
+        month_day: slot.month_day,
+        start_time: slot.start_time
+      }
+    }
+    return {
+      recurrence_type: 'weekly',
+      weekday: slot.weekday,
+      start_time: slot.start_time
+    }
+  })
+  .filter(slot => {
+    if (!slot.start_time) return false
+    if (slot.recurrence_type === 'monthly') {
+      return slot.month_day >= 1 && slot.month_day <= 31
+    }
+    return slot.weekday >= 1 && slot.weekday <= 7
+  })
+  .sort((a, b) => {
+    if (a.recurrence_type !== b.recurrence_type) {
+      return a.recurrence_type.localeCompare(b.recurrence_type)
+    }
+    if (a.recurrence_type === 'monthly') {
+      return (a.month_day - b.month_day) || a.start_time.localeCompare(b.start_time)
+    }
+    return (a.weekday - b.weekday) || a.start_time.localeCompare(b.start_time)
+  })
+
 const startPendingCountdownLabel = computed(() => `${getStartCountdownLabel(merchantTerms.value)}（分钟）`)
 const isRoomServiceEnabled = computed(() => !!merchantTerms.value?.support_room)
 const isCustomerServiceModeEnabled = computed(() => !!merchantTerms.value?.support_customer_service_mode)
@@ -267,6 +398,8 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
     start_delay_seconds: Number(project.start_delay_seconds ?? 60),
     room_select_timeout_minutes: Number(project.room_select_timeout_minutes ?? 1.5),
     start_pending_timeout_minutes: Number(project.start_pending_timeout_minutes ?? 5),
+    service_capacity: Number(project.service_capacity ?? 1),
+    service_time_slots: normalizeServiceTimeSlots(project.service_time_slots),
     auto_assign_technician_delay_minutes: Number(project.auto_assign_technician_delay_minutes ?? 5),
     delay_tolerance_minutes: Number(project.delay_tolerance_minutes ?? 1),
     delay_compensation_mode: String(project.delay_compensation_mode || 'minutes_bucket'),
@@ -313,6 +446,8 @@ const load = async () => {
           start_delay_seconds: Number(p.start_delay_seconds ?? 60),
           room_select_timeout_minutes: Number(p.room_select_timeout_seconds ?? 90) / 60,
           start_pending_timeout_minutes: Number(p.start_pending_timeout_seconds ?? 300) / 60,
+          service_capacity: Number(p.service_capacity ?? 1),
+          service_time_slots: normalizeServiceTimeSlots(p.service_time_slots),
           auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
           delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),
           delay_compensation_mode: String(p.delay_compensation_mode || 'minutes_bucket'),
@@ -341,6 +476,8 @@ const addProject = () => {
     start_delay_seconds: 60,
     room_select_timeout_minutes: 1.5,
     start_pending_timeout_minutes: 5,
+    service_capacity: 1,
+    service_time_slots: [],
     auto_assign_technician_delay_minutes: 5,
     delay_tolerance_minutes: 1,
     delay_compensation_mode: 'minutes_bucket',
@@ -349,6 +486,36 @@ const addProject = () => {
     is_default: form.value.projects.length === 0,
     _isNewUnsaved: true
   })
+}
+
+const addServiceTimeSlot = (project) => {
+  if (!Array.isArray(project.service_time_slots)) {
+    project.service_time_slots = []
+  }
+  project.service_time_slots.push({
+    recurrence_type: 'weekly',
+    weekday: 7,
+    start_time: '18:00'
+  })
+}
+
+const normalizeServiceTimeSlotType = (slot) => {
+  if (slot.recurrence_type === 'monthly') {
+    slot.month_day = Number(slot.month_day || 1)
+    delete slot.weekday
+    return
+  }
+  slot.recurrence_type = 'weekly'
+  slot.weekday = Number(slot.weekday || 7)
+  delete slot.month_day
+}
+
+const removeServiceTimeSlot = (project, slotIndex) => {
+  if (!Array.isArray(project.service_time_slots)) {
+    project.service_time_slots = []
+    return
+  }
+  project.service_time_slots.splice(slotIndex, 1)
 }
 
 const setDefaultProject = (index) => {
@@ -413,6 +580,29 @@ const save = async () => {
         return
       }
     }
+    const serviceCapacity = Number(project.service_capacity ?? 1)
+    if (!Number.isFinite(serviceCapacity) || serviceCapacity < 1 || serviceCapacity > 999) {
+      alert(`项目 ${i + 1} 的服务人数必须在 1-999 之间`)
+      return
+    }
+    const serviceTimeSlots = Array.isArray(project.service_time_slots) ? project.service_time_slots : []
+    for (let j = 0; j < serviceTimeSlots.length; j++) {
+      const slot = serviceTimeSlots[j]
+      const recurrenceType = String(slot.recurrence_type || 'weekly')
+      if (!slot.start_time) {
+        alert(`项目 ${i + 1} 的服务时间 ${j + 1} 必须选择开始时间`)
+        return
+      }
+      if (recurrenceType === 'monthly') {
+        if (!slot.month_day || slot.month_day < 1 || slot.month_day > 31) {
+          alert(`项目 ${i + 1} 的服务时间 ${j + 1} 必须选择 1-31 日`)
+          return
+        }
+      } else if (!slot.weekday || slot.weekday < 1 || slot.weekday > 7) {
+        alert(`项目 ${i + 1} 的服务时间 ${j + 1} 必须选择星期`)
+        return
+      }
+    }
     const gapMinutes = Number(project.service_gap_minutes ?? 3)
     if (!Number.isFinite(gapMinutes) || gapMinutes < 0 || gapMinutes > 60) {
       alert(`项目 ${i + 1} 的服务间歇时间必须在 0-60 分钟之间`)
@@ -468,6 +658,8 @@ const save = async () => {
         start_delay_seconds: Number(p.start_delay_seconds ?? 60),
         room_select_timeout_seconds: Math.round(Number(p.room_select_timeout_minutes ?? 1.5) * 60),
         start_pending_timeout_seconds: Number(p.start_pending_timeout_minutes ?? 5) * 60,
+        service_capacity: Number(p.service_capacity ?? 1),
+        service_time_slots: normalizeServiceTimeSlots(p.service_time_slots),
         auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
         delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),
         delay_compensation_mode: String(p.delay_compensation_mode || 'minutes_bucket'),

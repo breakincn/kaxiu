@@ -55,7 +55,7 @@ func TestCreateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 	config.DB = setupProjectHandlerTestDB(t)
 	merchant := seedProjectMerchant(t, config.DB)
 
-	body := `{"name":"肩颈调理","duration":60,"room_select_timeout_seconds":120,"start_pending_timeout_seconds":240,"delay_tolerance_minutes":2,"delay_compensation_mode":"fixed_unit","delay_redeem_threshold_percent":50,"delay_fixed_unit_value":3}`
+	body := `{"name":"肩颈调理","duration":60,"room_select_timeout_seconds":120,"start_pending_timeout_seconds":240,"service_capacity":15,"service_time_slots":[{"recurrence_type":"weekly","weekday":4,"start_time":"18:00"},{"weekday":2,"start_time":"18:00"},{"recurrence_type":"weekly","weekday":6,"start_time":"18:00"},{"recurrence_type":"monthly","month_day":15,"start_time":"20:00"}],"delay_tolerance_minutes":2,"delay_compensation_mode":"fixed_unit","delay_redeem_threshold_percent":50,"delay_fixed_unit_value":3}`
 	c, rec := newProjectMerchantJSONContext(http.MethodPost, "/merchant/projects", merchant.ID, body)
 	CreateMerchantProject(c)
 	if rec.Code != http.StatusOK {
@@ -68,7 +68,7 @@ func TestCreateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response failed: %v", err)
 	}
-	if resp.Data.RoomSelectTimeoutSeconds != 120 || resp.Data.StartPendingTimeoutSeconds != 240 || resp.Data.DelayToleranceMinutes != 2 || resp.Data.DelayCompensationMode != "fixed_unit" || resp.Data.DelayRedeemThresholdPercent != 50 || resp.Data.DelayFixedUnitValue != 3 {
+	if resp.Data.RoomSelectTimeoutSeconds != 120 || resp.Data.StartPendingTimeoutSeconds != 240 || resp.Data.ServiceCapacity != 15 || len(resp.Data.ServiceTimeSlots) != 4 || resp.Data.ServiceTimeSlots[0].RecurrenceType != "monthly" || resp.Data.ServiceTimeSlots[0].MonthDay != 15 || resp.Data.DelayToleranceMinutes != 2 || resp.Data.DelayCompensationMode != "fixed_unit" || resp.Data.DelayRedeemThresholdPercent != 50 || resp.Data.DelayFixedUnitValue != 3 {
 		t.Fatalf("unexpected delay config in response: %+v", resp.Data)
 	}
 
@@ -76,7 +76,7 @@ func TestCreateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 	if err := config.DB.First(&got, resp.Data.ID).Error; err != nil {
 		t.Fatalf("load project failed: %v", err)
 	}
-	if got.RoomSelectTimeoutSeconds != 120 || got.StartPendingTimeoutSeconds != 240 || got.DelayToleranceMinutes != 2 || got.DelayCompensationMode != "fixed_unit" || got.DelayRedeemThresholdPercent != 50 || got.DelayFixedUnitValue != 3 {
+	if got.RoomSelectTimeoutSeconds != 120 || got.StartPendingTimeoutSeconds != 240 || got.ServiceCapacity != 15 || len(got.ServiceTimeSlots) != 4 || got.ServiceTimeSlots[1].Weekday != 2 || got.ServiceTimeSlots[3].Weekday != 6 || got.DelayToleranceMinutes != 2 || got.DelayCompensationMode != "fixed_unit" || got.DelayRedeemThresholdPercent != 50 || got.DelayFixedUnitValue != 3 {
 		t.Fatalf("unexpected delay config in db: %+v", got)
 	}
 }
@@ -94,6 +94,8 @@ func TestUpdateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 		Duration:                    60,
 		RoomSelectTimeoutSeconds:    90,
 		StartPendingTimeoutSeconds:  300,
+		ServiceCapacity:             1,
+		ServiceTimeSlots:            models.MerchantProjectServiceTimeSlots{},
 		DelayToleranceMinutes:       1,
 		DelayCompensationMode:       "minutes_bucket",
 		DelayRedeemThresholdPercent: 100,
@@ -103,7 +105,7 @@ func TestUpdateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 		t.Fatalf("create project failed: %v", err)
 	}
 
-	body := `{"room_select_timeout_seconds":150,"start_pending_timeout_seconds":180,"delay_tolerance_minutes":5,"delay_compensation_mode":"amount_bucket","delay_redeem_threshold_percent":120,"delay_fixed_unit_value":8}`
+	body := `{"room_select_timeout_seconds":150,"start_pending_timeout_seconds":180,"service_capacity":8,"service_time_slots":[{"recurrence_type":"monthly","month_day":1,"start_time":"19:30"}],"delay_tolerance_minutes":5,"delay_compensation_mode":"amount_bucket","delay_redeem_threshold_percent":120,"delay_fixed_unit_value":8}`
 	projectID := strconv.Itoa(int(project.ID))
 	c, rec := newProjectMerchantJSONContext(http.MethodPut, "/merchant/projects/"+projectID, merchant.ID, body)
 	c.Params = gin.Params{{Key: "id", Value: projectID}}
@@ -116,8 +118,40 @@ func TestUpdateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {
 	if err := config.DB.First(&got, project.ID).Error; err != nil {
 		t.Fatalf("load project failed: %v", err)
 	}
-	if got.RoomSelectTimeoutSeconds != 150 || got.StartPendingTimeoutSeconds != 180 || got.DelayToleranceMinutes != 5 || got.DelayCompensationMode != "amount_bucket" || got.DelayRedeemThresholdPercent != 120 || got.DelayFixedUnitValue != 8 {
+	if got.RoomSelectTimeoutSeconds != 150 || got.StartPendingTimeoutSeconds != 180 || got.ServiceCapacity != 8 || len(got.ServiceTimeSlots) != 1 || got.ServiceTimeSlots[0].RecurrenceType != "monthly" || got.ServiceTimeSlots[0].MonthDay != 1 || got.ServiceTimeSlots[0].StartTime != "19:30" || got.DelayToleranceMinutes != 5 || got.DelayCompensationMode != "amount_bucket" || got.DelayRedeemThresholdPercent != 120 || got.DelayFixedUnitValue != 8 {
 		t.Fatalf("unexpected updated delay config: %+v", got)
+	}
+}
+
+func TestCreateMerchantProjectRejectsInvalidServiceTimeSlot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	config.DB = setupProjectHandlerTestDB(t)
+	merchant := seedProjectMerchant(t, config.DB)
+
+	body := `{"name":"爵士舞课","duration":60,"service_capacity":15,"service_time_slots":[{"weekday":8,"start_time":"18:00"}]}`
+	c, rec := newProjectMerchantJSONContext(http.MethodPost, "/merchant/projects", merchant.ID, body)
+	CreateMerchantProject(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateMerchantProjectRejectsInvalidMonthlyServiceTimeSlot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	config.DB = setupProjectHandlerTestDB(t)
+	merchant := seedProjectMerchant(t, config.DB)
+
+	body := `{"name":"爵士舞课","duration":60,"service_capacity":15,"service_time_slots":[{"recurrence_type":"monthly","month_day":32,"start_time":"18:00"}]}`
+	c, rec := newProjectMerchantJSONContext(http.MethodPost, "/merchant/projects", merchant.ID, body)
+	CreateMerchantProject(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

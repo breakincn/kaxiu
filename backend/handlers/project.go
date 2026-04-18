@@ -5,7 +5,10 @@ import (
 	"kabao/config"
 	"kabao/models"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -22,6 +25,65 @@ func ListMerchantProjects(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
 
+func normalizeMerchantProjectServiceTimeSlots(slots models.MerchantProjectServiceTimeSlots) (models.MerchantProjectServiceTimeSlots, error) {
+	if len(slots) == 0 {
+		return models.MerchantProjectServiceTimeSlots{}, nil
+	}
+
+	normalized := make(models.MerchantProjectServiceTimeSlots, 0, len(slots))
+	seen := make(map[string]struct{}, len(slots))
+	for _, slot := range slots {
+		startTime := strings.TrimSpace(slot.StartTime)
+		if _, err := time.Parse("15:04", startTime); err != nil {
+			return nil, errors.New("服务时间必须为 HH:mm 格式")
+		}
+
+		recurrenceType := strings.TrimSpace(slot.RecurrenceType)
+		if recurrenceType == "" {
+			recurrenceType = "weekly"
+		}
+		switch recurrenceType {
+		case "weekly":
+			if slot.Weekday < 1 || slot.Weekday > 7 {
+				return nil, errors.New("服务时间星期范围应为 1-7")
+			}
+			slot.MonthDay = 0
+		case "monthly":
+			if slot.MonthDay < 1 || slot.MonthDay > 31 {
+				return nil, errors.New("服务时间月日期范围应为 1-31")
+			}
+			slot.Weekday = 0
+		default:
+			return nil, errors.New("服务时间类型必须为 weekly 或 monthly")
+		}
+
+		key := recurrenceType + "|" + strconv.Itoa(slot.Weekday) + "|" + strconv.Itoa(slot.MonthDay) + "|" + startTime
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, models.MerchantProjectServiceTimeSlot{
+			RecurrenceType: recurrenceType,
+			Weekday:        slot.Weekday,
+			MonthDay:       slot.MonthDay,
+			StartTime:      startTime,
+		})
+	}
+	sort.Slice(normalized, func(i, j int) bool {
+		if normalized[i].RecurrenceType != normalized[j].RecurrenceType {
+			return normalized[i].RecurrenceType < normalized[j].RecurrenceType
+		}
+		if normalized[i].MonthDay != normalized[j].MonthDay {
+			return normalized[i].MonthDay < normalized[j].MonthDay
+		}
+		if normalized[i].Weekday != normalized[j].Weekday {
+			return normalized[i].Weekday < normalized[j].Weekday
+		}
+		return normalized[i].StartTime < normalized[j].StartTime
+	})
+	return normalized, nil
+}
+
 func CreateMerchantProject(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
@@ -29,23 +91,25 @@ func CreateMerchantProject(c *gin.Context) {
 	}
 
 	var input struct {
-		Name                             string  `json:"name" binding:"required"`
-		Duration                         int     `json:"duration" binding:"required,min=1"`
-		BookableOnline                   *bool   `json:"bookable_online"`
-		ServiceGapMinutes                *int    `json:"service_gap_minutes"`
-		StartDelaySeconds                *int    `json:"start_delay_seconds"`
-		RoomSelectTimeoutSeconds         *int    `json:"room_select_timeout_seconds"`
-		StartPendingTimeoutSeconds       *int    `json:"start_pending_timeout_seconds"`
-		AutoAssignTechnicianDelayMinutes *int    `json:"auto_assign_technician_delay_minutes"`
-		DelayToleranceMinutes            *int    `json:"delay_tolerance_minutes"`
-		DelayCompensationMode            *string `json:"delay_compensation_mode"`
-		DelayRedeemThresholdPercent      *int    `json:"delay_redeem_threshold_percent"`
-		DelayFixedUnitValue              *int    `json:"delay_fixed_unit_value"`
-		IsDefault                        *bool   `json:"is_default"`
-		Price                            float64 `json:"price"`
-		Description                      string  `json:"description"`
-		IsActive                         *bool   `json:"is_active"`
-		SortOrder                        *int    `json:"sort_order"`
+		Name                             string                                 `json:"name" binding:"required"`
+		Duration                         int                                    `json:"duration" binding:"required,min=1"`
+		BookableOnline                   *bool                                  `json:"bookable_online"`
+		ServiceGapMinutes                *int                                   `json:"service_gap_minutes"`
+		StartDelaySeconds                *int                                   `json:"start_delay_seconds"`
+		RoomSelectTimeoutSeconds         *int                                   `json:"room_select_timeout_seconds"`
+		StartPendingTimeoutSeconds       *int                                   `json:"start_pending_timeout_seconds"`
+		ServiceCapacity                  *int                                   `json:"service_capacity"`
+		ServiceTimeSlots                 models.MerchantProjectServiceTimeSlots `json:"service_time_slots"`
+		AutoAssignTechnicianDelayMinutes *int                                   `json:"auto_assign_technician_delay_minutes"`
+		DelayToleranceMinutes            *int                                   `json:"delay_tolerance_minutes"`
+		DelayCompensationMode            *string                                `json:"delay_compensation_mode"`
+		DelayRedeemThresholdPercent      *int                                   `json:"delay_redeem_threshold_percent"`
+		DelayFixedUnitValue              *int                                   `json:"delay_fixed_unit_value"`
+		IsDefault                        *bool                                  `json:"is_default"`
+		Price                            float64                                `json:"price"`
+		Description                      string                                 `json:"description"`
+		IsActive                         *bool                                  `json:"is_active"`
+		SortOrder                        *int                                   `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -96,6 +160,19 @@ func CreateMerchantProject(c *gin.Context) {
 			return
 		}
 		startPendingTimeoutSeconds = *input.StartPendingTimeoutSeconds
+	}
+	serviceCapacity := 1
+	if input.ServiceCapacity != nil {
+		if *input.ServiceCapacity < 1 || *input.ServiceCapacity > 999 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "服务人数范围应为 1-999"})
+			return
+		}
+		serviceCapacity = *input.ServiceCapacity
+	}
+	serviceTimeSlots, err := normalizeMerchantProjectServiceTimeSlots(input.ServiceTimeSlots)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 	autoAssignTechnicianDelayMinutes := 5
 	if input.AutoAssignTechnicianDelayMinutes != nil {
@@ -173,6 +250,8 @@ func CreateMerchantProject(c *gin.Context) {
 		StartDelaySeconds:                startDelaySeconds,
 		RoomSelectTimeoutSeconds:         roomSelectTimeoutSeconds,
 		StartPendingTimeoutSeconds:       startPendingTimeoutSeconds,
+		ServiceCapacity:                  serviceCapacity,
+		ServiceTimeSlots:                 serviceTimeSlots,
 		AutoAssignTechnicianDelayMinutes: autoAssignTechnicianDelayMinutes,
 		DelayToleranceMinutes:            delayToleranceMinutes,
 		DelayCompensationMode:            delayCompensationMode,
@@ -219,23 +298,25 @@ func UpdateMerchantProject(c *gin.Context) {
 	}
 
 	var input struct {
-		Name                             *string  `json:"name"`
-		Duration                         *int     `json:"duration"`
-		BookableOnline                   *bool    `json:"bookable_online"`
-		ServiceGapMinutes                *int     `json:"service_gap_minutes"`
-		StartDelaySeconds                *int     `json:"start_delay_seconds"`
-		RoomSelectTimeoutSeconds         *int     `json:"room_select_timeout_seconds"`
-		StartPendingTimeoutSeconds       *int     `json:"start_pending_timeout_seconds"`
-		AutoAssignTechnicianDelayMinutes *int     `json:"auto_assign_technician_delay_minutes"`
-		DelayToleranceMinutes            *int     `json:"delay_tolerance_minutes"`
-		DelayCompensationMode            *string  `json:"delay_compensation_mode"`
-		DelayRedeemThresholdPercent      *int     `json:"delay_redeem_threshold_percent"`
-		DelayFixedUnitValue              *int     `json:"delay_fixed_unit_value"`
-		IsDefault                        *bool    `json:"is_default"`
-		Price                            *float64 `json:"price"`
-		Description                      *string  `json:"description"`
-		IsActive                         *bool    `json:"is_active"`
-		SortOrder                        *int     `json:"sort_order"`
+		Name                             *string                                 `json:"name"`
+		Duration                         *int                                    `json:"duration"`
+		BookableOnline                   *bool                                   `json:"bookable_online"`
+		ServiceGapMinutes                *int                                    `json:"service_gap_minutes"`
+		StartDelaySeconds                *int                                    `json:"start_delay_seconds"`
+		RoomSelectTimeoutSeconds         *int                                    `json:"room_select_timeout_seconds"`
+		StartPendingTimeoutSeconds       *int                                    `json:"start_pending_timeout_seconds"`
+		ServiceCapacity                  *int                                    `json:"service_capacity"`
+		ServiceTimeSlots                 *models.MerchantProjectServiceTimeSlots `json:"service_time_slots"`
+		AutoAssignTechnicianDelayMinutes *int                                    `json:"auto_assign_technician_delay_minutes"`
+		DelayToleranceMinutes            *int                                    `json:"delay_tolerance_minutes"`
+		DelayCompensationMode            *string                                 `json:"delay_compensation_mode"`
+		DelayRedeemThresholdPercent      *int                                    `json:"delay_redeem_threshold_percent"`
+		DelayFixedUnitValue              *int                                    `json:"delay_fixed_unit_value"`
+		IsDefault                        *bool                                   `json:"is_default"`
+		Price                            *float64                                `json:"price"`
+		Description                      *string                                 `json:"description"`
+		IsActive                         *bool                                   `json:"is_active"`
+		SortOrder                        *int                                    `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -285,6 +366,21 @@ func UpdateMerchantProject(c *gin.Context) {
 			return
 		}
 		updates["start_pending_timeout_seconds"] = *input.StartPendingTimeoutSeconds
+	}
+	if input.ServiceCapacity != nil {
+		if *input.ServiceCapacity < 1 || *input.ServiceCapacity > 999 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "服务人数范围应为 1-999"})
+			return
+		}
+		updates["service_capacity"] = *input.ServiceCapacity
+	}
+	if input.ServiceTimeSlots != nil {
+		serviceTimeSlots, err := normalizeMerchantProjectServiceTimeSlots(*input.ServiceTimeSlots)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		updates["service_time_slots"] = serviceTimeSlots
 	}
 	if input.AutoAssignTechnicianDelayMinutes != nil {
 		if *input.AutoAssignTechnicianDelayMinutes < 0 || *input.AutoAssignTechnicianDelayMinutes > 180 {

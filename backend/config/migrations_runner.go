@@ -326,6 +326,16 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchants ADD COLUMN show_province BOOLEAN NOT NULL DEFAULT 0 COMMENT '用户端地址是否展示省份'",
 		},
 	},
+	{
+		Version: "2026041802",
+		Name:    "add_project_service_capacity_and_time_slots",
+		Statements: []string{
+			"ALTER TABLE merchant_projects ADD COLUMN service_capacity INT NOT NULL DEFAULT 1 COMMENT '服务人数'",
+			"ALTER TABLE merchant_projects ADD COLUMN service_time_slots JSON NULL COMMENT '服务时间槽'",
+			"UPDATE merchant_projects SET service_time_slots = JSON_ARRAY() WHERE service_time_slots IS NULL",
+			"ALTER TABLE merchant_projects MODIFY COLUMN service_time_slots JSON NOT NULL COMMENT '服务时间槽'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {
