@@ -104,6 +104,52 @@ func verifyHandCardUnreturnedAgeGuard(tx *gorm.DB, merchantID uint, supportHandC
 	}
 }
 
+func merchantProjectServiceTimeAllowed(project models.MerchantProject, now time.Time) bool {
+	if len(project.ServiceTimeSlots) == 0 {
+		return true
+	}
+
+	loc := appointmentLocation()
+	localNow := now.In(loc)
+	duration := time.Duration(project.Duration) * time.Minute
+	if duration <= 0 {
+		return false
+	}
+
+	for _, slot := range project.ServiceTimeSlots {
+		startClock, err := time.ParseInLocation("15:04", strings.TrimSpace(slot.StartTime), loc)
+		if err != nil {
+			continue
+		}
+		for offset := -1; offset <= 1; offset++ {
+			candidateDate := localNow.AddDate(0, 0, offset)
+			if !merchantProjectServiceTimeSlotMatchesDate(slot, candidateDate) {
+				continue
+			}
+			startAt := time.Date(candidateDate.Year(), candidateDate.Month(), candidateDate.Day(), startClock.Hour(), startClock.Minute(), 0, 0, loc)
+			windowStart := startAt.Add(-1 * time.Hour)
+			windowEnd := startAt.Add(duration).Add(-3 * time.Minute)
+			if !localNow.Before(windowStart) && !localNow.After(windowEnd) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func merchantProjectServiceTimeSlotMatchesDate(slot models.MerchantProjectServiceTimeSlot, date time.Time) bool {
+	if strings.TrimSpace(slot.RecurrenceType) == "monthly" {
+		return slot.MonthDay == date.Day()
+	}
+
+	weekday := int(date.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	return slot.Weekday == weekday
+}
+
 func GetCards(c *gin.Context) {
 	userID, ok := mustUserID(c)
 	if !ok {
@@ -761,6 +807,19 @@ func GenerateVerifyCode(c *gin.Context) {
 		if input.ProjectID == nil || *input.ProjectID == 0 {
 			pid := ids[0]
 			input.ProjectID = &pid
+		}
+	}
+
+	if appointment == nil && input.ProjectID != nil && *input.ProjectID > 0 {
+		var project models.MerchantProject
+		if err := config.DB.Where("id = ? AND merchant_id = ?", *input.ProjectID, card.MerchantID).First(&project).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "查询项目失败"})
+				return
+			}
+		} else if !merchantProjectServiceTimeAllowed(project, now) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前不在卡片项目服务时间"})
+			return
 		}
 	}
 

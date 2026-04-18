@@ -1073,6 +1073,57 @@ const verifyCodeModalHint = computed(() => {
   return '请向工作人员出示此码，由工作人员扫码完成到店核销'
 })
 
+const projectServiceTimeAllowed = (project, now = new Date()) => {
+  const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
+  if (slots.length === 0) return true
+
+  const durationMinutes = Number(project?.duration || 0)
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return false
+
+  for (const slot of slots) {
+    const startTime = String(slot?.start_time || '').trim()
+    const match = startTime.match(/^(\d{2}):(\d{2})$/)
+    if (!match) continue
+
+    const hour = Number(match[1])
+    const minute = Number(match[2])
+    for (let offset = -1; offset <= 1; offset++) {
+      const candidateDate = new Date(now)
+      candidateDate.setDate(candidateDate.getDate() + offset)
+      if (!serviceTimeSlotMatchesDate(slot, candidateDate)) continue
+
+      const startAt = new Date(candidateDate)
+      startAt.setHours(hour, minute, 0, 0)
+      const windowStart = new Date(startAt.getTime() - 60 * 60 * 1000)
+      const windowEnd = new Date(startAt.getTime() + durationMinutes * 60 * 1000 - 3 * 60 * 1000)
+      if (now >= windowStart && now <= windowEnd) {
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
+const serviceTimeSlotMatchesDate = (slot, date) => {
+  if (String(slot?.recurrence_type || 'weekly') === 'monthly') {
+    return Number(slot?.month_day || 0) === date.getDate()
+  }
+  const jsDay = date.getDay()
+  const weekday = jsDay === 0 ? 7 : jsDay
+  return Number(slot?.weekday || 0) === weekday
+}
+
+const canGenerateVerifyCodeForProject = (projectId) => {
+  if (!projectId) return true
+  const project = (selectedCard.value?.projects || []).find(p => Number(p.id) === Number(projectId))
+  if (!project || projectServiceTimeAllowed(project)) {
+    return true
+  }
+  alert('当前不在卡片项目服务时间')
+  return false
+}
+
 const ensureSelectedCardForAppointment = async () => {
   const cardId = Number(selectedCard.value?.id || 0)
   if (!cardId) return false
@@ -1108,6 +1159,9 @@ const ensureSelectedCardForAppointment = async () => {
 }
 
 const doGenerateVerifyCode = async (projectId, options = {}) => {
+  if (!options?.appointmentId && !canGenerateVerifyCodeForProject(projectId)) {
+    return false
+  }
   const payload = {}
   if (projectId) payload.project_id = Number(projectId)
   if (options?.appointmentId) payload.appointment_id = Number(options.appointmentId)
@@ -1128,6 +1182,7 @@ const doGenerateVerifyCode = async (projectId, options = {}) => {
     scale: 8,
     errorCorrectionLevel: 'M'
   })
+  return true
 }
 
 const stopVerifyStatusPoll = () => {
@@ -1271,7 +1326,8 @@ const openVerifyCodeFlowFromAction = async () => {
   generatingVerifyCode.value = true
   try {
     const onlyProjectId = projects.length === 1 ? projects[0].id : null
-    await doGenerateVerifyCode(onlyProjectId)
+    const generated = await doGenerateVerifyCode(onlyProjectId)
+    if (!generated) return
     showVerifyCodeModal.value = true
     await startVerifyStatusPoll()
   } catch (err) {
@@ -1324,7 +1380,8 @@ const confirmVerifyProjectAndGenerate = async () => {
   }
   generatingVerifyCode.value = true
   try {
-    await doGenerateVerifyCode(selectedVerifyProjectId.value)
+    const generated = await doGenerateVerifyCode(selectedVerifyProjectId.value)
+    if (!generated) return
     showVerifyProjectModal.value = false
     showVerifyCodeModal.value = true
     await startVerifyStatusPoll()
