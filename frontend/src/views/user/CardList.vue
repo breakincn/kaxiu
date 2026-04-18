@@ -684,6 +684,34 @@ const getSelectedCardMerchantClosedMessage = () => {
   return `${merchantName} 当前未营业`
 }
 
+const getUsageStartPendingSortTime = (usage) => {
+  const candidates = [
+    usage?.service_session_scheduled_start_at,
+    usage?.service_session_updated_at,
+    usage?.used_at,
+    usage?.created_at
+  ]
+  for (const value of candidates) {
+    const ms = new Date(value || '').getTime()
+    if (!Number.isNaN(ms) && ms > 0) return ms
+  }
+  return Number.MAX_SAFE_INTEGER
+}
+
+const pickEarliestStartPendingUsage = (usages) => {
+  return (usages || [])
+    .filter(usage =>
+      normalizeSessionStatus(usage?.service_session_status) === 'start_pending' &&
+      !usage?.service_session_start_confirmed_at &&
+      usage?.service_session_id
+    )
+    .sort((a, b) => {
+      const byTime = getUsageStartPendingSortTime(a) - getUsageStartPendingSortTime(b)
+      if (byTime !== 0) return byTime
+      return Number(a?.id || 0) - Number(b?.id || 0)
+    })[0] || null
+}
+
 const fetchCards = async () => {
   if (!userId.value) return
   
@@ -751,11 +779,7 @@ const fetchCards = async () => {
           const usageRes = await usageApi.getCardUsages(enrichedCard.id)
           const usages = usageRes?.data?.data || []
           enrichedCard.hasServingUsage = usages.some(usage => normalizeSessionStatus(usage?.service_session_status) === 'serving')
-          const startPendingUsage = usages.find(usage =>
-            normalizeSessionStatus(usage?.service_session_status) === 'start_pending' &&
-            !usage?.service_session_start_confirmed_at &&
-            usage?.service_session_id
-          )
+          const startPendingUsage = pickEarliestStartPendingUsage(usages)
           enrichedCard.hasStartPendingUsage = Boolean(startPendingUsage)
           enrichedCard.startPendingUsageSessionId = startPendingUsage?.service_session_id ? String(startPendingUsage.service_session_id) : ''
         } catch (_) {
