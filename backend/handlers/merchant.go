@@ -24,7 +24,7 @@ func MerchantRegister(c *gin.Context) {
 		Password   string `json:"password" binding:"required,min=6"`
 		Name       string `json:"name" binding:"required"`
 		Type       string `json:"type"`
-		Code       string `json:"code" binding:"required"`
+		Code       string `json:"code"`
 		InviteCode string `json:"invite_code" binding:"required"`
 	}
 
@@ -42,8 +42,13 @@ func MerchantRegister(c *gin.Context) {
 
 	var merchant models.Merchant
 	if err := config.DB.Transaction(func(tx *gorm.DB) error {
-		if err := consumeSMSCode(tx, input.Phone, "merchant_register", input.Code); err != nil {
-			return err
+		if !config.MerchantRegisterSMSVerificationDisabled() {
+			if strings.TrimSpace(input.Code) == "" {
+				return errors.New("请输入验证码")
+			}
+			if err := consumeSMSCode(tx, input.Phone, "merchant_register", input.Code); err != nil {
+				return err
+			}
 		}
 
 		var invite models.InviteCode

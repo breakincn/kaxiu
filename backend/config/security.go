@@ -32,6 +32,10 @@ func SMSDebugEnabled() bool {
 	return IsTruthyEnv("KABAO_SMS_DEBUG")
 }
 
+func MerchantRegisterSMSVerificationDisabled() bool {
+	return !IsTruthyEnv("KABAO_MERCHANT_REGISTER_REQUIRE_SMS")
+}
+
 func ValidateCriticalSecrets() error {
 	required := []string{
 		"KABAO_JWT_SECRET",

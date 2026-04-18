@@ -85,9 +85,8 @@
               <input
                 v-model="registerForm.code"
                 type="text"
-                placeholder="请输入验证码"
+                placeholder="开发阶段可留空；若开启校验请填写短信验证码"
                 class="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-                required
               />
               <button
                 type="button"
