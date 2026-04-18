@@ -148,6 +148,26 @@
               </div>
 
               <div>
+                <div class="flex items-center justify-between py-1">
+                  <div>
+                    <div class="text-sm font-medium text-gray-700">展示用户</div>
+                    <div class="mt-1 text-xs text-gray-400">多人服务项目在用户端使用记录中展示参与服务用户昵称。</div>
+                  </div>
+                  <button
+                    type="button"
+                    class="relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors"
+                    :class="project.show_participants !== false ? 'bg-blue-500' : 'bg-gray-300'"
+                    @click="project.show_participants = project.show_participants === false"
+                  >
+                    <span
+                      class="inline-block h-6 w-6 rounded-full bg-white shadow transition-transform"
+                      :class="project.show_participants !== false ? 'translate-x-5' : 'translate-x-0.5'"
+                    ></span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
                 <div class="flex items-center justify-between mb-2">
                   <div class="text-sm font-medium text-gray-700">服务时间</div>
                   <div class="flex items-center gap-3">
@@ -422,6 +442,7 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
     room_select_timeout_minutes: Number(project.room_select_timeout_minutes ?? 1.5),
     start_pending_timeout_minutes: Number(project.start_pending_timeout_minutes ?? 5),
     service_capacity: Number(project.service_capacity ?? 1),
+    show_participants: project.show_participants !== false,
     service_time_slots: normalizeServiceTimeSlots(project.service_time_slots),
     auto_assign_technician_delay_minutes: Number(project.auto_assign_technician_delay_minutes ?? 5),
     delay_tolerance_minutes: Number(project.delay_tolerance_minutes ?? 1),
@@ -470,6 +491,7 @@ const load = async () => {
           room_select_timeout_minutes: Number(p.room_select_timeout_seconds ?? 90) / 60,
           start_pending_timeout_minutes: Number(p.start_pending_timeout_seconds ?? 300) / 60,
           service_capacity: Number(p.service_capacity ?? 1),
+          show_participants: p.show_participants !== false,
           service_time_slot_mode: 'weekly',
           service_time_slots: normalizeServiceTimeSlots(p.service_time_slots),
           auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
@@ -501,6 +523,7 @@ const addProject = () => {
     room_select_timeout_minutes: 1.5,
     start_pending_timeout_minutes: 5,
     service_capacity: 1,
+    show_participants: true,
     service_time_slot_mode: 'weekly',
     service_time_slots: [],
     auto_assign_technician_delay_minutes: 5,
@@ -682,6 +705,7 @@ const save = async () => {
         room_select_timeout_seconds: Math.round(Number(p.room_select_timeout_minutes ?? 1.5) * 60),
         start_pending_timeout_seconds: Number(p.start_pending_timeout_minutes ?? 5) * 60,
         service_capacity: Number(p.service_capacity ?? 1),
+        show_participants: p.show_participants !== false,
         service_time_slots: normalizeServiceTimeSlots(p.service_time_slots),
         auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
         delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),

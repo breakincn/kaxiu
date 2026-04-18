@@ -35,6 +35,7 @@ func GetCardUsages(c *gin.Context) {
 	config.DB.Preload("Merchant").Preload("Technician").Preload("Technician.ServiceRole").Preload("Project").Where("card_id = ?", cardID).Order("used_at DESC").Find(&usages)
 	enrichUsagesWithCardSnapshots(usages)
 	enrichUsagesWithServiceSession(&usages)
+	enrichUsagesWithServiceParticipants(&usages)
 	attachLatestExtendRequestsToUsages(usages)
 	enrichUsagesWithQueue(&usages)
 	c.JSON(http.StatusOK, gin.H{"data": usages})
@@ -125,9 +126,104 @@ func GetMerchantUsages(c *gin.Context) {
 	query.Find(&usages)
 	enrichUsagesWithCardSnapshots(usages)
 	enrichUsagesWithServiceSession(&usages)
+	enrichUsagesWithServiceParticipants(&usages)
 	attachLatestExtendRequestsToUsages(usages)
 	enrichUsagesWithQueue(&usages)
 	c.JSON(http.StatusOK, gin.H{"data": usages})
+}
+
+func enrichUsagesWithServiceParticipants(usages *[]models.Usage) {
+	if usages == nil || len(*usages) == 0 {
+		return
+	}
+
+	projectIDs := make([]uint, 0)
+	projectByID := make(map[uint]*models.MerchantProject)
+	merchantIDs := make(map[uint]struct{})
+	for i := range *usages {
+		u := &(*usages)[i]
+		if u.MerchantID > 0 {
+			merchantIDs[u.MerchantID] = struct{}{}
+		}
+		if u.Project == nil || u.Project.ID == 0 {
+			continue
+		}
+		if u.Project.ServiceCapacity <= 1 || !u.Project.ShowParticipants {
+			continue
+		}
+		if _, ok := projectByID[u.Project.ID]; ok {
+			continue
+		}
+		projectByID[u.Project.ID] = u.Project
+		projectIDs = append(projectIDs, u.Project.ID)
+	}
+	if len(projectIDs) == 0 || len(merchantIDs) == 0 {
+		return
+	}
+
+	merchantIDList := make([]uint, 0, len(merchantIDs))
+	for id := range merchantIDs {
+		merchantIDList = append(merchantIDList, id)
+	}
+
+	type participantRow struct {
+		ProjectID uint   `gorm:"column:project_id"`
+		UserID    uint   `gorm:"column:user_id"`
+		Nickname  string `gorm:"column:nickname"`
+	}
+	var rows []participantRow
+	activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{
+		"room_selecting",
+		"room_locked",
+		"staff_selecting",
+		"start_pending",
+		"delay_pending",
+		"serving",
+		"auto_finishing",
+		"timeout_waiting",
+	})
+	if err := config.DB.
+		Table("service_sessions ss").
+		Select("ss.project_id, ss.user_id, COALESCE(NULLIF(users.nickname, ''), users.username) AS nickname").
+		Joins("JOIN users ON users.id = ss.user_id").
+		Where("ss.merchant_id IN ?", merchantIDList).
+		Where("ss.project_id IN ?", projectIDs).
+		Where("ss.status IN ?", activeStatuses).
+		Order("ss.created_at ASC, ss.id ASC").
+		Scan(&rows).Error; err != nil {
+		return
+	}
+
+	byProjectID := make(map[uint][]models.UsageParticipantUser)
+	seenByProjectID := make(map[uint]map[uint]struct{})
+	for _, row := range rows {
+		if row.ProjectID == 0 || row.UserID == 0 {
+			continue
+		}
+		nickname := strings.TrimSpace(row.Nickname)
+		if nickname == "" {
+			continue
+		}
+		if seenByProjectID[row.ProjectID] == nil {
+			seenByProjectID[row.ProjectID] = make(map[uint]struct{})
+		}
+		if _, seen := seenByProjectID[row.ProjectID][row.UserID]; seen {
+			continue
+		}
+		seenByProjectID[row.ProjectID][row.UserID] = struct{}{}
+		byProjectID[row.ProjectID] = append(byProjectID[row.ProjectID], models.UsageParticipantUser{
+			UserID:   row.UserID,
+			Nickname: nickname,
+		})
+	}
+
+	for i := range *usages {
+		u := &(*usages)[i]
+		if u.Project == nil || u.Project.ServiceCapacity <= 1 || !u.Project.ShowParticipants {
+			continue
+		}
+		u.ServiceParticipantUsers = byProjectID[u.Project.ID]
+	}
 }
 
 func enrichUsagesWithQueue(usages *[]models.Usage) {

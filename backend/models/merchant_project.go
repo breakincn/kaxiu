@@ -69,6 +69,7 @@ type MerchantProject struct {
 	RoomSelectTimeoutSeconds         int                             `json:"room_select_timeout_seconds" gorm:"not null;default:90;comment:自动分配房间延迟时间（秒）"`
 	StartPendingTimeoutSeconds       int                             `json:"start_pending_timeout_seconds" gorm:"not null;default:300;comment:待开始服务倒计时秒数"`
 	ServiceCapacity                  int                             `json:"service_capacity" gorm:"not null;default:1;comment:服务人数"`
+	ShowParticipants                 bool                            `json:"show_participants" gorm:"not null;default:true;comment:用户端是否展示参与服务用户"`
 	ServiceTimeSlots                 MerchantProjectServiceTimeSlots `json:"service_time_slots" gorm:"type:json;not null;comment:服务时间槽"`
 	AutoAssignTechnicianDelayMinutes int                             `json:"auto_assign_technician_delay_minutes" gorm:"not null;default:5;comment:自动分配客服延迟时间（分钟）"`
 	DelayToleranceMinutes            int                             `json:"delay_tolerance_minutes" gorm:"not null;default:1;comment:拖堂补偿容忍分钟数"`

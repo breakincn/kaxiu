@@ -457,6 +457,9 @@
             <div v-if="getUsageServiceStaffInfo(usage)" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
               <span v-if="getUsageServiceStaffInfo(usage)">{{ getUsageServiceStaffInfo(usage) }}</span>
             </div>
+            <div v-if="getUsageParticipantUsersText(usage)" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
+              <span>{{ getUsageParticipantUsersText(usage) }}</span>
+            </div>
             <div v-if="isSyntheticAppointmentUsage(usage) && showAppointmentSettlementButton" class="col-span-2 mt-2">
               <button
                 type="button"
@@ -3264,6 +3267,7 @@ const shouldShowUsageExtendButton = (usage) => {
   if (!usage?.service_session_id) return false
   if (String(usage?.status || '').trim() !== 'in_progress') return false
   if (normalizeSessionStatus(usage?.service_session_status) !== 'serving') return false
+  if (Number(getUsageProject(usage)?.service_capacity || 1) > 1) return false
   return availableExtendProjects.value.length > 0
 }
 
@@ -4113,6 +4117,17 @@ const getUsageProjectText = (usage) => {
   const duration = Number(p.duration || 0)
   const txt = duration > 0 ? `${p.name}（${duration}分钟）` : p.name
   return txt ? `项目：${txt}` : ''
+}
+
+const getUsageParticipantUsersText = (usage) => {
+  const project = getUsageProject(usage)
+  if (!project || Number(project?.service_capacity || 1) <= 1 || project?.show_participants === false) return ''
+  const participants = Array.isArray(usage?.service_participant_users) ? usage.service_participant_users : []
+  const names = participants
+    .map(item => String(item?.nickname || '').trim())
+    .filter(Boolean)
+  const uniqueNames = Array.from(new Set(names))
+  return uniqueNames.length > 0 ? `服务用户：${uniqueNames.join('、')}` : ''
 }
 
 const doGenerateVerifyCode = async (projectId, options = {}) => {

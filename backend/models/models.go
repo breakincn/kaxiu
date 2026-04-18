@@ -180,6 +180,7 @@ type Usage struct {
 	ServiceTechnician                          *Technician                  `json:"service_technician" gorm:"-"`
 	ServiceTechnicianAvailable                 bool                         `json:"service_technician_available" gorm:"-"`
 	ServiceTechnicianUnavailableReason         string                       `json:"service_technician_unavailable_reason" gorm:"-"`
+	ServiceParticipantUsers                    []UsageParticipantUser       `json:"service_participant_users" gorm:"-"`
 	StartTimeoutCount                          int                          `json:"start_timeout_count" gorm:"-"`
 	RevokeDeadlineAt                           *time.Time                   `json:"revoke_deadline_at" gorm:"-"`
 	CanRevoke                                  bool                         `json:"can_revoke" gorm:"-"`
@@ -198,6 +199,11 @@ func (Usage) TableName() string {
 
 func (Usage) TableComment() string {
 	return "卡片使用记录表"
+}
+
+type UsageParticipantUser struct {
+	UserID   uint   `json:"user_id"`
+	Nickname string `json:"nickname"`
 }
 
 type Notice struct {

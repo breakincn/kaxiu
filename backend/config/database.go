@@ -200,6 +200,7 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `start_pending_timeout_seconds` int NOT NULL DEFAULT 300 COMMENT '待开始服务倒计时秒数'")
 	// merchant_projects: 项目级服务人数与固定服务时间
 	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `service_capacity` int NOT NULL DEFAULT 1 COMMENT '服务人数'")
+	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `show_participants` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '用户端是否展示参与服务用户'")
 	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `service_time_slots` JSON NULL COMMENT '服务时间槽'")
 	DB.Exec("UPDATE `merchant_projects` SET `service_time_slots` = JSON_ARRAY() WHERE `service_time_slots` IS NULL")
 	DB.Exec("ALTER TABLE `merchant_projects` MODIFY COLUMN `service_time_slots` JSON NOT NULL COMMENT '服务时间槽'")

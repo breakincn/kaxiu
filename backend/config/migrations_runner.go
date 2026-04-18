@@ -336,6 +336,13 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchant_projects MODIFY COLUMN service_time_slots JSON NOT NULL COMMENT '服务时间槽'",
 		},
 	},
+	{
+		Version: "2026041803",
+		Name:    "add_project_show_participants",
+		Statements: []string{
+			"ALTER TABLE merchant_projects ADD COLUMN show_participants BOOLEAN NOT NULL DEFAULT 1 COMMENT '用户端是否展示参与服务用户'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

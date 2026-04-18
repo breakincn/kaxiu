@@ -99,6 +99,7 @@ func CreateMerchantProject(c *gin.Context) {
 		RoomSelectTimeoutSeconds         *int                                   `json:"room_select_timeout_seconds"`
 		StartPendingTimeoutSeconds       *int                                   `json:"start_pending_timeout_seconds"`
 		ServiceCapacity                  *int                                   `json:"service_capacity"`
+		ShowParticipants                 *bool                                  `json:"show_participants"`
 		ServiceTimeSlots                 models.MerchantProjectServiceTimeSlots `json:"service_time_slots"`
 		AutoAssignTechnicianDelayMinutes *int                                   `json:"auto_assign_technician_delay_minutes"`
 		DelayToleranceMinutes            *int                                   `json:"delay_tolerance_minutes"`
@@ -168,6 +169,10 @@ func CreateMerchantProject(c *gin.Context) {
 			return
 		}
 		serviceCapacity = *input.ServiceCapacity
+	}
+	showParticipants := true
+	if input.ShowParticipants != nil {
+		showParticipants = *input.ShowParticipants
 	}
 	serviceTimeSlots, err := normalizeMerchantProjectServiceTimeSlots(input.ServiceTimeSlots)
 	if err != nil {
@@ -251,6 +256,7 @@ func CreateMerchantProject(c *gin.Context) {
 		RoomSelectTimeoutSeconds:         roomSelectTimeoutSeconds,
 		StartPendingTimeoutSeconds:       startPendingTimeoutSeconds,
 		ServiceCapacity:                  serviceCapacity,
+		ShowParticipants:                 showParticipants,
 		ServiceTimeSlots:                 serviceTimeSlots,
 		AutoAssignTechnicianDelayMinutes: autoAssignTechnicianDelayMinutes,
 		DelayToleranceMinutes:            delayToleranceMinutes,
@@ -306,6 +312,7 @@ func UpdateMerchantProject(c *gin.Context) {
 		RoomSelectTimeoutSeconds         *int                                    `json:"room_select_timeout_seconds"`
 		StartPendingTimeoutSeconds       *int                                    `json:"start_pending_timeout_seconds"`
 		ServiceCapacity                  *int                                    `json:"service_capacity"`
+		ShowParticipants                 *bool                                   `json:"show_participants"`
 		ServiceTimeSlots                 *models.MerchantProjectServiceTimeSlots `json:"service_time_slots"`
 		AutoAssignTechnicianDelayMinutes *int                                    `json:"auto_assign_technician_delay_minutes"`
 		DelayToleranceMinutes            *int                                    `json:"delay_tolerance_minutes"`
@@ -373,6 +380,9 @@ func UpdateMerchantProject(c *gin.Context) {
 			return
 		}
 		updates["service_capacity"] = *input.ServiceCapacity
+	}
+	if input.ShowParticipants != nil {
+		updates["show_participants"] = *input.ShowParticipants
 	}
 	if input.ServiceTimeSlots != nil {
 		serviceTimeSlots, err := normalizeMerchantProjectServiceTimeSlots(*input.ServiceTimeSlots)
