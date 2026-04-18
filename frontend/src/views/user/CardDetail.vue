@@ -434,7 +434,11 @@
               >
                 {{ revokeLoading ? '撤销中...' : '撤销核销' }}
               </button>
-              <div v-if="getUsageStatusCountdownText(usage)" class="text-xs mt-0.5 font-mono" :class="getUsageStatusCountdownClass(usage)">
+              <div
+                v-if="getUsageStatusCountdownText(usage)"
+                class="text-xs mt-0.5 font-mono"
+                :class="getUsageStatusCountdownText(usage) === '当前不在卡片服务时间' ? 'text-gray-400' : getUsageStatusCountdownClass(usage)"
+              >
                 {{ getUsageStatusCountdownText(usage) }}
               </div>
               <button
@@ -2485,7 +2489,7 @@ const getUsageStatusCountdownClass = (usage) => {
   // 待选客服倒计时（橙色）
   if (supportCS && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting') && usage?.room_locked_at) {
     if (!isUsageProjectServiceTimeAllowed(usage, new Date(nowTick.value))) {
-      return 'text-gray-500'
+      return 'text-gray-400'
     }
     return 'text-orange-500'
   }
