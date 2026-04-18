@@ -92,7 +92,7 @@
                 <p class="text-gray-500 text-xs mt-0.5">{{ item.card_type }}</p>
               </div>
               <div
-                :class="item.hasServingUsage ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'"
+                :class="getCardNoTagClass(item)"
                 class="px-2.5 py-0.5 rounded-full"
               >
                 <span class="text-xs font-medium">NO: {{ item.card_no }}</span>
@@ -710,6 +710,12 @@ const pickEarliestStartPendingUsage = (usages) => {
       if (byTime !== 0) return byTime
       return Number(a?.id || 0) - Number(b?.id || 0)
     })[0] || null
+}
+
+const getCardNoTagClass = (card) => {
+  if (card?.hasStartPendingUsage) return 'bg-red-100 text-red-700'
+  if (card?.hasServingUsage) return 'bg-green-100 text-green-700'
+  return 'bg-gray-100 text-gray-700'
 }
 
 const fetchCards = async () => {
