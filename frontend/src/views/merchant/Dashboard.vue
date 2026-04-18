@@ -621,14 +621,17 @@
         </div>
         <div v-else class="mt-3 space-y-2">
           <div v-for="row in visibleSchedulePublishings" :key="getSchedulePublishingRowKey(row)" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
+            <div class="mb-2 text-xs text-gray-400">
+              {{ formatScheduleBookingOpenLabel(row) }}
+            </div>
             <div class="font-medium text-gray-800">{{ formatDateTime(row.start_at) }} - {{ formatDateTime(row.end_at) }}</div>
             <div class="mt-2 flex items-center justify-between gap-3">
               <div class="text-sm text-gray-500 truncate">{{ row.technician?.name || '-' }}</div>
               <div class="flex items-center gap-2 shrink-0">
-                <span v-if="row.published_at" class="text-xs text-gray-400">{{ formatDateTime(row.published_at) }}</span>
                 <span class="px-2 py-1 rounded-full text-xs font-medium" :class="getSchedulePublishingStatusClass(getEffectiveSchedulePublishingStatus(row))">
                   {{ getSchedulePublishingStatusText(getEffectiveSchedulePublishingStatus(row)) }}
                 </span>
+                <span v-if="row.published_at" class="text-xs text-gray-400">{{ formatDateTime(row.published_at) }}</span>
               </div>
             </div>
           </div>
@@ -3201,6 +3204,15 @@ const parseScheduleDateValue = (value) => {
 const formatScheduleDayLabel = (date) => {
   if (!date || Number.isNaN(date.getTime())) return ''
   return `${date.getDate()}日`
+}
+const formatScheduleBookingOpenLabel = (row) => {
+  const source = row?.start_at || row?.publish_date
+  if (!source) return ''
+  const date = new Date(source)
+  if (Number.isNaN(date.getTime())) return ''
+  const openDate = new Date(date)
+  openDate.setDate(openDate.getDate() - 1)
+  return `${formatScheduleDayLabel(openDate)} 10:00 开放预约`
 }
 const getSchedulePublishCutoff = (date) => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 10, 0, 0, 0)
