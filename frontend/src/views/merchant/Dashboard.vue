@@ -3280,8 +3280,9 @@ const showTechnicianSchedulePublishingTab = computed(() => {
   const rows = visibleSchedulePublishings.value || []
   const hasPublishableRows = rows.some(row => ['unpublished', 'canceled'].includes(getEffectiveSchedulePublishingStatus(row)))
   const hasPublishedRows = rows.some(row => getEffectiveSchedulePublishingStatus(row) === 'published')
+  const hasRepublishableCanceledRows = rows.some(row => getEffectiveSchedulePublishingStatus(row) === 'canceled')
   return (technicianSchedulePublishingWindowState.value.canPublish && hasPublishableRows) ||
-    (technicianSchedulePublishingWindowState.value.canWithdraw && hasPublishedRows)
+    (technicianSchedulePublishingWindowState.value.canWithdraw && (hasPublishedRows || hasRepublishableCanceledRows))
 })
 const technicianSchedulePublishingSubtitle = computed(() => {
   if (hasPublishedScheduleRows.value) {
@@ -6659,7 +6660,7 @@ const formatScheduleTechnicianLabel = (row) => {
 }
 
 const hasCanceledScheduleRows = computed(() => {
-  return visibleSchedulePublishings.value.some(row => row?.status === 'canceled')
+  return (schedulePublishings.value || []).some(row => row?.status === 'canceled')
 })
 
 const getEffectiveSchedulePublishingStatus = (row) => {
@@ -6688,7 +6689,7 @@ const isExpiredSchedulePublishingRow = (row) => {
   const targetDate = getSchedulePublishingTargetDateFromRow(row)
   if (!targetDate) return false
   const windowState = getSchedulePublishingWindowStateForDate(targetDate, schedulePublishingNow.value)
-  return !windowState.canPublish
+  return status === 'canceled' ? !windowState.canWithdraw : !windowState.canPublish
 }
 
 const visibleSchedulePublishings = computed(() => {
@@ -6757,13 +6758,14 @@ const schedulePublishingPrimaryAction = computed(() => {
       }
     }
     const canPublish = technicianSchedulePublishingWindowState.value.canPublish
+    const canRepublishCanceled = technicianSchedulePublishingWindowState.value.canWithdraw && hasCanceledScheduleRows.value
     const canPublishRows = hasPublishableScheduleRows.value
     return {
       mode: 'publish',
       label: '发布次日安排',
       submittingText: '发布中...',
-      disabled: !canPublish || !canPublishRows,
-      className: canPublish && canPublishRows ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-400'
+      disabled: !(canPublish || canRepublishCanceled) || !canPublishRows,
+      className: (canPublish || canRepublishCanceled) && canPublishRows ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-400'
     }
   }
   if (canWithdrawPublishedScheduleRows.value) {

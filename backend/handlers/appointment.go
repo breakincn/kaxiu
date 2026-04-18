@@ -590,19 +590,41 @@ func resolveSchedulePublishingDate(raw string, now time.Time, _ bool) (time.Time
 	return today.Add(24 * time.Hour), nil
 }
 
-func validateStaffSchedulePublishWindow(now, targetDate time.Time) error {
+func validateStaffSchedulePublishWindow(now, targetDate time.Time, allowRepublishCanceled bool) error {
 	loc := now.Location()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	target := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, loc)
 	switch {
 	case target.Equal(today.Add(24 * time.Hour)):
 		if !now.Before(schedulePublishCutoffAt(today)) {
+			if allowRepublishCanceled && now.Before(scheduleWithdrawCutoffAt(today)) {
+				return nil
+			}
 			return apiErr{status: http.StatusBadRequest, msg: "次日预约排班仅可在当天10:00前发布"}
 		}
 		return nil
 	default:
 		return apiErr{status: http.StatusBadRequest, msg: "仅支持发布次日预约排班"}
 	}
+}
+
+func hasStaffCanceledSchedulePublishingRows(tx *gorm.DB, merchantID, technicianID uint, targetDate time.Time) (bool, error) {
+	if tx == nil || merchantID == 0 || technicianID == 0 {
+		return false, nil
+	}
+	rows, err := loadSchedulePublishingsByDate(tx, merchantID, targetDate)
+	if err != nil {
+		return false, err
+	}
+	for _, row := range rows {
+		if row.TechnicianID == nil || *row.TechnicianID != technicianID {
+			continue
+		}
+		if row.Status == "canceled" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func validateStaffScheduleWithdrawWindow(now, targetDate time.Time) error {
@@ -5080,8 +5102,13 @@ func PublishNextDaySchedule(c *gin.Context) {
 		return
 	}
 	if isStaff {
+		allowRepublishCanceled, err := hasStaffCanceledSchedulePublishingRows(config.DB, merchantID, scopedTechnicianID, targetDate)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "读取排班发布列表失败"})
+			return
+		}
 		var ae apiErr
-		if err := validateStaffSchedulePublishWindow(now, targetDate); err != nil {
+		if err := validateStaffSchedulePublishWindow(now, targetDate, allowRepublishCanceled); err != nil {
 			if errors.As(err, &ae) {
 				c.JSON(ae.status, gin.H{"error": ae.msg})
 				return

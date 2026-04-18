@@ -872,6 +872,89 @@ func TestStaffCannotPublishTomorrowScheduleAfterTodayTenAM(t *testing.T) {
 	}
 }
 
+func TestStaffCanRepublishCanceledTomorrowScheduleBeforeWithdrawCutoff(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, _, tech, _, role, _ := seedAppointmentPermissionFixture(t, config.DB)
+	seedAppointmentPermission(t, config.DB, role.ID, "merchant.appointment.view")
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+	if err := config.DB.Model(&models.Technician{}).Where("id = ?", tech.ID).Update("is_active", true).Error; err != nil {
+		t.Fatalf("activate technician failed: %v", err)
+	}
+
+	loc := appointmentLocation()
+	now := time.Date(2026, 3, 27, 10, 15, 0, 0, loc)
+	withAppointmentCurrentTime(t, now)
+	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	startAt := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 9, 0, 0, 0, loc)
+	endAt := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 22, 0, 0, 0, loc)
+	canceled := models.TechnicianSchedulePublishing{
+		MerchantID:   merchant.ID,
+		TechnicianID: &tech.ID,
+		PublishDate:  &targetDate,
+		StartAt:      &startAt,
+		EndAt:        &endAt,
+		Status:       "canceled",
+	}
+	if err := config.DB.Create(&canceled).Error; err != nil {
+		t.Fatalf("create canceled publishing failed: %v", err)
+	}
+
+	path := "/merchant/schedules/publish-next-day?date=" + targetDate.Format("2006-01-02")
+	c, rec := newStaffContext(http.MethodPost, path, merchant.ID, tech.ID, role.ID)
+	c.Request = httptest.NewRequest(http.MethodPost, path, nil)
+	PublishNextDaySchedule(c)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestStaffCannotRepublishCanceledTomorrowScheduleAfterWithdrawCutoff(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	setupAppointmentLifecycleTestDB(t)
+
+	merchant, _, tech, _, role, _ := seedAppointmentPermissionFixture(t, config.DB)
+	seedAppointmentPermission(t, config.DB, role.ID, "merchant.appointment.view")
+	if err := config.DB.Model(&models.Merchant{}).Where("id = ?", merchant.ID).Update("support_customer_service_mode", true).Error; err != nil {
+		t.Fatalf("enable customer service mode failed: %v", err)
+	}
+
+	loc := appointmentLocation()
+	now := time.Date(2026, 3, 27, 10, 30, 0, 0, loc)
+	withAppointmentCurrentTime(t, now)
+	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	startAt := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 9, 0, 0, 0, loc)
+	endAt := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 22, 0, 0, 0, loc)
+	canceled := models.TechnicianSchedulePublishing{
+		MerchantID:   merchant.ID,
+		TechnicianID: &tech.ID,
+		PublishDate:  &targetDate,
+		StartAt:      &startAt,
+		EndAt:        &endAt,
+		Status:       "canceled",
+	}
+	if err := config.DB.Create(&canceled).Error; err != nil {
+		t.Fatalf("create canceled publishing failed: %v", err)
+	}
+
+	path := "/merchant/schedules/publish-next-day?date=" + targetDate.Format("2006-01-02")
+	c, rec := newStaffContext(http.MethodPost, path, merchant.ID, tech.ID, role.ID)
+	c.Request = httptest.NewRequest(http.MethodPost, path, nil)
+	PublishNextDaySchedule(c)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestStaffListSchedulePublishingsIncludesOwnRowsForOperationalRole(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB
