@@ -66,16 +66,16 @@
         </div>
 
         <div v-if="getMerchantBusinessHours()" class="pt-4 mt-4 border-t border-gray-100">
-          <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-2">
               <svg :class="isMerchantOpen() ? 'text-green-500' : 'text-red-500'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
               </svg>
               <span class="font-medium text-gray-800">营业时间</span>
             </div>
+            <div v-if="isMerchantOpen()" class="text-sm leading-relaxed text-gray-500 text-right" v-html="getMerchantBusinessHours()"></div>
             <span v-if="!isMerchantOpen()" class="bg-red-500 text-white text-sm font-medium px-3 py-1 rounded">打烊</span>
           </div>
-          <div class="text-sm leading-relaxed text-gray-500" v-html="getMerchantBusinessHours()"></div>
         </div>
 
         <div class="live-service-section pt-4 mt-4 border-t border-gray-100">
@@ -4454,7 +4454,7 @@ const getMerchantBusinessHours = () => {
   
   // 全天营业
   if (m.all_day_start && m.all_day_end) {
-    return `全天营业: ${m.all_day_start} - ${m.all_day_end}`
+    return `全天 ${m.all_day_start} - ${m.all_day_end}`
   }
   
   // 分时段营业
