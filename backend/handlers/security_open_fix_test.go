@@ -177,7 +177,7 @@ func TestUpdateTechnicianAliasRejectsStaffWithoutInfoPermission(t *testing.T) {
 	}
 }
 
-func TestMerchantSearchUsersOnlyReturnsMerchantLinkedUsers(t *testing.T) {
+func TestMerchantSearchUsersWithIssuePermissionReturnsGlobalUsers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
@@ -188,6 +188,66 @@ func TestMerchantSearchUsersOnlyReturnsMerchantLinkedUsers(t *testing.T) {
 		t.Fatalf("create merchant failed: %v", err)
 	}
 	role := createStaffRoleWithPermission(t, config.DB, m.ID, "merchant.card.issue")
+
+	phone1 := "13900000001"
+	phone2 := "13900000002"
+	u1 := models.User{Username: "u1", Password: "pwd", Phone: &phone1, Nickname: "linked-card"}
+	u2 := models.User{Username: "u2", Password: "pwd", Phone: &phone2, Nickname: "unlinked"}
+	if err := config.DB.Create(&u1).Error; err != nil {
+		t.Fatalf("create user1 failed: %v", err)
+	}
+	if err := config.DB.Create(&u2).Error; err != nil {
+		t.Fatalf("create user2 failed: %v", err)
+	}
+	if err := config.DB.Create(&models.Card{UserID: u1.ID, MerchantID: m.ID, CardNo: "00001", CardType: "A"}).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/merchant/users/search?phone=139", nil)
+	c.Set("auth_type", "staff")
+	c.Set("merchant_id", m.ID)
+	c.Set("service_role_id", role.ID)
+
+	MerchantSearchUsers(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data []struct {
+			ID       uint    `json:"id"`
+			Phone    *string `json:"phone"`
+			Nickname string  `json:"nickname"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if len(resp.Data) != 2 {
+		t.Fatalf("want 2 users, got %d body=%s", len(resp.Data), rec.Body.String())
+	}
+	got := map[uint]bool{}
+	for _, u := range resp.Data {
+		got[u.ID] = true
+	}
+	if !got[u1.ID] || !got[u2.ID] {
+		t.Fatalf("want linked and unlinked users, got body=%s", rec.Body.String())
+	}
+}
+
+func TestMerchantSearchUsersWithVerifyPermissionOnlyReturnsMerchantLinkedUsers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupSecurityFixTestDB(t)
+
+	m := models.Merchant{Name: "m", Phone: "18800001116", Password: "pwd"}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	role := createStaffRoleWithPermission(t, config.DB, m.ID, "merchant.card.verify")
 
 	phone1 := "13900000001"
 	phone2 := "13900000002"

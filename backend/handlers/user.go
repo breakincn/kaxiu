@@ -100,7 +100,18 @@ func MerchantSearchUsers(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !requireAnyMerchantPermissionInHandler(c, "merchant.card.issue", "merchant.card.verify") {
+	canIssue, err := hasMerchantPermissionInHandler(c, "merchant.card.issue")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "权限校验失败"})
+		return
+	}
+	canVerify, err := hasMerchantPermissionInHandler(c, "merchant.card.verify")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "权限校验失败"})
+		return
+	}
+	if !canIssue && !canVerify {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权限"})
 		return
 	}
 
@@ -125,11 +136,14 @@ func MerchantSearchUsers(c *gin.Context) {
 		Where("merchant_id = ?", merchantID)
 
 	var users []merchantUserResult
-	config.DB.
+	query := config.DB.
 		Model(&models.User{}).
 		Select("users.id, users.phone, users.nickname").
-		Where("phone LIKE ?", "%"+phone+"%").
-		Where("(users.id IN (?) OR users.id IN (?))", cardUserSubQuery, appointmentUserSubQuery).
+		Where("phone LIKE ?", "%"+phone+"%")
+	if !canIssue {
+		query = query.Where("(users.id IN (?) OR users.id IN (?))", cardUserSubQuery, appointmentUserSubQuery)
+	}
+	query.
 		Order("users.id DESC").
 		Limit(20).
 		Find(&users)
