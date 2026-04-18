@@ -148,23 +148,21 @@
               </div>
 
               <div>
-                <div class="flex items-center justify-between py-1">
-                  <div>
-                    <div class="text-sm font-medium text-gray-700">展示用户</div>
-                    <div class="mt-1 text-xs text-gray-400">多人服务项目在用户端使用记录中展示参与服务用户昵称。</div>
-                  </div>
+                <div class="flex items-center justify-between">
+                  <div class="text-sm font-medium text-gray-700 leading-5">展示用户</div>
                   <button
                     type="button"
-                    class="relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors"
+                    class="relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors"
                     :class="project.show_participants !== false ? 'bg-blue-500' : 'bg-gray-300'"
                     @click="project.show_participants = project.show_participants === false"
                   >
                     <span
-                      class="inline-block h-6 w-6 rounded-full bg-white shadow transition-transform"
-                      :class="project.show_participants !== false ? 'translate-x-5' : 'translate-x-0.5'"
+                      class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
+                      :class="project.show_participants !== false ? 'translate-x-4' : 'translate-x-0.5'"
                     ></span>
                   </button>
                 </div>
+                <div class="mt-1 text-xs text-gray-400">多人服务项目在用户端使用记录中展示参与服务用户昵称。</div>
               </div>
 
               <div>
