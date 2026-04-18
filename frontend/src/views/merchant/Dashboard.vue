@@ -621,13 +621,14 @@
         </div>
         <div v-else class="mt-3 space-y-2">
           <div v-for="row in visibleSchedulePublishings" :key="getSchedulePublishingRowKey(row)" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <div class="font-medium text-gray-800">{{ formatDateTime(row.start_at) }} - {{ formatDateTime(row.end_at) }}</div>
-                <div v-if="row.technician?.name" class="mt-1 text-sm text-gray-500">{{ row.technician.name }}</div>
-              </div>
-              <div class="px-2 py-1 rounded-full text-xs font-medium shrink-0" :class="getSchedulePublishingStatusClass(getEffectiveSchedulePublishingStatus(row))">
-                {{ getSchedulePublishingStatusText(getEffectiveSchedulePublishingStatus(row)) }}
+            <div class="font-medium text-gray-800">{{ formatDateTime(row.start_at) }} - {{ formatDateTime(row.end_at) }}</div>
+            <div class="mt-2 flex items-center justify-between gap-3">
+              <div class="text-sm text-gray-500 truncate">{{ row.technician?.name || '-' }}</div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span v-if="row.published_at" class="text-xs text-gray-400">{{ formatDateTime(row.published_at) }}</span>
+                <span class="px-2 py-1 rounded-full text-xs font-medium" :class="getSchedulePublishingStatusClass(getEffectiveSchedulePublishingStatus(row))">
+                  {{ getSchedulePublishingStatusText(getEffectiveSchedulePublishingStatus(row)) }}
+                </span>
               </div>
             </div>
           </div>
@@ -3197,6 +3198,10 @@ const parseScheduleDateValue = (value) => {
   if (Number.isNaN(date.getTime())) return null
   return date
 }
+const formatScheduleDayLabel = (date) => {
+  if (!date || Number.isNaN(date.getTime())) return ''
+  return `${date.getDate()}日`
+}
 const getSchedulePublishCutoff = (date) => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 10, 0, 0, 0)
 }
@@ -3267,6 +3272,14 @@ const showTechnicianSchedulePublishingTab = computed(() => {
     (technicianSchedulePublishingWindowState.value.canWithdraw && hasPublishedRows)
 })
 const technicianSchedulePublishingSubtitle = computed(() => {
+  if (hasPublishedScheduleRows.value) {
+    const target = currentSchedulePublishingDate.value
+    if (target) {
+      const withdrawDate = new Date(target)
+      withdrawDate.setDate(withdrawDate.getDate() - 1)
+      return `${formatScheduleDayLabel(target)}的预约排班已发布，${formatScheduleDayLabel(withdrawDate)}10:30 前可撤销`
+    }
+  }
   return '请在今天 10:00 前发布明天的预约安排，10:30 前可撤销。'
 })
 const technicianSchedulePublishingHint = computed(() => {
