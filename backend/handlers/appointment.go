@@ -581,20 +581,12 @@ func scheduleWithdrawCutoffAt(targetDate time.Time) time.Time {
 	return time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 10, 30, 0, 0, targetDate.Location())
 }
 
-func scheduleNextDayOpenAt(targetDate time.Time) time.Time {
-	prevDate := targetDate.Add(-24 * time.Hour)
-	return time.Date(prevDate.Year(), prevDate.Month(), prevDate.Day(), 16, 0, 0, 0, targetDate.Location())
-}
-
-func resolveSchedulePublishingDate(raw string, now time.Time, staffScoped bool) (time.Time, error) {
+func resolveSchedulePublishingDate(raw string, now time.Time, _ bool) (time.Time, error) {
 	loc := now.Location()
 	if strings.TrimSpace(raw) != "" {
 		return time.ParseInLocation("2006-01-02", strings.TrimSpace(raw), loc)
 	}
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-	if staffScoped && now.Before(scheduleWithdrawCutoffAt(today)) {
-		return today, nil
-	}
 	return today.Add(24 * time.Hour), nil
 }
 
@@ -603,26 +595,24 @@ func validateStaffSchedulePublishWindow(now, targetDate time.Time) error {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 	target := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, loc)
 	switch {
-	case target.Equal(today):
-		if !now.Before(schedulePublishCutoffAt(target)) {
-			return apiErr{status: http.StatusBadRequest, msg: "当天预约排班仅可在当天10:00前发布"}
-		}
-		return nil
 	case target.Equal(today.Add(24 * time.Hour)):
-		if now.Before(scheduleNextDayOpenAt(target)) {
-			return apiErr{status: http.StatusBadRequest, msg: "次日预约排班仅可在前一日16:00后发布"}
-		}
-		if !now.Before(schedulePublishCutoffAt(target)) {
-			return apiErr{status: http.StatusBadRequest, msg: "次日预约排班超过次日10:00后不可再发布"}
+		if !now.Before(schedulePublishCutoffAt(today)) {
+			return apiErr{status: http.StatusBadRequest, msg: "次日预约排班仅可在当天10:00前发布"}
 		}
 		return nil
 	default:
-		return apiErr{status: http.StatusBadRequest, msg: "仅支持发布当天或次日预约排班"}
+		return apiErr{status: http.StatusBadRequest, msg: "仅支持发布次日预约排班"}
 	}
 }
 
 func validateStaffScheduleWithdrawWindow(now, targetDate time.Time) error {
-	if !now.Before(scheduleWithdrawCutoffAt(targetDate)) {
+	loc := now.Location()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	target := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 0, 0, 0, 0, loc)
+	if !target.Equal(today.Add(24 * time.Hour)) {
+		return apiErr{status: http.StatusBadRequest, msg: "仅支持撤销次日预约安排"}
+	}
+	if !now.Before(scheduleWithdrawCutoffAt(today)) {
 		return apiErr{status: http.StatusBadRequest, msg: "当天10:30后不可撤销预约安排"}
 	}
 	return nil
@@ -5757,7 +5747,7 @@ func GetAvailableTimeSlots(c *gin.Context) {
 	}
 
 	loc := appointmentLocation()
-	now := time.Now().In(loc)
+	now := appointmentCurrentTime().In(loc)
 	todayDate := now.Format("2006-01-02")
 	tomorrowDate := now.Add(24 * time.Hour).Format("2006-01-02")
 	if date == "" {

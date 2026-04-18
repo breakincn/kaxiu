@@ -3203,28 +3203,14 @@ const getSchedulePublishCutoff = (date) => {
 const getScheduleWithdrawCutoff = (date) => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 10, 30, 0, 0)
 }
-const getScheduleNextDayOpenAt = (date) => {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1, 16, 0, 0, 0)
-}
 const getDefaultSchedulePublishingDate = () => {
   const now = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
-  if (isTechnicianAuth() && now < getScheduleWithdrawCutoff(today)) {
-    return formatScheduleDateValue(today)
-  }
   const tomorrow = new Date(today)
   tomorrow.setDate(tomorrow.getDate() + 1)
   return formatScheduleDateValue(tomorrow)
 }
 const currentSchedulePublishingDate = computed(() => parseScheduleDateValue(schedulePublishingDate.value))
-const isTodaySchedulePublishingTarget = computed(() => {
-  const target = currentSchedulePublishingDate.value
-  if (!target) return false
-  const now = schedulePublishingNow.value
-  return target.getFullYear() === now.getFullYear() &&
-    target.getMonth() === now.getMonth() &&
-    target.getDate() === now.getDate()
-})
 const getSchedulePublishingWindowStateForDate = (target, now = schedulePublishingNow.value) => {
   if (!target || !isTechnicianAuth()) {
     return {
@@ -3251,28 +3237,21 @@ const getSchedulePublishingWindowStateForDate = (target, now = schedulePublishin
   }
 
   if (targetDay.getTime() === tomorrow.getTime()) {
-    const nextDayOpenAt = getScheduleNextDayOpenAt(targetDay)
-    if (now < nextDayOpenAt) {
-      return {
-        canPublish: false,
-        canWithdraw: false,
-        publishBlockedReason: '次日预约排班需在前一日 16:00 后才能发布',
-        withdrawBlockedReason: '次日预约排班尚未开放发布，当前不可撤销'
-      }
-    }
+    const publishCutoff = getSchedulePublishCutoff(today)
+    const withdrawCutoff = getScheduleWithdrawCutoff(today)
     return {
       canPublish: now < publishCutoff,
       canWithdraw: now < withdrawCutoff,
-      publishBlockedReason: now < publishCutoff ? '' : '次日预约排班已过 10:00 发布时间',
-      withdrawBlockedReason: now < withdrawCutoff ? '' : '次日预约排班已过 10:30 撤销截止时间'
+      publishBlockedReason: now < publishCutoff ? '' : '次日预约排班已过今日 10:00 发布时间',
+      withdrawBlockedReason: now < withdrawCutoff ? '' : '次日预约排班已过今日 10:30 撤销截止时间'
     }
   }
 
   return {
     canPublish: false,
     canWithdraw: false,
-    publishBlockedReason: '仅支持发布今日或次日预约排班',
-      withdrawBlockedReason: '仅支持撤销今日或次日预约排班'
+    publishBlockedReason: '仅支持发布次日预约排班',
+    withdrawBlockedReason: '仅支持撤销次日预约排班'
   }
 }
 const technicianSchedulePublishingWindowState = computed(() => {
@@ -3288,9 +3267,7 @@ const showTechnicianSchedulePublishingTab = computed(() => {
     (technicianSchedulePublishingWindowState.value.canWithdraw && hasPublishedRows)
 })
 const technicianSchedulePublishingSubtitle = computed(() => {
-  return isTodaySchedulePublishingTarget.value
-    ? '请在今天 10:00 前发布今天的预约安排，10:30 前可撤销。'
-    : '请在今日 16:00 后至明日 10:00 前发布后日预约排班，明日 10:30 前可撤销。'
+  return '请在今天 10:00 前发布明天的预约安排，10:30 前可撤销。'
 })
 const technicianSchedulePublishingHint = computed(() => {
   if (!isTechnicianAuth()) return ''
@@ -6758,7 +6735,7 @@ const schedulePublishingPrimaryAction = computed(() => {
     const canPublishRows = hasPublishableScheduleRows.value
     return {
       mode: 'publish',
-      label: isTodaySchedulePublishingTarget.value ? '发布今日安排' : '发布次日安排',
+      label: '发布次日安排',
       submittingText: '发布中...',
       disabled: !canPublish || !canPublishRows,
       className: canPublish && canPublishRows ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-400'

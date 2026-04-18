@@ -770,9 +770,9 @@ func TestStaffCanListAndPublishOwnScheduleWithoutManagePermission(t *testing.T) 
 	loc := appointmentLocation()
 	now := time.Date(2026, 3, 27, 9, 0, 0, 0, loc)
 	withAppointmentCurrentTime(t, now)
-	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-	startAt := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, loc)
-	endAt := time.Date(now.Year(), now.Month(), now.Day(), 22, 0, 0, 0, loc)
+	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	startAt := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 9, 0, 0, 0, loc)
+	endAt := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 22, 0, 0, 0, loc)
 	previewRows := []models.TechnicianSchedulePublishing{
 		{MerchantID: merchant.ID, TechnicianID: &tech.ID, PublishDate: &targetDate, StartAt: &startAt, EndAt: &endAt, Status: "unpublished"},
 		{MerchantID: merchant.ID, TechnicianID: &otherTech.ID, PublishDate: &targetDate, StartAt: &startAt, EndAt: &endAt, Status: "unpublished"},
@@ -842,7 +842,7 @@ func TestStaffCanListAndPublishOwnScheduleWithoutManagePermission(t *testing.T) 
 	}
 }
 
-func TestStaffCannotPublishTomorrowScheduleBeforeFourPM(t *testing.T) {
+func TestStaffCannotPublishTomorrowScheduleAfterTodayTenAM(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB
 	defer func() { config.DB = oldDB }()
@@ -855,7 +855,7 @@ func TestStaffCannotPublishTomorrowScheduleBeforeFourPM(t *testing.T) {
 	}
 
 	loc := appointmentLocation()
-	now := time.Date(2026, 3, 27, 15, 0, 0, 0, loc)
+	now := time.Date(2026, 3, 27, 10, 0, 0, 0, loc)
 	withAppointmentCurrentTime(t, now)
 	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
 	path := "/merchant/schedules/publish-next-day?date=" + targetDate.Format("2006-01-02")
@@ -867,8 +867,8 @@ func TestStaffCannotPublishTomorrowScheduleBeforeFourPM(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "16:00") {
-		t.Fatalf("want 16:00 hint, got %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "10:00") {
+		t.Fatalf("want 10:00 hint, got %s", rec.Body.String())
 	}
 }
 
@@ -890,7 +890,7 @@ func TestStaffListSchedulePublishingsIncludesOwnRowsForOperationalRole(t *testin
 	loc := appointmentLocation()
 	now := time.Date(2026, 3, 28, 9, 0, 0, 0, loc)
 	withAppointmentCurrentTime(t, now)
-	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
 
 	listPath := "/merchant/schedules/publishings?date=" + targetDate.Format("2006-01-02")
 	listCtx, listRec := newStaffContext(http.MethodGet, listPath, merchant.ID, tech.ID, role.ID)
@@ -944,9 +944,9 @@ func TestStaffWithdrawOnlyOwnPublishedScheduleAndAppointments(t *testing.T) {
 	loc := appointmentLocation()
 	now := time.Date(2026, 3, 27, 9, 15, 0, 0, loc)
 	withAppointmentCurrentTime(t, now)
-	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-	startAt := time.Date(now.Year(), now.Month(), now.Day(), 10, 0, 0, 0, loc)
-	endAt := time.Date(now.Year(), now.Month(), now.Day(), 13, 0, 0, 0, loc)
+	targetDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).Add(24 * time.Hour)
+	startAt := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 10, 0, 0, 0, loc)
+	endAt := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 13, 0, 0, 0, loc)
 	publishedAt := time.Date(now.Year(), now.Month(), now.Day(), 8, 30, 0, 0, loc)
 
 	rows := []models.TechnicianSchedulePublishing{
@@ -957,8 +957,8 @@ func TestStaffWithdrawOnlyOwnPublishedScheduleAndAppointments(t *testing.T) {
 		t.Fatalf("create publishings failed: %v", err)
 	}
 
-	ownAppointmentTime := time.Date(now.Year(), now.Month(), now.Day(), 10, 30, 0, 0, loc)
-	otherAppointmentTime := time.Date(now.Year(), now.Month(), now.Day(), 11, 0, 0, 0, loc)
+	ownAppointmentTime := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 10, 30, 0, 0, loc)
+	otherAppointmentTime := time.Date(targetDate.Year(), targetDate.Month(), targetDate.Day(), 11, 0, 0, 0, loc)
 	ownAppointment := models.Appointment{MerchantID: merchant.ID, UserID: user.ID, TechnicianID: &tech.ID, AppointmentTime: &ownAppointmentTime, Status: "confirmed"}
 	otherAppointment := models.Appointment{MerchantID: merchant.ID, UserID: user.ID, TechnicianID: &otherTech.ID, AppointmentTime: &otherAppointmentTime, Status: "confirmed"}
 	if err := config.DB.Create(&ownAppointment).Error; err != nil {
