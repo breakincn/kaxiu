@@ -319,6 +319,13 @@ var defaultMigrations = []dbMigration{
 			"UPDATE usages u JOIN cards c ON c.id = u.card_id LEFT JOIN (SELECT older.id AS usage_id, COALESCE(SUM(CASE WHEN later.used_times > 0 THEN later.used_times ELSE 0 END), 0) AS later_used FROM usages older LEFT JOIN usages later ON later.card_id = older.card_id AND later.status <> 'failed' AND later.id <> older.id AND ((older.used_at IS NOT NULL AND later.used_at IS NOT NULL AND later.used_at > older.used_at) OR (older.used_at IS NOT NULL AND later.used_at = older.used_at AND later.id > older.id) OR (older.used_at IS NULL AND later.id > older.id)) WHERE older.status <> 'failed' GROUP BY older.id) x ON x.usage_id = u.id SET u.card_total_times_snapshot = c.total_times, u.card_used_times_snapshot = GREATEST(c.used_times - COALESCE(x.later_used, 0), 0), u.card_remain_times_snapshot = c.remain_times + COALESCE(x.later_used, 0) WHERE u.status <> 'failed' AND (u.card_total_times_snapshot IS NULL OR u.card_used_times_snapshot IS NULL OR u.card_remain_times_snapshot IS NULL)",
 		},
 	},
+	{
+		Version: "2026041801",
+		Name:    "add_merchant_show_province",
+		Statements: []string{
+			"ALTER TABLE merchants ADD COLUMN show_province BOOLEAN NOT NULL DEFAULT 0 COMMENT '用户端地址是否展示省份'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

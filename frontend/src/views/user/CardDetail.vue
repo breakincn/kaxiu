@@ -4437,7 +4437,7 @@ const getMerchantAddress = () => {
   const m = card.value.merchant
   const parts = []
   
-  if (m.province) parts.push(m.province)
+  if (m.show_province && m.province) parts.push(m.province)
   if (m.city) parts.push(m.city)
   if (m.district) parts.push(m.district)
   if (m.address) parts.push(m.address)

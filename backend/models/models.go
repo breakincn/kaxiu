@@ -74,10 +74,11 @@ type Merchant struct {
 	AllDayStart    string `json:"all_day_start" gorm:"size:10;default:'';comment:全天营业开始时间（格式：HH:MM）"`
 	AllDayEnd      string `json:"all_day_end" gorm:"size:10;default:'';comment:全天营业结束时间（格式：HH:MM）"`
 	// 地址信息
-	Province string `json:"province" gorm:"size:50;default:'';comment:省份"`
-	City     string `json:"city" gorm:"size:50;default:'';comment:城市"`
-	District string `json:"district" gorm:"size:50;default:'';comment:区县"`
-	Address  string `json:"address" gorm:"size:200;default:'';comment:详细地址（街道门牌号）"`
+	Province     string `json:"province" gorm:"size:50;default:'';comment:省份"`
+	City         string `json:"city" gorm:"size:50;default:'';comment:城市"`
+	District     string `json:"district" gorm:"size:50;default:'';comment:区县"`
+	Address      string `json:"address" gorm:"size:200;default:'';comment:详细地址（街道门牌号）"`
+	ShowProvince bool   `json:"show_province" gorm:"default:false;comment:用户端地址是否展示省份"`
 	// 营业状态
 	IsOpen    bool       `json:"is_open" gorm:"default:true;comment:营业状态（0-打烊，1-营业中）"`
 	CreatedAt *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`

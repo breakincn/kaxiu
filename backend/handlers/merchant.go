@@ -691,6 +691,7 @@ func UpdateMerchant(c *gin.Context) {
 		Name               string `json:"name"`
 		Type               string `json:"type"`
 		SupportAppointment *bool  `json:"support_appointment"`
+		ShowProvince       *bool  `json:"show_province"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -707,8 +708,19 @@ func UpdateMerchant(c *gin.Context) {
 	if input.SupportAppointment != nil {
 		updates["support_appointment"] = *input.SupportAppointment
 	}
-	config.DB.Model(&merchant).Updates(updates)
-	config.DB.First(&merchant, id)
+	if input.ShowProvince != nil {
+		updates["show_province"] = *input.ShowProvince
+	}
+	if len(updates) > 0 {
+		if err := config.DB.Model(&merchant).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+			return
+		}
+	}
+	if err := config.DB.First(&merchant, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取商户信息失败"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"data": merchant})
 }
 
@@ -869,6 +881,7 @@ func UpdateMerchantInfo(c *gin.Context) {
 		City           *string `json:"city"`
 		District       *string `json:"district"`
 		Address        *string `json:"address"`
+		ShowProvince   *bool   `json:"show_province"`
 		StartTerm      *string `json:"start_term"`
 		FinishTerm     *string `json:"finish_term"`
 	}
@@ -913,6 +926,9 @@ func UpdateMerchantInfo(c *gin.Context) {
 	}
 	if input.Address != nil {
 		updates["address"] = strings.TrimSpace(*input.Address)
+	}
+	if input.ShowProvince != nil {
+		updates["show_province"] = *input.ShowProvince
 	}
 	if input.StartTerm != nil {
 		updates["start_term"] = strings.TrimSpace(*input.StartTerm)

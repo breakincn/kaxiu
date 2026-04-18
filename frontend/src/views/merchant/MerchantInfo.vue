@@ -163,6 +163,15 @@
             </div>
           </div>
 
+          <label class="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-3 py-3">
+            <span class="text-sm text-gray-700">省份展示</span>
+            <input
+              v-model="form.show_province"
+              type="checkbox"
+              class="h-5 w-5 accent-primary"
+            />
+          </label>
+
           <!-- 详细地址 -->
           <div>
             <label class="text-xs text-gray-500 mb-1 block">详细地址</label>
@@ -248,6 +257,7 @@ const form = ref({
   city: '',
   district: '',
   address: '',
+  show_province: false,
   start_term: '',
   finish_term: ''
 })
@@ -266,6 +276,7 @@ const buildSnapshot = () => JSON.stringify({
   city: form.value.city || '',
   district: form.value.district || '',
   address: form.value.address || '',
+  show_province: !!form.value.show_province,
   start_term: form.value.start_term || '',
   finish_term: form.value.finish_term || ''
 })
@@ -317,6 +328,7 @@ const fetchMerchantInfo = async () => {
       city: data.city || '',
       district: data.district || '',
       address: data.address || '',
+      show_province: !!data.show_province,
       start_term: data.start_term || '',
       finish_term: data.finish_term || ''
     }
@@ -348,11 +360,19 @@ const saveInfo = async () => {
 
   saving.value = true
   try {
-    await merchantApi.updateMerchantInfo(form.value)
+    const payload = {
+      ...form.value,
+      show_province: !!form.value.show_province
+    }
+    const res = await merchantApi.updateMerchantInfo(payload)
+    const saved = res.data?.data
+    if (saved && !!saved.show_province !== payload.show_province) {
+      throw new Error('省份展示保存失败')
+    }
     alert('保存成功')
     await fetchMerchantInfo()
   } catch (err) {
-    alert(err.response?.data?.error || '保存失败')
+    alert(err.response?.data?.error || err.message || '保存失败')
   } finally {
     saving.value = false
   }

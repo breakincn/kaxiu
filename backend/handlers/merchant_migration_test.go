@@ -30,6 +30,63 @@ func setupMerchantHandlerTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestUpdateMerchantInfoShowProvinceCanToggle(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupMerchantHandlerTestDB(t)
+
+	m := models.Merchant{
+		Name:     "蜜桃健身",
+		Phone:    "18800002001",
+		Password: "pwd",
+	}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	if m.ShowProvince {
+		t.Fatalf("show_province should default false")
+	}
+
+	body, _ := json.Marshal(map[string]any{"show_province": true})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/info", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("merchant_id", m.ID)
+
+	UpdateMerchantInfo(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got models.Merchant
+	if err := config.DB.First(&got, m.ID).Error; err != nil {
+		t.Fatalf("load merchant failed: %v", err)
+	}
+	if !got.ShowProvince {
+		t.Fatalf("show_province should be true after enabling")
+	}
+
+	body, _ = json.Marshal(map[string]any{"show_province": false})
+	rec = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/info", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("merchant_id", m.ID)
+
+	UpdateMerchantInfo(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if err := config.DB.First(&got, m.ID).Error; err != nil {
+		t.Fatalf("reload merchant failed: %v", err)
+	}
+	if got.ShowProvince {
+		t.Fatalf("show_province should be false after disabling")
+	}
+}
+
 func TestUpdateCurrentMerchantServices_DoesNotMigrateOnHandCardToggle(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB
