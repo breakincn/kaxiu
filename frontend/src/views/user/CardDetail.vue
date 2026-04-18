@@ -71,7 +71,7 @@
               <svg :class="isMerchantOpen() ? 'text-green-500' : 'text-red-500'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
               </svg>
-              <span class="font-medium text-gray-800">营业时间</span>
+              <span class="font-medium text-gray-800">{{ isMerchantOpen() ? '营业时间' : '暂停营业' }}</span>
             </div>
             <div v-if="isMerchantOpen()" class="text-sm leading-relaxed text-gray-500 text-right" v-html="getMerchantBusinessHours()"></div>
             <span v-if="!isMerchantOpen()" class="bg-red-500 text-white text-sm font-medium px-3 py-1 rounded">打烊</span>
