@@ -283,10 +283,12 @@ export const merchantApi = {
   // 专业客服岗位（商户自定义）
   getProfessionalRoles: () => api.get('/merchant/professional-roles'),
   createProfessionalRole: (data) => api.post('/merchant/professional-roles', data),
+  updateProfessionalRole: (roleKey, data) => api.put(`/merchant/professional-roles/${encodeURIComponent(roleKey)}`, data),
 
   // 运营客服岗位（平台默认 + 商户自定义）
   getOperationalRoles: () => api.get('/merchant/operational-roles'),
   createOperationalRole: (data) => api.post('/merchant/operational-roles', data),
+  updateOperationalRole: (roleKey, data) => api.put(`/merchant/operational-roles/${encodeURIComponent(roleKey)}`, data),
 
   // 角色权限微调
   getRolePermissions: (roleKey) => api.get(`/merchant/role-permissions/${roleKey}`),

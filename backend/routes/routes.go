@@ -219,10 +219,12 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	// 商户端：专业客服岗位（称谓+前缀）
 	auth.GET("/professional-roles", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantProfessionalRoles)
 	auth.POST("/professional-roles", middleware.RequirePermission("merchant.cs.manage"), handlers.CreateMerchantProfessionalRole)
+	auth.PUT("/professional-roles/:roleKey", middleware.RequirePermission("merchant.cs.manage"), handlers.UpdateMerchantProfessionalRole)
 
 	// 商户端：运营客服岗位（称谓+前缀）
 	auth.GET("/operational-roles", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantOperationalRoles)
 	auth.POST("/operational-roles", middleware.RequirePermission("merchant.cs.manage"), handlers.CreateMerchantOperationalRole)
+	auth.PUT("/operational-roles/:roleKey", middleware.RequirePermission("merchant.cs.manage"), handlers.UpdateMerchantOperationalRole)
 
 	// 岗位签到配置（按岗位独立控制是否需要签到）
 	auth.GET("/role-attendance-configs", middleware.RequirePermission("merchant.cs.manage"), handlers.GetMerchantRoleAttendanceConfigs)

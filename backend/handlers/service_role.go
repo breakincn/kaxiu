@@ -15,6 +15,108 @@ func duplicateRolePrefixError(prefix, roleName string) string {
 	return fmt.Sprintf("%q前缀已被岗位%q使用", prefix, roleName)
 }
 
+func parseMerchantRoleInput(c *gin.Context) (string, string, bool) {
+	var input struct {
+		Name          string `json:"name" binding:"required"`
+		AccountPrefix string `json:"account_prefix" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return "", "", false
+	}
+
+	name := strings.TrimSpace(input.Name)
+	prefix := strings.ToLower(strings.TrimSpace(input.AccountPrefix))
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "称谓不能为空"})
+		return "", "", false
+	}
+	if config.IsReservedServiceRoleName(name) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该岗位名称为系统保留名称"})
+		return "", "", false
+	}
+	if prefix == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀不能为空"})
+		return "", "", false
+	}
+	if len(prefix) > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀最多5个英文字母"})
+		return "", "", false
+	}
+	for _, ch := range prefix {
+		if ch < 'a' || ch > 'z' {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀只能包含英文字母"})
+			return "", "", false
+		}
+	}
+	return name, prefix, true
+}
+
+func ensureMerchantRoleUnique(c *gin.Context, merchantID uint, roleID uint, name string, prefix string) bool {
+	var existing models.ServiceRole
+	if err := config.DB.Where("merchant_id = ? AND account_prefix = ? AND id <> ?", merchantID, prefix, roleID).First(&existing).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": duplicateRolePrefixError(prefix, existing.Name)})
+		return false
+	}
+
+	var existingByName models.ServiceRole
+	if err := config.DB.Where("merchant_id = ? AND name = ? AND id <> ?", merchantID, name, roleID).First(&existingByName).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该岗位称谓已经存在,请不要重复添加"})
+		return false
+	}
+	return true
+}
+
+func updateMerchantRole(c *gin.Context, roleType string) {
+	authType, _ := c.Get("auth_type")
+	if authType == "staff" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "仅商户可操作"})
+		return
+	}
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+
+	roleKey := strings.TrimSpace(c.Param("roleKey"))
+	if roleKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "岗位不存在"})
+		return
+	}
+
+	name, prefix, ok := parseMerchantRoleInput(c)
+	if !ok {
+		return
+	}
+
+	var role models.ServiceRole
+	if err := config.DB.Where("merchant_id = ? AND `key` = ? AND role_type = ?", merchantID, roleKey, roleType).First(&role).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "岗位不存在或无权编辑"})
+		return
+	}
+	if !ensureMerchantRoleUnique(c, merchantID, role.ID, name, prefix) {
+		return
+	}
+
+	nextKey := config.BuildMerchantServiceRoleKey(merchantID, prefix)
+	if config.IsFixedServiceRoleKey(nextKey) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该岗位标识为系统保留标识"})
+		return
+	}
+	if err := config.DB.Model(&role).Updates(map[string]interface{}{
+		"name":           name,
+		"account_prefix": prefix,
+		"key":            nextKey,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	role.Name = name
+	role.AccountPrefix = prefix
+	role.Key = nextKey
+	c.JSON(http.StatusOK, gin.H{"data": role})
+}
+
 func GetPlatformServiceRoles(c *gin.Context) {
 	var list []models.ServiceRole
 	config.DB.Where("is_active = ? AND merchant_id IS NULL AND `key` IN ?", true, config.FixedServiceRoleKeys()).Order("sort asc, id asc").Find(&list)
@@ -51,49 +153,11 @@ func CreateMerchantProfessionalRole(c *gin.Context) {
 		return
 	}
 
-	var input struct {
-		Name          string `json:"name" binding:"required"`
-		AccountPrefix string `json:"account_prefix" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	name, prefix, ok := parseMerchantRoleInput(c)
+	if !ok {
 		return
 	}
-
-	name := strings.TrimSpace(input.Name)
-	prefix := strings.ToLower(strings.TrimSpace(input.AccountPrefix))
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "称谓不能为空"})
-		return
-	}
-	if config.IsReservedServiceRoleName(name) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该岗位名称为系统保留名称"})
-		return
-	}
-	if prefix == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀不能为空"})
-		return
-	}
-	if len(prefix) > 5 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀最多5个英文字母"})
-		return
-	}
-	for _, ch := range prefix {
-		if ch < 'a' || ch > 'z' {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀只能包含英文字母"})
-			return
-		}
-	}
-
-	var existing models.ServiceRole
-	if err := config.DB.Where("merchant_id = ? AND account_prefix = ?", merchantID, prefix).First(&existing).Error; err == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": duplicateRolePrefixError(prefix, existing.Name)})
-		return
-	}
-
-	var existingByName models.ServiceRole
-	if err := config.DB.Where("merchant_id = ? AND name = ?", merchantID, name).First(&existingByName).Error; err == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该岗位称谓已经存在,请不要重复添加"})
+	if !ensureMerchantRoleUnique(c, merchantID, 0, name, prefix) {
 		return
 	}
 
@@ -150,6 +214,10 @@ func CreateMerchantProfessionalRole(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": role})
 }
 
+func UpdateMerchantProfessionalRole(c *gin.Context) {
+	updateMerchantRole(c, "professional")
+}
+
 func GetMerchantOperationalRoles(c *gin.Context) {
 	authType, _ := c.Get("auth_type")
 	if authType == "staff" {
@@ -180,49 +248,11 @@ func CreateMerchantOperationalRole(c *gin.Context) {
 		return
 	}
 
-	var input struct {
-		Name          string `json:"name" binding:"required"`
-		AccountPrefix string `json:"account_prefix" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	name, prefix, ok := parseMerchantRoleInput(c)
+	if !ok {
 		return
 	}
-
-	name := strings.TrimSpace(input.Name)
-	prefix := strings.ToLower(strings.TrimSpace(input.AccountPrefix))
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "称谓不能为空"})
-		return
-	}
-	if config.IsReservedServiceRoleName(name) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该岗位名称为系统保留名称"})
-		return
-	}
-	if prefix == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀不能为空"})
-		return
-	}
-	if len(prefix) > 5 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀最多5个英文字母"})
-		return
-	}
-	for _, ch := range prefix {
-		if ch < 'a' || ch > 'z' {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "账号前缀只能包含英文字母"})
-			return
-		}
-	}
-
-	var existing models.ServiceRole
-	if err := config.DB.Where("merchant_id = ? AND account_prefix = ?", merchantID, prefix).First(&existing).Error; err == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": duplicateRolePrefixError(prefix, existing.Name)})
-		return
-	}
-
-	var existingByName models.ServiceRole
-	if err := config.DB.Where("merchant_id = ? AND name = ?", merchantID, name).First(&existingByName).Error; err == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该岗位称谓已经存在,请不要重复添加"})
+	if !ensureMerchantRoleUnique(c, merchantID, 0, name, prefix) {
 		return
 	}
 
@@ -279,6 +309,10 @@ func CreateMerchantOperationalRole(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": role})
+}
+
+func UpdateMerchantOperationalRole(c *gin.Context) {
+	updateMerchantRole(c, "operational")
 }
 
 func AdminListServiceRoles(c *gin.Context) {

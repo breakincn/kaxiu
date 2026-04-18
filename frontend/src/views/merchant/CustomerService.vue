@@ -108,6 +108,14 @@
                     </div>
                     <div v-if="group.role" class="mt-2 flex items-center justify-start gap-2">
                       <button
+                        v-if="canEditRole(group.role)"
+                        type="button"
+                        class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium"
+                        @click="openEditRole(group.role)"
+                      >
+                        编辑
+                      </button>
+                      <button
                         v-if="group.role && group.role.allow_permission_adjust"
                         type="button"
                         class="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium"
@@ -206,6 +214,14 @@
                       </div>
                     </div>
                     <div v-if="group.role" class="mt-2 flex items-center justify-start gap-2">
+                      <button
+                        v-if="canEditRole(group.role)"
+                        type="button"
+                        class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium"
+                        @click="openEditRole(group.role)"
+                      >
+                        编辑
+                      </button>
                       <button
                         v-if="group.role && group.role.allow_permission_adjust"
                         type="button"
@@ -753,6 +769,9 @@ const projectConfigSelectedIds = ref([])
 const projectConfigBindingMode = ref('merchant_default')
 
 const showAddRole = ref(false)
+const isEditRole = ref(false)
+const editingRoleKey = ref('')
+const editingRoleType = ref('')
 const roleForm = ref({
   name: '',
   account_prefix: ''
@@ -761,6 +780,7 @@ const rolePrefixAutoMode = ref(true)
 const rolePrefixLastClickAt = ref(0)
 
 const roleModalTitle = computed(() => {
+  if (isEditRole.value) return activeType.value === 'operational' ? '编辑运营岗位' : '编辑专业岗位'
   return activeType.value === 'operational' ? '添加运营岗位' : '添加专业岗位'
 })
 
@@ -875,14 +895,38 @@ const openCreateOperationalByKey = (roleKey) => {
 }
 
 const openCreateProfessionalRole = () => {
+  isEditRole.value = false
+  editingRoleKey.value = ''
+  editingRoleType.value = ''
   roleForm.value = { name: '', account_prefix: '' }
   rolePrefixAutoMode.value = true
   showAddRole.value = true
 }
 
 const openCreateOperationalRole = () => {
+  isEditRole.value = false
+  editingRoleKey.value = ''
+  editingRoleType.value = ''
   roleForm.value = { name: '', account_prefix: '' }
   rolePrefixAutoMode.value = true
+  showAddRole.value = true
+}
+
+const canEditRole = (role) => {
+  return !!role?.merchant_id && !!role?.key
+}
+
+const openEditRole = (role) => {
+  if (!canEditRole(role)) return
+  isEditRole.value = true
+  editingRoleKey.value = String(role.key || '')
+  editingRoleType.value = String(role.role_type || activeType.value || '')
+  activeType.value = editingRoleType.value === 'operational' ? 'operational' : 'professional'
+  roleForm.value = {
+    name: role.name || '',
+    account_prefix: role.account_prefix || ''
+  }
+  rolePrefixAutoMode.value = false
   showAddRole.value = true
 }
 
@@ -1177,6 +1221,9 @@ const onToggleRoleAttendance = async (roleKey, checked) => {
 
 const closeAddRole = () => {
   showAddRole.value = false
+  isEditRole.value = false
+  editingRoleKey.value = ''
+  editingRoleType.value = ''
   roleForm.value = { name: '', account_prefix: '' }
   rolePrefixAutoMode.value = true
 }
@@ -1273,13 +1320,16 @@ const submitRole = async () => {
     return
   }
 
-	// 称谓重复校验：与“新增岗位（称谓）”下拉框一致
-	const base = activeType.value === 'operational' ? (operationalRoles.value || []) : (professionalRoles.value || [])
-	const exists = base.some((r) => String(r?.name || '').trim() === name)
-	if (exists) {
-		alert('该岗位称谓已经存在,请不要重复添加')
-		return
-	}
+  // 称谓重复校验：与“新增岗位（称谓）”下拉框一致
+  const roleType = isEditRole.value
+    ? (editingRoleType.value === 'operational' ? 'operational' : 'professional')
+    : activeType.value
+  const base = roleType === 'operational' ? (operationalRoles.value || []) : (professionalRoles.value || [])
+  const exists = base.some((r) => String(r?.key || '') !== editingRoleKey.value && String(r?.name || '').trim() === name)
+  if (exists) {
+    alert('该岗位称谓已经存在,请不要重复添加')
+    return
+  }
 
   if (!prefix) {
     alert('请输入账号前缀')
@@ -1287,10 +1337,15 @@ const submitRole = async () => {
   }
   savingRole.value = true
   try {
-    const isOperational = activeType.value === 'operational'
-    const res = isOperational
-      ? await merchantApi.createOperationalRole({ name, account_prefix: prefix })
-      : await merchantApi.createProfessionalRole({ name, account_prefix: prefix })
+    const wasEditRole = isEditRole.value
+    const isOperational = roleType === 'operational'
+    const res = wasEditRole
+      ? (isOperational
+          ? await merchantApi.updateOperationalRole(editingRoleKey.value, { name, account_prefix: prefix })
+          : await merchantApi.updateProfessionalRole(editingRoleKey.value, { name, account_prefix: prefix }))
+      : (isOperational
+          ? await merchantApi.createOperationalRole({ name, account_prefix: prefix })
+          : await merchantApi.createProfessionalRole({ name, account_prefix: prefix }))
     const role = res?.data?.data
     if (isOperational) {
       await loadOperationalRoles()
@@ -1307,9 +1362,10 @@ const submitRole = async () => {
       }
     }
     closeAddRole()
-    alert('创建成功')
+    await load()
+    alert(wasEditRole ? '保存成功' : '创建成功')
   } catch (e) {
-    alert(e.response?.data?.error || '创建失败')
+    alert(e.response?.data?.error || (isEditRole.value ? '保存失败' : '创建失败'))
   } finally {
     savingRole.value = false
   }

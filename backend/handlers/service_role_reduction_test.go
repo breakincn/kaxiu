@@ -222,12 +222,12 @@ func TestCreateMerchantProfessionalRoleReturnsRoleNameInDuplicatePrefixError(t *
 	}
 	mid := m.ID
 	mustCreateServiceRole(t, config.DB, models.ServiceRole{
-		MerchantID:     &mid,
-		Key:            "m1_zj",
-		Name:           "助教",
-		AccountPrefix:  "zj",
-		RoleType:       "professional",
-		IsActive:       true,
+		MerchantID:    &mid,
+		Key:           "m1_zj",
+		Name:          "助教",
+		AccountPrefix: "zj",
+		RoleType:      "professional",
+		IsActive:      true,
 	})
 
 	rec := httptest.NewRecorder()
@@ -249,6 +249,49 @@ func TestCreateMerchantProfessionalRoleReturnsRoleNameInDuplicatePrefixError(t *
 	}
 	if resp.Error != `"zj"前缀已被岗位"助教"使用` {
 		t.Fatalf("unexpected error body=%s", rec.Body.String())
+	}
+}
+
+func TestUpdateMerchantProfessionalRoleEditsNamePrefixAndKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupServiceRoleReductionTestDB(t)
+
+	m := models.Merchant{Name: "m", Phone: "18800001212", Password: "pwd"}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	mid := m.ID
+	role := mustCreateServiceRole(t, config.DB, models.ServiceRole{
+		MerchantID:            &mid,
+		Key:                   "m1_bls",
+		Name:                  "Breaking老师",
+		AccountPrefix:         "bls",
+		RoleType:              "professional",
+		IsActive:              true,
+		AllowPermissionAdjust: true,
+	})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/professional-roles/m1_bls", bytes.NewBufferString(`{"name":"Breading老师","account_prefix":"br"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "roleKey", Value: "m1_bls"}}
+	c.Set("auth_type", "merchant")
+	c.Set("merchant_id", m.ID)
+
+	UpdateMerchantProfessionalRole(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got models.ServiceRole
+	if err := config.DB.First(&got, role.ID).Error; err != nil {
+		t.Fatalf("load role failed: %v", err)
+	}
+	if got.Name != "Breading老师" || got.AccountPrefix != "br" || got.Key != "m1_br" {
+		t.Fatalf("role not updated correctly: %#v", got)
 	}
 }
 
