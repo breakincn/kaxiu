@@ -1599,6 +1599,61 @@ const getUsageServiceDurationMinutes = (usage) => {
   return 50
 }
 
+const getUsageProject = (usage) => {
+  if (usage?.project && Number(usage.project?.id || 0) > 0) return usage.project
+  const projectID = Number(usage?.project_id || 0)
+  if (projectID <= 0) return null
+  return (card.value?.projects || []).find((item) => Number(item?.id || 0) === projectID) || null
+}
+
+const serviceTimeSlotMatchesDate = (slot, date) => {
+  if (String(slot?.recurrence_type || 'weekly') === 'monthly') {
+    return Number(slot?.month_day || 0) === date.getDate()
+  }
+  const jsDay = date.getDay()
+  const weekday = jsDay === 0 ? 7 : jsDay
+  return Number(slot?.weekday || 0) === weekday
+}
+
+const isUsageProjectServiceTimeAllowed = (usage, now = new Date()) => {
+  const project = getUsageProject(usage)
+  const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
+  if (slots.length === 0) return true
+
+  const durationMinutes = getUsageServiceDurationMinutes(usage)
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return false
+
+  for (const slot of slots) {
+    const startTime = String(slot?.start_time || '').trim()
+    const match = startTime.match(/^(\d{2}):(\d{2})$/)
+    if (!match) continue
+
+    const hour = Number(match[1])
+    const minute = Number(match[2])
+    for (let offset = -1; offset <= 1; offset++) {
+      const candidateDate = new Date(now)
+      candidateDate.setDate(candidateDate.getDate() + offset)
+      if (!serviceTimeSlotMatchesDate(slot, candidateDate)) continue
+
+      const startAt = new Date(candidateDate)
+      startAt.setHours(hour, minute, 0, 0)
+      const windowStart = new Date(startAt.getTime() - 60 * 60 * 1000)
+      const windowEnd = new Date(startAt.getTime() + durationMinutes * 60 * 1000 - 3 * 60 * 1000)
+      if (now >= windowStart && now <= windowEnd) {
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
+const ensureUsageProjectServiceTimeAllowed = (usage) => {
+  if (isUsageProjectServiceTimeAllowed(usage)) return true
+  alert('当前不在卡片项目服务时间')
+  return false
+}
+
 const getUsageProjectStartPendingTimeoutSeconds = (usage) => {
   const fromUsageProject = Number(usage?.project?.start_pending_timeout_seconds || 0)
   if (Number.isFinite(fromUsageProject) && fromUsageProject > 0) return fromUsageProject
@@ -2901,6 +2956,7 @@ const onUsageTouchStart = (e, usage) => {
           return
         }
         if (isUsageStartTimeout(latest)) {
+          if (!ensureUsageProjectServiceTimeAllowed(latest)) return
           router.push({
             path: `/user/service-sessions/${sessID}`,
             query: { next_step: 'staff_select', usage_id: String(latest?.id || ''), can_revoke: latest?.can_revoke ? '1' : '0' }
@@ -2916,6 +2972,7 @@ const onUsageTouchStart = (e, usage) => {
         }
         // 只有客服模式下才允许跳转到选择客服页面
         if (supportCSMode && (sessStatus === 'room_locked' || sessStatus === 'staff_selecting')) {
+          if (!ensureUsageProjectServiceTimeAllowed(latest)) return
           router.push({
             path: `/user/service-sessions/${sessID}`,
             query: { next_step: 'staff_select', usage_id: String(latest?.id || ''), can_revoke: latest?.can_revoke ? '1' : '0' }
