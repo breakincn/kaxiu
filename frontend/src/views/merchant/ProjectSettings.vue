@@ -188,7 +188,7 @@
                     <select
                       v-if="slot.recurrence_type !== 'monthly'"
                       v-model.number="slot.weekday"
-                      class="min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      class="h-10 min-w-0 px-3 py-0 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option
                         v-for="day in weekdayOptions"
@@ -201,7 +201,7 @@
                     <select
                       v-else
                       v-model.number="slot.month_day"
-                      class="min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      class="h-10 min-w-0 px-3 py-0 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option
                         v-for="day in monthDayOptions"
@@ -211,15 +211,26 @@
                         {{ day }}日
                       </option>
                     </select>
-                    <input
-                      v-model="slot.start_time"
-                      type="time"
-                      class="min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
+                    <div class="relative min-w-0">
+                      <input
+                        v-model="slot.start_time"
+                        type="time"
+                        class="service-time-input h-10 w-full min-w-0 px-3 pr-9 py-0 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      <svg
+                        class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-700"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle cx="12" cy="12" r="9" stroke-width="2"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 7v5l3 2"/>
+                      </svg>
+                    </div>
                     <button
                       type="button"
                       @click="removeServiceTimeSlot(project, slotIndex)"
-                      class="px-2 py-2 text-red-500"
+                      class="h-10 px-2 text-red-500"
                     >
                       删除
                     </button>
@@ -699,3 +710,9 @@ onMounted(() => {
   load()
 })
 </script>
+
+<style scoped>
+.service-time-input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+}
+</style>
