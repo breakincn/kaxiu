@@ -208,7 +208,7 @@
             @click="openVerifyCodeFlowFromAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
           >
-            生成核销码
+            {{ selectedCardMerchantClosed ? '暂停营业' : '生成核销码' }}
           </button>
           <button
             v-if="!hasActiveAppointment"
@@ -666,6 +666,13 @@ const displayedTechnicians = computed(() => {
   }
   return list
 })
+
+const selectedCardMerchantClosed = computed(() => selectedCard.value?.merchant?.is_open === false)
+
+const getSelectedCardMerchantClosedMessage = () => {
+  const merchantName = selectedCard.value?.merchant?.name || '商户'
+  return `${merchantName} 当前未营业`
+}
 
 const fetchCards = async () => {
   if (!userId.value) return
@@ -1191,6 +1198,10 @@ const openAppointmentArrivalVerifyFlowFromAction = async () => {
 }
 
 const openVerifyCodeFlowFromAction = async () => {
+  if (selectedCardMerchantClosed.value) {
+    alert(getSelectedCardMerchantClosedMessage())
+    return
+  }
   closeActionSheet()
   if (!selectedCard.value?.id) return
   await ensureSelectedCardForAppointment()
@@ -1235,6 +1246,10 @@ const handleAppointmentAction = async () => {
 
 const confirmVerifyProjectAndGenerate = async () => {
   if (!selectedVerifyProjectId.value || generatingVerifyCode.value) return
+  if (selectedCardMerchantClosed.value) {
+    alert(getSelectedCardMerchantClosedMessage())
+    return
+  }
   generatingVerifyCode.value = true
   try {
     await doGenerateVerifyCode(selectedVerifyProjectId.value)
