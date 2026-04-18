@@ -106,7 +106,7 @@
                         />
                       </div>
                     </div>
-                    <div v-if="group.role" class="mt-2 flex items-center justify-end gap-2">
+                    <div v-if="group.role" class="mt-2 flex items-center justify-start gap-2">
                       <button
                         v-if="group.role && group.role.allow_permission_adjust"
                         type="button"
@@ -191,10 +191,10 @@
                 <div v-for="(group, roleName) in professionalTechsByRole" :key="roleName" class="mb-6">
                   <div class="mb-3">
                     <div class="flex items-center justify-between gap-3">
-                    <div class="flex items-center gap-2">
-                      <div class="text-gray-800 font-medium">{{ roleName }}</div>
-                      <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs">{{ group.techs.length }}人</span>
-                    </div>
+                      <div class="flex items-center gap-2">
+                        <div class="text-gray-800 font-medium">{{ roleName }}</div>
+                        <span class="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-xs">{{ group.techs.length }}人</span>
+                      </div>
                       <div v-if="group.role" class="flex items-center gap-2">
                         <div class="text-gray-700 text-sm">开启签到</div>
                         <input
@@ -205,7 +205,7 @@
                         />
                       </div>
                     </div>
-                    <div v-if="group.role" class="mt-2 flex items-center justify-end gap-2">
+                    <div v-if="group.role" class="mt-2 flex items-center justify-start gap-2">
                       <button
                         v-if="group.role && group.role.allow_permission_adjust"
                         type="button"
