@@ -1129,6 +1129,7 @@ const sessionIdFromQuery = computed(() => {
   const v = String(route.query.session_id || '').trim()
   return v
 })
+const autoOpenStartQrDone = ref(false)
 
 const isPrecheckModal = computed(() => {
   return qrMode.value === 'start'
@@ -2751,6 +2752,25 @@ const closeUsageQrModal = () => {
   usagePrecheckDone.value = false
 }
 
+const maybeOpenStartQrFromQuery = async () => {
+  if (autoOpenStartQrDone.value) return
+  if (route.query.openStartQr !== '1') return
+  const sessionId = sessionIdFromQuery.value
+  if (!sessionId) return
+
+  const usage = (usages.value || []).find(u => {
+    return String(u?.service_session_id || '') === sessionId &&
+      normalizeSessionStatus(u?.service_session_status) === 'start_pending' &&
+      !u?.service_session_start_confirmed_at
+  })
+  if (!usage) return
+
+  autoOpenStartQrDone.value = true
+  usageRecordsCollapsed.value = false
+  await nextTick()
+  await openUsageQrModal(usage)
+}
+
 // 记录“上钟超时后，已开始计时等待用户选技师”的记录：usageId -> enteredAtMs
 const autoAssignCountdownMap = ref({})
 
@@ -3494,6 +3514,7 @@ const fetchUsages = async () => {
       if (route.query.scrollToUsages === '1' && displayUsages.value.length > 0) {
         await scrollToUsages()
       }
+      await maybeOpenStartQrFromQuery()
     } catch (err) {
       console.error('获取使用记录失败:', err)
     } finally {

@@ -197,6 +197,13 @@
         </div>
         <div class="space-y-3">
           <button
+            v-if="selectedCardHasStartPendingUsage"
+            @click="openStartPendingUsageFromAction"
+            class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
+          >
+            {{ selectedCardScanStartLabel }}
+          </button>
+          <button
             v-if="hasActiveAppointment"
             @click="handleAppointmentAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
@@ -456,6 +463,7 @@ import { useRouter } from 'vue-router'
 import { appointmentApi, cardApi, noticeApi, shopApi, usageApi } from '../../api'
 import { formatDate } from '../../utils/dateFormat'
 import { normalizeSessionStatus } from '../../utils/sessionStatus'
+import { getScanStartLabel } from '../../utils/terms'
 import QRCode from 'qrcode'
 import { LOW_PRIORITY_POLL_INTERVAL_MS } from '../../constants/polling'
 
@@ -668,6 +676,8 @@ const displayedTechnicians = computed(() => {
 })
 
 const selectedCardMerchantClosed = computed(() => selectedCard.value?.merchant?.is_open === false)
+const selectedCardHasStartPendingUsage = computed(() => Boolean(selectedCard.value?.hasStartPendingUsage && selectedCard.value?.startPendingUsageSessionId))
+const selectedCardScanStartLabel = computed(() => getScanStartLabel(selectedCard.value?.merchant))
 
 const getSelectedCardMerchantClosedMessage = () => {
   const merchantName = selectedCard.value?.merchant?.name || '商户'
@@ -706,7 +716,14 @@ const fetchCards = async () => {
     }
     
     const enrichedCards = await Promise.all((cardsData || []).map(async (card) => {
-      const enrichedCard = { ...card, pinnedNotice: null, hasAppointment: false, hasServingUsage: false }
+      const enrichedCard = {
+        ...card,
+        pinnedNotice: null,
+        hasAppointment: false,
+        hasServingUsage: false,
+        hasStartPendingUsage: false,
+        startPendingUsageSessionId: ''
+      }
 
       if (enrichedCard.merchant_id) {
         try {
@@ -734,8 +751,17 @@ const fetchCards = async () => {
           const usageRes = await usageApi.getCardUsages(enrichedCard.id)
           const usages = usageRes?.data?.data || []
           enrichedCard.hasServingUsage = usages.some(usage => normalizeSessionStatus(usage?.service_session_status) === 'serving')
+          const startPendingUsage = usages.find(usage =>
+            normalizeSessionStatus(usage?.service_session_status) === 'start_pending' &&
+            !usage?.service_session_start_confirmed_at &&
+            usage?.service_session_id
+          )
+          enrichedCard.hasStartPendingUsage = Boolean(startPendingUsage)
+          enrichedCard.startPendingUsageSessionId = startPendingUsage?.service_session_id ? String(startPendingUsage.service_session_id) : ''
         } catch (_) {
           enrichedCard.hasServingUsage = false
+          enrichedCard.hasStartPendingUsage = false
+          enrichedCard.startPendingUsageSessionId = ''
         }
       }
 
@@ -1223,6 +1249,22 @@ const openVerifyCodeFlowFromAction = async () => {
   } finally {
     generatingVerifyCode.value = false
   }
+}
+
+const openStartPendingUsageFromAction = () => {
+  const cardId = Number(selectedCard.value?.id || 0)
+  const sessionId = String(selectedCard.value?.startPendingUsageSessionId || '').trim()
+  if (!cardId || !sessionId) return
+
+  closeActionSheet()
+  router.push({
+    path: `/user/cards/${cardId}`,
+    query: {
+      scrollToUsages: '1',
+      session_id: sessionId,
+      openStartQr: '1'
+    }
+  })
 }
 
 const handleAppointmentAction = async () => {
