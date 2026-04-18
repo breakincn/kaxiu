@@ -246,13 +246,16 @@
                     <div v-for="t in group.techs" :key="t.id" class="bg-white border border-gray-100 rounded-xl p-4">
                       <div class="flex items-start justify-between gap-3">
                         <div>
-                          <div class="flex items-center gap-2">
+                          <div class="flex items-center gap-2 flex-wrap">
                             <div class="text-gray-800 font-medium">{{ t.name }}</div>
+                            <span class="text-gray-500 text-sm">账号：{{ t.account }}</span>
                             <span class="px-2 py-0.5 rounded text-xs" :class="t.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-500'">
                               {{ t.is_active ? '启用' : '禁用' }}
                             </span>
+                          </div>
+                          <div v-if="canConfigureAppointmentProjects(t)" class="text-gray-500 text-sm mt-1 flex items-center gap-2 flex-wrap">
+                            <span>{{ getAppointmentProjectSummary(t) }}</span>
                             <button
-                              v-if="canConfigureAppointmentProjects(t)"
                               type="button"
                               class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium"
                               @click="openProjectConfig(t)"
@@ -260,10 +263,8 @@
                               预约项目
                             </button>
                           </div>
-                          <div class="text-gray-500 text-sm mt-1 flex items-center gap-2 flex-wrap">
-                            <span>编号：{{ t.code }}　账号：{{ t.account }}</span>
+                          <div v-if="t.can_view_original_password" class="mt-1">
                             <button
-                              v-if="t.can_view_original_password"
                               type="button"
                               class="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium"
                               @click="viewOriginalPassword(t)"
@@ -272,7 +273,6 @@
                             </button>
                           </div>
                           <div v-if="shouldShowWindowNo && t.window_no" class="text-gray-500 text-sm mt-1">{{ windowTerm }}：{{ t.window_no }}</div>
-                          <div v-if="canConfigureAppointmentProjects(t)" class="text-gray-500 text-sm mt-1">{{ getAppointmentProjectSummary(t) }}</div>
                         </div>
                       </div>
 
@@ -1093,7 +1093,7 @@ const canConfigureAppointmentProjects = (t) => {
 const getAppointmentProjectSummary = (t) => {
   const mode = String(t?.appointment_project_binding_mode || 'merchant_default').trim()
   const projectIds = Array.isArray(t?.appointment_project_ids) ? t.appointment_project_ids : []
-  if (mode !== 'custom') return '预约项目：全部线上项目'
+  if (mode !== 'custom') return '预约项目：全部项目'
   return `预约项目：已选 ${projectIds.length} 项`
 }
 
