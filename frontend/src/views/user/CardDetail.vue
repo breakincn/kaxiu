@@ -92,7 +92,7 @@
                   {{ liveServiceStatus?.status_text || '正在读取门店实时状态' }}
                 </div>
                 <div class="live-service-summary">
-                  {{ liveServiceStatus?.summary_text || liveServiceError || '根据当前服务进度进行估算' }}
+                  {{ formatLiveServiceSummary(liveServiceStatus) || liveServiceError || '根据当前服务进度进行估算' }}
                 </div>
               </div>
               <button class="live-service-refresh" :disabled="liveServiceLoading" @click="refreshLiveServiceStatus">
@@ -104,15 +104,15 @@
               <div class="live-service-metrics">
                 <div>
                   <span>待服务</span>
-                  <strong>{{ liveServiceStatus.counts?.waiting_count || 0 }}</strong>
+                  <strong>{{ formatLiveServiceCount(liveServiceStatus.counts?.waiting_count) }}</strong>
                 </div>
                 <div>
                   <span>服务中</span>
-                  <strong>{{ liveServiceStatus.counts?.serving_count || 0 }}</strong>
+                  <strong>{{ formatLiveServiceCount(liveServiceStatus.counts?.serving_count) }}</strong>
                 </div>
                 <div>
                   <span>空闲客服</span>
-                  <strong>{{ liveServiceStatus.counts?.idle_staff_count || 0 }}</strong>
+                  <strong>{{ formatLiveServiceCount(liveServiceStatus.counts?.idle_staff_count) }}</strong>
                 </div>
               </div>
 
@@ -4487,6 +4487,18 @@ const getLiveServiceStatusLevel = (status) => {
   return status?.status_level || 'default'
 }
 
+const formatLiveServiceCount = (value) => {
+  if (!isMerchantOpen()) return '-'
+  const count = Number(value || 0)
+  return Number.isFinite(count) ? String(count) : '0'
+}
+
+const formatLiveServiceSummary = (status) => {
+  if (!status) return ''
+  if (!isMerchantOpen()) return '门店当前处于非营业状态'
+  return status.summary_text || ''
+}
+
 const formatLiveServiceWait = (status) => {
   if (!status) return '读取中'
   if (status.estimate?.wait_text) return status.estimate.wait_text
@@ -4505,6 +4517,7 @@ const shouldShowLiveServiceWaitLabel = (status) => {
 }
 
 const getLiveServiceEstimateClass = (status) => {
+  if (!isMerchantOpen()) return 'is-sample'
   const waitMinutes = Number(status?.estimate?.wait_minutes)
   if (Number.isFinite(waitMinutes) && waitMinutes > 0) return 'is-waiting'
   if (status?.status_level === 'busy') return 'is-waiting'
@@ -4783,6 +4796,10 @@ onUnmounted(() => {
 
 .live-service-estimate.is-smooth {
   background: #22c55e;
+}
+
+.live-service-estimate.is-sample {
+  background: #ef4444;
 }
 
 .live-service-estimate.is-waiting {
