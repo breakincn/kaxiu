@@ -138,8 +138,9 @@
                           </span>
                         </div>
                         <div class="text-gray-500 text-sm mt-1">
-                          <div>岗位：{{ it.technician.service_role?.name || '-' }}　账号：{{ it.technician.account }}</div>
+                          <div class="whitespace-nowrap overflow-x-auto">岗位：{{ it.technician.service_role?.name || '-' }}　账号：{{ it.technician.account }}</div>
                           <div v-if="it.checked_in_at">签到：{{ formatTime(it.checked_in_at) }}</div>
+                          <div v-if="getStaffCurrentSessionNo(it)">单号：{{ getStaffCurrentSessionNo(it) }}</div>
                           <div v-if="it.room">房间：{{ it.room.name }}</div>
                           <div v-if="it.service_start_at">开始：{{ formatTime(it.service_start_at) }}</div>
                           <div v-if="it.service_finish_at">结束：{{ formatTime(it.service_finish_at) }}</div>
@@ -427,6 +428,18 @@ const formatTime = (value) => {
   if (Number.isNaN(date.getTime())) return '-'
   const pad = (num) => String(num).padStart(2, '0')
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+
+const formatSessionNo = (id) => {
+  const n = Number(id || 0)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  return String(n).padStart(8, '0')
+}
+
+const getStaffCurrentSessionNo = (item) => {
+  const session = item?.current_session
+  if (!session) return ''
+  return formatSessionNo(session.initial_usage_id || session.usage_id || session.id)
 }
 
 const formatDuration = (seconds) => {

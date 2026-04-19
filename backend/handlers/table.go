@@ -261,17 +261,23 @@ func TableStaff(c *gin.Context) {
 	var sessions []models.ServiceSession
 	config.DB.
 		Preload("Room").
-		Where("merchant_id = ? AND technician_id IS NOT NULL AND status IN ?", merchantID, tableActiveSessionStatuses).
+		Where("merchant_id = ? AND status IN ?", merchantID, tableActiveSessionStatuses).
 		Order("id desc").
 		Find(&sessions)
 
 	sessionByTech := map[uint]models.ServiceSession{}
 	for _, s := range sessions {
-		if s.TechnicianID == nil {
-			continue
+		boundTechIDs := []uint(s.ServiceTechnicianIDs)
+		if len(boundTechIDs) == 0 && s.TechnicianID != nil && *s.TechnicianID > 0 {
+			boundTechIDs = []uint{*s.TechnicianID}
 		}
-		if _, exists := sessionByTech[*s.TechnicianID]; !exists {
-			sessionByTech[*s.TechnicianID] = s
+		for _, techID := range boundTechIDs {
+			if techID == 0 {
+				continue
+			}
+			if _, exists := sessionByTech[techID]; !exists {
+				sessionByTech[techID] = s
+			}
 		}
 	}
 
@@ -283,16 +289,16 @@ func TableStaff(c *gin.Context) {
 	completedCountByTech := map[uint]int64{}
 	if len(techIDs) > 0 {
 		type completedSessionLite struct {
-			TechnicianID     *uint `gorm:"column:technician_id"`
-			LastTechnicianID *uint `gorm:"column:last_technician_id"`
+			TechnicianID         *uint                                             `gorm:"column:technician_id"`
+			LastTechnicianID     *uint                                             `gorm:"column:last_technician_id"`
+			ServiceTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:service_technician_ids"`
 		}
 
 		var completedSessions []completedSessionLite
 		config.DB.
 			Model(&models.ServiceSession{}).
-			Select("technician_id, last_technician_id").
+			Select("technician_id, last_technician_id, service_technician_ids").
 			Where("merchant_id = ? AND status IN ? AND finished_at >= ? AND finished_at < ?", merchantID, models.ExpandStatusWithKnownPrefixes("finished"), start, end).
-			Where("(technician_id IN ? OR last_technician_id IN ?)", techIDs, techIDs).
 			Find(&completedSessions)
 
 		techIDSet := make(map[uint]struct{}, len(techIDs))
@@ -301,21 +307,28 @@ func TableStaff(c *gin.Context) {
 		}
 
 		for _, session := range completedSessions {
-			var ownerTechID uint
-			if session.TechnicianID != nil {
-				if _, ok := techIDSet[*session.TechnicianID]; ok {
-					ownerTechID = *session.TechnicianID
+			counted := make(map[uint]struct{})
+			for _, techID := range session.ServiceTechnicianIDs {
+				if _, ok := techIDSet[techID]; !ok || techID == 0 {
+					continue
 				}
+				completedCountByTech[techID]++
+				counted[techID] = struct{}{}
 			}
-			if ownerTechID == 0 && session.LastTechnicianID != nil {
-				if _, ok := techIDSet[*session.LastTechnicianID]; ok {
-					ownerTechID = *session.LastTechnicianID
-				}
-			}
-			if ownerTechID == 0 {
+			if len(counted) > 0 {
 				continue
 			}
-			completedCountByTech[ownerTechID]++
+			if session.TechnicianID != nil {
+				if _, ok := techIDSet[*session.TechnicianID]; ok {
+					completedCountByTech[*session.TechnicianID]++
+					continue
+				}
+			}
+			if session.LastTechnicianID != nil {
+				if _, ok := techIDSet[*session.LastTechnicianID]; ok {
+					completedCountByTech[*session.LastTechnicianID]++
+				}
+			}
 		}
 	}
 
