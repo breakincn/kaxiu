@@ -300,35 +300,36 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 	}
 
 	type sessLite struct {
-		ID                         uint       `gorm:"column:id"`
-		InitialUsageID             uint       `gorm:"column:initial_usage_id"`
-		ProjectID                  *uint      `gorm:"column:project_id"`
-		SourceType                 string     `gorm:"column:source_type"`
-		SourceID                   *uint      `gorm:"column:source_id"`
-		Status                     string     `gorm:"column:status"`
-		RoomID                     *uint      `gorm:"column:room_id"`
-		TechnicianID               *uint      `gorm:"column:technician_id"`
-		LastTechnicianID           *uint      `gorm:"column:last_technician_id"`
-		StartTimeoutCount          int        `gorm:"column:start_timeout_count"`
-		StartConfirmedAt           *time.Time `gorm:"column:start_confirmed_at"`
-		ScheduledStartAt           *time.Time `gorm:"column:scheduled_start_at"`
-		StartedAt                  *time.Time `gorm:"column:started_at"`
-		ScheduledFinishAt          *time.Time `gorm:"column:scheduled_finish_at"`
-		FinishedAt                 *time.Time `gorm:"column:finished_at"`
-		DurationMinutes            int        `gorm:"column:duration_minutes"`
-		CreatedAt                  *time.Time `gorm:"column:created_at"`
-		UpdatedAt                  *time.Time `gorm:"column:updated_at"`
-		StartPendingTimeoutSeconds int        `gorm:"column:start_pending_timeout_seconds"`
-		RoomSelectDeadlineAt       *time.Time `gorm:"column:room_select_deadline_at"`
-		RoomLockedAt               *time.Time `gorm:"column:room_locked_at"`
-		StaffSelectCooldownUntil   *time.Time `gorm:"column:staff_select_cooldown_until"`
-		StaffSelectEnteredAt       *time.Time `gorm:"column:staff_select_entered_at"`
+		ID                         uint                                              `gorm:"column:id"`
+		InitialUsageID             uint                                              `gorm:"column:initial_usage_id"`
+		ProjectID                  *uint                                             `gorm:"column:project_id"`
+		SourceType                 string                                            `gorm:"column:source_type"`
+		SourceID                   *uint                                             `gorm:"column:source_id"`
+		Status                     string                                            `gorm:"column:status"`
+		RoomID                     *uint                                             `gorm:"column:room_id"`
+		TechnicianID               *uint                                             `gorm:"column:technician_id"`
+		LastTechnicianID           *uint                                             `gorm:"column:last_technician_id"`
+		ServiceTechnicianIDs       models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:service_technician_ids"`
+		StartTimeoutCount          int                                               `gorm:"column:start_timeout_count"`
+		StartConfirmedAt           *time.Time                                        `gorm:"column:start_confirmed_at"`
+		ScheduledStartAt           *time.Time                                        `gorm:"column:scheduled_start_at"`
+		StartedAt                  *time.Time                                        `gorm:"column:started_at"`
+		ScheduledFinishAt          *time.Time                                        `gorm:"column:scheduled_finish_at"`
+		FinishedAt                 *time.Time                                        `gorm:"column:finished_at"`
+		DurationMinutes            int                                               `gorm:"column:duration_minutes"`
+		CreatedAt                  *time.Time                                        `gorm:"column:created_at"`
+		UpdatedAt                  *time.Time                                        `gorm:"column:updated_at"`
+		StartPendingTimeoutSeconds int                                               `gorm:"column:start_pending_timeout_seconds"`
+		RoomSelectDeadlineAt       *time.Time                                        `gorm:"column:room_select_deadline_at"`
+		RoomLockedAt               *time.Time                                        `gorm:"column:room_locked_at"`
+		StaffSelectCooldownUntil   *time.Time                                        `gorm:"column:staff_select_cooldown_until"`
+		StaffSelectEnteredAt       *time.Time                                        `gorm:"column:staff_select_entered_at"`
 	}
 
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions").
-		Select("id, initial_usage_id, project_id, source_type, source_id, status, room_id, technician_id, last_technician_id, start_timeout_count, start_confirmed_at, scheduled_start_at, started_at, scheduled_finish_at, finished_at, duration_minutes, created_at, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until, staff_select_entered_at").
+		Select("id, initial_usage_id, project_id, source_type, source_id, status, room_id, technician_id, last_technician_id, service_technician_ids, start_timeout_count, start_confirmed_at, scheduled_start_at, started_at, scheduled_finish_at, finished_at, duration_minutes, created_at, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until, staff_select_entered_at").
 		Where("initial_usage_id IN ?", ids).
 		Order("id desc").
 		Find(&sessions).Error; err != nil {
@@ -409,6 +410,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 
 	roomIDs := make([]uint, 0, len(sessions))
 	techIDs := make([]uint, 0, len(sessions))
+	defaultServiceTechIDsByUsage := make(map[uint][]uint)
 	for i := range sessions {
 		s := sessions[i]
 		if s.RoomID != nil && *s.RoomID > 0 {
@@ -419,6 +421,34 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		}
 		if s.LastTechnicianID != nil && *s.LastTechnicianID > 0 {
 			techIDs = append(techIDs, *s.LastTechnicianID)
+		}
+	}
+	for i := range *usages {
+		u := &(*usages)[i]
+		ids := models.MerchantProjectDefaultServiceTechnicianIDs{}
+		if s, ok := byUsageID[u.ID]; ok && len(s.ServiceTechnicianIDs) > 0 {
+			ids = s.ServiceTechnicianIDs
+		} else if u.Project != nil && u.Project.ServiceCapacity > 1 && len(u.Project.DefaultServiceTechnicianIDs) > 0 {
+			ids = u.Project.DefaultServiceTechnicianIDs
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		resolvedIDs := make([]uint, 0, len(ids))
+		seen := make(map[uint]struct{}, len(ids))
+		for _, id := range ids {
+			if id == 0 {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			resolvedIDs = append(resolvedIDs, id)
+			techIDs = append(techIDs, id)
+		}
+		if len(resolvedIDs) > 0 {
+			defaultServiceTechIDsByUsage[u.ID] = resolvedIDs
 		}
 	}
 
@@ -491,6 +521,22 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 				if t, okT := byTechID[*s.LastTechnicianID]; okT {
 					u.ServiceTechnician = t
 				}
+			}
+			if ids := defaultServiceTechIDsByUsage[u.ID]; len(ids) > 0 {
+				seenTechIDs := make(map[uint]struct{}, len(ids)+1)
+				for _, id := range ids {
+					if t, okT := byTechID[id]; okT {
+						u.ServiceTechnicians = append(u.ServiceTechnicians, t)
+						seenTechIDs[id] = struct{}{}
+					}
+				}
+				if u.ServiceTechnician != nil && u.ServiceTechnician.ID > 0 {
+					if _, ok := seenTechIDs[u.ServiceTechnician.ID]; !ok {
+						u.ServiceTechnicians = append(u.ServiceTechnicians, u.ServiceTechnician)
+					}
+				}
+			} else if u.ServiceTechnician != nil && u.ServiceTechnician.ID > 0 {
+				u.ServiceTechnicians = []*models.Technician{u.ServiceTechnician}
 			}
 		}
 	}

@@ -352,6 +352,15 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchant_projects MODIFY COLUMN default_service_technician_ids JSON NOT NULL COMMENT '多人项目默认服务人员ID列表（专业客服）'",
 		},
 	},
+	{
+		Version: "2026041902",
+		Name:    "add_service_session_technician_ids",
+		Statements: []string{
+			"ALTER TABLE service_sessions ADD COLUMN service_technician_ids JSON NULL COMMENT '服务单绑定的服务人员ID列表（专业客服）'",
+			"UPDATE service_sessions SET service_technician_ids = CASE WHEN technician_id IS NULL THEN JSON_ARRAY() ELSE JSON_ARRAY(technician_id) END WHERE service_technician_ids IS NULL",
+			"ALTER TABLE service_sessions MODIFY COLUMN service_technician_ids JSON NOT NULL COMMENT '服务单绑定的服务人员ID列表（专业客服）'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

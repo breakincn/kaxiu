@@ -47,11 +47,15 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 
 	durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchant.ID, verifyCode.ProjectID, 50, 60)
 	var defaultServiceTechnicianID uint
+	var defaultServiceTechnicianIDs []uint
 	if merchant.SupportCustomerServiceMode && source.Appointment == nil {
 		var err error
-		defaultServiceTechnicianID, err = resolveProjectDefaultServiceTechnicianID(tx, merchant.ID, verifyCode.ProjectID)
+		defaultServiceTechnicianIDs, err = resolveProjectDefaultServiceTechnicianIDs(tx, merchant.ID, verifyCode.ProjectID)
 		if err != nil {
 			return models.ServiceSession{}, "", false, err
+		}
+		if len(defaultServiceTechnicianIDs) > 0 {
+			defaultServiceTechnicianID = defaultServiceTechnicianIDs[0]
 		}
 	}
 	if isQueueMode {
@@ -120,6 +124,7 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		SourceID:                         source.SourceID,
 		TechnicianID:                     session.TechnicianID,
 		LastTechnicianID:                 session.LastTechnicianID,
+		ServiceTechnicianIDs:             models.MerchantProjectDefaultServiceTechnicianIDs(defaultServiceTechnicianIDs),
 		Status:                           status,
 		RoomSelectDeadlineAt:             roomSelectDeadlineAt,
 		StartConfirmedAt:                 startConfirmedAt,
@@ -139,25 +144,39 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 }
 
 func resolveProjectDefaultServiceTechnicianID(tx *gorm.DB, merchantID uint, projectID *uint) (uint, error) {
+	ids, err := resolveProjectDefaultServiceTechnicianIDs(tx, merchantID, projectID)
+	if err != nil || len(ids) == 0 {
+		return 0, err
+	}
+	return ids[0], nil
+}
+
+func resolveProjectDefaultServiceTechnicianIDs(tx *gorm.DB, merchantID uint, projectID *uint) ([]uint, error) {
 	if tx == nil || merchantID == 0 || projectID == nil || *projectID == 0 {
-		return 0, nil
+		return nil, nil
 	}
 	project, err := config.ResolveMerchantProject(tx, merchantID, projectID)
 	if err != nil || project == nil {
-		return 0, err
+		return nil, err
 	}
 	if project.ServiceCapacity <= 1 || len(project.DefaultServiceTechnicianIDs) == 0 {
-		return 0, nil
+		return nil, nil
 	}
 
 	ids := make([]uint, 0, len(project.DefaultServiceTechnicianIDs))
+	seen := make(map[uint]struct{}, len(project.DefaultServiceTechnicianIDs))
 	for _, id := range project.DefaultServiceTechnicianIDs {
-		if id > 0 {
-			ids = append(ids, id)
+		if id == 0 {
+			continue
 		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
 	}
 	if len(ids) == 0 {
-		return 0, nil
+		return nil, nil
 	}
 
 	var techs []models.Technician
@@ -165,18 +184,19 @@ func resolveProjectDefaultServiceTechnicianID(tx *gorm.DB, merchantID uint, proj
 		Joins("JOIN service_roles sr ON sr.id = technicians.service_role_id").
 		Where("technicians.merchant_id = ? AND technicians.id IN ? AND technicians.is_active = ? AND sr.role_type = ?", merchantID, ids, true, "professional").
 		Find(&techs).Error; err != nil {
-		return 0, err
+		return nil, err
 	}
 	valid := make(map[uint]struct{}, len(techs))
 	for _, tech := range techs {
 		valid[tech.ID] = struct{}{}
 	}
+	resolved := make([]uint, 0, len(ids))
 	for _, id := range ids {
 		if _, ok := valid[id]; ok {
-			return id, nil
+			resolved = append(resolved, id)
 		}
 	}
-	return 0, nil
+	return resolved, nil
 }
 
 func enqueueVerifyUsageIfNeeded(merchant models.Merchant, card models.Card, usageID uint, shouldEnqueueOnsite bool) {

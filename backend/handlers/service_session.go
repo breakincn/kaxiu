@@ -232,8 +232,19 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			}
 		}
 
+		defaultTechIDs := []uint(s.ServiceTechnicianIDs)
+		if len(defaultTechIDs) == 0 {
+			var err error
+			defaultTechIDs, err = resolveProjectDefaultServiceTechnicianIDs(tx, merchantID, s.ProjectID)
+			if err != nil {
+				return err
+			}
+		}
 		if s.TechnicianID != nil && *s.TechnicianID > 0 && *s.TechnicianID != *techID {
-			return apiErr{status: http.StatusBadRequest, msg: "该单已选择其他人员服务"}
+			if !uintIDInSlice(defaultTechIDs, *techID) {
+				return apiErr{status: http.StatusBadRequest, msg: "该单已选择其他人员服务"}
+			}
+			s.TechnicianID = techID
 		}
 		if s.TechnicianID == nil {
 			s.TechnicianID = techID
@@ -247,6 +258,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		var att models.TechnicianAttendance
 		attRes := tx.
+			Select("id", "merchant_id", "technician_id", "status").
 			Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, *s.TechnicianID, start).
 			Order("id desc").
@@ -283,9 +295,19 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			"start_confirmed_at": now,
 			"scheduled_start_at": startAt,
 			"status":             models.ApplyStatusPrefix(s.Status, "delay_pending"),
+			"technician_id":      *s.TechnicianID,
+			"last_technician_id": *s.TechnicianID,
+		}
+		if len(defaultTechIDs) > 0 {
+			updates["service_technician_ids"] = models.MerchantProjectDefaultServiceTechnicianIDs(defaultTechIDs)
 		}
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err
+		}
+		if s.InitialUsageID > 0 {
+			if err := tx.Model(&models.Usage{}).Where("id = ?", s.InitialUsageID).Update("technician_id", *s.TechnicianID).Error; err != nil {
+				return err
+			}
 		}
 
 		// 开始服务成功后占用技师：仅允许 idle -> busy，避免并发重复提交
@@ -302,7 +324,11 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			}
 		}
 
-		if err := tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error; err != nil {
+		outQuery := tx.Preload("Room").Preload("Technician")
+		if tx.Dialector != nil && tx.Dialector.Name() == "sqlite" {
+			outQuery = outQuery.Select("id", "merchant_id", "user_id", "card_id", "project_id", "initial_usage_id", "verify_code", "session_mode", "source_type", "source_id", "technician_id", "last_technician_id", "service_technician_ids", "room_id", "status", "start_delay_seconds", "duration_minutes", "auto_finish_delay_seconds", "auto_idle_after_seconds", "start_pending_timeout_seconds", "start_timeout_count")
+		}
+		if err := outQuery.First(&out, s.ID).Error; err != nil {
 			return err
 		}
 		return nil
@@ -327,6 +353,15 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		"session":    out,
 	}})
 	return true
+}
+
+func uintIDInSlice(ids []uint, id uint) bool {
+	for _, item := range ids {
+		if item == id {
+			return true
+		}
+	}
+	return false
 }
 
 // handleQueueModeStartScan 叫号模式下的扫码上号处理
@@ -640,6 +675,9 @@ func GetServiceSession(c *gin.Context) {
 	s = snapshotSessions[0]
 	s.StartPendingRemainingSeconds = computeStartPendingRemainingSecondsForSession(&s, time.Now())
 	attachLatestExtendRequestToSession(&s)
+	serviceSessions := []models.ServiceSession{s}
+	enrichServiceSessionsWithServiceTechnicians(serviceSessions)
+	s = serviceSessions[0]
 	c.JSON(http.StatusOK, gin.H{"data": s})
 }
 
@@ -693,8 +731,45 @@ func ListServiceSessions(c *gin.Context) {
 	for i := range list {
 		list[i].StartPendingRemainingSeconds = computeStartPendingRemainingSecondsForSession(&list[i], now)
 	}
+	enrichServiceSessionsWithServiceTechnicians(list)
 	attachLatestExtendRequestsToSessions(list)
 	c.JSON(http.StatusOK, gin.H{"data": list})
+}
+
+func enrichServiceSessionsWithServiceTechnicians(sessions []models.ServiceSession) {
+	ids := make([]uint, 0)
+	for i := range sessions {
+		for _, id := range sessions[i].ServiceTechnicianIDs {
+			if id > 0 {
+				ids = append(ids, id)
+			}
+		}
+		if len(sessions[i].ServiceTechnicianIDs) == 0 && sessions[i].TechnicianID != nil && *sessions[i].TechnicianID > 0 {
+			ids = append(ids, *sessions[i].TechnicianID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	var techs []models.Technician
+	if err := config.DB.Preload("ServiceRole").Where("id IN ?", ids).Find(&techs).Error; err != nil {
+		return
+	}
+	byID := make(map[uint]*models.Technician, len(techs))
+	for i := range techs {
+		byID[techs[i].ID] = &techs[i]
+	}
+	for i := range sessions {
+		orderedIDs := []uint(sessions[i].ServiceTechnicianIDs)
+		if len(orderedIDs) == 0 && sessions[i].TechnicianID != nil && *sessions[i].TechnicianID > 0 {
+			orderedIDs = []uint{*sessions[i].TechnicianID}
+		}
+		for _, id := range orderedIDs {
+			if tech, ok := byID[id]; ok {
+				sessions[i].ServiceTechnicians = append(sessions[i].ServiceTechnicians, tech)
+			}
+		}
+	}
 }
 
 func ChooseServiceSessionRoom(c *gin.Context) {
@@ -746,7 +821,26 @@ func ChooseServiceSessionRoom(c *gin.Context) {
 			"room_select_deadline_at": nil,
 		}
 		if m.SupportCustomerServiceMode {
-			updates["status"] = models.ApplyStatusPrefix(s.Status, "room_locked")
+			defaultTechIDs := []uint(s.ServiceTechnicianIDs)
+			if len(defaultTechIDs) == 0 {
+				var err error
+				defaultTechIDs, err = resolveProjectDefaultServiceTechnicianIDs(tx, merchantID, s.ProjectID)
+				if err != nil {
+					return err
+				}
+			}
+			if len(defaultTechIDs) > 0 {
+				techID := defaultTechIDs[0]
+				updates["technician_id"] = techID
+				updates["last_technician_id"] = techID
+				updates["service_technician_ids"] = models.MerchantProjectDefaultServiceTechnicianIDs(defaultTechIDs)
+				updates["status"] = models.ApplyStatusPrefix(s.Status, "start_pending")
+				updates["start_pending_timeout_seconds"] = config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, merchantID, techID, s.ProjectID)
+				updates["staff_select_entered_at"] = nil
+				updates["staff_select_cooldown_until"] = nil
+			} else {
+				updates["status"] = models.ApplyStatusPrefix(s.Status, "room_locked")
+			}
 		} else {
 			delaySeconds := s.StartDelaySeconds
 			if delaySeconds <= 0 {
@@ -760,7 +854,11 @@ func ChooseServiceSessionRoom(c *gin.Context) {
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err
 		}
-		return tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error
+		outQuery := tx.Preload("Room").Preload("Technician")
+		if tx.Dialector != nil && tx.Dialector.Name() == "sqlite" {
+			outQuery = outQuery.Select("id", "merchant_id", "user_id", "card_id", "project_id", "initial_usage_id", "verify_code", "session_mode", "source_type", "source_id", "technician_id", "last_technician_id", "service_technician_ids", "room_id", "status", "start_delay_seconds", "duration_minutes", "auto_finish_delay_seconds", "auto_idle_after_seconds", "start_pending_timeout_seconds", "start_timeout_count")
+		}
+		return outQuery.First(&out, s.ID).Error
 	})
 	if err != nil {
 		var ae apiErr
@@ -848,6 +946,7 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		updates := map[string]interface{}{
 			"technician_id":                 input.TechnicianID,
 			"last_technician_id":            input.TechnicianID,
+			"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{input.TechnicianID},
 			"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 			"staff_select_entered_at":       nil,
 			"staff_select_cooldown_until":   nil,
@@ -858,7 +957,11 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 			return err
 		}
 		_ = now
-		return tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error
+		outQuery := tx.Preload("Room").Preload("Technician")
+		if tx.Dialector != nil && tx.Dialector.Name() == "sqlite" {
+			outQuery = outQuery.Select("id", "merchant_id", "user_id", "card_id", "project_id", "initial_usage_id", "verify_code", "session_mode", "source_type", "source_id", "technician_id", "last_technician_id", "service_technician_ids", "room_id", "status", "start_delay_seconds", "duration_minutes", "auto_finish_delay_seconds", "auto_idle_after_seconds", "start_pending_timeout_seconds", "start_timeout_count")
+		}
+		return outQuery.First(&out, s.ID).Error
 	})
 	if err != nil {
 		var ae apiErr

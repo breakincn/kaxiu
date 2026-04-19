@@ -532,15 +532,15 @@
           </div>
 
           <!-- 房间号与客服人员信息 -->
-          <div v-if="selectedUsage && (selectedUsage.service_room || selectedUsage.service_technician)" class="mt-3 text-center text-sm text-gray-600">
-            <template v-if="selectedUsage.service_room && selectedUsage.service_technician">
-              房间: {{ selectedUsage.service_room.name || selectedUsage.service_room.code }}  {{ selectedUsage.service_technician.service_role?.name || '技师' }}: {{ selectedUsage.service_technician.account }} {{ selectedUsage.service_technician.name }}
+          <div v-if="selectedUsage && (selectedUsage.service_room || getUsageServiceStaffDisplayText(selectedUsage))" class="mt-3 text-center text-sm text-gray-600">
+            <template v-if="selectedUsage.service_room && getUsageServiceStaffDisplayText(selectedUsage)">
+              房间: {{ selectedUsage.service_room.name || selectedUsage.service_room.code }}  服务人员: {{ getUsageServiceStaffDisplayText(selectedUsage) }}
             </template>
             <template v-else-if="selectedUsage.service_room">
               房间: {{ selectedUsage.service_room.name || selectedUsage.service_room.code }}
             </template>
-            <template v-else-if="selectedUsage.service_technician">
-              {{ selectedUsage.service_technician.service_role?.name || '技师' }}: {{ selectedUsage.service_technician.account }} {{ selectedUsage.service_technician.name }}
+            <template v-else-if="getUsageServiceStaffDisplayText(selectedUsage)">
+              服务人员: {{ getUsageServiceStaffDisplayText(selectedUsage) }}
             </template>
           </div>
 
@@ -3364,10 +3364,36 @@ const formatUsageStaffIdentity = (staff) => {
   return account || name || ''
 }
 
+const getUsageServiceStaffList = (usage) => {
+  const result = []
+  const seen = new Set()
+  const source = []
+  if (Array.isArray(usage?.service_technicians)) {
+    source.push(...usage.service_technicians)
+  }
+  if (usage?.service_technician) {
+    source.push(usage.service_technician)
+  }
+  source.forEach((staff) => {
+    if (!staff) return
+    const key = staff.id ? `id:${staff.id}` : `${staff.account || ''}:${staff.name || ''}`
+    if (seen.has(key)) return
+    seen.add(key)
+    result.push(staff)
+  })
+  return result
+}
+
+const getUsageServiceStaffDisplayText = (usage) => {
+  return getUsageServiceStaffList(usage)
+    .map(formatUsageStaffIdentity)
+    .filter(Boolean)
+    .join('、')
+}
+
 const getUsageServiceStaffInfo = (usage) => {
   if (isSyntheticAppointmentUsage(usage)) return ''
-  const staff = usage?.service_technician || null
-  const identity = formatUsageStaffIdentity(staff)
+  const identity = getUsageServiceStaffDisplayText(usage)
   if (!identity) return ''
   return `服务人员：${identity}`
 }

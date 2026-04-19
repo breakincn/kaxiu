@@ -178,6 +178,7 @@ type Usage struct {
 	StaffSelectEnteredAt                       *time.Time                   `json:"staff_select_entered_at" gorm:"-"`
 	ServiceRoom                                *Room                        `json:"service_room" gorm:"-"`
 	ServiceTechnician                          *Technician                  `json:"service_technician" gorm:"-"`
+	ServiceTechnicians                         []*Technician                `json:"service_technicians" gorm:"-"`
 	ServiceTechnicianAvailable                 bool                         `json:"service_technician_available" gorm:"-"`
 	ServiceTechnicianUnavailableReason         string                       `json:"service_technician_unavailable_reason" gorm:"-"`
 	ServiceParticipantUsers                    []UsageParticipantUser       `json:"service_participant_users" gorm:"-"`
