@@ -101,7 +101,16 @@ func UserGetVerifyCodeStatus(c *gin.Context) {
 					nextStep = "room_select"
 				}
 			} else if baseStatus == "staff_selecting" || baseStatus == "room_locked" {
-				nextStep = "staff_select"
+				if hasServiceSessionBoundTechnicians(&s) {
+					nextStep = ""
+				} else {
+					nextStep = "staff_select"
+				}
+			}
+			if nextStep == "staff_select" {
+				if techIDs, err := resolveProjectDefaultServiceTechnicianIDs(config.DB, s.MerchantID, s.ProjectID); err == nil && len(techIDs) > 0 {
+					nextStep = ""
+				}
 			}
 			resp["session_id"] = s.ID
 			resp["session_status"] = s.Status
@@ -160,6 +169,17 @@ func UserResumeServiceSession(c *gin.Context) {
 				updates["room_locked_at"] = nil
 			} else {
 				updates["room_select_deadline_at"] = nil
+				if techIDs, err := resolveProjectDefaultServiceTechnicianIDs(tx, s.MerchantID, s.ProjectID); err != nil {
+					return err
+				} else if len(techIDs) > 0 {
+					techID := techIDs[0]
+					newStatus = "start_pending"
+					updates["status"] = models.ApplyStatusPrefix(s.Status, newStatus)
+					updates["technician_id"] = techID
+					updates["last_technician_id"] = techID
+					updates["service_technician_ids"] = models.MerchantProjectDefaultServiceTechnicianIDs(techIDs)
+					updates["start_pending_timeout_seconds"] = config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, s.MerchantID, techID, s.ProjectID)
+				}
 			}
 		} else {
 			updates["room_id"] = nil
@@ -366,7 +386,24 @@ func buildServiceSessionRoomSelectionUpdates(tx *gorm.DB, merchant models.Mercha
 		"room_locked_at": lockedAt,
 	}
 	if merchant.SupportCustomerServiceMode {
-		if s.TechnicianID != nil && *s.TechnicianID > 0 {
+		techIDs := []uint(s.ServiceTechnicianIDs)
+		if len(techIDs) == 0 {
+			resolvedIDs, err := resolveProjectDefaultServiceTechnicianIDs(tx, s.MerchantID, s.ProjectID)
+			if err == nil {
+				techIDs = resolvedIDs
+			}
+		}
+		if len(techIDs) > 0 {
+			techID := techIDs[0]
+			timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, s.MerchantID, techID, s.ProjectID)
+			updates["technician_id"] = techID
+			updates["last_technician_id"] = techID
+			updates["service_technician_ids"] = models.MerchantProjectDefaultServiceTechnicianIDs(techIDs)
+			updates["status"] = models.ApplyStatusPrefix(s.Status, "start_pending")
+			updates["staff_select_entered_at"] = nil
+			updates["staff_select_cooldown_until"] = nil
+			updates["start_pending_timeout_seconds"] = timeoutSeconds
+		} else if s.TechnicianID != nil && *s.TechnicianID > 0 {
 			timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, s.MerchantID, *s.TechnicianID, s.ProjectID)
 			updates["status"] = models.ApplyStatusPrefix(s.Status, "start_pending")
 			updates["staff_select_entered_at"] = nil
@@ -387,6 +424,16 @@ func buildServiceSessionRoomSelectionUpdates(tx *gorm.DB, merchant models.Mercha
 	updates["start_confirmed_at"] = lockedAt
 	updates["scheduled_start_at"] = startAt
 	return updates
+}
+
+func hasServiceSessionBoundTechnicians(s *models.ServiceSession) bool {
+	if s == nil {
+		return false
+	}
+	if len(s.ServiceTechnicianIDs) > 0 {
+		return true
+	}
+	return s.TechnicianID != nil && *s.TechnicianID > 0
 }
 
 func UserListAvailableTechnicians(c *gin.Context) {
