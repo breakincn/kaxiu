@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1145,10 +1146,127 @@ func advanceQueueAutoSingleSerialIfPossible(tx *gorm.DB, s *models.ServiceSessio
 	return nil
 }
 
+func restoreProjectScheduledDefaultStaffSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) (bool, error) {
+	if tx == nil || s == nil || s.ProjectID == nil || *s.ProjectID == 0 || s.StartConfirmedAt != nil {
+		return false, nil
+	}
+	if s.ScheduledStartAt != nil && len(s.ServiceTechnicianIDs) > 0 && s.TechnicianID != nil && *s.TechnicianID > 0 {
+		return false, nil
+	}
+	baseStatus := models.NormalizeSessionStatus(s.Status)
+	if baseStatus != "room_locked" && baseStatus != "staff_selecting" && baseStatus != "start_pending" {
+		return false, nil
+	}
+
+	project, err := config.ResolveMerchantProject(tx, s.MerchantID, s.ProjectID)
+	if err != nil || project == nil {
+		return false, err
+	}
+	if len(project.DefaultServiceTechnicianIDs) == 0 || len(project.ServiceTimeSlots) == 0 {
+		return false, nil
+	}
+
+	ids, err := resolveSchedulerProjectDefaultServiceTechnicianIDs(tx, s.MerchantID, project.DefaultServiceTechnicianIDs)
+	if err != nil || len(ids) == 0 {
+		return false, err
+	}
+
+	baseAt := now
+	if s.CreatedAt != nil {
+		baseAt = *s.CreatedAt
+	}
+	if s.InitialUsageID > 0 {
+		var usage struct {
+			UsedAt sql.NullString `gorm:"column:used_at"`
+		}
+		if err := tx.Table("usages").Select("used_at").Where("id = ?", s.InitialUsageID).Scan(&usage).Error; err == nil {
+			if usedAt, ok := parseSchedulerDBTimeValue(usage.UsedAt.String); usage.UsedAt.Valid && ok && usedAt != nil {
+				baseAt = *usedAt
+			}
+		}
+	}
+	startAt, ok := config.NextMerchantProjectServiceStart(*project, baseAt)
+	if !ok {
+		return false, nil
+	}
+
+	techID := ids[0]
+	updates := map[string]interface{}{
+		"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
+		"technician_id":                 techID,
+		"last_technician_id":            techID,
+		"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs(ids),
+		"scheduled_start_at":            startAt,
+		"start_pending_timeout_seconds": 0,
+		"staff_select_entered_at":       nil,
+		"staff_select_cooldown_until":   nil,
+	}
+	if err := tx.Model(&models.ServiceSession{}).
+		Where("id = ? AND start_confirmed_at IS NULL AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending"})).
+		Updates(updates).Error; err != nil {
+		return false, err
+	}
+
+	s.Status = models.ApplyStatusPrefix(s.Status, "start_pending")
+	s.TechnicianID = &techID
+	s.LastTechnicianID = &techID
+	s.ServiceTechnicianIDs = models.MerchantProjectDefaultServiceTechnicianIDs(ids)
+	s.ScheduledStartAt = startAt
+	s.StartPendingTimeoutSeconds = 0
+	s.StaffSelectEnteredAt = nil
+	s.StaffSelectCooldownUntil = nil
+	return true, nil
+}
+
+func resolveSchedulerProjectDefaultServiceTechnicianIDs(tx *gorm.DB, merchantID uint, defaultIDs models.MerchantProjectDefaultServiceTechnicianIDs) ([]uint, error) {
+	if tx == nil || merchantID == 0 || len(defaultIDs) == 0 {
+		return nil, nil
+	}
+	ids := make([]uint, 0, len(defaultIDs))
+	seen := make(map[uint]struct{}, len(defaultIDs))
+	for _, id := range defaultIDs {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	var techs []models.Technician
+	if err := tx.
+		Joins("JOIN service_roles sr ON sr.id = technicians.service_role_id").
+		Where("technicians.merchant_id = ? AND technicians.id IN ? AND technicians.is_active = ? AND sr.role_type = ?", merchantID, ids, true, "professional").
+		Find(&techs).Error; err != nil {
+		return nil, err
+	}
+	valid := make(map[uint]struct{}, len(techs))
+	for _, tech := range techs {
+		valid[tech.ID] = struct{}{}
+	}
+	resolved := make([]uint, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := valid[id]; ok {
+			resolved = append(resolved, id)
+		}
+	}
+	return resolved, nil
+}
+
 func handleRoomLockedOrStaffSelecting(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
 	var merchant models.Merchant
 	if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 		return err
+	}
+	if merchant.SupportCustomerServiceMode {
+		if ok, err := restoreProjectScheduledDefaultStaffSession(tx, s, now); err != nil || ok {
+			return err
+		}
 	}
 	if merchant.SupportQueue && merchant.QueueMode == "manual" {
 		abandonTimeout := 12 * time.Hour
@@ -1251,6 +1369,11 @@ func handleStartPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 		var merchant models.Merchant
 		if err := tx.First(&merchant, s.MerchantID).Error; err != nil {
 			return err
+		}
+		if merchant.SupportCustomerServiceMode {
+			if ok, err := restoreProjectScheduledDefaultStaffSession(tx, s, now); err != nil || ok {
+				return err
+			}
 		}
 		skipDegradeToDelayPending := false
 		if !merchant.SupportCustomerServiceMode && merchant.SupportQueue {

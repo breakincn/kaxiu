@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -19,7 +20,7 @@ func setupSchedulerTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Merchant{}, &models.Technician{}, &models.Card{}, &models.Usage{}, &models.ServiceSession{}, &models.TechnicianAttendance{}, &models.Appointment{}, &models.AppointmentSettlement{}, &models.ProtectedRepairSlot{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}, &models.MerchantProject{}, &models.SystemConfig{}); err != nil {
+	if err := db.AutoMigrate(&models.Merchant{}, &models.ServiceRole{}, &models.Technician{}, &models.Card{}, &models.Usage{}, &models.ServiceSession{}, &models.TechnicianAttendance{}, &models.Appointment{}, &models.AppointmentSettlement{}, &models.ProtectedRepairSlot{}, &models.TechnicianMonthlyDisruptionCounter{}, &models.TechnicianDisruptionLedger{}, &models.AppointmentDelayLedger{}, &models.MerchantProject{}, &models.SystemConfig{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 	return db
@@ -77,6 +78,109 @@ func TestFinalizeUsagesAfterQueueEnded_OnlyInProgressToSuccess(t *testing.T) {
 	}
 	if got3.Status != "canceled" {
 		t.Fatalf("want u3 remain canceled, got %s", got3.Status)
+	}
+}
+
+func TestRestoreProjectScheduledDefaultStaffSessionFromStaffSelecting(t *testing.T) {
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	db := setupSchedulerTestDB(t)
+	config.DB = db
+
+	loc := config.ProjectServiceTimeLocation()
+	usedAt := time.Date(2026, 4, 19, 15, 27, 0, 0, loc)
+	now := time.Date(2026, 4, 19, 16, 28, 0, 0, loc)
+
+	merchant := models.Merchant{Name: "m-scheduled", Phone: "18800000977", Password: "pwd", SupportCustomerServiceMode: true}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	role := models.ServiceRole{RoleType: "professional", Key: "teacher", Name: "专业客服", IsActive: true}
+	if err := db.Create(&role).Error; err != nil {
+		t.Fatalf("create role failed: %v", err)
+	}
+	firstTech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "朱古丽", Code: "0001", Account: "jsls0001", IsActive: true}
+	secondTech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "671", Code: "0002", Account: "bls0001", IsActive: true}
+	if err := db.Create(&firstTech).Error; err != nil {
+		t.Fatalf("create first technician failed: %v", err)
+	}
+	if err := db.Create(&secondTech).Error; err != nil {
+		t.Fatalf("create second technician failed: %v", err)
+	}
+	project := models.MerchantProject{
+		MerchantID:                  merchant.ID,
+		Name:                        "爵士舞课",
+		Duration:                    60,
+		ServiceCapacity:             1,
+		DefaultServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{firstTech.ID, secondTech.ID},
+		ServiceTimeSlots: models.MerchantProjectServiceTimeSlots{{
+			RecurrenceType: "weekly",
+			Weekday:        7,
+			StartTime:      "16:00",
+		}},
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project failed: %v", err)
+	}
+	usage := models.Usage{MerchantID: merchant.ID, ProjectID: &project.ID, Status: "in_progress", UsedAt: &usedAt}
+	if err := db.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+	session := models.ServiceSession{
+		MerchantID:                 merchant.ID,
+		ProjectID:                  &project.ID,
+		InitialUsageID:             usage.ID,
+		SessionMode:                models.SessionModeCustomerService,
+		Status:                     "cs_staff_selecting",
+		LastTechnicianID:           &firstTech.ID,
+		ServiceTechnicianIDs:       models.MerchantProjectDefaultServiceTechnicianIDs{firstTech.ID, secondTech.ID},
+		StaffSelectEnteredAt:       &now,
+		StartPendingTimeoutSeconds: 0,
+		CreatedAt:                  &usedAt,
+		UpdatedAt:                  &now,
+	}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	if err := handleRoomLockedOrStaffSelecting(db, &session, now); err != nil {
+		t.Fatalf("handleRoomLockedOrStaffSelecting failed: %v", err)
+	}
+
+	var got struct {
+		Status                     string
+		TechnicianID               *uint
+		ServiceTechnicianIDs       models.MerchantProjectDefaultServiceTechnicianIDs
+		ScheduledStartAt           string     `gorm:"column:scheduled_start_at"`
+		StaffSelectEnteredAt       *time.Time `gorm:"column:staff_select_entered_at"`
+		StartPendingTimeoutSeconds int        `gorm:"column:start_pending_timeout_seconds"`
+	}
+	if err := db.Model(&models.ServiceSession{}).
+		Select("status", "technician_id", "service_technician_ids", "scheduled_start_at", "staff_select_entered_at", "start_pending_timeout_seconds").
+		Where("id = ?", session.ID).
+		First(&got).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if got.Status != "cs_start_pending" {
+		t.Fatalf("want cs_start_pending, got %s", got.Status)
+	}
+	if got.TechnicianID == nil || *got.TechnicianID != firstTech.ID {
+		t.Fatalf("want first default technician, got %+v", got.TechnicianID)
+	}
+	wantStart := time.Date(2026, 4, 19, 16, 0, 0, 0, loc)
+	gotStart, err := time.ParseInLocation("2006-01-02 15:04:05", strings.TrimSpace(got.ScheduledStartAt), loc)
+	if err != nil {
+		gotStart, err = time.ParseInLocation("2006-01-02 15:04:05-07:00", strings.TrimSpace(got.ScheduledStartAt), loc)
+	}
+	if err != nil || !gotStart.Equal(wantStart) {
+		t.Fatalf("want scheduled start %s, got %+v", wantStart, got.ScheduledStartAt)
+	}
+	if got.StaffSelectEnteredAt != nil {
+		t.Fatalf("want staff_select_entered_at cleared, got %+v", got.StaffSelectEnteredAt)
+	}
+	if len(got.ServiceTechnicianIDs) != 2 {
+		t.Fatalf("want both default technicians, got %+v", got.ServiceTechnicianIDs)
 	}
 }
 
