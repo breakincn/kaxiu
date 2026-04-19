@@ -5341,8 +5341,11 @@ const fetchTodayStartUsages = async ({ silent = false } = {}) => {
     // 后端已过滤，但这里仍做一次兜底，确保只显示“当前技师 + 今日 + 有会话”的记录
     const nextList = (res.data.data || []).filter((u) => {
       if (!u || !u.used_at || !u.used_at.startsWith(today)) return false
-      const techId = u?.service_technician?.id || u?.technician_id
-      if (Number(techId) !== Number(currentTechnicianId)) return false
+      const serviceTechIds = Array.isArray(u?.service_technicians)
+        ? u.service_technicians.map(item => Number(item?.id || 0)).filter(Boolean)
+        : []
+      const techId = Number(u?.service_technician?.id || u?.technician_id || 0)
+      if (techId !== Number(currentTechnicianId) && !serviceTechIds.includes(Number(currentTechnicianId))) return false
       return !!u.service_session_status
     })
     patchTodayStartUsages(nextList)

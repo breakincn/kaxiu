@@ -184,6 +184,72 @@ func TestRestoreProjectScheduledDefaultStaffSessionFromStaffSelecting(t *testing
 	}
 }
 
+func TestHandleDelayPendingStartsFromScheduledStartAt(t *testing.T) {
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	db := setupSchedulerTestDB(t)
+	config.DB = db
+
+	loc := config.ProjectServiceTimeLocation()
+	scheduledStart := time.Date(2026, 4, 19, 16, 0, 0, 0, loc)
+	scannedAt := time.Date(2026, 4, 19, 16, 40, 32, 0, loc)
+	now := time.Date(2026, 4, 19, 16, 40, 34, 0, loc)
+
+	merchant := models.Merchant{Name: "m-delay", Phone: "18800000978", Password: "pwd", SupportCustomerServiceMode: true}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	session := models.ServiceSession{
+		MerchantID:                 merchant.ID,
+		SessionMode:                models.SessionModeCustomerService,
+		Status:                     "cs_delay_pending",
+		StartConfirmedAt:           &scannedAt,
+		ScheduledStartAt:           &scheduledStart,
+		DurationMinutes:            60,
+		StartPendingTimeoutSeconds: 0,
+		CreatedAt:                  &scannedAt,
+		UpdatedAt:                  &scannedAt,
+	}
+	if err := db.Create(&session).Error; err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+
+	if err := handleDelayPending(db, &session, now); err != nil {
+		t.Fatalf("handleDelayPending failed: %v", err)
+	}
+
+	var got struct {
+		Status            string
+		StartedAt         string `gorm:"column:started_at"`
+		ScheduledFinishAt string `gorm:"column:scheduled_finish_at"`
+	}
+	if err := db.Model(&models.ServiceSession{}).
+		Select("status", "started_at", "scheduled_finish_at").
+		Where("id = ?", session.ID).
+		First(&got).Error; err != nil {
+		t.Fatalf("reload session failed: %v", err)
+	}
+	if got.Status != "cs_serving" {
+		t.Fatalf("want cs_serving, got %s", got.Status)
+	}
+	gotStartedAt, err := time.ParseInLocation("2006-01-02 15:04:05", strings.TrimSpace(got.StartedAt), loc)
+	if err != nil {
+		gotStartedAt, err = time.ParseInLocation("2006-01-02 15:04:05-07:00", strings.TrimSpace(got.StartedAt), loc)
+	}
+	if err != nil || !gotStartedAt.Equal(scheduledStart) {
+		t.Fatalf("want started_at %s, got %q err=%v", scheduledStart, got.StartedAt, err)
+	}
+	wantFinish := scheduledStart.Add(60 * time.Minute)
+	gotFinishAt, err := time.ParseInLocation("2006-01-02 15:04:05", strings.TrimSpace(got.ScheduledFinishAt), loc)
+	if err != nil {
+		gotFinishAt, err = time.ParseInLocation("2006-01-02 15:04:05-07:00", strings.TrimSpace(got.ScheduledFinishAt), loc)
+	}
+	if err != nil || !gotFinishAt.Equal(wantFinish) {
+		t.Fatalf("want scheduled_finish_at %s, got %q err=%v", wantFinish, got.ScheduledFinishAt, err)
+	}
+}
+
 func TestFinalizeUsagesAfterQueueEnded_FinishesLinkedPrefixedSession(t *testing.T) {
 	oldDB := config.DB
 	oldQueue := queue.Default

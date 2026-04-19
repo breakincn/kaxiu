@@ -1516,13 +1516,14 @@ func handleDelayPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 		return nil
 	}
 	if s.ScheduledStartAt != nil && !now.Before(*s.ScheduledStartAt) {
+		serviceStartAt := *s.ScheduledStartAt
 		updates := map[string]interface{}{
 			"status":     models.ApplyStatusPrefix(s.Status, "serving"),
-			"started_at": now,
+			"started_at": serviceStartAt,
 		}
 		if s.ScheduledFinishAt == nil {
 			if s.DurationMinutes > 0 {
-				finishAt := now.Add(time.Duration(s.DurationMinutes) * time.Minute)
+				finishAt := serviceStartAt.Add(time.Duration(s.DurationMinutes) * time.Minute)
 				updates["scheduled_finish_at"] = finishAt
 			}
 		}
@@ -1556,7 +1557,7 @@ func handleDelayPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 			return err
 		}
 		if s.SourceType == "appointment" && s.SourceID != nil {
-			return tx.Model(&models.Appointment{}).Where("id = ? AND actual_start_at IS NULL", *s.SourceID).Update("actual_start_at", now).Error
+			return tx.Model(&models.Appointment{}).Where("id = ? AND actual_start_at IS NULL", *s.SourceID).Update("actual_start_at", serviceStartAt).Error
 		}
 		return nil
 	}

@@ -99,7 +99,11 @@ func GetMerchantUsages(c *gin.Context) {
 		}
 		if technicianIDStr != "" {
 			if tid, err := strconv.ParseUint(technicianIDStr, 10, 64); err == nil && tid > 0 {
-				query = query.Where("ss.technician_id = ?", tid)
+				if config.DB != nil && config.DB.Dialector != nil && config.DB.Dialector.Name() == "mysql" {
+					query = query.Where("(ss.technician_id = ? OR ss.last_technician_id = ? OR JSON_CONTAINS(ss.service_technician_ids, JSON_ARRAY(?)))", tid, tid, tid)
+				} else {
+					query = query.Where("(ss.technician_id = ? OR ss.last_technician_id = ? OR ss.service_technician_ids LIKE ? OR ss.service_technician_ids LIKE ? OR ss.service_technician_ids LIKE ? OR ss.service_technician_ids LIKE ?)", tid, tid, "%["+strconv.FormatUint(tid, 10)+"]%", "%["+strconv.FormatUint(tid, 10)+",%", "%,"+strconv.FormatUint(tid, 10)+",%", "%,"+strconv.FormatUint(tid, 10)+"]%")
+				}
 			}
 		}
 	}
@@ -428,7 +432,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		ids := models.MerchantProjectDefaultServiceTechnicianIDs{}
 		if s, ok := byUsageID[u.ID]; ok && len(s.ServiceTechnicianIDs) > 0 {
 			ids = s.ServiceTechnicianIDs
-		} else if u.Project != nil && u.Project.ServiceCapacity > 1 && len(u.Project.DefaultServiceTechnicianIDs) > 0 {
+		} else if u.Project != nil && len(u.Project.DefaultServiceTechnicianIDs) > 0 {
 			ids = u.Project.DefaultServiceTechnicianIDs
 		}
 		if len(ids) == 0 {
