@@ -43,8 +43,17 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 	autoFinishDelaySeconds := 60
 	predictedAppointmentDelayMinutes := 0
 	var predictedReadyAt *time.Time
+	startPendingTimeoutSeconds := 0
 
 	durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchant.ID, verifyCode.ProjectID, 50, 60)
+	var defaultServiceTechnicianID uint
+	if merchant.SupportCustomerServiceMode && source.Appointment == nil {
+		var err error
+		defaultServiceTechnicianID, err = resolveProjectDefaultServiceTechnicianID(tx, merchant.ID, verifyCode.ProjectID)
+		if err != nil {
+			return models.ServiceSession{}, "", false, err
+		}
+	}
 	if isQueueMode {
 		durationMinutes, delaySeconds = resolveProjectServiceConfig(tx, merchant.ID, verifyCode.ProjectID, 15, merchant.StartDelaySeconds)
 		status = "staff_selecting"
@@ -79,11 +88,24 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		} else {
 			status = models.WithCSPrefix("start_pending")
 			nextStep = ""
+			startPendingTimeoutSeconds = config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, merchant.ID, techID, verifyCode.ProjectID)
 		}
 		session.TechnicianID = &techID
 		session.LastTechnicianID = &techID
 		predictedAppointmentDelayMinutes = delayMinutes
 		predictedReadyAt = readyAt
+	} else if merchant.SupportCustomerServiceMode && defaultServiceTechnicianID > 0 {
+		techID := defaultServiceTechnicianID
+		if merchant.SupportRoom {
+			status = models.WithCSPrefix("room_selecting")
+			nextStep = "room_select"
+		} else {
+			status = models.WithCSPrefix("start_pending")
+			nextStep = ""
+			startPendingTimeoutSeconds = config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, merchant.ID, techID, verifyCode.ProjectID)
+		}
+		session.TechnicianID = &techID
+		session.LastTechnicianID = &techID
 	}
 
 	session = models.ServiceSession{
@@ -106,6 +128,7 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		DurationMinutes:                  durationMinutes,
 		AutoFinishDelaySeconds:           autoFinishDelaySeconds,
 		AutoIdleAfterSeconds:             180,
+		StartPendingTimeoutSeconds:       startPendingTimeoutSeconds,
 		PredictedReadyAt:                 predictedReadyAt,
 		PredictedAppointmentDelayMinutes: predictedAppointmentDelayMinutes,
 	}
@@ -113,6 +136,47 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		return models.ServiceSession{}, "", false, err
 	}
 	return session, nextStep, shouldEnqueueOnsite, nil
+}
+
+func resolveProjectDefaultServiceTechnicianID(tx *gorm.DB, merchantID uint, projectID *uint) (uint, error) {
+	if tx == nil || merchantID == 0 || projectID == nil || *projectID == 0 {
+		return 0, nil
+	}
+	project, err := config.ResolveMerchantProject(tx, merchantID, projectID)
+	if err != nil || project == nil {
+		return 0, err
+	}
+	if project.ServiceCapacity <= 1 || len(project.DefaultServiceTechnicianIDs) == 0 {
+		return 0, nil
+	}
+
+	ids := make([]uint, 0, len(project.DefaultServiceTechnicianIDs))
+	for _, id := range project.DefaultServiceTechnicianIDs {
+		if id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	var techs []models.Technician
+	if err := tx.
+		Joins("JOIN service_roles sr ON sr.id = technicians.service_role_id").
+		Where("technicians.merchant_id = ? AND technicians.id IN ? AND technicians.is_active = ? AND sr.role_type = ?", merchantID, ids, true, "professional").
+		Find(&techs).Error; err != nil {
+		return 0, err
+	}
+	valid := make(map[uint]struct{}, len(techs))
+	for _, tech := range techs {
+		valid[tech.ID] = struct{}{}
+	}
+	for _, id := range ids {
+		if _, ok := valid[id]; ok {
+			return id, nil
+		}
+	}
+	return 0, nil
 }
 
 func enqueueVerifyUsageIfNeeded(merchant models.Merchant, card models.Card, usageID uint, shouldEnqueueOnsite bool) {

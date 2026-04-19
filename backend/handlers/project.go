@@ -84,6 +84,40 @@ func normalizeMerchantProjectServiceTimeSlots(slots models.MerchantProjectServic
 	return normalized, nil
 }
 
+func normalizeMerchantProjectDefaultServiceTechnicianIDs(tx *gorm.DB, merchantID uint, serviceCapacity int, ids models.MerchantProjectDefaultServiceTechnicianIDs) (models.MerchantProjectDefaultServiceTechnicianIDs, error) {
+	if serviceCapacity <= 1 || len(ids) == 0 {
+		return models.MerchantProjectDefaultServiceTechnicianIDs{}, nil
+	}
+
+	normalized := make(models.MerchantProjectDefaultServiceTechnicianIDs, 0, len(ids))
+	seen := make(map[uint]struct{}, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		normalized = append(normalized, id)
+	}
+	if len(normalized) == 0 {
+		return models.MerchantProjectDefaultServiceTechnicianIDs{}, nil
+	}
+
+	var count int64
+	if err := tx.Model(&models.Technician{}).
+		Joins("JOIN service_roles sr ON sr.id = technicians.service_role_id").
+		Where("technicians.merchant_id = ? AND technicians.id IN ? AND technicians.is_active = ? AND sr.role_type = ?", merchantID, []uint(normalized), true, "professional").
+		Count(&count).Error; err != nil {
+		return nil, err
+	}
+	if count != int64(len(normalized)) {
+		return nil, errors.New("服务人员必须选择当前商户下已启用的专业客服")
+	}
+	return normalized, nil
+}
+
 func CreateMerchantProject(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
@@ -91,26 +125,27 @@ func CreateMerchantProject(c *gin.Context) {
 	}
 
 	var input struct {
-		Name                             string                                 `json:"name" binding:"required"`
-		Duration                         int                                    `json:"duration" binding:"required,min=1"`
-		BookableOnline                   *bool                                  `json:"bookable_online"`
-		ServiceGapMinutes                *int                                   `json:"service_gap_minutes"`
-		StartDelaySeconds                *int                                   `json:"start_delay_seconds"`
-		RoomSelectTimeoutSeconds         *int                                   `json:"room_select_timeout_seconds"`
-		StartPendingTimeoutSeconds       *int                                   `json:"start_pending_timeout_seconds"`
-		ServiceCapacity                  *int                                   `json:"service_capacity"`
-		ShowParticipants                 *bool                                  `json:"show_participants"`
-		ServiceTimeSlots                 models.MerchantProjectServiceTimeSlots `json:"service_time_slots"`
-		AutoAssignTechnicianDelayMinutes *int                                   `json:"auto_assign_technician_delay_minutes"`
-		DelayToleranceMinutes            *int                                   `json:"delay_tolerance_minutes"`
-		DelayCompensationMode            *string                                `json:"delay_compensation_mode"`
-		DelayRedeemThresholdPercent      *int                                   `json:"delay_redeem_threshold_percent"`
-		DelayFixedUnitValue              *int                                   `json:"delay_fixed_unit_value"`
-		IsDefault                        *bool                                  `json:"is_default"`
-		Price                            float64                                `json:"price"`
-		Description                      string                                 `json:"description"`
-		IsActive                         *bool                                  `json:"is_active"`
-		SortOrder                        *int                                   `json:"sort_order"`
+		Name                             string                                            `json:"name" binding:"required"`
+		Duration                         int                                               `json:"duration" binding:"required,min=1"`
+		BookableOnline                   *bool                                             `json:"bookable_online"`
+		ServiceGapMinutes                *int                                              `json:"service_gap_minutes"`
+		StartDelaySeconds                *int                                              `json:"start_delay_seconds"`
+		RoomSelectTimeoutSeconds         *int                                              `json:"room_select_timeout_seconds"`
+		StartPendingTimeoutSeconds       *int                                              `json:"start_pending_timeout_seconds"`
+		ServiceCapacity                  *int                                              `json:"service_capacity"`
+		ShowParticipants                 *bool                                             `json:"show_participants"`
+		ServiceTimeSlots                 models.MerchantProjectServiceTimeSlots            `json:"service_time_slots"`
+		DefaultServiceTechnicianIDs      models.MerchantProjectDefaultServiceTechnicianIDs `json:"default_service_technician_ids"`
+		AutoAssignTechnicianDelayMinutes *int                                              `json:"auto_assign_technician_delay_minutes"`
+		DelayToleranceMinutes            *int                                              `json:"delay_tolerance_minutes"`
+		DelayCompensationMode            *string                                           `json:"delay_compensation_mode"`
+		DelayRedeemThresholdPercent      *int                                              `json:"delay_redeem_threshold_percent"`
+		DelayFixedUnitValue              *int                                              `json:"delay_fixed_unit_value"`
+		IsDefault                        *bool                                             `json:"is_default"`
+		Price                            float64                                           `json:"price"`
+		Description                      string                                            `json:"description"`
+		IsActive                         *bool                                             `json:"is_active"`
+		SortOrder                        *int                                              `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -175,6 +210,11 @@ func CreateMerchantProject(c *gin.Context) {
 		showParticipants = *input.ShowParticipants
 	}
 	serviceTimeSlots, err := normalizeMerchantProjectServiceTimeSlots(input.ServiceTimeSlots)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	defaultServiceTechnicianIDs, err := normalizeMerchantProjectDefaultServiceTechnicianIDs(config.DB, merchantID, serviceCapacity, input.DefaultServiceTechnicianIDs)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -258,6 +298,7 @@ func CreateMerchantProject(c *gin.Context) {
 		ServiceCapacity:                  serviceCapacity,
 		ShowParticipants:                 showParticipants,
 		ServiceTimeSlots:                 serviceTimeSlots,
+		DefaultServiceTechnicianIDs:      defaultServiceTechnicianIDs,
 		AutoAssignTechnicianDelayMinutes: autoAssignTechnicianDelayMinutes,
 		DelayToleranceMinutes:            delayToleranceMinutes,
 		DelayCompensationMode:            delayCompensationMode,
@@ -304,26 +345,27 @@ func UpdateMerchantProject(c *gin.Context) {
 	}
 
 	var input struct {
-		Name                             *string                                 `json:"name"`
-		Duration                         *int                                    `json:"duration"`
-		BookableOnline                   *bool                                   `json:"bookable_online"`
-		ServiceGapMinutes                *int                                    `json:"service_gap_minutes"`
-		StartDelaySeconds                *int                                    `json:"start_delay_seconds"`
-		RoomSelectTimeoutSeconds         *int                                    `json:"room_select_timeout_seconds"`
-		StartPendingTimeoutSeconds       *int                                    `json:"start_pending_timeout_seconds"`
-		ServiceCapacity                  *int                                    `json:"service_capacity"`
-		ShowParticipants                 *bool                                   `json:"show_participants"`
-		ServiceTimeSlots                 *models.MerchantProjectServiceTimeSlots `json:"service_time_slots"`
-		AutoAssignTechnicianDelayMinutes *int                                    `json:"auto_assign_technician_delay_minutes"`
-		DelayToleranceMinutes            *int                                    `json:"delay_tolerance_minutes"`
-		DelayCompensationMode            *string                                 `json:"delay_compensation_mode"`
-		DelayRedeemThresholdPercent      *int                                    `json:"delay_redeem_threshold_percent"`
-		DelayFixedUnitValue              *int                                    `json:"delay_fixed_unit_value"`
-		IsDefault                        *bool                                   `json:"is_default"`
-		Price                            *float64                                `json:"price"`
-		Description                      *string                                 `json:"description"`
-		IsActive                         *bool                                   `json:"is_active"`
-		SortOrder                        *int                                    `json:"sort_order"`
+		Name                             *string                                            `json:"name"`
+		Duration                         *int                                               `json:"duration"`
+		BookableOnline                   *bool                                              `json:"bookable_online"`
+		ServiceGapMinutes                *int                                               `json:"service_gap_minutes"`
+		StartDelaySeconds                *int                                               `json:"start_delay_seconds"`
+		RoomSelectTimeoutSeconds         *int                                               `json:"room_select_timeout_seconds"`
+		StartPendingTimeoutSeconds       *int                                               `json:"start_pending_timeout_seconds"`
+		ServiceCapacity                  *int                                               `json:"service_capacity"`
+		ShowParticipants                 *bool                                              `json:"show_participants"`
+		ServiceTimeSlots                 *models.MerchantProjectServiceTimeSlots            `json:"service_time_slots"`
+		DefaultServiceTechnicianIDs      *models.MerchantProjectDefaultServiceTechnicianIDs `json:"default_service_technician_ids"`
+		AutoAssignTechnicianDelayMinutes *int                                               `json:"auto_assign_technician_delay_minutes"`
+		DelayToleranceMinutes            *int                                               `json:"delay_tolerance_minutes"`
+		DelayCompensationMode            *string                                            `json:"delay_compensation_mode"`
+		DelayRedeemThresholdPercent      *int                                               `json:"delay_redeem_threshold_percent"`
+		DelayFixedUnitValue              *int                                               `json:"delay_fixed_unit_value"`
+		IsDefault                        *bool                                              `json:"is_default"`
+		Price                            *float64                                           `json:"price"`
+		Description                      *string                                            `json:"description"`
+		IsActive                         *bool                                              `json:"is_active"`
+		SortOrder                        *int                                               `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -391,6 +433,20 @@ func UpdateMerchantProject(c *gin.Context) {
 			return
 		}
 		updates["service_time_slots"] = serviceTimeSlots
+	}
+	if input.DefaultServiceTechnicianIDs != nil {
+		nextServiceCapacity := p.ServiceCapacity
+		if input.ServiceCapacity != nil {
+			nextServiceCapacity = *input.ServiceCapacity
+		}
+		defaultServiceTechnicianIDs, err := normalizeMerchantProjectDefaultServiceTechnicianIDs(config.DB, merchantID, nextServiceCapacity, *input.DefaultServiceTechnicianIDs)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		updates["default_service_technician_ids"] = defaultServiceTechnicianIDs
+	} else if input.ServiceCapacity != nil && *input.ServiceCapacity <= 1 {
+		updates["default_service_technician_ids"] = models.MerchantProjectDefaultServiceTechnicianIDs{}
 	}
 	if input.AutoAssignTechnicianDelayMinutes != nil {
 		if *input.AutoAssignTechnicianDelayMinutes < 0 || *input.AutoAssignTechnicianDelayMinutes > 180 {

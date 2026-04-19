@@ -343,6 +343,15 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE merchant_projects ADD COLUMN show_participants BOOLEAN NOT NULL DEFAULT 1 COMMENT '用户端是否展示参与服务用户'",
 		},
 	},
+	{
+		Version: "2026041901",
+		Name:    "add_project_default_service_technician_ids",
+		Statements: []string{
+			"ALTER TABLE merchant_projects ADD COLUMN default_service_technician_ids JSON NULL COMMENT '多人项目默认服务人员ID列表（专业客服）'",
+			"UPDATE merchant_projects SET default_service_technician_ids = JSON_ARRAY() WHERE default_service_technician_ids IS NULL",
+			"ALTER TABLE merchant_projects MODIFY COLUMN default_service_technician_ids JSON NOT NULL COMMENT '多人项目默认服务人员ID列表（专业客服）'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

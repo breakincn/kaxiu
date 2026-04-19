@@ -165,6 +165,42 @@
                 <div class="mt-1 text-xs text-gray-400">多人服务项目在用户端使用记录中展示参与服务用户昵称。</div>
               </div>
 
+              <div v-if="Number(project.service_capacity || 1) > 1">
+                <div class="text-sm font-medium text-gray-700 mb-2">服务人员</div>
+                <div class="relative">
+                  <button
+                    type="button"
+                    class="w-full min-h-10 px-3 py-2 border border-gray-300 rounded-lg bg-white text-left focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    @click="toggleServiceTechnicianDropdown(project)"
+                  >
+                    <span v-if="getSelectedServiceTechnicianNames(project).length" class="text-gray-800">
+                      {{ getSelectedServiceTechnicianNames(project).join('、') }}
+                    </span>
+                    <span v-else class="text-gray-400">请选择服务人员</span>
+                  </button>
+                  <div
+                    v-if="project._serviceTechnicianDropdownOpen"
+                    class="absolute left-0 right-0 top-full mt-1 z-20 max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"
+                  >
+                    <div v-if="professionalTechnicians.length === 0" class="px-3 py-3 text-sm text-gray-400">暂无专业客服</div>
+                    <label
+                      v-for="tech in professionalTechnicians"
+                      :key="tech.id"
+                      class="flex items-center gap-2 px-3 py-2 text-sm text-gray-700"
+                    >
+                      <input
+                        type="checkbox"
+                        :checked="isServiceTechnicianSelected(project, tech.id)"
+                        class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        @change="toggleProjectServiceTechnician(project, tech.id)"
+                      />
+                      <span class="min-w-0 flex-1 truncate">{{ tech.name || tech.account || `ID:${tech.id}` }}</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="mt-1 text-xs text-gray-400">多人项目核销后，系统直接绑定所选专业客服，不再让用户手动选择服务人员。</div>
+              </div>
+
               <div>
                 <div class="flex items-center justify-between mb-2">
                   <div class="text-sm font-medium text-gray-700">服务时间</div>
@@ -368,6 +404,7 @@ const loading = ref(true)
 const saving = ref(false)
 const initialSnapshot = ref('')
 const merchantTerms = ref(null)
+const professionalTechnicians = ref([])
 
 const removedProjectIds = ref([])
 
@@ -441,6 +478,7 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
     start_pending_timeout_minutes: Number(project.start_pending_timeout_minutes ?? 5),
     service_capacity: Number(project.service_capacity ?? 1),
     show_participants: project.show_participants !== false,
+    default_service_technician_ids: Number(project.service_capacity ?? 1) > 1 ? normalizeServiceTechnicianIds(project.default_service_technician_ids) : [],
     service_time_slots: normalizeServiceTimeSlots(project.service_time_slots),
     auto_assign_technician_delay_minutes: Number(project.auto_assign_technician_delay_minutes ?? 5),
     delay_tolerance_minutes: Number(project.delay_tolerance_minutes ?? 1),
@@ -455,6 +493,46 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
 const isDirty = computed(() => (
   normalizeProjectsState(form.value.projects, removedProjectIds.value) !== initialSnapshot.value
 ))
+
+const normalizeServiceTechnicianIds = (ids) => (Array.isArray(ids) ? ids : [])
+  .map(id => Number(id || 0))
+  .filter(id => Number.isFinite(id) && id > 0)
+  .filter((id, index, arr) => arr.indexOf(id) === index)
+
+const isServiceTechnicianSelected = (project, technicianId) => {
+  return normalizeServiceTechnicianIds(project.default_service_technician_ids).includes(Number(technicianId))
+}
+
+const toggleServiceTechnicianDropdown = (project) => {
+  form.value.projects.forEach((item) => {
+    if (item !== project) item._serviceTechnicianDropdownOpen = false
+  })
+  project._serviceTechnicianDropdownOpen = !project._serviceTechnicianDropdownOpen
+}
+
+const toggleProjectServiceTechnician = (project, technicianId) => {
+  const id = Number(technicianId || 0)
+  if (!id) return
+  const ids = normalizeServiceTechnicianIds(project.default_service_technician_ids)
+  if (ids.includes(id)) {
+    project.default_service_technician_ids = ids.filter(item => item !== id)
+    return
+  }
+  project.default_service_technician_ids = [...ids, id]
+}
+
+const getSelectedServiceTechnicianNames = (project) => {
+  const selectedIds = normalizeServiceTechnicianIds(project.default_service_technician_ids)
+  if (selectedIds.length === 0) return []
+  const byId = new Map(professionalTechnicians.value.map(tech => [Number(tech.id), tech]))
+  return selectedIds
+    .map(id => {
+      const tech = byId.get(id)
+      if (!tech) return `ID:${id}`
+      return tech.name || tech.account || `ID:${id}`
+    })
+    .filter(Boolean)
+}
 
 const goBack = () => {
   if (window.history.length > 1) {
@@ -474,6 +552,15 @@ const load = async () => {
   try {
     const merchantRes = await merchantApi.getCurrentMerchant()
     merchantTerms.value = merchantRes.data?.data || null
+    try {
+      const techRes = await merchantApi.getTechnicians()
+      professionalTechnicians.value = (techRes.data?.data || []).filter((tech) => {
+        return tech?.is_active !== false && String(tech?.service_role?.role_type || '').trim() === 'professional'
+      })
+    } catch (e) {
+      console.error('加载专业客服失败', e)
+      professionalTechnicians.value = []
+    }
     const res = await merchantProjectApi.list()
     const list = res.data?.data || []
     removedProjectIds.value = []
@@ -490,6 +577,7 @@ const load = async () => {
           start_pending_timeout_minutes: Number(p.start_pending_timeout_seconds ?? 300) / 60,
           service_capacity: Number(p.service_capacity ?? 1),
           show_participants: p.show_participants !== false,
+          default_service_technician_ids: normalizeServiceTechnicianIds(p.default_service_technician_ids),
           service_time_slot_mode: 'weekly',
           service_time_slots: normalizeServiceTimeSlots(p.service_time_slots),
           auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
@@ -522,6 +610,7 @@ const addProject = () => {
     start_pending_timeout_minutes: 5,
     service_capacity: 1,
     show_participants: true,
+    default_service_technician_ids: [],
     service_time_slot_mode: 'weekly',
     service_time_slots: [],
     auto_assign_technician_delay_minutes: 5,
@@ -704,6 +793,7 @@ const save = async () => {
         start_pending_timeout_seconds: Number(p.start_pending_timeout_minutes ?? 5) * 60,
         service_capacity: Number(p.service_capacity ?? 1),
         show_participants: p.show_participants !== false,
+        default_service_technician_ids: Number(p.service_capacity ?? 1) > 1 ? normalizeServiceTechnicianIds(p.default_service_technician_ids) : [],
         service_time_slots: normalizeServiceTimeSlots(p.service_time_slots),
         auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
         delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),

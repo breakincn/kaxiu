@@ -23,7 +23,7 @@ func setupProjectHandlerTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.Merchant{}, &models.MerchantProject{}); err != nil {
+	if err := db.AutoMigrate(&models.Merchant{}, &models.ServiceRole{}, &models.Technician{}, &models.MerchantProject{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 	return db
@@ -45,6 +45,62 @@ func seedProjectMerchant(t *testing.T, db *gorm.DB) models.Merchant {
 		t.Fatalf("create merchant failed: %v", err)
 	}
 	return merchant
+}
+
+func TestCreateMerchantProjectStoresDefaultServiceTechnicians(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	config.DB = setupProjectHandlerTestDB(t)
+	merchant := seedProjectMerchant(t, config.DB)
+	role := models.ServiceRole{RoleType: "professional", Key: "teacher", Name: "专业客服", IsActive: true}
+	if err := config.DB.Create(&role).Error; err != nil {
+		t.Fatalf("create role failed: %v", err)
+	}
+	tech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "老师A", Code: "0001", Account: "pro0001", IsActive: true}
+	if err := config.DB.Create(&tech).Error; err != nil {
+		t.Fatalf("create technician failed: %v", err)
+	}
+
+	body := `{"name":"团课","duration":60,"service_capacity":15,"default_service_technician_ids":[` + strconv.Itoa(int(tech.ID)) + `]}`
+	c, rec := newProjectMerchantJSONContext(http.MethodPost, "/merchant/projects", merchant.ID, body)
+	CreateMerchantProject(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got models.MerchantProject
+	if err := config.DB.Where("merchant_id = ? AND name = ?", merchant.ID, "团课").First(&got).Error; err != nil {
+		t.Fatalf("load project failed: %v", err)
+	}
+	if len(got.DefaultServiceTechnicianIDs) != 1 || got.DefaultServiceTechnicianIDs[0] != tech.ID {
+		t.Fatalf("unexpected default service technicians: %+v", got.DefaultServiceTechnicianIDs)
+	}
+}
+
+func TestCreateMerchantProjectRejectsOperationalDefaultServiceTechnician(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	config.DB = setupProjectHandlerTestDB(t)
+	merchant := seedProjectMerchant(t, config.DB)
+	role := models.ServiceRole{RoleType: "operational", Key: "front", Name: "运营客服", IsActive: true}
+	if err := config.DB.Create(&role).Error; err != nil {
+		t.Fatalf("create role failed: %v", err)
+	}
+	tech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "客服A", Code: "001", Account: "op001", IsActive: true}
+	if err := config.DB.Create(&tech).Error; err != nil {
+		t.Fatalf("create technician failed: %v", err)
+	}
+
+	body := `{"name":"团课","duration":60,"service_capacity":15,"default_service_technician_ids":[` + strconv.Itoa(int(tech.ID)) + `]}`
+	c, rec := newProjectMerchantJSONContext(http.MethodPost, "/merchant/projects", merchant.ID, body)
+	CreateMerchantProject(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestCreateMerchantProjectSupportsDelayCompensationConfig(t *testing.T) {

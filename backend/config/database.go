@@ -204,6 +204,9 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `service_time_slots` JSON NULL COMMENT '服务时间槽'")
 	DB.Exec("UPDATE `merchant_projects` SET `service_time_slots` = JSON_ARRAY() WHERE `service_time_slots` IS NULL")
 	DB.Exec("ALTER TABLE `merchant_projects` MODIFY COLUMN `service_time_slots` JSON NOT NULL COMMENT '服务时间槽'")
+	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `default_service_technician_ids` JSON NULL COMMENT '多人项目默认服务人员ID列表（专业客服）'")
+	DB.Exec("UPDATE `merchant_projects` SET `default_service_technician_ids` = JSON_ARRAY() WHERE `default_service_technician_ids` IS NULL")
+	DB.Exec("ALTER TABLE `merchant_projects` MODIFY COLUMN `default_service_technician_ids` JSON NOT NULL COMMENT '多人项目默认服务人员ID列表（专业客服）'")
 	// merchant_projects: 项目级自动分配客服延迟时间（分钟）
 	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `auto_assign_technician_delay_minutes` int NOT NULL DEFAULT 5 COMMENT '自动分配客服延迟时间（分钟）'")
 
