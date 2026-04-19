@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"kabao/config"
 	"kabao/models"
 	"kabao/queue"
@@ -253,6 +254,7 @@ func liveServiceLoadActiveSessions(merchantID uint) ([]models.ServiceSession, er
 		SessionMode               string         `gorm:"column:session_mode"`
 		RoomID                    *uint          `gorm:"column:room_id"`
 		TechnicianID              *uint          `gorm:"column:technician_id"`
+		ServiceTechnicianIDs      string         `gorm:"column:service_technician_ids"`
 		Status                    string         `gorm:"column:status"`
 		StartConfirmedAtText      sql.NullString `gorm:"column:start_confirmed_at"`
 		ScheduledStartAtText      sql.NullString `gorm:"column:scheduled_start_at"`
@@ -276,6 +278,7 @@ func liveServiceLoadActiveSessions(merchantID uint) ([]models.ServiceSession, er
 			"session_mode",
 			"room_id",
 			"technician_id",
+			"service_technician_ids",
 			"status",
 			"start_confirmed_at",
 			"scheduled_start_at",
@@ -327,6 +330,7 @@ func liveServiceLoadActiveSessions(merchantID uint) ([]models.ServiceSession, er
 			SessionMode:                row.SessionMode,
 			RoomID:                     row.RoomID,
 			TechnicianID:               row.TechnicianID,
+			ServiceTechnicianIDs:       liveServiceParseTechnicianIDs(row.ServiceTechnicianIDs),
 			Status:                     row.Status,
 			StartConfirmedAt:           liveServiceParseNullableTime(row.StartConfirmedAtText),
 			ScheduledStartAt:           liveServiceParseNullableTime(row.ScheduledStartAtText),
@@ -347,6 +351,18 @@ func liveServiceLoadActiveSessions(merchantID uint) ([]models.ServiceSession, er
 		sessions = append(sessions, session)
 	}
 	return sessions, nil
+}
+
+func liveServiceParseTechnicianIDs(raw string) models.MerchantProjectDefaultServiceTechnicianIDs {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return models.MerchantProjectDefaultServiceTechnicianIDs{}
+	}
+	var ids []uint
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return models.MerchantProjectDefaultServiceTechnicianIDs{}
+	}
+	return models.MerchantProjectDefaultServiceTechnicianIDs(ids)
 }
 
 func liveServiceLoadEligibleTechnicians(merchantID uint) ([]models.Technician, error) {
@@ -746,6 +762,9 @@ func liveServiceProjectedStatus(merchant *models.Merchant, session *models.Servi
 		return baseStatus
 	}
 	if merchant != nil && !merchant.SupportCustomerServiceMode && merchant.SupportQueue && isManualQueueMode(merchant.QueueMode) {
+		return baseStatus
+	}
+	if session.ScheduledStartAt != nil {
 		return baseStatus
 	}
 	if computeStartPendingRemainingSecondsForSession(session, now) > 0 {

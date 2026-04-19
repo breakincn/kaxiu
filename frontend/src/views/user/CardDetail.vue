@@ -1276,6 +1276,7 @@ const getUsageStatusText = (usage) => {
         if (isMultiQueueSession && !usage?.service_technician) return '待叫号'
         return '待扫码上号'
       }
+      if (isUsageProjectServiceScheduledSession(usage)) return '待上课'
       return '待服务开始'
     }
     
@@ -1294,6 +1295,7 @@ const getUsageStatusText = (usage) => {
       if (isQueueSession) {
         return '待上号'
       }
+      if (isUsageProjectServiceScheduledSession(usage)) return '待上课'
       return getCardStartPendingLabel()
     }
     if (sessStatus === 'serving') return replaceTerms('服务中', card.value?.merchant)
@@ -1582,6 +1584,19 @@ const getUsageSessionScheduledStartAtMs = (usage) => {
   if (!v) return 0
   const ms = new Date(v).getTime()
   return Number.isFinite(ms) ? ms : 0
+}
+
+const isUsageProjectServiceScheduledSession = (usage) => {
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
+  if (sessStatus !== 'start_pending' && sessStatus !== 'delay_pending') return false
+  const scheduledStartMs = getUsageSessionScheduledStartAtMs(usage)
+  if (!scheduledStartMs) return false
+  const techs = Array.isArray(usage?.service_technicians) ? usage.service_technicians : []
+  return techs.length > 0 || Boolean(usage?.service_technician)
+}
+
+const isUsageWaitingProjectServiceStart = (usage, nowMs = nowTick.value) => {
+  return isUsageProjectServiceScheduledSession(usage) && getUsageSessionScheduledStartAtMs(usage) > nowMs
 }
 
 const getUsageSessionStartedAtMs = (usage) => {
@@ -1974,6 +1989,7 @@ const getUsageCurrentTimesClass = (usage, index) => {
 }
 
 const getPrecheckDeadlineAtMs = (usage) => {
+  if (isUsageProjectServiceScheduledSession(usage)) return 0
   const ms = getUsageSessionUpdatedAtMs(usage)
   if (!ms) return 0
   const startPendingTimeoutMs = getStartPendingTimeoutMs(usage)
@@ -2410,6 +2426,9 @@ const getUsageStatusCountdownText = (usage) => {
 
   // 待开始服务倒计时
   if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
+    if (isUsageProjectServiceScheduledSession(usage)) {
+      return '等待老师扫码开始服务'
+    }
     const dl = getPrecheckDeadlineAtMs(usage)
     if (dl) {
       const diff = dl - now
@@ -2423,6 +2442,15 @@ const getUsageStatusCountdownText = (usage) => {
       // 超时后不显示倒计时
       return ''
     }
+  }
+
+  if (supportCS && sessStatus === 'delay_pending' && isUsageProjectServiceScheduledSession(usage)) {
+    const diff = getUsageSessionScheduledStartAtMs(usage) - now
+    if (diff <= 0) return '即将自动上课'
+    const totalSeconds = Math.max(0, Math.floor(diff / 1000))
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return `${minutes}分${seconds}秒后自动上课`
   }
 
   if (isQueueSession && sessStatus === 'timeout_waiting') {

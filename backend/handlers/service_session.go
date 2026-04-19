@@ -291,6 +291,13 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		}
 
 		startAt := now.Add(time.Duration(s.StartDelaySeconds) * time.Second)
+		deferAttendanceBusy := false
+		if start, ok, err := resolveSessionProjectScheduledStart(tx, &s, now); err != nil {
+			return err
+		} else if ok {
+			startAt = *start
+			deferAttendanceBusy = startAt.After(now)
+		}
 		updates := map[string]interface{}{
 			"start_confirmed_at": now,
 			"scheduled_start_at": startAt,
@@ -310,8 +317,8 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			}
 		}
 
-		// 开始服务成功后占用技师：仅允许 idle -> busy，避免并发重复提交
-		if att.Status == "idle" {
+		// 普通待开始服务扫码后立即占用客服；项目固定服务时间的早扫场景延后到真正开课时占用。
+		if att.Status == "idle" && !deferAttendanceBusy {
 			res := tx.Model(&models.TechnicianAttendance{}).
 				Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, *s.TechnicianID, "idle").
 				Updates(map[string]interface{}{"status": "busy"})
@@ -838,6 +845,12 @@ func ChooseServiceSessionRoom(c *gin.Context) {
 				updates["start_pending_timeout_seconds"] = config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, merchantID, techID, s.ProjectID)
 				updates["staff_select_entered_at"] = nil
 				updates["staff_select_cooldown_until"] = nil
+				if startAt, ok, err := config.ResolveProjectNextServiceStart(tx, merchantID, s.ProjectID, lockedAt); err != nil {
+					return err
+				} else if ok {
+					updates["scheduled_start_at"] = startAt
+					updates["start_pending_timeout_seconds"] = 0
+				}
 			} else {
 				updates["status"] = models.ApplyStatusPrefix(s.Status, "room_locked")
 			}

@@ -109,7 +109,7 @@ func merchantProjectServiceTimeAllowed(project models.MerchantProject, now time.
 		return true
 	}
 
-	loc := appointmentLocation()
+	loc := config.ProjectServiceTimeLocation()
 	localNow := now.In(loc)
 	duration := time.Duration(project.Duration) * time.Minute
 	if duration <= 0 {
@@ -123,7 +123,7 @@ func merchantProjectServiceTimeAllowed(project models.MerchantProject, now time.
 		}
 		for offset := -1; offset <= 1; offset++ {
 			candidateDate := localNow.AddDate(0, 0, offset)
-			if !merchantProjectServiceTimeSlotMatchesDate(slot, candidateDate) {
+			if !config.MerchantProjectServiceTimeSlotMatchesDate(slot, candidateDate) {
 				continue
 			}
 			startAt := time.Date(candidateDate.Year(), candidateDate.Month(), candidateDate.Day(), startClock.Hour(), startClock.Minute(), 0, 0, loc)
@@ -136,18 +136,6 @@ func merchantProjectServiceTimeAllowed(project models.MerchantProject, now time.
 	}
 
 	return false
-}
-
-func merchantProjectServiceTimeSlotMatchesDate(slot models.MerchantProjectServiceTimeSlot, date time.Time) bool {
-	if strings.TrimSpace(slot.RecurrenceType) == "monthly" {
-		return slot.MonthDay == date.Day()
-	}
-
-	weekday := int(date.Weekday())
-	if weekday == 0 {
-		weekday = 7
-	}
-	return slot.Weekday == weekday
 }
 
 func GetCards(c *gin.Context) {

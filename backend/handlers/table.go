@@ -49,6 +49,9 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 			if models.NormalizeSessionStatus(s.Status) != "start_pending" || s.StartConfirmedAt != nil || s.UpdatedAt == nil {
 				continue
 			}
+			if s.ScheduledStartAt != nil {
+				continue
+			}
 			timeout := config.StartPendingTimeout()
 			if s.StartPendingTimeoutSeconds > 0 {
 				timeout = time.Duration(s.StartPendingTimeoutSeconds) * time.Second

@@ -107,6 +107,12 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 			status = models.WithCSPrefix("start_pending")
 			nextStep = ""
 			startPendingTimeoutSeconds = config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, merchant.ID, techID, verifyCode.ProjectID)
+			if startAt, ok, err := config.ResolveProjectNextServiceStart(tx, merchant.ID, verifyCode.ProjectID, now); err != nil {
+				return models.ServiceSession{}, "", false, err
+			} else if ok {
+				scheduledStartAt = startAt
+				startPendingTimeoutSeconds = 0
+			}
 		}
 		session.TechnicianID = &techID
 		session.LastTechnicianID = &techID
@@ -159,7 +165,7 @@ func resolveProjectDefaultServiceTechnicianIDs(tx *gorm.DB, merchantID uint, pro
 	if err != nil || project == nil {
 		return nil, err
 	}
-	if project.ServiceCapacity <= 1 || len(project.DefaultServiceTechnicianIDs) == 0 {
+	if len(project.DefaultServiceTechnicianIDs) == 0 {
 		return nil, nil
 	}
 
@@ -197,6 +203,20 @@ func resolveProjectDefaultServiceTechnicianIDs(tx *gorm.DB, merchantID uint, pro
 		}
 	}
 	return resolved, nil
+}
+
+func resolveSessionProjectScheduledStart(tx *gorm.DB, s *models.ServiceSession, now time.Time) (*time.Time, bool, error) {
+	if tx == nil || s == nil || s.ProjectID == nil || *s.ProjectID == 0 {
+		return nil, false, nil
+	}
+	if s.ScheduledStartAt != nil {
+		return s.ScheduledStartAt, true, nil
+	}
+	startAt, ok, err := config.ResolveProjectNextServiceStart(tx, s.MerchantID, s.ProjectID, now)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	return startAt, true, nil
 }
 
 func enqueueVerifyUsageIfNeeded(merchant models.Merchant, card models.Card, usageID uint, shouldEnqueueOnsite bool) {

@@ -110,7 +110,7 @@
                 />
               </div>
 
-              <div v-if="isCustomerServiceModeEnabled">
+              <div v-if="isCustomerServiceModeEnabled && !hasProjectDefaultServiceTechnicians(project)">
                 <div class="text-sm font-medium text-gray-700 mb-2">自动分配客服延迟时间（分钟）</div>
                 <input
                   v-model.number="project.auto_assign_technician_delay_minutes"
@@ -122,7 +122,7 @@
                 />
               </div>
 
-              <div v-if="isCustomerServiceModeEnabled">
+              <div v-if="isCustomerServiceModeEnabled && !hasProjectServiceTimeSlots(project)">
                 <div class="text-sm font-medium text-gray-700 mb-2">{{ startPendingCountdownLabel }}</div>
                 <input
                   v-model.number="project.start_pending_timeout_minutes"
@@ -165,7 +165,7 @@
                 <div class="mt-1 text-xs text-gray-400">多人服务项目在用户端使用记录中展示参与服务用户昵称。</div>
               </div>
 
-              <div v-if="Number(project.service_capacity || 1) > 1">
+              <div>
                 <div class="text-sm font-medium text-gray-700 mb-2">服务人员</div>
                 <div class="relative">
                   <button
@@ -198,7 +198,7 @@
                     </label>
                   </div>
                 </div>
-                <div class="mt-1 text-xs text-gray-400">多人项目核销后，系统直接绑定所选专业客服，不再让用户手动选择服务人员。</div>
+                <div class="mt-1 text-xs text-gray-400">项目核销后，系统直接绑定所选专业客服，不再让用户手动选择服务人员。</div>
               </div>
 
               <div>
@@ -466,6 +466,9 @@ const startPendingCountdownLabel = computed(() => `${getStartCountdownLabel(merc
 const isRoomServiceEnabled = computed(() => !!merchantTerms.value?.support_room)
 const isCustomerServiceModeEnabled = computed(() => !!merchantTerms.value?.support_customer_service_mode)
 
+const hasProjectDefaultServiceTechnicians = (project) => normalizeServiceTechnicianIds(project?.default_service_technician_ids).length > 0
+const hasProjectServiceTimeSlots = (project) => normalizeServiceTimeSlots(project?.service_time_slots).length > 0
+
 const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
   projects: (projects || []).map((project) => ({
     id: project.id ?? null,
@@ -478,7 +481,7 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
     start_pending_timeout_minutes: Number(project.start_pending_timeout_minutes ?? 5),
     service_capacity: Number(project.service_capacity ?? 1),
     show_participants: project.show_participants !== false,
-    default_service_technician_ids: Number(project.service_capacity ?? 1) > 1 ? normalizeServiceTechnicianIds(project.default_service_technician_ids) : [],
+    default_service_technician_ids: normalizeServiceTechnicianIds(project.default_service_technician_ids),
     service_time_slots: normalizeServiceTimeSlots(project.service_time_slots),
     auto_assign_technician_delay_minutes: Number(project.auto_assign_technician_delay_minutes ?? 5),
     delay_tolerance_minutes: Number(project.delay_tolerance_minutes ?? 1),
@@ -706,7 +709,7 @@ const save = async () => {
         return
       }
     }
-    if (isCustomerServiceModeEnabled.value) {
+    if (isCustomerServiceModeEnabled.value && !hasProjectServiceTimeSlots(project)) {
       const startPendingTimeoutMinutes = Number(project.start_pending_timeout_minutes ?? 5)
       if (!Number.isFinite(startPendingTimeoutMinutes) || startPendingTimeoutMinutes < 1 || startPendingTimeoutMinutes > 60) {
         alert(`项目 ${i + 1} 的${getStartCountdownLabel(merchantTerms.value)}必须在 1-60 分钟之间`)
@@ -741,7 +744,7 @@ const save = async () => {
       alert(`项目 ${i + 1} 的服务间歇时间必须在 0-60 分钟之间`)
       return
     }
-    if (isCustomerServiceModeEnabled.value) {
+    if (isCustomerServiceModeEnabled.value && !hasProjectDefaultServiceTechnicians(project)) {
       const autoAssignDelayMinutes = Number(project.auto_assign_technician_delay_minutes ?? 5)
       if (!Number.isFinite(autoAssignDelayMinutes) || autoAssignDelayMinutes < 0 || autoAssignDelayMinutes > 180) {
         alert(`项目 ${i + 1} 的自动分配客服延迟时间必须在 0-180 分钟之间`)
@@ -793,7 +796,7 @@ const save = async () => {
         start_pending_timeout_seconds: Number(p.start_pending_timeout_minutes ?? 5) * 60,
         service_capacity: Number(p.service_capacity ?? 1),
         show_participants: p.show_participants !== false,
-        default_service_technician_ids: Number(p.service_capacity ?? 1) > 1 ? normalizeServiceTechnicianIds(p.default_service_technician_ids) : [],
+        default_service_technician_ids: normalizeServiceTechnicianIds(p.default_service_technician_ids),
         service_time_slots: normalizeServiceTimeSlots(p.service_time_slots),
         auto_assign_technician_delay_minutes: Number(p.auto_assign_technician_delay_minutes ?? 5),
         delay_tolerance_minutes: Number(p.delay_tolerance_minutes ?? 1),

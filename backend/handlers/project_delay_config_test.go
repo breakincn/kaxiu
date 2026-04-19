@@ -63,7 +63,7 @@ func TestCreateMerchantProjectStoresDefaultServiceTechnicians(t *testing.T) {
 		t.Fatalf("create technician failed: %v", err)
 	}
 
-	body := `{"name":"团课","duration":60,"service_capacity":15,"default_service_technician_ids":[` + strconv.Itoa(int(tech.ID)) + `]}`
+	body := `{"name":"团课","duration":60,"service_capacity":1,"default_service_technician_ids":[` + strconv.Itoa(int(tech.ID)) + `]}`
 	c, rec := newProjectMerchantJSONContext(http.MethodPost, "/merchant/projects", merchant.ID, body)
 	CreateMerchantProject(c)
 	if rec.Code != http.StatusOK {

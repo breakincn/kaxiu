@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"kabao/appointmentdelay"
@@ -129,7 +130,7 @@ func loadServiceSessionByID(tx *gorm.DB, sessionID uint) (*models.ServiceSession
 		return nil, nil
 	}
 	rows, err := tx.Table("service_sessions").
-		Select("id, merchant_id, user_id, card_id, project_id, initial_usage_id, verify_code, session_mode, source_type, source_id, occupies_next_appointment, next_appointment_id, predicted_appointment_delay_minutes, predicted_ready_at, room_id, technician_id, last_technician_id, start_timeout_count, start_timeout_last_at, staff_select_cooldown_until, staff_select_entered_at, start_pending_timeout_seconds, status, room_select_deadline_at, room_locked_at, start_confirmed_at, start_delay_seconds, scheduled_start_at, started_at, duration_minutes, scheduled_finish_at, finished_at, auto_finish_delay_seconds, auto_idle_after_seconds, created_at, updated_at").
+		Select("id, merchant_id, user_id, card_id, project_id, initial_usage_id, verify_code, session_mode, source_type, source_id, occupies_next_appointment, next_appointment_id, predicted_appointment_delay_minutes, predicted_ready_at, room_id, technician_id, last_technician_id, service_technician_ids, start_timeout_count, start_timeout_last_at, staff_select_cooldown_until, staff_select_entered_at, start_pending_timeout_seconds, status, room_select_deadline_at, room_locked_at, start_confirmed_at, start_delay_seconds, scheduled_start_at, started_at, duration_minutes, scheduled_finish_at, finished_at, auto_finish_delay_seconds, auto_idle_after_seconds, created_at, updated_at").
 		Where("id = ?", sessionID).
 		Limit(1).
 		Rows()
@@ -149,6 +150,7 @@ func loadServiceSessionByID(tx *gorm.DB, sessionID uint) (*models.ServiceSession
 		roomIDRaw                   interface{}
 		technicianIDRaw             interface{}
 		lastTechnicianIDRaw         interface{}
+		serviceTechnicianIDsRaw     interface{}
 		startTimeoutLastAtRaw       interface{}
 		staffSelectCooldownUntilRaw interface{}
 		staffSelectEnteredAtRaw     interface{}
@@ -180,6 +182,7 @@ func loadServiceSessionByID(tx *gorm.DB, sessionID uint) (*models.ServiceSession
 		&roomIDRaw,
 		&technicianIDRaw,
 		&lastTechnicianIDRaw,
+		&serviceTechnicianIDsRaw,
 		&session.StartTimeoutCount,
 		&startTimeoutLastAtRaw,
 		&staffSelectCooldownUntilRaw,
@@ -223,6 +226,9 @@ func loadServiceSessionByID(tx *gorm.DB, sessionID uint) (*models.ServiceSession
 	if v, ok := schedulerValueToUint(lastTechnicianIDRaw); ok {
 		session.LastTechnicianID = &v
 	}
+	if ids := schedulerParseTechnicianIDs(serviceTechnicianIDsRaw); len(ids) > 0 {
+		session.ServiceTechnicianIDs = ids
+	}
 	if v, ok := parseSchedulerDBTimeValue(startTimeoutLastAtRaw); ok {
 		session.StartTimeoutLastAt = v
 	}
@@ -260,6 +266,30 @@ func loadServiceSessionByID(tx *gorm.DB, sessionID uint) (*models.ServiceSession
 		session.UpdatedAt = v
 	}
 	return &session, nil
+}
+
+func schedulerParseTechnicianIDs(value interface{}) models.MerchantProjectDefaultServiceTechnicianIDs {
+	if value == nil {
+		return models.MerchantProjectDefaultServiceTechnicianIDs{}
+	}
+	var raw string
+	switch v := value.(type) {
+	case []byte:
+		raw = string(v)
+	case string:
+		raw = v
+	default:
+		return models.MerchantProjectDefaultServiceTechnicianIDs{}
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return models.MerchantProjectDefaultServiceTechnicianIDs{}
+	}
+	var ids []uint
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return models.MerchantProjectDefaultServiceTechnicianIDs{}
+	}
+	return models.MerchantProjectDefaultServiceTechnicianIDs(ids)
 }
 
 func finalizeOverdueManualServingSessions(db *gorm.DB, now time.Time) error {
@@ -1257,6 +1287,9 @@ func handleStartPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 	if s.StartConfirmedAt != nil {
 		return nil
 	}
+	if s.ScheduledStartAt != nil {
+		return nil
+	}
 	if s.UpdatedAt == nil {
 		return nil
 	}
@@ -1388,6 +1421,11 @@ func handleDelayPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 						Updates(map[string]interface{}{"status": "busy"}).Error
 				}
 			}
+		}
+		if s.TechnicianID != nil && *s.TechnicianID > 0 {
+			_ = tx.Model(&models.TechnicianAttendance{}).
+				Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "idle").
+				Updates(map[string]interface{}{"status": "busy"}).Error
 		}
 		if err := tx.Model(&models.ServiceSession{}).
 			Where("id = ? AND status IN ? AND start_confirmed_at IS NOT NULL", s.ID, models.ExpandStatusWithKnownPrefixes("delay_pending")).

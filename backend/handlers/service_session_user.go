@@ -403,6 +403,10 @@ func buildServiceSessionRoomSelectionUpdates(tx *gorm.DB, merchant models.Mercha
 			updates["staff_select_entered_at"] = nil
 			updates["staff_select_cooldown_until"] = nil
 			updates["start_pending_timeout_seconds"] = timeoutSeconds
+			if startAt, ok, err := config.ResolveProjectNextServiceStart(tx, s.MerchantID, s.ProjectID, lockedAt); err == nil && ok {
+				updates["scheduled_start_at"] = startAt
+				updates["start_pending_timeout_seconds"] = 0
+			}
 		} else if s.TechnicianID != nil && *s.TechnicianID > 0 {
 			timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, s.MerchantID, *s.TechnicianID, s.ProjectID)
 			updates["status"] = models.ApplyStatusPrefix(s.Status, "start_pending")

@@ -56,7 +56,7 @@ func TestChooseServiceSessionRoomSkipsStaffSelectWithProjectDefaultTechnicians(t
 		MerchantID:                  merchant.ID,
 		Name:                        "爵士舞课",
 		Duration:                    60,
-		ServiceCapacity:             15,
+		ServiceCapacity:             1,
 		DefaultServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{firstTech.ID, secondTech.ID},
 		ServiceTimeSlots:            models.MerchantProjectServiceTimeSlots{},
 	}
@@ -141,7 +141,7 @@ func TestServiceSessionStartScanAllowsAnyProjectDefaultProfessionalTechnician(t 
 		MerchantID:                  merchant.ID,
 		Name:                        "爵士舞课",
 		Duration:                    60,
-		ServiceCapacity:             15,
+		ServiceCapacity:             1,
 		DefaultServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{firstTech.ID, secondTech.ID},
 		ServiceTimeSlots:            models.MerchantProjectServiceTimeSlots{},
 	}
@@ -319,7 +319,7 @@ func TestPerformVerifyCommitBindsProjectDefaultProfessionalTechnician(t *testing
 		MerchantID:                  merchant.ID,
 		Name:                        "团课",
 		Duration:                    60,
-		ServiceCapacity:             15,
+		ServiceCapacity:             1,
 		DefaultServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{tech.ID, secondTech.ID},
 		StartPendingTimeoutSeconds:  240,
 		ServiceTimeSlots:            models.MerchantProjectServiceTimeSlots{},
@@ -381,5 +381,102 @@ func TestPerformVerifyCommitBindsProjectDefaultProfessionalTechnician(t *testing
 	}
 	if session.StartPendingTimeoutSeconds != 240 {
 		t.Fatalf("want project start timeout 240, got %d", session.StartPendingTimeoutSeconds)
+	}
+}
+
+func TestPerformVerifyCommitUsesProjectServiceTimeForDefaultTechnicians(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupServiceSessionFactoryTestDB(t)
+
+	loc := config.ProjectServiceTimeLocation()
+	now := time.Now().In(loc)
+	slotStart := now.Add(30 * time.Minute).Truncate(time.Minute)
+	weekday := int(slotStart.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+
+	merchant := models.Merchant{Name: "m-service-time", Phone: "18800000006", Password: "pwd", SupportCustomerServiceMode: true}
+	if err := config.DB.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	role := models.ServiceRole{RoleType: "professional", Key: "teacher", Name: "专业客服", IsActive: true}
+	if err := config.DB.Create(&role).Error; err != nil {
+		t.Fatalf("create role failed: %v", err)
+	}
+	firstTech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "朱古丽", Code: "0001", Account: "jsls0001", IsActive: true}
+	secondTech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "671", Code: "0002", Account: "bls0001", IsActive: true}
+	if err := config.DB.Create(&firstTech).Error; err != nil {
+		t.Fatalf("create first technician failed: %v", err)
+	}
+	if err := config.DB.Create(&secondTech).Error; err != nil {
+		t.Fatalf("create second technician failed: %v", err)
+	}
+	project := models.MerchantProject{
+		MerchantID:                  merchant.ID,
+		Name:                        "爵士舞课",
+		Duration:                    60,
+		ServiceCapacity:             1,
+		DefaultServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{firstTech.ID, secondTech.ID},
+		StartPendingTimeoutSeconds:  300,
+		ServiceTimeSlots: models.MerchantProjectServiceTimeSlots{{
+			RecurrenceType: "weekly",
+			Weekday:        weekday,
+			StartTime:      slotStart.Format("15:04"),
+		}},
+	}
+	if err := config.DB.Create(&project).Error; err != nil {
+		t.Fatalf("create project failed: %v", err)
+	}
+	card := models.Card{UserID: 9, MerchantID: merchant.ID, CardNo: "00003", CardType: "times", TotalTimes: 10, RemainTimes: 10, RechargeAt: &now, LastUsedAt: &now}
+	if err := config.DB.Create(&card).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+	verifyCode := models.VerifyCode{CardID: card.ID, Code: "VERIFY-SERVICE-TIME", ExpireAt: now.Add(10 * time.Minute).Unix(), ProjectID: &project.ID}
+	if err := config.DB.Create(&verifyCode).Error; err != nil {
+		t.Fatalf("create verify code failed: %v", err)
+	}
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("auth_type", "merchant")
+
+	result := verifyCommitResult{}
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		result, err = performVerifyCommit(tx, ctx, merchant, verifyCode, card, "")
+		return err
+	}); err != nil {
+		t.Fatalf("performVerifyCommit failed: %v", err)
+	}
+
+	var session struct {
+		Status                     string
+		ScheduledStartAt           string `gorm:"column:scheduled_start_at"`
+		StartPendingTimeoutSeconds int    `gorm:"column:start_pending_timeout_seconds"`
+		ServiceTechnicianIDs       models.MerchantProjectDefaultServiceTechnicianIDs
+	}
+	if err := config.DB.Model(&models.ServiceSession{}).
+		Select("status", "scheduled_start_at", "start_pending_timeout_seconds", "service_technician_ids").
+		Where("id = ?", result.SessionID).
+		First(&session).Error; err != nil {
+		t.Fatalf("load service session failed: %v", err)
+	}
+	if session.Status != "cs_start_pending" {
+		t.Fatalf("want cs_start_pending, got %s", session.Status)
+	}
+	gotStart, err := time.ParseInLocation("2006-01-02 15:04:05", strings.TrimSpace(session.ScheduledStartAt), loc)
+	if err != nil {
+		gotStart, err = time.ParseInLocation("2006-01-02 15:04:05-07:00", strings.TrimSpace(session.ScheduledStartAt), loc)
+	}
+	if err != nil || !gotStart.Equal(slotStart) {
+		t.Fatalf("want scheduled start %s, got %q err=%v", slotStart, session.ScheduledStartAt, err)
+	}
+	if session.StartPendingTimeoutSeconds != 0 {
+		t.Fatalf("want no start pending timeout for project service time, got %d", session.StartPendingTimeoutSeconds)
+	}
+	if len(session.ServiceTechnicianIDs) != 2 {
+		t.Fatalf("want both service technicians, got %+v", session.ServiceTechnicianIDs)
 	}
 }

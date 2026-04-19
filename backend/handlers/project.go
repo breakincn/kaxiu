@@ -84,8 +84,8 @@ func normalizeMerchantProjectServiceTimeSlots(slots models.MerchantProjectServic
 	return normalized, nil
 }
 
-func normalizeMerchantProjectDefaultServiceTechnicianIDs(tx *gorm.DB, merchantID uint, serviceCapacity int, ids models.MerchantProjectDefaultServiceTechnicianIDs) (models.MerchantProjectDefaultServiceTechnicianIDs, error) {
-	if serviceCapacity <= 1 || len(ids) == 0 {
+func normalizeMerchantProjectDefaultServiceTechnicianIDs(tx *gorm.DB, merchantID uint, ids models.MerchantProjectDefaultServiceTechnicianIDs) (models.MerchantProjectDefaultServiceTechnicianIDs, error) {
+	if len(ids) == 0 {
 		return models.MerchantProjectDefaultServiceTechnicianIDs{}, nil
 	}
 
@@ -214,7 +214,7 @@ func CreateMerchantProject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	defaultServiceTechnicianIDs, err := normalizeMerchantProjectDefaultServiceTechnicianIDs(config.DB, merchantID, serviceCapacity, input.DefaultServiceTechnicianIDs)
+	defaultServiceTechnicianIDs, err := normalizeMerchantProjectDefaultServiceTechnicianIDs(config.DB, merchantID, input.DefaultServiceTechnicianIDs)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -435,18 +435,12 @@ func UpdateMerchantProject(c *gin.Context) {
 		updates["service_time_slots"] = serviceTimeSlots
 	}
 	if input.DefaultServiceTechnicianIDs != nil {
-		nextServiceCapacity := p.ServiceCapacity
-		if input.ServiceCapacity != nil {
-			nextServiceCapacity = *input.ServiceCapacity
-		}
-		defaultServiceTechnicianIDs, err := normalizeMerchantProjectDefaultServiceTechnicianIDs(config.DB, merchantID, nextServiceCapacity, *input.DefaultServiceTechnicianIDs)
+		defaultServiceTechnicianIDs, err := normalizeMerchantProjectDefaultServiceTechnicianIDs(config.DB, merchantID, *input.DefaultServiceTechnicianIDs)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		updates["default_service_technician_ids"] = defaultServiceTechnicianIDs
-	} else if input.ServiceCapacity != nil && *input.ServiceCapacity <= 1 {
-		updates["default_service_technician_ids"] = models.MerchantProjectDefaultServiceTechnicianIDs{}
 	}
 	if input.AutoAssignTechnicianDelayMinutes != nil {
 		if *input.AutoAssignTechnicianDelayMinutes < 0 || *input.AutoAssignTechnicianDelayMinutes > 180 {
