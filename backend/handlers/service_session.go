@@ -1170,7 +1170,13 @@ func ExtendServiceSession(c *gin.Context) {
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err
 		}
-		return tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error
+		if err := tx.Preload("Room").Preload("LastTechnician").First(&out, s.ID).Error; err != nil {
+			return err
+		}
+		serviceSessions := []models.ServiceSession{out}
+		enrichServiceSessionsWithServiceTechnicians(serviceSessions)
+		out = serviceSessions[0]
+		return nil
 	})
 	if err != nil {
 		var ae apiErr
@@ -1231,7 +1237,13 @@ func ExtendServiceSessionDuration(c *gin.Context) {
 		if err := applyServiceSessionExtension(tx, &s, addMinutes); err != nil {
 			return err
 		}
-		return tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error
+		if err := tx.Preload("Room").Preload("LastTechnician").First(&out, s.ID).Error; err != nil {
+			return err
+		}
+		serviceSessions := []models.ServiceSession{out}
+		enrichServiceSessionsWithServiceTechnicians(serviceSessions)
+		out = serviceSessions[0]
+		return nil
 	})
 	if err != nil {
 		var ae apiErr

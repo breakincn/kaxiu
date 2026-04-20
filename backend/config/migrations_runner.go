@@ -483,6 +483,8 @@ var (
 	alterTableAddColumnIfNotExistsPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+(.+)$`)
 	alterTableAddColumnPattern            = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+COLUMN\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+(.+)$`)
 	alterTableAddIndexPattern             = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+(?:UNIQUE\s+)?INDEX\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s*\(.+\)$`)
+	alterTableDropIndexIfExistsPattern    = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+DROP\s+INDEX\s+IF\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)$`)
+	alterTableDropForeignKeyIfExistsPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+DROP\s+FOREIGN\s+KEY\s+IF\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)$`)
 	alterTableDropColumnIfExistsPattern   = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)(.*)$`)
 	appointmentsPredictedDelayBackfillSQL = regexp.MustCompile(`(?i)^UPDATE\s+appointments\s+SET\s+predicted_delay_minutes\s*=\s*predicted_wait_minutes\s+WHERE\s+predicted_delay_minutes\s*=\s*0$`)
 	serviceSessionAutoFinishRepairSQL     = regexp.MustCompile(`(?i)^UPDATE\s+service_sessions\s+s\s+JOIN\s+merchants\s+m\s+ON\s+m\.id\s*=\s*s\.merchant_id\s+SET\s+`)
@@ -524,6 +526,28 @@ func rewriteMigrationStatementForCompatibility(tx *gorm.DB, stmt string) (rewrit
 			return "", true
 		}
 		return stmt, false
+	}
+
+	if matches := alterTableDropIndexIfExistsPattern.FindStringSubmatch(trimmed); len(matches) == 3 {
+		tableToken, indexToken := matches[1], matches[2]
+		if !hasIndexByTableName(tx, unquoteIdentifier(tableToken), unquoteIdentifier(indexToken)) {
+			return "", true
+		}
+		if tx.Dialector != nil && tx.Dialector.Name() == "sqlite" {
+			return fmt.Sprintf("DROP INDEX %s", indexToken), false
+		}
+		return fmt.Sprintf("ALTER TABLE %s DROP INDEX %s", tableToken, indexToken), false
+	}
+
+	if matches := alterTableDropForeignKeyIfExistsPattern.FindStringSubmatch(trimmed); len(matches) == 3 {
+		tableToken, constraintToken := matches[1], matches[2]
+		if tx.Dialector == nil || tx.Dialector.Name() != "mysql" {
+			return "", true
+		}
+		if !hasConstraintByTableName(tx, unquoteIdentifier(tableToken), unquoteIdentifier(constraintToken)) {
+			return "", true
+		}
+		return fmt.Sprintf("ALTER TABLE %s DROP FOREIGN KEY %s", tableToken, constraintToken), false
 	}
 
 	if matches := alterTableDropColumnIfExistsPattern.FindStringSubmatch(trimmed); len(matches) == 4 {
@@ -582,6 +606,14 @@ func hasIndexByTableName(tx *gorm.DB, tableName, indexName string) bool {
 	}
 	cleanDB := tx.Session(&gorm.Session{NewDB: true})
 	return cleanDB.Migrator().HasIndex(tableName, indexName)
+}
+
+func hasConstraintByTableName(tx *gorm.DB, tableName, constraintName string) bool {
+	if tx == nil || tableName == "" || constraintName == "" {
+		return false
+	}
+	cleanDB := tx.Session(&gorm.Session{NewDB: true})
+	return cleanDB.Migrator().HasConstraint(tableName, constraintName)
 }
 
 func hasAppliedMigration(tx *gorm.DB, version string) bool {

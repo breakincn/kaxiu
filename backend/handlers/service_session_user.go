@@ -27,10 +27,13 @@ func UserGetServiceSession(c *gin.Context) {
 
 	id := c.Param("id")
 	var s models.ServiceSession
-	if err := config.DB.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").Where("id = ? AND user_id = ?", id, userID).First(&s).Error; err != nil {
+	if err := config.DB.Preload("Room").Preload("LastTechnician").Preload("LastTechnician.ServiceRole").Where("id = ? AND user_id = ?", id, userID).First(&s).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "会话不存在"})
 		return
 	}
+	serviceSessions := []models.ServiceSession{s}
+	enrichServiceSessionsWithServiceTechnicians(serviceSessions)
+	s = serviceSessions[0]
 	c.JSON(http.StatusOK, gin.H{"data": s})
 }
 
@@ -154,7 +157,6 @@ func UserResumeServiceSession(c *gin.Context) {
 		newStatus := "staff_selecting"
 		updates := map[string]interface{}{
 			"status":                        models.ApplyStatusPrefix(s.Status, newStatus),
-			"technician_id":                 nil,
 			"staff_select_cooldown_until":   nil,
 			"staff_select_entered_at":       nil,
 			"start_pending_timeout_seconds": 0,
@@ -175,7 +177,6 @@ func UserResumeServiceSession(c *gin.Context) {
 					techID := techIDs[0]
 					newStatus = "start_pending"
 					updates["status"] = models.ApplyStatusPrefix(s.Status, newStatus)
-					updates["technician_id"] = techID
 					updates["last_technician_id"] = techID
 					updates["service_technician_ids"] = models.MerchantProjectDefaultServiceTechnicianIDs(techIDs)
 					updates["start_pending_timeout_seconds"] = config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, s.MerchantID, techID, s.ProjectID)
@@ -190,7 +191,13 @@ func UserResumeServiceSession(c *gin.Context) {
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ? AND user_id = ? AND status IN ?", s.ID, userID, models.ExpandStatusWithKnownPrefixes("canceled")).Updates(updates).Error; err != nil {
 			return err
 		}
-		return tx.Preload("Room").Preload("Technician").Preload("Technician.ServiceRole").First(&out, s.ID).Error
+		if err := tx.Preload("Room").Preload("LastTechnician").Preload("LastTechnician.ServiceRole").First(&out, s.ID).Error; err != nil {
+			return err
+		}
+		serviceSessions := []models.ServiceSession{out}
+		enrichServiceSessionsWithServiceTechnicians(serviceSessions)
+		out = serviceSessions[0]
+		return nil
 	})
 	if err != nil {
 		var ae apiErr
@@ -356,7 +363,13 @@ func UserChooseServiceSessionRoom(c *gin.Context) {
 			return err
 		}
 
-		return tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error
+		if err := tx.Preload("Room").Preload("LastTechnician").First(&out, s.ID).Error; err != nil {
+			return err
+		}
+		serviceSessions := []models.ServiceSession{out}
+		enrichServiceSessionsWithServiceTechnicians(serviceSessions)
+		out = serviceSessions[0]
+		return nil
 	})
 	if err != nil {
 		var ae apiErr
@@ -466,7 +479,6 @@ func UserListAvailableTechnicians(c *gin.Context) {
 	}
 
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	activeSessionStatuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
 	var list []models.TechnicianAttendance
 	var merchant models.Merchant
 	if err := config.DB.First(&merchant, s.MerchantID).Error; err != nil {
@@ -480,11 +492,22 @@ func UserListAvailableTechnicians(c *gin.Context) {
 		Preload("Technician").
 		Preload("Technician.ServiceRole").
 		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", s.MerchantID, start).
-		Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, activeSessionStatuses).
 		Where("t.is_active = ?", true).
 		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 		Order("technician_attendances.updated_at asc").
 		Find(&list)
+	filteredBySession := make([]models.TechnicianAttendance, 0, len(list))
+	for _, item := range list {
+		activeSessions, err := loadActiveServiceSessionsForTechnician(config.DB, s.MerchantID, item.TechnicianID, s.ID, []string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
+		if err != nil {
+			continue
+		}
+		if len(activeSessions) > 0 {
+			continue
+		}
+		filteredBySession = append(filteredBySession, item)
+	}
+	list = filteredBySession
 
 	if strings.TrimSpace(s.SourceType) != serviceSessionSourceAppointment {
 		filtered := make([]models.TechnicianAttendance, 0, len(list))
@@ -628,7 +651,6 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 		timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, s.MerchantID, input.TechnicianID, s.ProjectID)
 
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
-			"technician_id":                 input.TechnicianID,
 			"last_technician_id":            input.TechnicianID,
 			"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{input.TechnicianID},
 			"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
@@ -640,7 +662,13 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			return err
 		}
 
-		return tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error
+		if err := tx.Preload("Room").Preload("LastTechnician").First(&out, s.ID).Error; err != nil {
+			return err
+		}
+		serviceSessions := []models.ServiceSession{out}
+		enrichServiceSessionsWithServiceTechnicians(serviceSessions)
+		out = serviceSessions[0]
+		return nil
 	})
 	if err != nil {
 		var ae apiErr
@@ -706,7 +734,13 @@ func ExtendServiceSessionUser(c *gin.Context) {
 			return err
 		}
 
-		return tx.Preload("Room").Preload("Technician").First(&out, s.ID).Error
+		if err := tx.Preload("Room").Preload("LastTechnician").First(&out, s.ID).Error; err != nil {
+			return err
+		}
+		serviceSessions := []models.ServiceSession{out}
+		enrichServiceSessionsWithServiceTechnicians(serviceSessions)
+		out = serviceSessions[0]
+		return nil
 	})
 	if err != nil {
 		var ae apiErr

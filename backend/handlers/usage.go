@@ -307,7 +307,6 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		SourceID                    *uint                                             `gorm:"column:source_id"`
 		Status                      string                                            `gorm:"column:status"`
 		RoomID                      *uint                                             `gorm:"column:room_id"`
-		TechnicianID                *uint                                             `gorm:"column:technician_id"`
 		LastTechnicianID            *uint                                             `gorm:"column:last_technician_id"`
 		ServiceTechnicianIDs        models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:service_technician_ids"`
 		StartConfirmedTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:start_confirmed_technician_ids"`
@@ -417,11 +416,18 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		if s.RoomID != nil && *s.RoomID > 0 {
 			roomIDs = append(roomIDs, *s.RoomID)
 		}
-		if s.TechnicianID != nil && *s.TechnicianID > 0 {
-			techIDs = append(techIDs, *s.TechnicianID)
-		}
 		if s.LastTechnicianID != nil && *s.LastTechnicianID > 0 {
 			techIDs = append(techIDs, *s.LastTechnicianID)
+		}
+		for _, id := range s.ServiceTechnicianIDs {
+			if id > 0 {
+				techIDs = append(techIDs, id)
+			}
+		}
+		for _, id := range s.StartConfirmedTechnicianIDs {
+			if id > 0 {
+				techIDs = append(techIDs, id)
+			}
 		}
 	}
 	for i := range *usages {
@@ -516,8 +522,16 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 					u.ServiceRoom = r
 				}
 			}
-			if s.TechnicianID != nil {
-				if t, okT := byTechID[*s.TechnicianID]; okT {
+			primaryTechIDs := serviceSessionPrimaryTechnicianIDs(&models.ServiceSession{
+				LastTechnicianID:            s.LastTechnicianID,
+				ServiceTechnicianIDs:        s.ServiceTechnicianIDs,
+				StartConfirmedTechnicianIDs: s.StartConfirmedTechnicianIDs,
+				StartConfirmedAt:            startConfirmedAt,
+				StartedAt:                   s.StartedAt,
+				FinishedAt:                  s.FinishedAt,
+			})
+			if len(primaryTechIDs) > 0 {
+				if t, okT := byTechID[primaryTechIDs[0]]; okT {
 					u.ServiceTechnician = t
 				}
 			} else if s.LastTechnicianID != nil && shouldFallbackServiceTechnicianToLast(s.Status, startConfirmedAt, s.StartedAt, s.FinishedAt) {

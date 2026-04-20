@@ -67,7 +67,6 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 			}
 			updates := map[string]interface{}{
 				"status":                        models.ApplyStatusPrefix(s.Status, "staff_selecting"),
-				"technician_id":                 nil,
 				"last_technician_id":            nil,
 				"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{},
 				"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
@@ -108,11 +107,12 @@ func TableRooms(c *gin.Context) {
 	var sessions []models.ServiceSession
 	config.DB.
 		Preload("Room").
-		Preload("Technician").
-		Preload("Technician.ServiceRole").
+		Preload("LastTechnician").
+		Preload("LastTechnician.ServiceRole").
 		Where("merchant_id = ? AND room_id IS NOT NULL AND status IN ?", merchantID, tableActiveSessionStatuses).
 		Order("id desc").
 		Find(&sessions)
+	enrichServiceSessionsWithServiceTechnicians(sessions)
 
 	byRoom := map[uint]models.ServiceSession{}
 	for _, s := range sessions {
@@ -295,7 +295,6 @@ func TableStaff(c *gin.Context) {
 	completedCountByTech := map[uint]int64{}
 	if len(techIDs) > 0 {
 		type completedSessionLite struct {
-			TechnicianID         *uint                                             `gorm:"column:technician_id"`
 			LastTechnicianID     *uint                                             `gorm:"column:last_technician_id"`
 			ServiceTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:service_technician_ids"`
 		}
@@ -303,7 +302,7 @@ func TableStaff(c *gin.Context) {
 		var completedSessions []completedSessionLite
 		config.DB.
 			Model(&models.ServiceSession{}).
-			Select("technician_id, last_technician_id, service_technician_ids").
+			Select("last_technician_id, service_technician_ids").
 			Where("merchant_id = ? AND status IN ? AND finished_at >= ? AND finished_at < ?", merchantID, models.ExpandStatusWithKnownPrefixes("finished"), start, end).
 			Find(&completedSessions)
 

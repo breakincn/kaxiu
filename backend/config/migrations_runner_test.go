@@ -247,6 +247,61 @@ func TestRunMigrationsSkipsDuplicateIndexStatements(t *testing.T) {
 	}
 }
 
+func TestRunMigrationsSupportsServiceSessionTechnicianDropCompatibilityGuards(t *testing.T) {
+	oldMigrations := defaultMigrations
+	defaultMigrations = []dbMigration{
+		{
+			Version: "2026042002",
+			Name:    "drop_service_session_technician_id",
+			Statements: []string{
+				"ALTER TABLE service_sessions DROP FOREIGN KEY IF EXISTS fk_service_sessions_technician",
+				"ALTER TABLE service_sessions DROP INDEX IF EXISTS idx_service_sessions_technician_id",
+				"ALTER TABLE service_sessions DROP COLUMN IF EXISTS technician_id",
+			},
+		},
+	}
+	defer func() { defaultMigrations = oldMigrations }()
+
+	dsn := "file:config_migrations_runner_drop_technician_id_test?mode=memory&cache=shared&_loc=auto"
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite failed: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE service_sessions (id integer primary key, technician_id integer, last_technician_id integer)").Error; err != nil {
+		t.Fatalf("create service_sessions failed: %v", err)
+	}
+	if err := db.Exec("CREATE INDEX idx_service_sessions_technician_id ON service_sessions(technician_id)").Error; err != nil {
+		t.Fatalf("create technician_id index failed: %v", err)
+	}
+
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("first run failed: %v", err)
+	}
+	if err := RunMigrations(db); err != nil {
+		t.Fatalf("second run failed: %v", err)
+	}
+
+	type sqliteColumnInfo struct {
+		Name string `gorm:"column:name"`
+	}
+	var cols []sqliteColumnInfo
+	if err := db.Raw("PRAGMA table_info(service_sessions)").Scan(&cols).Error; err != nil {
+		t.Fatalf("query sqlite table_info failed: %v", err)
+	}
+	for _, col := range cols {
+		if col.Name == "technician_id" {
+			t.Fatalf("technician_id should be dropped")
+		}
+	}
+	var indexCount int64
+	if err := db.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?", "idx_service_sessions_technician_id").Scan(&indexCount).Error; err != nil {
+		t.Fatalf("query sqlite indexes failed: %v", err)
+	}
+	if indexCount > 0 {
+		t.Fatalf("idx_service_sessions_technician_id should be dropped")
+	}
+}
+
 func TestRunMigrationsSkipsPredictedDelayBackfillWhenLegacyColumnMissing(t *testing.T) {
 	oldMigrations := defaultMigrations
 	defaultMigrations = []dbMigration{
