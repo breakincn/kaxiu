@@ -73,6 +73,20 @@ func mergeServiceSessionStartConfirmedTechnicianIDs(defaultTechIDs []uint, scann
 	return out
 }
 
+func hasServiceSessionStartConfirmedTechnician(technicianID uint, sessions []models.ServiceSession) bool {
+	if technicianID == 0 {
+		return false
+	}
+	for _, s := range sessions {
+		for _, id := range s.StartConfirmedTechnicianIDs {
+			if id == technicianID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func ensureQueueSessionRoomLocked(merchant *models.Merchant, s *models.ServiceSession) error {
 	if merchant == nil || s == nil {
 		return nil
@@ -375,6 +389,9 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			default:
 				targetStatusUpdateIDs = []uint{s.ID}
 			}
+		}
+		if len(defaultTechIDs) > 0 && hasServiceSessionStartConfirmedTechnician(scannerTechID, targetSessions) {
+			return apiErr{status: http.StatusBadRequest, msg: fmt.Sprintf("该服务人员已扫码%s，无需重复扫码", startTerm)}
 		}
 		confirmedTechIDs := mergeServiceSessionStartConfirmedTechnicianIDs(defaultTechIDs, scannerTechID, targetSessions)
 		updates := map[string]interface{}{

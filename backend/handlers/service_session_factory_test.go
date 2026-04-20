@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -317,6 +318,122 @@ func TestServiceSessionStartScanPropagatesProjectCoursePrecheck(t *testing.T) {
 	}
 	if confirmedCount != 2 {
 		t.Fatalf("want both sessions start-confirmed, got %d", confirmedCount)
+	}
+}
+
+func TestServiceSessionStartScanServingCourseAllowsOnlyUnconfirmedDefaultTechnician(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupServiceSessionFactoryTestDB(t)
+
+	now := time.Now()
+	scheduledStartRaw := now.Add(10 * time.Minute)
+	scheduledStart := time.Date(scheduledStartRaw.Year(), scheduledStartRaw.Month(), scheduledStartRaw.Day(), scheduledStartRaw.Hour(), scheduledStartRaw.Minute(), 0, 0, scheduledStartRaw.Location())
+	weekday := int(scheduledStart.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+
+	merchant := models.Merchant{Name: "m", Phone: "18800000025", Password: "pwd", SupportCustomerServiceMode: true}
+	if err := config.DB.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	role := models.ServiceRole{RoleType: "professional", Key: "teacher", Name: "专业客服", IsActive: true}
+	if err := config.DB.Create(&role).Error; err != nil {
+		t.Fatalf("create role failed: %v", err)
+	}
+	firstTech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "朱古丽", Code: "0001", Account: "jsls0001", IsActive: true}
+	secondTech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "671", Code: "0002", Account: "bls0001", IsActive: true}
+	if err := config.DB.Create(&firstTech).Error; err != nil {
+		t.Fatalf("create first technician failed: %v", err)
+	}
+	if err := config.DB.Create(&secondTech).Error; err != nil {
+		t.Fatalf("create second technician failed: %v", err)
+	}
+	project := models.MerchantProject{
+		MerchantID:                  merchant.ID,
+		Name:                        "爵士舞课",
+		Duration:                    60,
+		ServiceCapacity:             15,
+		DefaultServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{firstTech.ID, secondTech.ID},
+		ServiceTimeSlots: models.MerchantProjectServiceTimeSlots{{
+			RecurrenceType: "weekly",
+			Weekday:        weekday,
+			StartTime:      scheduledStart.Format("15:04"),
+		}},
+	}
+	if err := config.DB.Create(&project).Error; err != nil {
+		t.Fatalf("create project failed: %v", err)
+	}
+	for _, techID := range []uint{firstTech.ID, secondTech.ID} {
+		if err := config.DB.Create(&models.TechnicianAttendance{
+			MerchantID:   merchant.ID,
+			TechnicianID: techID,
+			CheckedInAt:  &now,
+			Status:       "idle",
+		}).Error; err != nil {
+			t.Fatalf("create attendance failed: %v", err)
+		}
+	}
+
+	usages := []models.Usage{
+		{MerchantID: merchant.ID, ProjectID: &project.ID, Status: "in_progress"},
+		{MerchantID: merchant.ID, ProjectID: &project.ID, Status: "in_progress"},
+	}
+	if err := config.DB.Create(&usages).Error; err != nil {
+		t.Fatalf("create usages failed: %v", err)
+	}
+	firstConfirmed := models.MerchantProjectDefaultServiceTechnicianIDs{firstTech.ID}
+	sessions := []models.ServiceSession{
+		{MerchantID: merchant.ID, ProjectID: &project.ID, InitialUsageID: usages[0].ID, SessionMode: models.SessionModeCustomerService, TechnicianID: &firstTech.ID, LastTechnicianID: &firstTech.ID, ServiceTechnicianIDs: project.DefaultServiceTechnicianIDs, StartConfirmedTechnicianIDs: firstConfirmed, Status: "cs_serving", ScheduledStartAt: &scheduledStart, CreatedAt: &now, UpdatedAt: &now},
+		{MerchantID: merchant.ID, ProjectID: &project.ID, InitialUsageID: usages[1].ID, SessionMode: models.SessionModeCustomerService, TechnicianID: &firstTech.ID, LastTechnicianID: &firstTech.ID, ServiceTechnicianIDs: project.DefaultServiceTechnicianIDs, StartConfirmedTechnicianIDs: firstConfirmed, Status: "cs_serving", ScheduledStartAt: &scheduledStart, CreatedAt: &now, UpdatedAt: &now},
+	}
+	if err := config.DB.Create(&sessions).Error; err != nil {
+		t.Fatalf("create sessions failed: %v", err)
+	}
+
+	dupRec := httptest.NewRecorder()
+	dupCtx, _ := gin.CreateTestContext(dupRec)
+	dupCtx.Set("merchant_id", merchant.ID)
+	dupCtx.Set("auth_type", "staff")
+	dupCtx.Set("technician_id", firstTech.ID)
+	dupCtx.Request = httptest.NewRequest(http.MethodPost, "/merchant/verify", strings.NewReader(`{"code":"SS:"}`))
+	if handled := handleServiceSessionStartScan(dupCtx, "SS:"+strconv.FormatUint(uint64(sessions[0].ID), 10)); !handled {
+		t.Fatalf("want duplicate start scan handled")
+	}
+	if dupRec.Code != http.StatusBadRequest {
+		t.Fatalf("want duplicate status 400, got %d body=%s", dupRec.Code, dupRec.Body.String())
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set("merchant_id", merchant.ID)
+	c.Set("auth_type", "staff")
+	c.Set("technician_id", secondTech.ID)
+	c.Request = httptest.NewRequest(http.MethodPost, "/merchant/verify", strings.NewReader(`{"code":"SS:"}`))
+	if handled := handleServiceSessionStartScan(c, "SS:"+strconv.FormatUint(uint64(sessions[0].ID), 10)); !handled {
+		t.Fatalf("want second start scan handled")
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got []models.ServiceSession
+	if err := config.DB.Select("id", "status", "start_confirmed_technician_ids").Where("id IN ?", []uint{sessions[0].ID, sessions[1].ID}).Order("id asc").Find(&got).Error; err != nil {
+		t.Fatalf("reload sessions failed: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 sessions, got %d", len(got))
+	}
+	for _, session := range got {
+		if session.Status != "cs_serving" {
+			t.Fatalf("session %d should keep cs_serving, got %s", session.ID, session.Status)
+		}
+		want := models.MerchantProjectDefaultServiceTechnicianIDs{firstTech.ID, secondTech.ID}
+		if !reflect.DeepEqual(session.StartConfirmedTechnicianIDs, want) {
+			t.Fatalf("session %d want confirmed %+v, got %+v", session.ID, want, session.StartConfirmedTechnicianIDs)
+		}
 	}
 }
 

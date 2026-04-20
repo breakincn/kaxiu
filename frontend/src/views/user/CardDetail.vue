@@ -458,7 +458,7 @@
               <span>
                 服务人员：
                 <template v-for="(staff, idx) in getUsageServiceStaffList(usage)" :key="staff.id || `${staff.account || ''}-${idx}`">
-                  <span :class="staff?.service_start_confirmed ? 'text-green-600 font-medium' : ''">{{ formatUsageStaffIdentity(staff) }}</span><span v-if="idx < getUsageServiceStaffList(usage).length - 1">、</span>
+                  <span :class="shouldHighlightUsageServiceStaff(usage, staff) ? 'text-green-600 font-medium' : ''">{{ formatUsageStaffIdentity(staff) }}</span><span v-if="idx < getUsageServiceStaffList(usage).length - 1">、</span>
                 </template>
               </span>
             </div>
@@ -515,15 +515,10 @@
           </div>
 
           <div v-if="isPrecheckModal" class="mt-2 text-center text-gray-600 text-sm">
-            <template v-if="usagePrecheckDone">
-              {{ replaceTerms('起单完成，进入服务', card?.merchant) }}
-            </template>
-            <template v-else>
-              请向工作人员出示此码，由工作人员扫码进入服务
-            </template>
+            请向工作人员出示此码，由工作人员扫码进入服务
           </div>
 
-          <div v-if="usageQrDataUrl && !(isPrecheckModal && usagePrecheckDone)" class="mt-4 flex justify-center">
+          <div v-if="usageQrDataUrl" class="mt-4 flex justify-center">
             <div
               class="select-none"
               style="-webkit-touch-callout: none; -webkit-user-select: none; user-select: none; pointer-events: none; touch-action: none;"
@@ -537,15 +532,15 @@
           </div>
 
           <!-- 房间号与客服人员信息 -->
-          <div v-if="selectedUsage && (selectedUsage.service_room || getUsageServiceStaffDisplayText(selectedUsage))" class="mt-3 text-center text-sm text-gray-600">
-            <template v-if="selectedUsage.service_room && getUsageServiceStaffDisplayText(selectedUsage)">
-              房间: {{ selectedUsage.service_room.name || selectedUsage.service_room.code }}  服务人员: {{ getUsageServiceStaffDisplayText(selectedUsage) }}
+          <div v-if="selectedUsage && (selectedUsage.service_room || getUsageQrServiceStaffDisplayText(selectedUsage))" class="mt-3 text-center text-sm text-gray-600">
+            <template v-if="selectedUsage.service_room && getUsageQrServiceStaffDisplayText(selectedUsage)">
+              房间: {{ selectedUsage.service_room.name || selectedUsage.service_room.code }}  服务人员: {{ getUsageQrServiceStaffDisplayText(selectedUsage) }}
             </template>
             <template v-else-if="selectedUsage.service_room">
               房间: {{ selectedUsage.service_room.name || selectedUsage.service_room.code }}
             </template>
-            <template v-else-if="getUsageServiceStaffDisplayText(selectedUsage)">
-              服务人员: {{ getUsageServiceStaffDisplayText(selectedUsage) }}
+            <template v-else-if="getUsageQrServiceStaffDisplayText(selectedUsage)">
+              服务人员: {{ getUsageQrServiceStaffDisplayText(selectedUsage) }}
             </template>
           </div>
 
@@ -1132,7 +1127,6 @@ const displayUsages = computed(() => {
 const showUsageQrModal = ref(false)
 const selectedUsage = ref(null)
 const usageQrDataUrl = ref('')
-const usagePrecheckDone = ref(false)
 
 const qrMode = ref('finish')
 const qrSessionId = ref('')
@@ -1153,8 +1147,6 @@ const precheckCode = computed(() => {
 })
 
 const usageQrTitle = computed(() => {
-  if (isPrecheckModal.value && usagePrecheckDone.value) return '即将进入服务'
-  
   // 叫号模式下显示“扫码上号二维码”
   const merchant = card.value?.merchant
   const rawSessStatus = String(selectedUsage.value?.service_session_status || '').trim()
@@ -2710,19 +2702,13 @@ const trySwitchUsageQrToFinish = async () => {
     return
   }
   stopUsageQrPoll()
-
-  usagePrecheckDone.value = true
-  usageQrDataUrl.value = ''
-  setTimeout(() => {
-    closeUsageQrModal()
-  }, 3000)
+  closeUsageQrModal()
 }
 
 const openUsageQrModal = async (usage) => {
   stopUsageQrPoll()
   qrMode.value = 'start'
   qrSessionId.value = ''
-  usagePrecheckDone.value = false
 
   const merchant = card.value?.merchant
   const supportCS = Boolean(merchant?.support_customer_service)
@@ -2745,7 +2731,6 @@ const openUsageQrModal = async (usage) => {
     selectedUsage.value = usage
     showUsageQrModal.value = true
     usageQrDataUrl.value = ''
-    usagePrecheckDone.value = false
     usageQrPollSessionId = String(sessID)
     usageQrPollTimer = setInterval(() => {
       if (!showUsageQrModal.value || qrMode.value !== 'start') {
@@ -2794,7 +2779,6 @@ const openUsageQrModal = async (usage) => {
     selectedUsage.value = usage
     showUsageQrModal.value = true
     usageQrDataUrl.value = ''
-    usagePrecheckDone.value = false
     usageQrPollSessionId = String(sessID)
     usageQrPollTimer = setInterval(() => {
       if (!showUsageQrModal.value || qrMode.value !== 'start') {
@@ -2820,7 +2804,31 @@ const openUsageQrModal = async (usage) => {
     selectedUsage.value = usage
     showUsageQrModal.value = true
     usageQrDataUrl.value = ''
-    usagePrecheckDone.value = false
+    usageQrPollSessionId = String(sessID)
+    usageQrPollTimer = setInterval(() => {
+      if (!showUsageQrModal.value || qrMode.value !== 'start') {
+        stopUsageQrPoll()
+        return
+      }
+      trySwitchUsageQrToFinish()
+    }, FAST_POLL_INTERVAL_MS)
+    try {
+      usageQrDataUrl.value = await QRCode.toDataURL(precheckCode.value, {
+        margin: 1,
+        scale: 8,
+        errorCorrectionLevel: 'M'
+      })
+    } catch (_) {
+      // ignore
+    }
+    return
+  }
+  if (supportCS && sessID && (sessStatus === 'serving' || sessStatus === 'auto_finishing') && hasUnconfirmedUsageServiceStaff(usage)) {
+    qrMode.value = 'start'
+    qrSessionId.value = String(sessID)
+    selectedUsage.value = usage
+    showUsageQrModal.value = true
+    usageQrDataUrl.value = ''
     usageQrPollSessionId = String(sessID)
     usageQrPollTimer = setInterval(() => {
       if (!showUsageQrModal.value || qrMode.value !== 'start') {
@@ -2855,7 +2863,6 @@ const closeUsageQrModal = () => {
   usageQrDataUrl.value = ''
   qrMode.value = 'start'
   qrSessionId.value = ''
-  usagePrecheckDone.value = false
 }
 
 const maybeOpenStartQrFromQuery = async () => {
@@ -3417,8 +3424,29 @@ const getUsageServiceStaffList = (usage) => {
   return result
 }
 
+const isUsageCurrentServing = (usage) => normalizeSessionStatus(usage?.service_session_status) === 'serving'
+
+const shouldHighlightUsageServiceStaff = (usage, staff) => {
+  return isUsageCurrentServing(usage) && staff?.service_start_confirmed === true
+}
+
+const hasUnconfirmedUsageServiceStaff = (usage) => {
+  return getUsageServiceStaffList(usage).some(staff => staff && staff.service_start_confirmed !== true)
+}
+
 const getUsageServiceStaffDisplayText = (usage) => {
   return getUsageServiceStaffList(usage)
+    .map(formatUsageStaffIdentity)
+    .filter(Boolean)
+    .join('、')
+}
+
+const getUsageQrServiceStaffDisplayText = (usage) => {
+  const list = getUsageServiceStaffList(usage)
+  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
+  const shouldOnlyShowUnconfirmed = (sessStatus === 'serving' || sessStatus === 'auto_finishing') && list.some(staff => staff && staff.service_start_confirmed !== true)
+  return list
+    .filter(staff => !shouldOnlyShowUnconfirmed || staff?.service_start_confirmed !== true)
     .map(formatUsageStaffIdentity)
     .filter(Boolean)
     .join('、')
@@ -3518,6 +3546,9 @@ const shouldKeepUsageQrModalOpenForUsage = (usage) => {
   if (supportCS && sessStatus === 'start_pending' && !precheckedAt) {
     const deadlineMs = getPrecheckDeadlineAtMs(usage)
     if (deadlineMs && nowTick.value >= deadlineMs) return false
+    return true
+  }
+  if (supportCS && (sessStatus === 'serving' || sessStatus === 'auto_finishing') && hasUnconfirmedUsageServiceStaff(usage)) {
     return true
   }
 

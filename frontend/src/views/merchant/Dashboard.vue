@@ -1026,7 +1026,7 @@
                 预约号：#{{ getUsageAppointmentNumber(usage) }}
               </div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
-              <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
+              <div class="text-sm mt-1" :class="getUsageServiceStatusClass(usage)">状态：{{ getUsageServiceStatusText(usage) }}</div>
               <div v-if="getUsageServiceTechnicianSegments(usage).length > 0" class="text-gray-500 text-sm mt-1">
                 服务人员：
                 <template v-for="(segment, idx) in getUsageServiceTechnicianSegments(usage)" :key="`${segment.text}-${idx}`">
@@ -1086,7 +1086,7 @@
               <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
-              <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
+              <div class="text-sm mt-1" :class="getUsageServiceStatusClass(usage)">状态：{{ getUsageServiceStatusText(usage) }}</div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.finished_at) }}</div>
             </div>
             <div class="text-right">
@@ -1739,7 +1739,7 @@
             <div v-if="getUsageRoomOccupancyDurationText(usage)" class="text-gray-500 text-sm mt-1">
               房间占用时间：{{ getUsageRoomOccupancyDurationText(usage) }}
             </div>
-            <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
+            <div class="text-sm mt-1" :class="getUsageServiceStatusClass(usage)">状态：{{ getUsageServiceStatusText(usage) }}</div>
             <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             <button
               v-if="hasPendingExtendRequest(usage)"
@@ -4811,9 +4811,20 @@ const getUsageServiceTechnicianSegments = (usage) => {
     if (!text) return null
     return {
       text: roleName ? `${roleName}：${text}` : text,
-      confirmed: !!technician?.service_start_confirmed
+      confirmed: isUsageCurrentServing(usage) && !!technician?.service_start_confirmed
     }
   }).filter(Boolean)
+}
+
+const isUsageCurrentServing = (usage) => normalizeSessionStatus(usage?.service_session_status) === 'serving'
+
+const isCurrentTechnicianPendingServiceStartSign = (usage) => {
+  if (!isTechnicianAuth()) return false
+  if (!isUsageCurrentServing(usage)) return false
+  const techID = getTechnicianId()
+  if (!techID) return false
+  const technicians = Array.isArray(usage?.service_technicians) ? usage.service_technicians : []
+  return technicians.some(technician => Number(technician?.id || 0) === Number(techID) && technician?.service_start_confirmed !== true)
 }
 
 const getUsageServiceTechnicianLabel = (usage) => {
@@ -4958,7 +4969,12 @@ const getUsageServiceStatusText = (usage) => {
       return getMerchantPendingStartLabel({ queueMode: isQueueModeMerchant(merchant.value) })
     }
     if (s === 'delay_pending') return getMerchantPendingStartLabel({ queueMode: isQueueModeMerchant(merchant.value) })
-    if (s === 'serving') return replaceTerms('服务中', merchant.value)
+    if (s === 'serving') {
+      if (isCurrentTechnicianPendingServiceStartSign(usage)) {
+        return `${replaceTerms('服务中', merchant.value)} 待${getMerchantScanStartLabel()}签到`
+      }
+      return replaceTerms('服务中', merchant.value)
+    }
     if (s === 'auto_finishing') return getMerchantAutoFinishLabel()
     if (s === 'created') return '已创建'
     if (s === 'canceled') return '已取消'
@@ -4981,6 +4997,10 @@ const getUsageServiceStatusText = (usage) => {
   }
 
   return '-'
+}
+
+const getUsageServiceStatusClass = (usage) => {
+  return isCurrentTechnicianPendingServiceStartSign(usage) ? 'text-red-500' : 'text-gray-500'
 }
 
 // 获取核销次数显示文本（总次数 / 当前次数）
