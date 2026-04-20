@@ -1027,8 +1027,11 @@
               </div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">状态：{{ getUsageServiceStatusText(usage) }}</div>
-              <div v-if="getUsageServiceTechnicianLabel(usage)" class="text-gray-500 text-sm mt-1">
-                {{ getUsageServiceTechnicianLabel(usage) }}
+              <div v-if="getUsageServiceTechnicianSegments(usage).length > 0" class="text-gray-500 text-sm mt-1">
+                服务人员：
+                <template v-for="(segment, idx) in getUsageServiceTechnicianSegments(usage)" :key="`${segment.text}-${idx}`">
+                  <span :class="segment.confirmed ? 'text-green-600 font-medium' : ''">{{ segment.text }}</span><span v-if="idx < getUsageServiceTechnicianSegments(usage).length - 1">、</span>
+                </template>
               </div>
               <div v-if="shouldShowUsagePendingReassign(usage)" class="text-amber-600 text-sm mt-1">
                 {{ usage.service_technician_unavailable_reason || ('当前' + replaceTerms('客服', merchant) + '不可服务') }}
@@ -4785,7 +4788,37 @@ const getVerifyOperatorPrimaryInfo = (usage) => {
   return fullText.split(' / ')[0]
 }
 
+const getUsageServiceTechnicianSegments = (usage) => {
+  const source = []
+  if (Array.isArray(usage?.service_technicians)) {
+    source.push(...usage.service_technicians)
+  }
+  if (usage?.service_technician) {
+    source.push(usage.service_technician)
+  }
+  const seen = new Set()
+  return source.map((technician) => {
+    if (!technician) return null
+    const key = technician.id ? `id:${technician.id}` : `${technician.account || ''}:${technician.name || ''}`
+    if (seen.has(key)) return null
+    seen.add(key)
+    const roleName = String(technician?.service_role?.name || '').trim() || replaceTerms('客服', merchant.value)
+    const account = String(technician?.account || technician?.code || '').trim()
+    const name = String(technician?.name || '').trim()
+    let text = ''
+    if (account && name) text = `${account} - ${name}`
+    else text = account || name || ''
+    if (!text) return null
+    return {
+      text: roleName ? `${roleName}：${text}` : text,
+      confirmed: !!technician?.service_start_confirmed
+    }
+  }).filter(Boolean)
+}
+
 const getUsageServiceTechnicianLabel = (usage) => {
+  const segments = getUsageServiceTechnicianSegments(usage)
+  if (segments.length > 0) return `服务人员：${segments.map(item => item.text).join('、')}`
   const technician = usage?.service_technician
   if (!technician) return ''
   const roleName = String(technician?.service_role?.name || '').trim() || replaceTerms('客服', merchant.value)

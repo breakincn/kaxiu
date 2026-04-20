@@ -454,8 +454,13 @@
             <div v-if="getUsageOperatorInfo(usage)" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
               <span v-if="getUsageOperatorInfo(usage)">{{ getUsageOperatorInfo(usage) }}</span>
             </div>
-            <div v-if="getUsageServiceStaffInfo(usage)" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
-              <span v-if="getUsageServiceStaffInfo(usage)">{{ getUsageServiceStaffInfo(usage) }}</span>
+            <div v-if="getUsageServiceStaffList(usage).length > 0" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
+              <span>
+                服务人员：
+                <template v-for="(staff, idx) in getUsageServiceStaffList(usage)" :key="staff.id || `${staff.account || ''}-${idx}`">
+                  <span :class="staff?.service_start_confirmed ? 'text-green-600 font-medium' : ''">{{ formatUsageStaffIdentity(staff) }}</span><span v-if="idx < getUsageServiceStaffList(usage).length - 1">、</span>
+                </template>
+              </span>
             </div>
             <div v-if="getUsageParticipantUsersText(usage)" class="col-span-2 flex items-center justify-between text-gray-400 text-sm mt-0.5">
               <span>{{ getUsageParticipantUsersText(usage) }}</span>

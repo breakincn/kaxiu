@@ -361,6 +361,15 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE service_sessions MODIFY COLUMN service_technician_ids JSON NOT NULL COMMENT '服务单绑定的服务人员ID列表（专业客服）'",
 		},
 	},
+	{
+		Version: "2026042001",
+		Name:    "add_service_session_start_confirmed_technician_ids",
+		Statements: []string{
+			"ALTER TABLE service_sessions ADD COLUMN start_confirmed_technician_ids JSON NULL COMMENT '已扫码确认待开始服务的服务人员ID列表'",
+			"UPDATE service_sessions SET start_confirmed_technician_ids = CASE WHEN start_confirmed_at IS NOT NULL AND technician_id IS NOT NULL THEN JSON_ARRAY(technician_id) ELSE JSON_ARRAY() END WHERE start_confirmed_technician_ids IS NULL",
+			"ALTER TABLE service_sessions MODIFY COLUMN start_confirmed_technician_ids JSON NOT NULL COMMENT '已扫码确认待开始服务的服务人员ID列表'",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

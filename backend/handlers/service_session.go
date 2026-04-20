@@ -43,6 +43,36 @@ func shouldBlockCustomerServiceStartByAttendance(status string, hasOtherServingS
 	}
 }
 
+func mergeServiceSessionStartConfirmedTechnicianIDs(defaultTechIDs []uint, scannerTechID uint, sessions []models.ServiceSession) models.MerchantProjectDefaultServiceTechnicianIDs {
+	seen := make(map[uint]struct{})
+	for _, s := range sessions {
+		for _, id := range s.StartConfirmedTechnicianIDs {
+			if id > 0 {
+				seen[id] = struct{}{}
+			}
+		}
+	}
+	if scannerTechID > 0 {
+		seen[scannerTechID] = struct{}{}
+	}
+
+	out := make(models.MerchantProjectDefaultServiceTechnicianIDs, 0, len(seen))
+	for _, id := range defaultTechIDs {
+		if id == 0 {
+			continue
+		}
+		if _, ok := seen[id]; !ok {
+			continue
+		}
+		out = append(out, id)
+		delete(seen, id)
+	}
+	for id := range seen {
+		out = append(out, id)
+	}
+	return out
+}
+
 func ensureQueueSessionRoomLocked(merchant *models.Merchant, s *models.ServiceSession) error {
 	if merchant == nil || s == nil {
 		return nil
@@ -214,7 +244,11 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 	var out models.ServiceSession
 	err = config.DB.Transaction(func(tx *gorm.DB) error {
 		var s models.ServiceSession
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", uint(sid64), merchantID).First(&s).Error; err != nil {
+		sessionQuery := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND merchant_id = ?", uint(sid64), merchantID)
+		if tx.Dialector != nil && tx.Dialector.Name() == "sqlite" {
+			sessionQuery = sessionQuery.Select("id", "merchant_id", "project_id", "initial_usage_id", "session_mode", "room_id", "technician_id", "last_technician_id", "service_technician_ids", "start_confirmed_technician_ids", "status", "start_delay_seconds", "start_pending_timeout_seconds")
+		}
+		if err := sessionQuery.First(&s).Error; err != nil {
 			return err
 		}
 		// 模式守卫：拒绝跨模式操作（如 queue 会话被 CS 入口处理）
@@ -240,17 +274,19 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 				return err
 			}
 		}
-		if s.TechnicianID != nil && *s.TechnicianID > 0 && *s.TechnicianID != *techID {
-			if !uintIDInSlice(defaultTechIDs, *techID) {
-				return apiErr{status: http.StatusBadRequest, msg: "该单已选择其他人员服务"}
+		scannerTechID := *techID
+		if len(defaultTechIDs) > 0 {
+			if !uintIDInSlice(defaultTechIDs, scannerTechID) {
+				return apiErr{status: http.StatusBadRequest, msg: "仅项目配置的服务人员可扫码待开始服务"}
 			}
-			s.TechnicianID = techID
+		} else if s.TechnicianID != nil && *s.TechnicianID > 0 && *s.TechnicianID != scannerTechID {
+			return apiErr{status: http.StatusBadRequest, msg: "该单已选择其他人员服务"}
 		}
 		if s.TechnicianID == nil {
 			s.TechnicianID = techID
 		}
 
-		if s.TechnicianID == nil {
+		if s.TechnicianID == nil || *s.TechnicianID == 0 {
 			return apiErr{status: http.StatusBadRequest, msg: "未选择工作人员"}
 		}
 
@@ -260,7 +296,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		attRes := tx.
 			Select("id", "merchant_id", "technician_id", "status").
 			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, *s.TechnicianID, start).
+			Where("merchant_id = ? AND technician_id = ? AND checked_in_at >= ? AND checked_out_at IS NULL", merchantID, scannerTechID, start).
 			Order("id desc").
 			Limit(1).
 			Find(&att)
@@ -273,7 +309,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		}
 		hasOtherServingSession := false
 		if att.Status == "busy" {
-			if err := ensureNoOtherActiveServingSessionForTechnician(tx, merchantID, *s.TechnicianID, s.ID); err != nil {
+			if err := ensureNoOtherActiveServingSessionForTechnician(tx, merchantID, scannerTechID, s.ID); err != nil {
 				hasOtherServingSession = true
 			}
 		}
@@ -298,21 +334,72 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 			startAt = *start
 			deferAttendanceBusy = startAt.After(now)
 		}
+		targetSessions := []models.ServiceSession{s}
+		if len(defaultTechIDs) > 0 && s.ProjectID != nil && *s.ProjectID > 0 && !startAt.IsZero() {
+			statuses := models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})
+			var grouped []models.ServiceSession
+			groupQuery := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("merchant_id = ? AND project_id = ? AND scheduled_start_at = ? AND status IN ?", merchantID, *s.ProjectID, startAt, statuses).
+				Order("id asc")
+			if tx.Dialector != nil && tx.Dialector.Name() == "sqlite" {
+				groupQuery = groupQuery.Select("id", "merchant_id", "project_id", "initial_usage_id", "technician_id", "service_technician_ids", "start_confirmed_technician_ids", "status")
+			}
+			groupQuery = groupQuery.Find(&grouped)
+			if groupQuery.Error != nil {
+				return groupQuery.Error
+			}
+			if len(grouped) > 0 {
+				targetSessions = grouped
+			}
+		}
+		targetSessionIDs := make([]uint, 0, len(targetSessions))
+		targetStatusUpdateIDs := make([]uint, 0, len(targetSessions))
+		targetUsageIDs := make([]uint, 0, len(targetSessions))
+		for _, target := range targetSessions {
+			if target.ID > 0 {
+				targetSessionIDs = append(targetSessionIDs, target.ID)
+				switch models.NormalizeSessionStatus(target.Status) {
+				case "serving", "auto_finishing":
+				default:
+					targetStatusUpdateIDs = append(targetStatusUpdateIDs, target.ID)
+				}
+			}
+			if target.InitialUsageID > 0 {
+				targetUsageIDs = append(targetUsageIDs, target.InitialUsageID)
+			}
+		}
+		if len(targetSessionIDs) == 0 {
+			targetSessionIDs = []uint{s.ID}
+			switch models.NormalizeSessionStatus(s.Status) {
+			case "serving", "auto_finishing":
+			default:
+				targetStatusUpdateIDs = []uint{s.ID}
+			}
+		}
+		confirmedTechIDs := mergeServiceSessionStartConfirmedTechnicianIDs(defaultTechIDs, scannerTechID, targetSessions)
 		updates := map[string]interface{}{
-			"start_confirmed_at": now,
-			"scheduled_start_at": startAt,
-			"status":             models.ApplyStatusPrefix(s.Status, "delay_pending"),
-			"technician_id":      *s.TechnicianID,
-			"last_technician_id": *s.TechnicianID,
+			"start_confirmed_at":             gorm.Expr("COALESCE(start_confirmed_at, ?)", now),
+			"scheduled_start_at":             startAt,
+			"technician_id":                  gorm.Expr("COALESCE(technician_id, ?)", scannerTechID),
+			"last_technician_id":             scannerTechID,
+			"start_confirmed_technician_ids": confirmedTechIDs,
 		}
 		if len(defaultTechIDs) > 0 {
 			updates["service_technician_ids"] = models.MerchantProjectDefaultServiceTechnicianIDs(defaultTechIDs)
 		}
-		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
+		if deferAttendanceBusy {
+			updates["start_pending_timeout_seconds"] = 0
+		}
+		if err := tx.Model(&models.ServiceSession{}).Where("id IN ?", targetSessionIDs).Updates(updates).Error; err != nil {
 			return err
 		}
-		if s.InitialUsageID > 0 {
-			if err := tx.Model(&models.Usage{}).Where("id = ?", s.InitialUsageID).Update("technician_id", *s.TechnicianID).Error; err != nil {
+		if len(targetStatusUpdateIDs) > 0 {
+			if err := tx.Model(&models.ServiceSession{}).Where("id IN ?", targetStatusUpdateIDs).Update("status", models.ApplyStatusPrefix(s.Status, "delay_pending")).Error; err != nil {
+				return err
+			}
+		}
+		if len(targetUsageIDs) > 0 {
+			if err := tx.Model(&models.Usage{}).Where("id IN ?", targetUsageIDs).Update("technician_id", gorm.Expr("COALESCE(technician_id, ?)", scannerTechID)).Error; err != nil {
 				return err
 			}
 		}
@@ -320,7 +407,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		// 普通待开始服务扫码后立即占用客服；项目固定服务时间的早扫场景延后到真正开课时占用。
 		if att.Status == "idle" && !deferAttendanceBusy {
 			res := tx.Model(&models.TechnicianAttendance{}).
-				Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, *s.TechnicianID, "idle").
+				Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, merchantID, scannerTechID, "idle").
 				Updates(map[string]interface{}{"status": "busy"})
 			if res.Error != nil {
 				return res.Error
@@ -333,7 +420,7 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 
 		outQuery := tx.Preload("Room").Preload("Technician")
 		if tx.Dialector != nil && tx.Dialector.Name() == "sqlite" {
-			outQuery = outQuery.Select("id", "merchant_id", "user_id", "card_id", "project_id", "initial_usage_id", "verify_code", "session_mode", "source_type", "source_id", "technician_id", "last_technician_id", "service_technician_ids", "room_id", "status", "start_delay_seconds", "duration_minutes", "auto_finish_delay_seconds", "auto_idle_after_seconds", "start_pending_timeout_seconds", "start_timeout_count")
+			outQuery = outQuery.Select("id", "merchant_id", "user_id", "card_id", "project_id", "initial_usage_id", "verify_code", "session_mode", "source_type", "source_id", "technician_id", "last_technician_id", "service_technician_ids", "start_confirmed_technician_ids", "room_id", "status", "start_delay_seconds", "duration_minutes", "auto_finish_delay_seconds", "auto_idle_after_seconds", "start_pending_timeout_seconds", "start_timeout_count")
 		}
 		if err := outQuery.First(&out, s.ID).Error; err != nil {
 			return err
@@ -751,6 +838,11 @@ func enrichServiceSessionsWithServiceTechnicians(sessions []models.ServiceSessio
 				ids = append(ids, id)
 			}
 		}
+		for _, id := range sessions[i].StartConfirmedTechnicianIDs {
+			if id > 0 {
+				ids = append(ids, id)
+			}
+		}
 		if len(sessions[i].ServiceTechnicianIDs) == 0 && sessions[i].TechnicianID != nil && *sessions[i].TechnicianID > 0 {
 			ids = append(ids, *sessions[i].TechnicianID)
 		}
@@ -771,9 +863,17 @@ func enrichServiceSessionsWithServiceTechnicians(sessions []models.ServiceSessio
 		if len(orderedIDs) == 0 && sessions[i].TechnicianID != nil && *sessions[i].TechnicianID > 0 {
 			orderedIDs = []uint{*sessions[i].TechnicianID}
 		}
+		confirmedTechIDs := make(map[uint]struct{}, len(sessions[i].StartConfirmedTechnicianIDs))
+		for _, id := range sessions[i].StartConfirmedTechnicianIDs {
+			if id > 0 {
+				confirmedTechIDs[id] = struct{}{}
+			}
+		}
 		for _, id := range orderedIDs {
 			if tech, ok := byID[id]; ok {
-				sessions[i].ServiceTechnicians = append(sessions[i].ServiceTechnicians, tech)
+				techCopy := *tech
+				_, techCopy.ServiceStartConfirmed = confirmedTechIDs[id]
+				sessions[i].ServiceTechnicians = append(sessions[i].ServiceTechnicians, &techCopy)
 			}
 		}
 	}

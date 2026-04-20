@@ -171,6 +171,9 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `service_technician_ids` JSON NULL COMMENT '服务单绑定的服务人员ID列表（专业客服）'")
 	DB.Exec("UPDATE `service_sessions` SET `service_technician_ids` = CASE WHEN `technician_id` IS NULL THEN JSON_ARRAY() ELSE JSON_ARRAY(`technician_id`) END WHERE `service_technician_ids` IS NULL")
 	DB.Exec("ALTER TABLE `service_sessions` MODIFY COLUMN `service_technician_ids` JSON NOT NULL COMMENT '服务单绑定的服务人员ID列表（专业客服）'")
+	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `start_confirmed_technician_ids` JSON NULL COMMENT '已扫码确认待开始服务的服务人员ID列表'")
+	DB.Exec("UPDATE `service_sessions` SET `start_confirmed_technician_ids` = CASE WHEN `start_confirmed_at` IS NOT NULL AND `technician_id` IS NOT NULL THEN JSON_ARRAY(`technician_id`) ELSE JSON_ARRAY() END WHERE `start_confirmed_technician_ids` IS NULL")
+	DB.Exec("ALTER TABLE `service_sessions` MODIFY COLUMN `start_confirmed_technician_ids` JSON NOT NULL COMMENT '已扫码确认待开始服务的服务人员ID列表'")
 	// service_sessions: 会话模式（用于客服/叫号模式隔离）
 	DB.Exec("ALTER TABLE `service_sessions` ADD COLUMN `session_mode` varchar(20) NOT NULL DEFAULT '' COMMENT '会话模式'")
 	// service_sessions: 会话来源（到店/预约）

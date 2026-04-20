@@ -22,6 +22,7 @@ type ServiceSession struct {
 	TechnicianID                     *uint                                      `json:"technician_id" gorm:"index;comment:工作人员ID"`
 	LastTechnicianID                 *uint                                      `json:"last_technician_id" gorm:"column:last_technician_id;index;comment:最后一次队列分配的工作人员ID（用于过号等待等保留展示）"`
 	ServiceTechnicianIDs             MerchantProjectDefaultServiceTechnicianIDs `json:"service_technician_ids" gorm:"column:service_technician_ids;type:json;not null;comment:服务单绑定的服务人员ID列表（专业客服）"`
+	StartConfirmedTechnicianIDs      MerchantProjectDefaultServiceTechnicianIDs `json:"start_confirmed_technician_ids" gorm:"column:start_confirmed_technician_ids;type:json;not null;comment:已扫码确认待开始服务的服务人员ID列表"`
 	StartTimeoutCount                int                                        `json:"start_timeout_count" gorm:"column:start_timeout_count;default:0"`
 	StartTimeoutLastAt               *time.Time                                 `json:"start_timeout_last_at" gorm:"column:start_timeout_last_at;type:datetime"`
 	StaffSelectCooldownUntil         *time.Time                                 `json:"staff_select_cooldown_until" gorm:"column:staff_select_cooldown_until;type:datetime(3);comment:选客服无空闲时冷却截止时间"`

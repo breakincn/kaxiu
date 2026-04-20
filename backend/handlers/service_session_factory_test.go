@@ -188,11 +188,11 @@ func TestServiceSessionStartScanAllowsAnyProjectDefaultProfessionalTechnician(t 
 		t.Fatalf("want status 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	var gotSession models.ServiceSession
-	if err := config.DB.Select("id", "technician_id", "last_technician_id", "service_technician_ids", "status").First(&gotSession, session.ID).Error; err != nil {
+	if err := config.DB.Select("id", "technician_id", "last_technician_id", "service_technician_ids", "start_confirmed_technician_ids", "status").First(&gotSession, session.ID).Error; err != nil {
 		t.Fatalf("reload session failed: %v", err)
 	}
-	if gotSession.TechnicianID == nil || *gotSession.TechnicianID != secondTech.ID {
-		t.Fatalf("want scanner technician %d, got %+v", secondTech.ID, gotSession.TechnicianID)
+	if gotSession.TechnicianID == nil || *gotSession.TechnicianID != firstTech.ID {
+		t.Fatalf("want primary technician %d, got %+v", firstTech.ID, gotSession.TechnicianID)
 	}
 	if gotSession.LastTechnicianID == nil || *gotSession.LastTechnicianID != secondTech.ID {
 		t.Fatalf("want last technician %d, got %+v", secondTech.ID, gotSession.LastTechnicianID)
@@ -203,12 +203,120 @@ func TestServiceSessionStartScanAllowsAnyProjectDefaultProfessionalTechnician(t 
 	if len(gotSession.ServiceTechnicianIDs) != 2 || gotSession.ServiceTechnicianIDs[0] != firstTech.ID || gotSession.ServiceTechnicianIDs[1] != secondTech.ID {
 		t.Fatalf("want bound service technicians [%d %d], got %+v", firstTech.ID, secondTech.ID, gotSession.ServiceTechnicianIDs)
 	}
+	if len(gotSession.StartConfirmedTechnicianIDs) != 1 || gotSession.StartConfirmedTechnicianIDs[0] != secondTech.ID {
+		t.Fatalf("want start-confirmed technicians [%d], got %+v", secondTech.ID, gotSession.StartConfirmedTechnicianIDs)
+	}
 	var gotUsage models.Usage
 	if err := config.DB.First(&gotUsage, usage.ID).Error; err != nil {
 		t.Fatalf("reload usage failed: %v", err)
 	}
 	if gotUsage.TechnicianID == nil || *gotUsage.TechnicianID != secondTech.ID {
 		t.Fatalf("want usage technician %d, got %+v", secondTech.ID, gotUsage.TechnicianID)
+	}
+}
+
+func TestServiceSessionStartScanPropagatesProjectCoursePrecheck(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupServiceSessionFactoryTestDB(t)
+
+	now := time.Now()
+	scheduledStart := now.Add(2 * time.Hour).Truncate(time.Minute)
+	weekday := int(scheduledStart.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	merchant := models.Merchant{Name: "m", Phone: "18800000024", Password: "pwd", SupportCustomerServiceMode: true}
+	if err := config.DB.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	role := models.ServiceRole{RoleType: "professional", Key: "teacher", Name: "专业客服", IsActive: true}
+	if err := config.DB.Create(&role).Error; err != nil {
+		t.Fatalf("create role failed: %v", err)
+	}
+	firstTech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "朱古丽", Code: "0001", Account: "jsls0001", IsActive: true}
+	secondTech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "671", Code: "0002", Account: "bls0001", IsActive: true}
+	if err := config.DB.Create(&firstTech).Error; err != nil {
+		t.Fatalf("create first technician failed: %v", err)
+	}
+	if err := config.DB.Create(&secondTech).Error; err != nil {
+		t.Fatalf("create second technician failed: %v", err)
+	}
+	project := models.MerchantProject{
+		MerchantID:                  merchant.ID,
+		Name:                        "爵士舞课",
+		Duration:                    60,
+		ServiceCapacity:             15,
+		DefaultServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{firstTech.ID, secondTech.ID},
+		ServiceTimeSlots: models.MerchantProjectServiceTimeSlots{{
+			RecurrenceType: "weekly",
+			Weekday:        weekday,
+			StartTime:      scheduledStart.Format("15:04"),
+		}},
+	}
+	if err := config.DB.Create(&project).Error; err != nil {
+		t.Fatalf("create project failed: %v", err)
+	}
+	if err := config.DB.Create(&models.TechnicianAttendance{
+		MerchantID:   merchant.ID,
+		TechnicianID: firstTech.ID,
+		CheckedInAt:  &now,
+		Status:       "idle",
+	}).Error; err != nil {
+		t.Fatalf("create attendance failed: %v", err)
+	}
+
+	usages := []models.Usage{
+		{MerchantID: merchant.ID, ProjectID: &project.ID, Status: "in_progress"},
+		{MerchantID: merchant.ID, ProjectID: &project.ID, Status: "in_progress"},
+	}
+	if err := config.DB.Create(&usages).Error; err != nil {
+		t.Fatalf("create usages failed: %v", err)
+	}
+	sessions := []models.ServiceSession{
+		{MerchantID: merchant.ID, ProjectID: &project.ID, InitialUsageID: usages[0].ID, SessionMode: models.SessionModeCustomerService, TechnicianID: &firstTech.ID, ServiceTechnicianIDs: project.DefaultServiceTechnicianIDs, Status: "cs_start_pending", ScheduledStartAt: &scheduledStart, CreatedAt: &now, UpdatedAt: &now},
+		{MerchantID: merchant.ID, ProjectID: &project.ID, InitialUsageID: usages[1].ID, SessionMode: models.SessionModeCustomerService, TechnicianID: &firstTech.ID, ServiceTechnicianIDs: project.DefaultServiceTechnicianIDs, Status: "cs_start_pending", ScheduledStartAt: &scheduledStart, CreatedAt: &now, UpdatedAt: &now},
+	}
+	if err := config.DB.Create(&sessions).Error; err != nil {
+		t.Fatalf("create sessions failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set("merchant_id", merchant.ID)
+	c.Set("auth_type", "staff")
+	c.Set("technician_id", firstTech.ID)
+	c.Request = httptest.NewRequest(http.MethodPost, "/merchant/verify", strings.NewReader(`{"code":"SS:"}`))
+
+	if handled := handleServiceSessionStartScan(c, "SS:"+strconv.FormatUint(uint64(sessions[0].ID), 10)); !handled {
+		t.Fatalf("want start scan handled")
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got []models.ServiceSession
+	if err := config.DB.Select("id", "status", "start_confirmed_technician_ids").Where("id IN ?", []uint{sessions[0].ID, sessions[1].ID}).Order("id asc").Find(&got).Error; err != nil {
+		t.Fatalf("reload sessions failed: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 sessions, got %d", len(got))
+	}
+	for _, session := range got {
+		if session.Status != "cs_delay_pending" {
+			t.Fatalf("session %d want cs_delay_pending, got %s", session.ID, session.Status)
+		}
+		if len(session.StartConfirmedTechnicianIDs) != 1 || session.StartConfirmedTechnicianIDs[0] != firstTech.ID {
+			t.Fatalf("session %d want confirmed [%d], got %+v", session.ID, firstTech.ID, session.StartConfirmedTechnicianIDs)
+		}
+	}
+	var confirmedCount int64
+	if err := config.DB.Model(&models.ServiceSession{}).Where("id IN ? AND start_confirmed_at IS NOT NULL", []uint{sessions[0].ID, sessions[1].ID}).Count(&confirmedCount).Error; err != nil {
+		t.Fatalf("count confirmed sessions failed: %v", err)
+	}
+	if confirmedCount != 2 {
+		t.Fatalf("want both sessions start-confirmed, got %d", confirmedCount)
 	}
 }
 
