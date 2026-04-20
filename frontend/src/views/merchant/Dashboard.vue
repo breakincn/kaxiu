@@ -3959,13 +3959,13 @@ const isSessionAssignedToTechnician = (session, techId) => {
 const isSessionConfirmedForTechnician = (session, techId) => {
   const id = Number(techId || 0)
   if (!id) return false
-  if (Number(session?.technician_id || 0) === id) return true
-  if (Array.isArray(session?.start_confirmed_technician_ids) && session.start_confirmed_technician_ids.some(item => Number(item || 0) === id)) {
-    return true
+  if (Array.isArray(session?.start_confirmed_technician_ids) && session.start_confirmed_technician_ids.length > 0) {
+    return session.start_confirmed_technician_ids.some(item => Number(item || 0) === id)
   }
   if (Array.isArray(session?.service_technicians)) {
     return session.service_technicians.some(technician => Number(technician?.id || 0) === id && technician?.service_start_confirmed === true)
   }
+  if (session?.start_confirmed_at && Number(session?.technician_id || 0) === id) return true
   return false
 }
 

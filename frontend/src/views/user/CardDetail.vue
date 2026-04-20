@@ -2798,6 +2798,23 @@ const openUsageQrModal = async (usage) => {
     }
     return
   }
+  if (supportCS && sessID && (sessStatus === 'start_pending' || sessStatus === 'delay_pending') && hasConfirmedUsageServiceStaff(usage) && hasUnconfirmedUsageServiceStaff(usage)) {
+    qrMode.value = 'start'
+    qrSessionId.value = String(sessID)
+    selectedUsage.value = usage
+    showUsageQrModal.value = true
+    usageQrDataUrl.value = ''
+    try {
+      usageQrDataUrl.value = await QRCode.toDataURL(precheckCode.value, {
+        margin: 1,
+        scale: 8,
+        errorCorrectionLevel: 'M'
+      })
+    } catch (_) {
+      // ignore
+    }
+    return
+  }
   if (supportCS && sessID && sessStatus === 'start_pending' && !precheckedAt) {
     qrMode.value = 'start'
     qrSessionId.value = String(sessID)
@@ -3429,6 +3446,10 @@ const hasUnconfirmedUsageServiceStaff = (usage) => {
   return getUsageServiceStaffList(usage).some(staff => staff && staff.service_start_confirmed !== true)
 }
 
+const hasConfirmedUsageServiceStaff = (usage) => {
+  return getUsageServiceStaffList(usage).some(staff => staff?.service_start_confirmed === true)
+}
+
 const getUsageServiceStaffDisplayText = (usage) => {
   return getUsageServiceStaffList(usage)
     .map(formatUsageStaffIdentity)
@@ -3438,8 +3459,7 @@ const getUsageServiceStaffDisplayText = (usage) => {
 
 const getUsageQrServiceStaffDisplayText = (usage) => {
   const list = getUsageServiceStaffList(usage)
-  const sessStatus = normalizeSessionStatus(usage?.service_session_status)
-  const shouldOnlyShowUnconfirmed = (sessStatus === 'serving' || sessStatus === 'auto_finishing') && list.some(staff => staff && staff.service_start_confirmed !== true)
+  const shouldOnlyShowUnconfirmed = isUsageActiveServiceStage(usage) && list.some(staff => staff && staff.service_start_confirmed !== true)
   return list
     .filter(staff => !shouldOnlyShowUnconfirmed || staff?.service_start_confirmed !== true)
     .map(formatUsageStaffIdentity)
@@ -3543,7 +3563,7 @@ const shouldKeepUsageQrModalOpenForUsage = (usage) => {
     if (deadlineMs && nowTick.value >= deadlineMs) return false
     return true
   }
-  if (supportCS && (sessStatus === 'serving' || sessStatus === 'auto_finishing') && hasUnconfirmedUsageServiceStaff(usage)) {
+  if (supportCS && isUsageActiveServiceStage(usage) && hasUnconfirmedUsageServiceStaff(usage)) {
     return true
   }
 
