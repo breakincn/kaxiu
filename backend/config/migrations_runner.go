@@ -480,14 +480,14 @@ func acquireMigrationLock(db *gorm.DB, timeout time.Duration) (func() error, err
 }
 
 var (
-	alterTableAddColumnIfNotExistsPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+(.+)$`)
-	alterTableAddColumnPattern            = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+COLUMN\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+(.+)$`)
-	alterTableAddIndexPattern             = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+(?:UNIQUE\s+)?INDEX\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s*\(.+\)$`)
-	alterTableDropIndexIfExistsPattern    = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+DROP\s+INDEX\s+IF\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)$`)
+	alterTableAddColumnIfNotExistsPattern   = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+(.+)$`)
+	alterTableAddColumnPattern              = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+COLUMN\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+(.+)$`)
+	alterTableAddIndexPattern               = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+ADD\s+(?:UNIQUE\s+)?INDEX\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s*\(.+\)$`)
+	alterTableDropIndexIfExistsPattern      = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+DROP\s+INDEX\s+IF\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)$`)
 	alterTableDropForeignKeyIfExistsPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+DROP\s+FOREIGN\s+KEY\s+IF\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)$`)
-	alterTableDropColumnIfExistsPattern   = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)(.*)$`)
-	appointmentsPredictedDelayBackfillSQL = regexp.MustCompile(`(?i)^UPDATE\s+appointments\s+SET\s+predicted_delay_minutes\s*=\s*predicted_wait_minutes\s+WHERE\s+predicted_delay_minutes\s*=\s*0$`)
-	serviceSessionAutoFinishRepairSQL     = regexp.MustCompile(`(?i)^UPDATE\s+service_sessions\s+s\s+JOIN\s+merchants\s+m\s+ON\s+m\.id\s*=\s*s\.merchant_id\s+SET\s+`)
+	alterTableDropColumnIfExistsPattern     = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + "`?[A-Za-z0-9_]+`?" + `)\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+(` + "`?[A-Za-z0-9_]+`?" + `)(.*)$`)
+	appointmentsPredictedDelayBackfillSQL   = regexp.MustCompile(`(?i)^UPDATE\s+appointments\s+SET\s+predicted_delay_minutes\s*=\s*predicted_wait_minutes\s+WHERE\s+predicted_delay_minutes\s*=\s*0$`)
+	serviceSessionAutoFinishRepairSQL       = regexp.MustCompile(`(?i)^UPDATE\s+service_sessions\s+s\s+JOIN\s+merchants\s+m\s+ON\s+m\.id\s*=\s*s\.merchant_id\s+SET\s+`)
 )
 
 func execMigrationStatement(tx *gorm.DB, stmt string) error {
@@ -502,6 +502,12 @@ func rewriteMigrationStatementForCompatibility(tx *gorm.DB, stmt string) (rewrit
 	trimmed := strings.TrimSpace(stmt)
 	if trimmed == "" {
 		return "", true
+	}
+	if strings.Contains(trimmed, "UPDATE service_sessions SET service_technician_ids = CASE WHEN technician_id IS NULL") && !hasColumnByTableName(tx, "service_sessions", "technician_id") {
+		return "UPDATE service_sessions SET service_technician_ids = JSON_ARRAY() WHERE service_technician_ids IS NULL", false
+	}
+	if strings.Contains(trimmed, "UPDATE service_sessions SET start_confirmed_technician_ids = CASE WHEN start_confirmed_at IS NOT NULL AND technician_id IS NOT NULL") && !hasColumnByTableName(tx, "service_sessions", "technician_id") {
+		return "UPDATE service_sessions SET start_confirmed_technician_ids = JSON_ARRAY() WHERE start_confirmed_technician_ids IS NULL", false
 	}
 
 	if matches := alterTableAddColumnIfNotExistsPattern.FindStringSubmatch(trimmed); len(matches) == 4 {

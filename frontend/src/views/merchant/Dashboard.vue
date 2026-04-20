@@ -5440,12 +5440,21 @@ const fetchAppointments = async () => {
 const fetchTodayUsages = async () => {
   try {
     const today = getLocalDateKey()
-    const res = await usageApi.getMerchantUsages(merchantId.value, {
+    const currentTechnicianId = getTechnicianId()
+    const params = {
       date: today,
       limit: 200
-    })
+    }
+    if (isTechnicianAuth() && currentTechnicianId) {
+      params.verifier_technician_id = currentTechnicianId
+    }
+    const res = await usageApi.getMerchantUsages(merchantId.value, params)
     todayUsages.value = (res.data.data || []).filter((u) => {
-      return u.used_at && u.used_at.startsWith(today) && u.status !== 'failed'
+      if (!u.used_at || !u.used_at.startsWith(today) || u.status === 'failed') return false
+      if (isTechnicianAuth() && currentTechnicianId) {
+        return Number(u.technician_id || 0) === Number(currentTechnicianId)
+      }
+      return true
     })
     todayVerifyCount.value = todayUsages.value.length
   } catch (err) {

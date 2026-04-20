@@ -76,6 +76,7 @@ func GetMerchantUsages(c *gin.Context) {
 
 	dateStr := c.Query("date")
 	technicianIDStr := c.Query("technician_id")
+	verifierTechnicianIDStr := c.Query("verifier_technician_id")
 	onlyWithSessionStr := c.Query("only_with_session")
 	limitStr := c.Query("limit")
 
@@ -101,6 +102,11 @@ func GetMerchantUsages(c *gin.Context) {
 			if tid, err := strconv.ParseUint(technicianIDStr, 10, 64); err == nil && tid > 0 {
 				query = applyServiceSessionTechnicianFilter(query, "ss", uint(tid), true)
 			}
+		}
+	}
+	if verifierTechnicianIDStr != "" {
+		if tid, err := strconv.ParseUint(verifierTechnicianIDStr, 10, 64); err == nil && tid > 0 {
+			query = query.Where("usages.technician_id = ?", uint(tid))
 		}
 	}
 
