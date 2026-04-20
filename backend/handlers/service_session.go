@@ -368,7 +368,6 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		}
 		targetSessionIDs := make([]uint, 0, len(targetSessions))
 		targetStatusUpdateIDs := make([]uint, 0, len(targetSessions))
-		targetUsageIDs := make([]uint, 0, len(targetSessions))
 		for _, target := range targetSessions {
 			if target.ID > 0 {
 				targetSessionIDs = append(targetSessionIDs, target.ID)
@@ -377,9 +376,6 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 				default:
 					targetStatusUpdateIDs = append(targetStatusUpdateIDs, target.ID)
 				}
-			}
-			if target.InitialUsageID > 0 {
-				targetUsageIDs = append(targetUsageIDs, target.InitialUsageID)
 			}
 		}
 		if len(targetSessionIDs) == 0 {
@@ -412,11 +408,6 @@ func handleServiceSessionStartScan(c *gin.Context, raw string) bool {
 		}
 		if len(targetStatusUpdateIDs) > 0 {
 			if err := tx.Model(&models.ServiceSession{}).Where("id IN ?", targetStatusUpdateIDs).Update("status", models.ApplyStatusPrefix(s.Status, "delay_pending")).Error; err != nil {
-				return err
-			}
-		}
-		if len(targetUsageIDs) > 0 {
-			if err := tx.Model(&models.Usage{}).Where("id IN ?", targetUsageIDs).Update("technician_id", gorm.Expr("COALESCE(technician_id, ?)", scannerTechID)).Error; err != nil {
 				return err
 			}
 		}

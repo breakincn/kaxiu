@@ -211,8 +211,8 @@ func TestServiceSessionStartScanAllowsAnyProjectDefaultProfessionalTechnician(t 
 	if err := config.DB.First(&gotUsage, usage.ID).Error; err != nil {
 		t.Fatalf("reload usage failed: %v", err)
 	}
-	if gotUsage.TechnicianID == nil || *gotUsage.TechnicianID != secondTech.ID {
-		t.Fatalf("want usage technician %d, got %+v", secondTech.ID, gotUsage.TechnicianID)
+	if gotUsage.TechnicianID != nil {
+		t.Fatalf("service start scan must not overwrite usage verifier, got technician_id=%d", *gotUsage.TechnicianID)
 	}
 }
 
@@ -434,6 +434,13 @@ func TestServiceSessionStartScanServingCourseAllowsOnlyUnconfirmedDefaultTechnic
 		if !reflect.DeepEqual(session.StartConfirmedTechnicianIDs, want) {
 			t.Fatalf("session %d want confirmed %+v, got %+v", session.ID, want, session.StartConfirmedTechnicianIDs)
 		}
+	}
+	var gotUsage models.Usage
+	if err := config.DB.Select("id", "technician_id").First(&gotUsage, usages[0].ID).Error; err != nil {
+		t.Fatalf("reload usage failed: %v", err)
+	}
+	if gotUsage.TechnicianID != nil {
+		t.Fatalf("service start scan must not overwrite usage verifier, got technician_id=%d", *gotUsage.TechnicianID)
 	}
 }
 

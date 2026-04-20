@@ -3416,10 +3416,13 @@ const getUsageServiceStaffList = (usage) => {
   return result
 }
 
-const isUsageCurrentServing = (usage) => normalizeSessionStatus(usage?.service_session_status) === 'serving'
+const isUsageActiveServiceStage = (usage) => {
+  const status = normalizeSessionStatus(usage?.service_session_status)
+  return ['start_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(status)
+}
 
 const shouldHighlightUsageServiceStaff = (usage, staff) => {
-  return isUsageCurrentServing(usage) && staff?.service_start_confirmed === true
+  return isUsageActiveServiceStage(usage) && staff?.service_start_confirmed === true
 }
 
 const hasUnconfirmedUsageServiceStaff = (usage) => {

@@ -4176,7 +4176,7 @@ const technicianCurrentStatus = computed(() => {
   }
   const baseStatus = normalizeSessionStatus(sess.status)
   if (['room_selecting', 'room_locked', 'staff_selecting'].includes(baseStatus)) return 'service_pending_presettlement'
-  if ((baseStatus === 'start_pending' || baseStatus === 'delay_pending') && !sess.start_confirmed_at) return 'service_pending_presettlement'
+  if (baseStatus === 'start_pending' || baseStatus === 'delay_pending') return 'service_pending_presettlement'
   return 'service_pending_settlement'
 })
 
@@ -4220,12 +4220,23 @@ const hasActiveServingSession = computed(() => {
   })
 })
 
+const hasConfirmedActiveServiceSession = computed(() => {
+  if (!isTechnicianAuth()) return false
+  const techId = Number(getTechnicianId() || 0)
+  if (!techId) return false
+  return (serviceSessions.value || []).some((session) => {
+    const status = normalizeSessionStatus(session?.status)
+    if (!['start_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(status)) return false
+    return isSessionConfirmedForTechnician(session, techId)
+  })
+})
+
 const showScanStartButton = computed(() => {
-  return isTechnicianAuth() && !isTechnicianNotCheckedIn.value && !hasActiveServingSession.value
+  return isTechnicianAuth() && !isTechnicianNotCheckedIn.value && !hasConfirmedActiveServiceSession.value
 })
 
 const showCheckOutButton = computed(() => {
-  return isTechnicianAuth() && !isTechnicianNotCheckedIn.value && !hasActiveServingSession.value
+  return isTechnicianAuth() && !isTechnicianNotCheckedIn.value && !hasConfirmedActiveServiceSession.value
 })
 
 const applyAttendanceStatusFromServer = (status) => {
@@ -4457,7 +4468,7 @@ const goScanVerify = () => {
 }
 
 const goScanStart = () => {
-  if (hasActiveServingSession.value) return
+  if (hasConfirmedActiveServiceSession.value) return
   router.push({
     path: '/merchant/scan-verify',
     query: {
@@ -4861,12 +4872,17 @@ const getUsageServiceTechnicianSegments = (usage) => {
     if (!text) return null
     return {
       text: roleName ? `${roleName}：${text}` : text,
-      confirmed: isUsageCurrentServing(usage) && !!technician?.service_start_confirmed
+      confirmed: isUsageActiveServiceStage(usage) && !!technician?.service_start_confirmed
     }
   }).filter(Boolean)
 }
 
 const isUsageCurrentServing = (usage) => normalizeSessionStatus(usage?.service_session_status) === 'serving'
+
+const isUsageActiveServiceStage = (usage) => {
+  const status = normalizeSessionStatus(usage?.service_session_status)
+  return ['start_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(status)
+}
 
 const isCurrentTechnicianPendingServiceStartSign = (usage) => {
   if (!isTechnicianAuth()) return false
@@ -7686,7 +7702,7 @@ const doCheckIn = async () => {
 
 const doCheckOut = async () => {
   if (!isTechnicianAuth()) return
-  if (hasActiveServingSession.value) {
+  if (hasConfirmedActiveServiceSession.value) {
     alert('当前服务完成后，才可以下班签到')
     return
   }
