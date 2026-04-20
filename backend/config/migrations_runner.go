@@ -370,6 +370,16 @@ var defaultMigrations = []dbMigration{
 			"ALTER TABLE service_sessions MODIFY COLUMN start_confirmed_technician_ids JSON NOT NULL COMMENT '已扫码确认待开始服务的服务人员ID列表'",
 		},
 	},
+	{
+		Version: "2026042002",
+		Name:    "drop_service_session_technician_id",
+		Statements: []string{
+			"ALTER TABLE service_sessions DROP FOREIGN KEY IF EXISTS fk_service_sessions_technician",
+			"ALTER TABLE service_sessions DROP INDEX IF EXISTS idx_service_sessions_technician_id",
+			"ALTER TABLE service_sessions DROP INDEX IF EXISTS technician_id",
+			"ALTER TABLE service_sessions DROP COLUMN IF EXISTS technician_id",
+		},
+	},
 }
 
 func RunMigrations(db *gorm.DB) error {

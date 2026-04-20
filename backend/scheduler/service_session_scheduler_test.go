@@ -150,14 +150,13 @@ func TestRestoreProjectScheduledDefaultStaffSessionFromStaffSelecting(t *testing
 
 	var got struct {
 		Status                     string
-		TechnicianID               *uint
 		ServiceTechnicianIDs       models.MerchantProjectDefaultServiceTechnicianIDs
 		ScheduledStartAt           string     `gorm:"column:scheduled_start_at"`
 		StaffSelectEnteredAt       *time.Time `gorm:"column:staff_select_entered_at"`
 		StartPendingTimeoutSeconds int        `gorm:"column:start_pending_timeout_seconds"`
 	}
 	if err := db.Model(&models.ServiceSession{}).
-		Select("status", "technician_id", "service_technician_ids", "scheduled_start_at", "staff_select_entered_at", "start_pending_timeout_seconds").
+		Select("status", "service_technician_ids", "scheduled_start_at", "staff_select_entered_at", "start_pending_timeout_seconds").
 		Where("id = ?", session.ID).
 		First(&got).Error; err != nil {
 		t.Fatalf("reload session failed: %v", err)
@@ -165,8 +164,8 @@ func TestRestoreProjectScheduledDefaultStaffSessionFromStaffSelecting(t *testing
 	if got.Status != "cs_start_pending" {
 		t.Fatalf("want cs_start_pending, got %s", got.Status)
 	}
-	if got.TechnicianID == nil || *got.TechnicianID != firstTech.ID {
-		t.Fatalf("want first default technician, got %+v", got.TechnicianID)
+	if len(got.ServiceTechnicianIDs) == 0 || got.ServiceTechnicianIDs[0] != firstTech.ID {
+		t.Fatalf("want first default technician in service_technician_ids, got %+v", got.ServiceTechnicianIDs)
 	}
 	wantStart := time.Date(2026, 4, 19, 16, 0, 0, 0, loc)
 	gotStart, err := time.ParseInLocation("2006-01-02 15:04:05", strings.TrimSpace(got.ScheduledStartAt), loc)
@@ -421,7 +420,8 @@ func TestMoveMultiQueueStartPendingToTimeoutWaitingPreservesLastTechnician(t *te
 	s := models.ServiceSession{
 		MerchantID:                 m.ID,
 		InitialUsageID:             u.ID,
-		TechnicianID:               &tech.ID,
+		LastTechnicianID:           &tech.ID,
+		ServiceTechnicianIDs:       models.MerchantProjectDefaultServiceTechnicianIDs{tech.ID},
 		Status:                     "qm_start_pending",
 		StartPendingTimeoutSeconds: 180,
 		CreatedAt:                  &now,
@@ -438,19 +438,19 @@ func TestMoveMultiQueueStartPendingToTimeoutWaitingPreservesLastTechnician(t *te
 	}
 
 	var got struct {
-		Status           string
-		TechnicianID     *uint
-		LastTechnicianID *uint
+		Status               string
+		LastTechnicianID     *uint
+		ServiceTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs
 	}
-	if err := db.Table("service_sessions").Select("status, technician_id, last_technician_id").Where("id = ?", s.ID).Scan(&got).Error; err != nil {
+	if err := db.Table("service_sessions").Select("status, last_technician_id, service_technician_ids").Where("id = ?", s.ID).Scan(&got).Error; err != nil {
 		t.Fatalf("reload session failed: %v", err)
 	}
 
 	if models.NormalizeSessionStatus(got.Status) != "timeout_waiting" {
 		t.Fatalf("want timeout_waiting, got %s", got.Status)
 	}
-	if got.TechnicianID != nil {
-		t.Fatalf("want technician_id cleared, got %v", *got.TechnicianID)
+	if len(got.ServiceTechnicianIDs) != 0 {
+		t.Fatalf("want service_technician_ids cleared, got %+v", got.ServiceTechnicianIDs)
 	}
 	if got.LastTechnicianID == nil || *got.LastTechnicianID != tech.ID {
 		t.Fatalf("want last_technician_id=%d, got %v", tech.ID, got.LastTechnicianID)
@@ -939,11 +939,13 @@ func TestReleaseFinishedSessionTechnicians_ReleasesBusyAttendance(t *testing.T) 
 
 	finishedAt := now.Add(-5 * time.Minute)
 	s := models.ServiceSession{
-		MerchantID:           m.ID,
-		Status:               "finished",
-		TechnicianID:         &techID,
-		FinishedAt:           &finishedAt,
-		AutoIdleAfterSeconds: 1,
+		MerchantID:                 m.ID,
+		Status:                     "finished",
+		LastTechnicianID:           &techID,
+		ServiceTechnicianIDs:       models.MerchantProjectDefaultServiceTechnicianIDs{techID},
+		StartConfirmedTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{techID},
+		FinishedAt:                 &finishedAt,
+		AutoIdleAfterSeconds:       1,
 	}
 	if err := db.Create(&s).Error; err != nil {
 		t.Fatalf("create finished session failed: %v", err)

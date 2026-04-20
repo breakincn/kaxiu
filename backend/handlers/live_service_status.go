@@ -253,7 +253,6 @@ func liveServiceLoadActiveSessions(merchantID uint) ([]models.ServiceSession, er
 		InitialUsageID            uint           `gorm:"column:initial_usage_id"`
 		SessionMode               string         `gorm:"column:session_mode"`
 		RoomID                    *uint          `gorm:"column:room_id"`
-		TechnicianID              *uint          `gorm:"column:technician_id"`
 		ServiceTechnicianIDs      string         `gorm:"column:service_technician_ids"`
 		Status                    string         `gorm:"column:status"`
 		StartConfirmedAtText      sql.NullString `gorm:"column:start_confirmed_at"`
@@ -277,7 +276,6 @@ func liveServiceLoadActiveSessions(merchantID uint) ([]models.ServiceSession, er
 			"initial_usage_id",
 			"session_mode",
 			"room_id",
-			"technician_id",
 			"service_technician_ids",
 			"status",
 			"start_confirmed_at",
@@ -322,6 +320,7 @@ func liveServiceLoadActiveSessions(merchantID uint) ([]models.ServiceSession, er
 
 	sessions := make([]models.ServiceSession, 0, len(rows))
 	for _, row := range rows {
+		serviceTechIDs := liveServiceParseTechnicianIDs(row.ServiceTechnicianIDs)
 		session := models.ServiceSession{
 			ID:                         row.ID,
 			MerchantID:                 row.MerchantID,
@@ -329,8 +328,7 @@ func liveServiceLoadActiveSessions(merchantID uint) ([]models.ServiceSession, er
 			InitialUsageID:             row.InitialUsageID,
 			SessionMode:                row.SessionMode,
 			RoomID:                     row.RoomID,
-			TechnicianID:               row.TechnicianID,
-			ServiceTechnicianIDs:       liveServiceParseTechnicianIDs(row.ServiceTechnicianIDs),
+			ServiceTechnicianIDs:       serviceTechIDs,
 			Status:                     row.Status,
 			StartConfirmedAt:           liveServiceParseNullableTime(row.StartConfirmedAtText),
 			ScheduledStartAt:           liveServiceParseNullableTime(row.ScheduledStartAtText),
@@ -472,12 +470,17 @@ func liveServiceBuildTechSnapshot(merchant *models.Merchant, mode string, techs 
 	busySessionsByTech := make(map[uint][]liveServiceProjectedSession)
 	busyStaffIDs := make(map[uint]struct{})
 	for _, item := range projected {
-		if !liveServiceOccupiesServiceSlot(item.BaseStatus) || item.Session == nil || item.Session.TechnicianID == nil || *item.Session.TechnicianID == 0 {
+		if !liveServiceOccupiesServiceSlot(item.BaseStatus) || item.Session == nil {
 			continue
 		}
-		techID := *item.Session.TechnicianID
-		busySessionsByTech[techID] = append(busySessionsByTech[techID], item)
-		busyStaffIDs[techID] = struct{}{}
+		techIDs := serviceSessionPrimaryTechnicianIDs(item.Session)
+		if len(techIDs) == 0 {
+			continue
+		}
+		for _, techID := range techIDs {
+			busySessionsByTech[techID] = append(busySessionsByTech[techID], item)
+			busyStaffIDs[techID] = struct{}{}
+		}
 	}
 	out.BusyCount = len(busyStaffIDs)
 

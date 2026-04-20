@@ -50,12 +50,14 @@ func TestFinishServiceSessionUpdatesUsageAndMarksQueueDone(t *testing.T) {
 		t.Fatalf("create usage failed: %v", err)
 	}
 	session := models.ServiceSession{
-		MerchantID:       merchant.ID,
-		InitialUsageID:   usage.ID,
-		Status:           "serving",
-		TechnicianID:     &techID,
-		RoomID:           &roomID,
-		StartConfirmedAt: &now,
+		MerchantID:                 merchant.ID,
+		InitialUsageID:             usage.ID,
+		Status:                     "serving",
+		LastTechnicianID:           &techID,
+		ServiceTechnicianIDs:       models.MerchantProjectDefaultServiceTechnicianIDs{techID},
+		StartConfirmedTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{techID},
+		RoomID:                     &roomID,
+		StartConfirmedAt:           &now,
 	}
 	if err := db.Create(&session).Error; err != nil {
 		t.Fatalf("create session failed: %v", err)

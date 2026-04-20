@@ -46,7 +46,6 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 	startPendingTimeoutSeconds := 0
 
 	durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchant.ID, verifyCode.ProjectID, 50, 60)
-	var defaultServiceTechnicianID uint
 	var defaultServiceTechnicianIDs []uint
 	var startConfirmedTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs
 	if merchant.SupportCustomerServiceMode && source.Appointment == nil {
@@ -54,9 +53,6 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		defaultServiceTechnicianIDs, err = resolveProjectDefaultServiceTechnicianIDs(tx, merchant.ID, verifyCode.ProjectID)
 		if err != nil {
 			return models.ServiceSession{}, "", false, err
-		}
-		if len(defaultServiceTechnicianIDs) > 0 {
-			defaultServiceTechnicianID = defaultServiceTechnicianIDs[0]
 		}
 	}
 	if isQueueMode {
@@ -95,12 +91,12 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 			nextStep = ""
 			startPendingTimeoutSeconds = config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, merchant.ID, techID, verifyCode.ProjectID)
 		}
-		session.TechnicianID = &techID
 		session.LastTechnicianID = &techID
+		defaultServiceTechnicianIDs = []uint{techID}
 		predictedAppointmentDelayMinutes = delayMinutes
 		predictedReadyAt = readyAt
-	} else if merchant.SupportCustomerServiceMode && defaultServiceTechnicianID > 0 {
-		techID := defaultServiceTechnicianID
+	} else if merchant.SupportCustomerServiceMode && len(defaultServiceTechnicianIDs) > 0 {
+		techID := defaultServiceTechnicianIDs[0]
 		if merchant.SupportRoom {
 			status = models.WithCSPrefix("room_selecting")
 			nextStep = "room_select"
@@ -115,8 +111,6 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 				startPendingTimeoutSeconds = 0
 			}
 		}
-		session.TechnicianID = &techID
-		session.LastTechnicianID = &techID
 		if !merchant.SupportRoom && verifierTechnicianID > 0 && uintIDInSlice(defaultServiceTechnicianIDs, verifierTechnicianID) {
 			status = models.WithCSPrefix("delay_pending")
 			startConfirmedAt = &now
@@ -127,6 +121,8 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 				startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 				scheduledStartAt = &startAt
 			}
+		} else {
+			session.LastTechnicianID = nil
 		}
 	}
 
@@ -140,7 +136,6 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		SessionMode:                      sessionMode,
 		SourceType:                       source.SourceType,
 		SourceID:                         source.SourceID,
-		TechnicianID:                     session.TechnicianID,
 		LastTechnicianID:                 session.LastTechnicianID,
 		ServiceTechnicianIDs:             models.MerchantProjectDefaultServiceTechnicianIDs(defaultServiceTechnicianIDs),
 		StartConfirmedTechnicianIDs:      startConfirmedTechnicianIDs,

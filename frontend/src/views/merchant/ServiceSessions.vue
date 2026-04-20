@@ -110,6 +110,7 @@ import { getMerchantId, hasMerchantPermission, isTechnicianAuth, getTechnicianId
 import ServiceSessionItem from '../../components/ServiceSessionItem.vue'
 import { getAutoFinishLabel, getPendingStartLabel } from '../../utils/terms'
 import { normalizeSessionStatus } from '../../utils/sessionStatus'
+import { isServiceSessionOwnedByTechnician } from '../../utils/serviceSessionTechnicians'
 
 const router = useRouter()
 
@@ -130,7 +131,7 @@ const myServingSessions = computed(() => {
   const techId = getTechnicianId()
   if (!techId) return []
   return serviceSessions.value.filter(s => 
-    s.technician_id === techId && 
+    isServiceSessionOwnedByTechnician(s, techId) && 
     ['delay_pending', 'serving', 'auto_finishing'].includes(normalizeSessionStatus(s.status))
   )
 })

@@ -264,9 +264,10 @@ func selectQueueReassignTarget(tx *gorm.DB, merchant *models.Merchant, excludeTe
 		}
 
 		var cnt int64
-		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchant.ID, cand.ID, activeStatuses).
-			Count(&cnt).Error; err != nil {
+		activeSessionQuery := tx.Model(&models.ServiceSession{}).
+			Where("merchant_id = ? AND status IN ?", merchant.ID, activeStatuses)
+		activeSessionQuery = applyServiceSessionTechnicianFilter(activeSessionQuery, "service_sessions", cand.ID, false)
+		if err := activeSessionQuery.Count(&cnt).Error; err != nil {
 			return nil, nil, err
 		}
 		if cnt > 0 {
@@ -432,10 +433,11 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 
 	{
 		var cnt int64
-		if err := tx.Model(&models.ServiceSession{}).
-			Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchant.ID, technicianID,
-				models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"})).
-			Count(&cnt).Error; err != nil || cnt > 0 {
+		activeSessionQuery := tx.Model(&models.ServiceSession{}).
+			Where("merchant_id = ? AND status IN ?", merchant.ID,
+				models.ExpandStatusesWithKnownPrefixes([]string{"start_pending", "delay_pending", "serving", "auto_finishing"}))
+		activeSessionQuery = applyServiceSessionTechnicianFilter(activeSessionQuery, "service_sessions", technicianID, false)
+		if err := activeSessionQuery.Count(&cnt).Error; err != nil || cnt > 0 {
 			return 0, false, nil
 		}
 	}
@@ -445,7 +447,8 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 	if nextUsageID > 0 {
 		// 尝试找到对应的可分配 session
 		q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchant.ID, nextUsageID)
+			Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL", merchant.ID, nextUsageID)
+		q = applyServiceSessionUnassignedFilter(q, "service_sessions")
 		q = q.Where("status IN ?", models.ExpandStatusWithKnownPrefixes("staff_selecting"))
 
 		var nextSession models.ServiceSession
@@ -457,15 +460,17 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 			}
 			// 找到了，分配给当前技师
 			updates := map[string]interface{}{
-				"technician_id":                 technicianID,
 				"last_technician_id":            technicianID,
+				"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{technicianID},
+				"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 				"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 				"staff_select_entered_at":       nil,
 				"staff_select_cooldown_until":   nil,
 				"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(merchant),
 			}
 			if err := tx.Model(&models.ServiceSession{}).
-				Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchant.ID).
+				Where("id = ? AND merchant_id = ? AND start_confirmed_at IS NULL", nextSession.ID, merchant.ID).
+				Scopes(func(db *gorm.DB) *gorm.DB { return applyServiceSessionUnassignedFilter(db, "service_sessions") }).
 				Updates(updates).Error; err != nil {
 				queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
 				return 0, false, err
@@ -497,7 +502,9 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 	// 策略2：队列无可叫号或队列返回的号已被分配，直接从数据库查找任意一个待分配的 session
 	var anySession models.ServiceSession
 	qAny := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", merchant.ID).
+		Where("merchant_id = ? AND start_confirmed_at IS NULL", merchant.ID)
+	qAny = applyServiceSessionUnassignedFilter(qAny, "service_sessions")
+	qAny = qAny.
 		Where("status IN ?", models.ExpandStatusWithKnownPrefixes("staff_selecting"))
 	if err := qAny.Order("id asc").First(&anySession).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -514,13 +521,16 @@ func assignNextSessionToTechnicianManual(tx *gorm.DB, merchant *models.Merchant,
 	updates := map[string]interface{}{
 		"technician_id":                 technicianID,
 		"last_technician_id":            technicianID,
+		"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{technicianID},
+		"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 		"status":                        models.ApplyStatusPrefix(anySession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(merchant),
 	}
 	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", anySession.ID, merchant.ID).
+		Where("id = ? AND merchant_id = ? AND start_confirmed_at IS NULL", anySession.ID, merchant.ID).
+		Scopes(func(db *gorm.DB) *gorm.DB { return applyServiceSessionUnassignedFilter(db, "service_sessions") }).
 		Updates(updates).Error; err != nil {
 		return 0, false, err
 	}
@@ -682,7 +692,7 @@ func GetQueueCallInfo(c *gin.Context) {
 		Table("service_sessions ss").
 		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, ss.start_pending_timeout_seconds, COALESCE(p.name,'') AS project_name, ss.started_at, ss.scheduled_finish_at, ss.duration_minutes, ss.created_at, ss.updated_at").
 		Joins("LEFT JOIN merchant_projects p ON p.id = ss.project_id").
-		Where("ss.merchant_id = ? AND ss.technician_id = ?", merchantID, technicianID).
+		Scopes(func(db *gorm.DB) *gorm.DB { return applyServiceSessionTechnicianFilter(db, "ss", technicianID, false) }).
 		Where("ss.status IN ?", models.ExpandStatusesWithKnownPrefixes(active)).
 		Order("ss.id desc").
 		Limit(1).
@@ -810,19 +820,20 @@ func GetQueuePendingList(c *gin.Context) {
 
 	// 取每个 usage 最新的一条 session
 	type sessLite struct {
-		ID                         uint       `gorm:"column:id"`
-		InitialUsageID             uint       `gorm:"column:initial_usage_id"`
-		Status                     string     `gorm:"column:status"`
-		StartConfirmedAt           *time.Time `gorm:"column:start_confirmed_at"`
-		StartPendingTimeoutSeconds int        `gorm:"column:start_pending_timeout_seconds"`
-		StartedAt                  *time.Time `gorm:"column:started_at"`
-		ScheduledFinishAt          *time.Time `gorm:"column:scheduled_finish_at"`
-		DurationMinutes            int        `gorm:"column:duration_minutes"`
-		TechnicianID               *uint      `gorm:"column:technician_id"`
-		ProjectName                string     `gorm:"column:project_name"`
-		UserNickname               string     `gorm:"column:user_nickname"`
-		CreatedAt                  *time.Time `gorm:"column:created_at"`
-		UpdatedAt                  *time.Time `gorm:"column:updated_at"`
+		ID                         uint                                              `gorm:"column:id"`
+		InitialUsageID             uint                                              `gorm:"column:initial_usage_id"`
+		Status                     string                                            `gorm:"column:status"`
+		StartConfirmedAt           *time.Time                                        `gorm:"column:start_confirmed_at"`
+		StartPendingTimeoutSeconds int                                               `gorm:"column:start_pending_timeout_seconds"`
+		StartedAt                  *time.Time                                        `gorm:"column:started_at"`
+		ScheduledFinishAt          *time.Time                                        `gorm:"column:scheduled_finish_at"`
+		DurationMinutes            int                                               `gorm:"column:duration_minutes"`
+		LastTechnicianID           *uint                                             `gorm:"column:last_technician_id"`
+		ServiceTechnicianIDs       models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:service_technician_ids"`
+		ProjectName                string                                            `gorm:"column:project_name"`
+		UserNickname               string                                            `gorm:"column:user_nickname"`
+		CreatedAt                  *time.Time                                        `gorm:"column:created_at"`
+		UpdatedAt                  *time.Time                                        `gorm:"column:updated_at"`
 	}
 
 	sub := config.DB.
@@ -834,7 +845,7 @@ func GetQueuePendingList(c *gin.Context) {
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions ss").
-		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, ss.start_pending_timeout_seconds, ss.started_at, ss.scheduled_finish_at, ss.duration_minutes, ss.technician_id, COALESCE(p.name,'') AS project_name, COALESCE(u.nickname,'') AS user_nickname, ss.created_at, ss.updated_at").
+		Select("ss.id, ss.initial_usage_id, ss.status, ss.start_confirmed_at, ss.start_pending_timeout_seconds, ss.started_at, ss.scheduled_finish_at, ss.duration_minutes, ss.last_technician_id, ss.service_technician_ids, COALESCE(p.name,'') AS project_name, COALESCE(u.nickname,'') AS user_nickname, ss.created_at, ss.updated_at").
 		Joins("LEFT JOIN merchant_projects p ON p.id = ss.project_id").
 		Joins("LEFT JOIN users u ON u.id = ss.user_id").
 		Where("ss.id IN (?)", sub).
@@ -848,14 +859,20 @@ func GetQueuePendingList(c *gin.Context) {
 		if s.InitialUsageID == 0 {
 			continue
 		}
+		sessionModel := models.ServiceSession{
+			LastTechnicianID:     s.LastTechnicianID,
+			ServiceTechnicianIDs: s.ServiceTechnicianIDs,
+		}
+		assignedTechIDs := serviceSessionAssignedTechnicianIDs(&sessionModel)
 		if scopedTechID != nil {
-			if s.TechnicianID == nil || *s.TechnicianID != *scopedTechID {
+			if !uintIDInSlice(assignedTechIDs, *scopedTechID) {
 				continue
 			}
 		}
 		byUsageIDSession[s.InitialUsageID] = s
-		if s.TechnicianID != nil && *s.TechnicianID > 0 {
-			techIDs = append(techIDs, *s.TechnicianID)
+		techIDs = append(techIDs, assignedTechIDs...)
+		if len(techIDs) > 0 {
+			techIDs = uniqueOrderedUintIDs(techIDs)
 		}
 	}
 	techMeta := listQueuePendingTechMeta(merchantID, techIDs)
@@ -883,11 +900,22 @@ func GetQueuePendingList(c *gin.Context) {
 		technicianName := ""
 		technicianAvailable := true
 		technicianUnavailableReason := ""
-		if s.TechnicianID != nil && *s.TechnicianID > 0 {
-			meta := techMeta[*s.TechnicianID]
+		var primaryTechID uint
+		if len(s.ServiceTechnicianIDs) > 0 {
+			primaryTechID = s.ServiceTechnicianIDs[0]
+		} else if s.LastTechnicianID != nil && *s.LastTechnicianID > 0 {
+			primaryTechID = *s.LastTechnicianID
+		}
+		if primaryTechID > 0 {
+			meta := techMeta[primaryTechID]
 			technicianName = meta.Name
 			technicianUnavailableReason = resolveQueuePendingTechUnavailableReason(meta)
 			technicianAvailable = technicianUnavailableReason == ""
+		}
+		var primaryTechIDPtr *uint
+		if primaryTechID > 0 {
+			primaryTechIDCopy := primaryTechID
+			primaryTechIDPtr = &primaryTechIDCopy
 		}
 		out = append(out, queuePendingItem{
 			UsageID:                      t.ID,
@@ -901,7 +929,7 @@ func GetQueuePendingList(c *gin.Context) {
 			StartedAt:                    s.StartedAt,
 			ScheduledFinishAt:            s.ScheduledFinishAt,
 			DurationMinutes:              s.DurationMinutes,
-			TechnicianID:                 s.TechnicianID,
+			TechnicianID:                 primaryTechIDPtr,
 			TechnicianName:               technicianName,
 			TechnicianAvailable:          technicianAvailable,
 			TechnicianUnavailableReason:  technicianUnavailableReason,
@@ -2075,10 +2103,11 @@ func ReassignCurrentPendingSession(c *gin.Context) {
 		if models.NormalizeSessionStatus(session.Status) != "start_pending" || session.StartConfirmedAt != nil {
 			return apiErr{status: http.StatusBadRequest, msg: "当前仅支持重分配待上号单"}
 		}
-		if session.TechnicianID == nil || *session.TechnicianID == 0 {
+		assignedTechIDs := serviceSessionAssignedTechnicianIDs(&session)
+		if len(assignedTechIDs) == 0 {
 			return apiErr{status: http.StatusBadRequest, msg: "当前待上号单尚未分配客服"}
 		}
-		oldTechID := *session.TechnicianID
+		oldTechID := assignedTechIDs[0]
 
 		if authType == "staff" {
 			if requesterTechID == 0 {
@@ -2099,8 +2128,9 @@ func ReassignCurrentPendingSession(c *gin.Context) {
 
 		timeoutSeconds := config.MerchantQueueWaitingStartSeconds(&merchant)
 		updates := map[string]interface{}{
-			"technician_id":                 targetTech.ID,
 			"last_technician_id":            oldTechID,
+			"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{targetTech.ID},
+			"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 			"start_pending_timeout_seconds": timeoutSeconds,
 			"updated_at":                    now,
 		}

@@ -274,6 +274,7 @@ import {
 } from '../../utils/terms'
 import { getMerchantId, isTechnicianAuth, getTechnicianId } from '../../utils/auth'
 import { normalizeSessionStatus } from '../../utils/sessionStatus'
+import { isServiceSessionOwnedByTechnician } from '../../utils/serviceSessionTechnicians'
 import ServiceSessionItem from '../../components/ServiceSessionItem.vue'
 
 const props = defineProps({
@@ -320,15 +321,7 @@ const canLoadMoreServiceSessions = computed(() => activeTab.value === 'service' 
 const isSessionOwnedByCurrentTechnician = (session) => {
   const techId = getTechnicianId()
   if (!techId) return false
-  const candidateIds = [
-    session?.technician_id,
-    session?.last_technician_id,
-    session?.technician?.id,
-    session?.last_technician?.id,
-    session?.initial_usage?.technician_id,
-    session?.initial_usage?.technician?.id
-  ]
-  return candidateIds.some((value) => Number(value || 0) === techId)
+  return isServiceSessionOwnedByTechnician(session, techId)
 }
 
 const myServingSessions = computed(() => {
@@ -336,7 +329,7 @@ const myServingSessions = computed(() => {
   const techId = getTechnicianId()
   if (!techId) return []
   return serviceSessions.value.filter((session) =>
-    Number(session?.technician_id || 0) === techId &&
+    isServiceSessionOwnedByTechnician(session, techId) &&
     ['delay_pending', 'serving', 'auto_finishing'].includes(normalizeSessionStatus(session.status))
   )
 })

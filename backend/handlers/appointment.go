@@ -1884,15 +1884,17 @@ func cancelUnstartedAppointmentArrival(tx *gorm.DB, appt *models.Appointment, no
 
 	updates := map[string]interface{}{
 		"status":                  models.ApplyStatusPrefix(session.Status, "canceled"),
-		"technician_id":           nil,
+		"last_technician_id":      nil,
+		"service_technician_ids":  models.MerchantProjectDefaultServiceTechnicianIDs{},
+		"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 		"room_id":                 nil,
 		"room_locked_at":          nil,
 		"room_select_deadline_at": nil,
 		"start_confirmed_at":      nil,
 		"predicted_ready_at":      nil,
 	}
-	if session.TechnicianID != nil && *session.TechnicianID > 0 {
-		updates["last_technician_id"] = *session.TechnicianID
+	if ids := serviceSessionPrimaryTechnicianIDs(&session); len(ids) > 0 {
+		updates["last_technician_id"] = ids[len(ids)-1]
 	}
 	if err := tx.Model(&models.ServiceSession{}).
 		Where("id = ? AND status NOT IN ?", session.ID, models.ExpandStatusesWithKnownPrefixes([]string{"finished", "canceled"})).
@@ -2810,8 +2812,8 @@ func CheckInAppointment(c *gin.Context) {
 			PredictedWaitMinutes: session.PredictedAppointmentDelayMinutes,
 			SessionWaitState:     models.NormalizeSessionStatus(session.Status),
 		}
-		if session.TechnicianID != nil {
-			result.BoundTechnicianID = *session.TechnicianID
+		if ids := serviceSessionAssignedTechnicianIDs(&session); len(ids) > 0 {
+			result.BoundTechnicianID = ids[0]
 		}
 		return nil
 	})

@@ -389,18 +389,18 @@ func TestChooseServiceSessionTechnicianKeepsMerchantBreachPendingForAppointmentW
 		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	var gotSession struct {
-		Status                     string `gorm:"column:status"`
-		TechnicianID               *uint  `gorm:"column:technician_id"`
-		StartPendingTimeoutSeconds int    `gorm:"column:start_pending_timeout_seconds"`
+		Status                     string                                         `gorm:"column:status"`
+		ServiceTechnicianIDs       models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:service_technician_ids"`
+		StartPendingTimeoutSeconds int                                            `gorm:"column:start_pending_timeout_seconds"`
 	}
-	if err := config.DB.Table("service_sessions").Select("status, technician_id, start_pending_timeout_seconds").Where("id = ?", session.ID).Take(&gotSession).Error; err != nil {
+	if err := config.DB.Table("service_sessions").Select("status, service_technician_ids, start_pending_timeout_seconds").Where("id = ?", session.ID).Take(&gotSession).Error; err != nil {
 		t.Fatalf("load session failed: %v", err)
 	}
 	if gotSession.Status != "cs_start_pending" {
 		t.Fatalf("want cs_start_pending, got %+v", gotSession)
 	}
-	if gotSession.TechnicianID == nil || *gotSession.TechnicianID != otherTech.ID {
-		t.Fatalf("want technician=%d, got %+v", otherTech.ID, gotSession.TechnicianID)
+	if len(gotSession.ServiceTechnicianIDs) != 1 || gotSession.ServiceTechnicianIDs[0] != otherTech.ID {
+		t.Fatalf("want service_technician_ids=[%d], got %+v", otherTech.ID, gotSession.ServiceTechnicianIDs)
 	}
 	if gotSession.StartPendingTimeoutSeconds <= 0 {
 		t.Fatalf("want positive start pending timeout, got %d", gotSession.StartPendingTimeoutSeconds)

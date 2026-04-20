@@ -36,8 +36,8 @@
       <div v-if="isAppointmentSession">
         预约号：#{{ session.source_id }}
       </div>
-      <div v-if="effectiveTechnicianDisplayText">
-        技师：{{ effectiveTechnicianDisplayText }}
+      <div v-if="serviceTechnicianDisplayText">
+        服务人员：{{ serviceTechnicianDisplayText }}
       </div>
       <div v-if="cancelReasonText">
         取消原因：{{ cancelReasonText }}
@@ -68,6 +68,7 @@ import { computed } from 'vue'
 import { formatDateTime } from '../utils/dateFormat'
 import { getAutoFinishLabel, getPendingStartLabel, replaceTerms } from '../utils/terms'
 import { normalizeSessionStatus } from '../utils/sessionStatus'
+import { getServiceSessionDisplayTechnicians } from '../utils/serviceSessionTechnicians'
 
 const props = defineProps({
   session: {
@@ -92,15 +93,18 @@ const isAppointmentSession = computed(() => {
   return String(props.session?.source_type || '').trim() === 'appointment' && Number(props.session?.source_id || 0) > 0
 })
 
-const effectiveTechnician = computed(() => {
-  return props.session?.technician || props.session?.last_technician || props.session?.initial_usage?.technician || null
+const serviceTechnicianSegments = computed(() => {
+  return getServiceSessionDisplayTechnicians(props.session).map((technician) => {
+    const account = String(technician?.account || '').trim()
+    const name = String(technician?.name || '').trim()
+    const base = account && name ? `${account} - ${name}` : (name || account || '')
+    if (!base) return ''
+    return technician?.service_start_confirmed === true ? `${base}（已扫码）` : `${base}（未扫码）`
+  }).filter(Boolean)
 })
 
-const effectiveTechnicianDisplayText = computed(() => {
-  const account = String(effectiveTechnician.value?.account || '').trim()
-  const name = String(effectiveTechnician.value?.name || '').trim()
-  if (account && name) return `${account} - ${name}`
-  return name || account || ''
+const serviceTechnicianDisplayText = computed(() => {
+  return serviceTechnicianSegments.value.join('、')
 })
 
 const trackingNumber = computed(() => {

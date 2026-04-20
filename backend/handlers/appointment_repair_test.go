@@ -44,19 +44,19 @@ func TestRepairCrossDayUnfinishedAppointmentsDryRunAndExecute(t *testing.T) {
 		t.Fatalf("create appointment failed: %v", err)
 	}
 	session := models.ServiceSession{
-		MerchantID:       merchant.ID,
-		UserID:           user.ID,
-		CardID:           card.ID,
-		ProjectID:        &projectID,
-		InitialUsageID:   usage.ID,
-		SessionMode:      models.SessionModeCustomerService,
-		SourceType:       "appointment",
-		SourceID:         &appt.ID,
-		TechnicianID:     &tech.ID,
-		LastTechnicianID: &tech.ID,
-		Status:           "cs_start_pending",
-		CreatedAt:        &arrivedAt,
-		UpdatedAt:        &arrivedAt,
+		MerchantID:                 merchant.ID,
+		UserID:                     user.ID,
+		CardID:                     card.ID,
+		ProjectID:                  &projectID,
+		InitialUsageID:             usage.ID,
+		SessionMode:                models.SessionModeCustomerService,
+		SourceType:                 "appointment",
+		SourceID:                   &appt.ID,
+		LastTechnicianID:           &tech.ID,
+		ServiceTechnicianIDs:       models.MerchantProjectDefaultServiceTechnicianIDs{tech.ID},
+		Status:                     "cs_start_pending",
+		CreatedAt:                  &arrivedAt,
+		UpdatedAt:                  &arrivedAt,
 	}
 	if err := config.DB.Create(&session).Error; err != nil {
 		t.Fatalf("create session failed: %v", err)

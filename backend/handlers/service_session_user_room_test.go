@@ -82,8 +82,8 @@ func TestBuildServiceSessionRoomSelectionUpdatesBindsProjectDefaultTechnicians(t
 	if got := models.NormalizeSessionStatus(updates["status"].(string)); got != "start_pending" {
 		t.Fatalf("want start_pending, got %s", got)
 	}
-	if got, ok := updates["technician_id"].(uint); !ok || got != firstTech.ID {
-		t.Fatalf("want compatibility technician %d, got %+v", firstTech.ID, updates["technician_id"])
+	if _, ok := updates["technician_id"]; ok {
+		t.Fatalf("want no technician_id update, got %+v", updates["technician_id"])
 	}
 	ids, ok := updates["service_technician_ids"].(models.MerchantProjectDefaultServiceTechnicianIDs)
 	if !ok {
@@ -120,11 +120,11 @@ func TestBuildServiceSessionRoomSelectionUpdatesKeepsAppointmentTechnicianAndMov
 	}
 
 	session := models.ServiceSession{
-		MerchantID:   merchant.ID,
-		UserID:       7,
-		CardID:       9,
-		Status:       "cs_room_selecting",
-		TechnicianID: &tech.ID,
+		MerchantID:       merchant.ID,
+		UserID:           7,
+		CardID:           9,
+		Status:           "cs_room_selecting",
+		LastTechnicianID: &tech.ID,
 	}
 	lockedAt := time.Now()
 	const roomID uint = 11

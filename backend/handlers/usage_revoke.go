@@ -103,22 +103,22 @@ func UserRevokeUsage(c *gin.Context) {
 		}
 
 		// 释放技师状态
-		if s.TechnicianID != nil && *s.TechnicianID > 0 {
+		for _, techID := range serviceSessionPrimaryTechnicianIDs(&s) {
 			_ = tx.Model(&models.TechnicianAttendance{}).
-				Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+				Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, techID, "busy").
 				Updates(map[string]interface{}{"status": "idle"}).Error
 		}
 
 		// 取消并释放会话资源
 		updates := map[string]interface{}{
-			"status":                  models.ApplyStatusPrefix(s.Status, "canceled"),
-			"technician_id":           nil,
-			"room_id":                 nil,
-			"room_locked_at":          nil,
-			"room_select_deadline_at": nil,
-		}
-		if s.TechnicianID != nil && *s.TechnicianID > 0 {
-			updates["last_technician_id"] = *s.TechnicianID
+			"status":                        models.ApplyStatusPrefix(s.Status, "canceled"),
+			"technician_id":                 nil,
+			"last_technician_id":            nil,
+			"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{},
+			"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
+			"room_id":                       nil,
+			"room_locked_at":                nil,
+			"room_select_deadline_at":       nil,
 		}
 		return tx.Model(&models.ServiceSession{}).
 			Where("id = ? AND status NOT IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"finished", "canceled"})).

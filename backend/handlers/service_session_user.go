@@ -396,7 +396,6 @@ func buildServiceSessionRoomSelectionUpdates(tx *gorm.DB, merchant models.Mercha
 		if len(techIDs) > 0 {
 			techID := techIDs[0]
 			timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, s.MerchantID, techID, s.ProjectID)
-			updates["technician_id"] = techID
 			updates["last_technician_id"] = techID
 			updates["service_technician_ids"] = models.MerchantProjectDefaultServiceTechnicianIDs(techIDs)
 			updates["status"] = models.ApplyStatusPrefix(s.Status, "start_pending")
@@ -407,8 +406,8 @@ func buildServiceSessionRoomSelectionUpdates(tx *gorm.DB, merchant models.Mercha
 				updates["scheduled_start_at"] = startAt
 				updates["start_pending_timeout_seconds"] = 0
 			}
-		} else if s.TechnicianID != nil && *s.TechnicianID > 0 {
-			timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, s.MerchantID, *s.TechnicianID, s.ProjectID)
+		} else if s.LastTechnicianID != nil && *s.LastTechnicianID > 0 {
+			timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, s.MerchantID, *s.LastTechnicianID, s.ProjectID)
 			updates["status"] = models.ApplyStatusPrefix(s.Status, "start_pending")
 			updates["staff_select_entered_at"] = nil
 			updates["staff_select_cooldown_until"] = nil
@@ -437,7 +436,7 @@ func hasServiceSessionBoundTechnicians(s *models.ServiceSession) bool {
 	if len(s.ServiceTechnicianIDs) > 0 {
 		return true
 	}
-	return s.TechnicianID != nil && *s.TechnicianID > 0
+	return s.LastTechnicianID != nil && *s.LastTechnicianID > 0
 }
 
 func UserListAvailableTechnicians(c *gin.Context) {
@@ -604,7 +603,6 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
 			Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
 			Where("technician_attendances.merchant_id = ? AND technician_attendances.technician_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", s.MerchantID, input.TechnicianID, start).
-			Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing"})).
 			Where("t.is_active = ?", true).
 			Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 			First(&candidate).Error; err != nil {
@@ -619,6 +617,10 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 			return apiErr{status: http.StatusBadRequest, msg: "工作人员不可选"}
 		}
 
+		if err := ensureNoOtherActiveServingSessionForTechnician(tx, s.MerchantID, input.TechnicianID, s.ID); err != nil {
+			return apiErr{status: http.StatusBadRequest, msg: "工作人员不可选"}
+		}
+
 		if err := tx.Model(&models.TechnicianAttendance{}).Where("id = ?", att.ID).Update("status", "busy").Error; err != nil {
 			return err
 		}
@@ -627,6 +629,9 @@ func UserChooseServiceSessionTechnician(c *gin.Context) {
 
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(map[string]interface{}{
 			"technician_id":                 input.TechnicianID,
+			"last_technician_id":            input.TechnicianID,
+			"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{input.TechnicianID},
+			"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 			"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 			"staff_select_entered_at":       nil,
 			"staff_select_cooldown_until":   nil,

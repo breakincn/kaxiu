@@ -243,14 +243,15 @@ func migrateSessionsAfterDisableCustomerService(tx *gorm.DB, m *models.Merchant,
 		s := sessions[i]
 
 		// 释放技师占用（如果有）
-		if s.TechnicianID != nil && *s.TechnicianID > 0 {
+		for _, techID := range serviceSessionPrimaryTechnicianIDs(&s) {
 			_ = tx.Model(&models.TechnicianAttendance{}).
-				Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+				Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, techID, "busy").
 				Updates(map[string]interface{}{"status": "idle"}).Error
 		}
-
 		updates := map[string]interface{}{
-			"technician_id":                 nil,
+			"last_technician_id":            nil,
+			"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{},
+			"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 			"staff_select_cooldown_until":   nil,
 			"staff_select_entered_at":       nil,
 			"start_pending_timeout_seconds": 0,

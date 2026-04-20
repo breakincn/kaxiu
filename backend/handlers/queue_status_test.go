@@ -249,7 +249,8 @@ func TestGetQueuePendingListStaffOnlySeesOwnSessions(t *testing.T) {
 		MerchantID:                 m.ID,
 		UserID:                     user1.ID,
 		InitialUsageID:             usage1.ID,
-		TechnicianID:               &tech1.ID,
+		LastTechnicianID:           &tech1.ID,
+		ServiceTechnicianIDs:       models.MerchantProjectDefaultServiceTechnicianIDs{tech1.ID},
 		Status:                     "start_pending",
 		StartPendingTimeoutSeconds: 180,
 		CreatedAt:                  &now,
@@ -259,7 +260,8 @@ func TestGetQueuePendingListStaffOnlySeesOwnSessions(t *testing.T) {
 		MerchantID:                 m.ID,
 		UserID:                     user2.ID,
 		InitialUsageID:             usage2.ID,
-		TechnicianID:               &tech2.ID,
+		LastTechnicianID:           &tech2.ID,
+		ServiceTechnicianIDs:       models.MerchantProjectDefaultServiceTechnicianIDs{tech2.ID},
 		Status:                     "serving",
 		StartPendingTimeoutSeconds: 180,
 		CreatedAt:                  &now,
@@ -447,13 +449,14 @@ func TestReassignCurrentPendingSessionSupportsCustomerServiceMode(t *testing.T) 
 	}
 
 	session := models.ServiceSession{
-		MerchantID:     m.ID,
-		InitialUsageID: usage.ID,
-		SessionMode:    models.SessionModeCustomerService,
-		TechnicianID:   &oldTech.ID,
-		Status:         "cs_start_pending",
-		CreatedAt:      &now,
-		UpdatedAt:      &now,
+		MerchantID:           m.ID,
+		InitialUsageID:       usage.ID,
+		SessionMode:          models.SessionModeCustomerService,
+		LastTechnicianID:     &oldTech.ID,
+		ServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{oldTech.ID},
+		Status:               "cs_start_pending",
+		CreatedAt:            &now,
+		UpdatedAt:            &now,
 	}
 	if err := config.DB.Create(&session).Error; err != nil {
 		t.Fatalf("create session failed: %v", err)
@@ -478,8 +481,8 @@ func TestReassignCurrentPendingSessionSupportsCustomerServiceMode(t *testing.T) 
 	if err := config.DB.First(&gotSession, session.ID).Error; err != nil {
 		t.Fatalf("reload session failed: %v", err)
 	}
-	if gotSession.TechnicianID == nil || *gotSession.TechnicianID != newTech.ID {
-		t.Fatalf("want session reassigned to %d, got %+v", newTech.ID, gotSession.TechnicianID)
+	if len(gotSession.ServiceTechnicianIDs) != 1 || gotSession.ServiceTechnicianIDs[0] != newTech.ID {
+		t.Fatalf("want session reassigned to [%d], got %+v", newTech.ID, gotSession.ServiceTechnicianIDs)
 	}
 	if gotSession.LastTechnicianID == nil || *gotSession.LastTechnicianID != oldTech.ID {
 		t.Fatalf("want last technician %d, got %+v", oldTech.ID, gotSession.LastTechnicianID)
@@ -540,13 +543,14 @@ func TestReassignCurrentPendingSessionCustomerServiceRejectsNoTarget(t *testing.
 	}
 
 	session := models.ServiceSession{
-		MerchantID:     m.ID,
-		InitialUsageID: usage.ID,
-		SessionMode:    models.SessionModeCustomerService,
-		TechnicianID:   &tech.ID,
-		Status:         "cs_start_pending",
-		CreatedAt:      &now,
-		UpdatedAt:      &now,
+		MerchantID:           m.ID,
+		InitialUsageID:       usage.ID,
+		SessionMode:          models.SessionModeCustomerService,
+		LastTechnicianID:     &tech.ID,
+		ServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{tech.ID},
+		Status:               "cs_start_pending",
+		CreatedAt:            &now,
+		UpdatedAt:            &now,
 	}
 	if err := config.DB.Create(&session).Error; err != nil {
 		t.Fatalf("create session failed: %v", err)
@@ -572,8 +576,8 @@ func TestReassignCurrentPendingSessionCustomerServiceRejectsNoTarget(t *testing.
 	if err := config.DB.First(&gotSession, session.ID).Error; err != nil {
 		t.Fatalf("reload session failed: %v", err)
 	}
-	if gotSession.TechnicianID == nil || *gotSession.TechnicianID != tech.ID {
-		t.Fatalf("want session still on %d, got %+v", tech.ID, gotSession.TechnicianID)
+	if len(gotSession.ServiceTechnicianIDs) != 1 || gotSession.ServiceTechnicianIDs[0] != tech.ID {
+		t.Fatalf("want session still on [%d], got %+v", tech.ID, gotSession.ServiceTechnicianIDs)
 	}
 }
 
@@ -621,13 +625,14 @@ func TestReassignCurrentPendingSessionCustomerServiceStaffOnlyOwnSession(t *test
 	}
 
 	session := models.ServiceSession{
-		MerchantID:     m.ID,
-		InitialUsageID: usage.ID,
-		SessionMode:    models.SessionModeCustomerService,
-		TechnicianID:   &otherTech.ID,
-		Status:         "cs_start_pending",
-		CreatedAt:      &now,
-		UpdatedAt:      &now,
+		MerchantID:           m.ID,
+		InitialUsageID:       usage.ID,
+		SessionMode:          models.SessionModeCustomerService,
+		LastTechnicianID:     &otherTech.ID,
+		ServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{otherTech.ID},
+		Status:               "cs_start_pending",
+		CreatedAt:            &now,
+		UpdatedAt:            &now,
 	}
 	if err := config.DB.Create(&session).Error; err != nil {
 		t.Fatalf("create session failed: %v", err)
@@ -696,13 +701,14 @@ func TestReassignCurrentPendingSessionCustomerServiceOperationalCanReassignAny(t
 	}
 
 	session := models.ServiceSession{
-		MerchantID:     m.ID,
-		InitialUsageID: usage.ID,
-		SessionMode:    models.SessionModeCustomerService,
-		TechnicianID:   &ownerTech.ID,
-		Status:         "cs_start_pending",
-		CreatedAt:      &now,
-		UpdatedAt:      &now,
+		MerchantID:           m.ID,
+		InitialUsageID:       usage.ID,
+		SessionMode:          models.SessionModeCustomerService,
+		LastTechnicianID:     &ownerTech.ID,
+		ServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{ownerTech.ID},
+		Status:               "cs_start_pending",
+		CreatedAt:            &now,
+		UpdatedAt:            &now,
 	}
 	if err := config.DB.Create(&session).Error; err != nil {
 		t.Fatalf("create session failed: %v", err)

@@ -112,7 +112,8 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 	}
 
 	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchantID, nextUsageID)
+		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL", merchantID, nextUsageID)
+	q = applyServiceSessionUnassignedFilter(q, "service_sessions")
 	q = q.Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked", "timeout_waiting"}))
 
 	var nextSession models.ServiceSession
@@ -128,13 +129,17 @@ func tryAutoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uin
 
 	updates := map[string]interface{}{
 		"technician_id":                 technicianID,
+		"last_technician_id":            technicianID,
+		"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{technicianID},
+		"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 		"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(&merchant),
 	}
 	result := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchantID).
+		Where("id = ? AND merchant_id = ? AND start_confirmed_at IS NULL", nextSession.ID, merchantID).
+		Scopes(func(db *gorm.DB) *gorm.DB { return applyServiceSessionUnassignedFilter(db, "service_sessions") }).
 		Updates(updates)
 	if result.Error != nil {
 		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)

@@ -722,9 +722,10 @@ func DeleteMerchantTechnician(c *gin.Context) {
 		"room_locked", "staff_selecting", "start_pending", "delay_pending", "serving", "auto_finishing", "timeout_waiting",
 	})
 	var activeCount int64
-	if err := config.DB.Model(&models.ServiceSession{}).
-		Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchantID, targetID, activeStatuses).
-		Count(&activeCount).Error; err != nil {
+	activeSessionQuery := config.DB.Model(&models.ServiceSession{}).
+		Where("merchant_id = ? AND status IN ?", merchantID, activeStatuses)
+	activeSessionQuery = applyServiceSessionTechnicianFilter(activeSessionQuery, "service_sessions", targetID, true)
+	if err := activeSessionQuery.Count(&activeCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除前校验失败"})
 		return
 	}

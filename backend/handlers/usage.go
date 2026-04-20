@@ -99,11 +99,7 @@ func GetMerchantUsages(c *gin.Context) {
 		}
 		if technicianIDStr != "" {
 			if tid, err := strconv.ParseUint(technicianIDStr, 10, 64); err == nil && tid > 0 {
-				if config.DB != nil && config.DB.Dialector != nil && config.DB.Dialector.Name() == "mysql" {
-					query = query.Where("(ss.technician_id = ? OR ss.last_technician_id = ? OR JSON_CONTAINS(ss.service_technician_ids, JSON_ARRAY(?)))", tid, tid, tid)
-				} else {
-					query = query.Where("(ss.technician_id = ? OR ss.last_technician_id = ? OR ss.service_technician_ids LIKE ? OR ss.service_technician_ids LIKE ? OR ss.service_technician_ids LIKE ? OR ss.service_technician_ids LIKE ?)", tid, tid, "%["+strconv.FormatUint(tid, 10)+"]%", "%["+strconv.FormatUint(tid, 10)+",%", "%,"+strconv.FormatUint(tid, 10)+",%", "%,"+strconv.FormatUint(tid, 10)+"]%")
-				}
+				query = applyServiceSessionTechnicianFilter(query, "ss", uint(tid), true)
 			}
 		}
 	}
@@ -334,7 +330,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 	var sessions []sessLite
 	if err := config.DB.
 		Table("service_sessions").
-		Select("id, initial_usage_id, project_id, source_type, source_id, status, room_id, technician_id, last_technician_id, service_technician_ids, start_confirmed_technician_ids, start_timeout_count, start_confirmed_at, scheduled_start_at, started_at, scheduled_finish_at, finished_at, duration_minutes, created_at, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until, staff_select_entered_at").
+		Select("id, initial_usage_id, project_id, source_type, source_id, status, room_id, last_technician_id, service_technician_ids, start_confirmed_technician_ids, start_timeout_count, start_confirmed_at, scheduled_start_at, started_at, scheduled_finish_at, finished_at, duration_minutes, created_at, updated_at, start_pending_timeout_seconds, room_select_deadline_at, room_locked_at, staff_select_cooldown_until, staff_select_entered_at").
 		Where("initial_usage_id IN ?", ids).
 		Order("id desc").
 		Find(&sessions).Error; err != nil {
@@ -578,12 +574,13 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 		}
 		if s, ok := byUsageID[u.ID]; ok {
 			sessionForRevoke := models.ServiceSession{
-				Status:            s.Status,
-				RoomID:            s.RoomID,
-				TechnicianID:      s.TechnicianID,
-				StartTimeoutCount: s.StartTimeoutCount,
-				StartConfirmedAt:  resolveSessionStartConfirmedAt(s.Status, s.StartConfirmedAt, s.StartedAt),
-				StartedAt:         s.StartedAt,
+				Status:               s.Status,
+				RoomID:               s.RoomID,
+				LastTechnicianID:     s.LastTechnicianID,
+				ServiceTechnicianIDs: s.ServiceTechnicianIDs,
+				StartTimeoutCount:    s.StartTimeoutCount,
+				StartConfirmedAt:     resolveSessionStartConfirmedAt(s.Status, s.StartConfirmedAt, s.StartedAt),
+				StartedAt:            s.StartedAt,
 			}
 			u.CanRevoke = canRevokeUsageWithSession(u, &sessionForRevoke, now)
 		}

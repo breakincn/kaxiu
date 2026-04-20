@@ -15,6 +15,22 @@ type FinishOptions struct {
 	MarkQueueDone       bool
 }
 
+func sessionflowServiceSessionPrimaryTechnicianIDs(s *models.ServiceSession) []uint {
+	if s == nil {
+		return nil
+	}
+	if len(s.StartConfirmedTechnicianIDs) > 0 {
+		return []uint(s.StartConfirmedTechnicianIDs)
+	}
+	if len(s.ServiceTechnicianIDs) > 0 {
+		return []uint(s.ServiceTechnicianIDs)
+	}
+	if s.LastTechnicianID != nil && *s.LastTechnicianID > 0 {
+		return []uint{*s.LastTechnicianID}
+	}
+	return nil
+}
+
 func syncAppointmentOutcome(tx *gorm.DB, appointmentID uint, appointmentUpdates map[string]interface{}, settlementUpdates map[string]interface{}) error {
 	if tx == nil || appointmentID == 0 {
 		return nil
@@ -77,8 +93,8 @@ func FinishServiceSession(tx *gorm.DB, s *models.ServiceSession, merchant *model
 		"status":      "success",
 		"finished_at": finishedAt,
 	}
-	if s.TechnicianID != nil && *s.TechnicianID > 0 {
-		uUpdates["technician_id"] = *s.TechnicianID
+	if ids := sessionflowServiceSessionPrimaryTechnicianIDs(s); len(ids) > 0 {
+		uUpdates["technician_id"] = ids[0]
 	}
 	if err := tx.Model(&models.Usage{}).
 		Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
@@ -132,7 +148,9 @@ func FinalizeUsageAndSession(tx *gorm.DB, usageID uint, merchant *models.Merchan
 		MerchantID          uint   `gorm:"column:merchant_id"`
 		InitialUsageID      uint   `gorm:"column:initial_usage_id"`
 		Status              string `gorm:"column:status"`
-		TechnicianID        *uint  `gorm:"column:technician_id"`
+		LastTechnicianID    *uint  `gorm:"column:last_technician_id"`
+		ServiceTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:service_technician_ids"`
+		StartConfirmedTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:start_confirmed_technician_ids"`
 		SourceType          string `gorm:"column:source_type"`
 		SourceID            *uint  `gorm:"column:source_id"`
 		StartConfirmedAtRaw string `gorm:"column:start_confirmed_at"`
@@ -140,7 +158,7 @@ func FinalizeUsageAndSession(tx *gorm.DB, usageID uint, merchant *models.Merchan
 	}
 	query := tx.
 		Table("service_sessions").
-		Select("id", "merchant_id", "initial_usage_id", "status", "technician_id", "source_type", "source_id", "start_confirmed_at", "finished_at").
+		Select("id", "merchant_id", "initial_usage_id", "status", "last_technician_id", "service_technician_ids", "start_confirmed_technician_ids", "source_type", "source_id", "start_confirmed_at", "finished_at").
 		Where("initial_usage_id = ?", usageID).
 		Order("id desc").
 		Limit(1).
@@ -168,13 +186,15 @@ func FinalizeUsageAndSession(tx *gorm.DB, usageID uint, merchant *models.Merchan
 	}
 
 	s := models.ServiceSession{
-		ID:             row.ID,
-		MerchantID:     row.MerchantID,
-		InitialUsageID: row.InitialUsageID,
-		Status:         row.Status,
-		TechnicianID:   row.TechnicianID,
-		SourceType:     row.SourceType,
-		SourceID:       row.SourceID,
+		ID:                         row.ID,
+		MerchantID:                 row.MerchantID,
+		InitialUsageID:             row.InitialUsageID,
+		Status:                     row.Status,
+		LastTechnicianID:           row.LastTechnicianID,
+		ServiceTechnicianIDs:       row.ServiceTechnicianIDs,
+		StartConfirmedTechnicianIDs: row.StartConfirmedTechnicianIDs,
+		SourceType:                 row.SourceType,
+		SourceID:                   row.SourceID,
 	}
 	s.StartConfirmedAt = &finishedAt
 

@@ -31,7 +31,7 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 	if err := config.DB.
 		Model(&models.ServiceSession{}).
 		Select("id").
-		Where("merchant_id = ? AND status IN ? AND start_confirmed_at IS NULL AND technician_id IS NOT NULL AND updated_at IS NOT NULL", merchantID, models.ExpandStatusWithKnownPrefixes("start_pending")).
+		Where("merchant_id = ? AND status IN ? AND start_confirmed_at IS NULL AND updated_at IS NOT NULL", merchantID, models.ExpandStatusWithKnownPrefixes("start_pending")).
 		Limit(200).
 		Pluck("id", &ids).Error; err != nil {
 		return
@@ -61,10 +61,16 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 				continue
 			}
 
-			oldTechID := s.TechnicianID
+			oldTechIDs := serviceSessionAssignedTechnicianIDs(&s)
+			if len(oldTechIDs) == 0 {
+				continue
+			}
 			updates := map[string]interface{}{
 				"status":                        models.ApplyStatusPrefix(s.Status, "staff_selecting"),
 				"technician_id":                 nil,
+				"last_technician_id":            nil,
+				"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{},
+				"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 				"staff_select_entered_at":       nil,
 				"start_pending_timeout_seconds": 0,
 				"start_timeout_count":           gorm.Expr("start_timeout_count + ?", 1),
@@ -80,9 +86,9 @@ func lazyReleaseStartPendingTimeout(merchantID uint, now time.Time) {
 				queue.Default.Uncall(s.MerchantID, date, queue.QueueTypeOnsite, s.InitialUsageID)
 			}
 
-			if oldTechID != nil && *oldTechID > 0 {
+			for _, oldTechID := range oldTechIDs {
 				_ = tx.Model(&models.TechnicianAttendance{}).
-					Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *oldTechID, "busy").
+					Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, oldTechID, "busy").
 					Updates(map[string]interface{}{"status": "idle"}).Error
 			}
 		}
@@ -158,9 +164,9 @@ func TableRooms(c *gin.Context) {
 			it.Occupied = true
 			it.Status = s.Status
 			it.Session = &s
-			if s.Technician != nil {
-				it.Technician = s.Technician
-				it.TechnicianRole = &s.Technician.ServiceRole
+			if len(s.ServiceTechnicians) > 0 && s.ServiceTechnicians[0] != nil {
+				it.Technician = s.ServiceTechnicians[0]
+				it.TechnicianRole = &s.ServiceTechnicians[0].ServiceRole
 			}
 			it.StartedAt = s.StartedAt
 			it.RoomLockedAt = s.RoomLockedAt
@@ -270,10 +276,7 @@ func TableStaff(c *gin.Context) {
 
 	sessionByTech := map[uint]models.ServiceSession{}
 	for _, s := range sessions {
-		boundTechIDs := []uint(s.ServiceTechnicianIDs)
-		if len(boundTechIDs) == 0 && s.TechnicianID != nil && *s.TechnicianID > 0 {
-			boundTechIDs = []uint{*s.TechnicianID}
-		}
+		boundTechIDs := serviceSessionAssignedTechnicianIDs(&s)
 		for _, techID := range boundTechIDs {
 			if techID == 0 {
 				continue
@@ -310,27 +313,15 @@ func TableStaff(c *gin.Context) {
 		}
 
 		for _, session := range completedSessions {
-			counted := make(map[uint]struct{})
-			for _, techID := range session.ServiceTechnicianIDs {
+			modelSession := models.ServiceSession{
+				LastTechnicianID:     session.LastTechnicianID,
+				ServiceTechnicianIDs: session.ServiceTechnicianIDs,
+			}
+			for _, techID := range serviceSessionPrimaryTechnicianIDs(&modelSession) {
 				if _, ok := techIDSet[techID]; !ok || techID == 0 {
 					continue
 				}
 				completedCountByTech[techID]++
-				counted[techID] = struct{}{}
-			}
-			if len(counted) > 0 {
-				continue
-			}
-			if session.TechnicianID != nil {
-				if _, ok := techIDSet[*session.TechnicianID]; ok {
-					completedCountByTech[*session.TechnicianID]++
-					continue
-				}
-			}
-			if session.LastTechnicianID != nil {
-				if _, ok := techIDSet[*session.LastTechnicianID]; ok {
-					completedCountByTech[*session.LastTechnicianID]++
-				}
 			}
 		}
 	}

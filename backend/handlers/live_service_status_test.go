@@ -96,16 +96,18 @@ func TestBuildMerchantLiveServiceStatusCustomerServiceMode(t *testing.T) {
 	scheduledFinishAt := now.Add(20 * time.Minute)
 	createdAt1 := now.Add(-12 * time.Minute)
 	if err := config.DB.Create(&models.ServiceSession{
-		MerchantID:           merchant.ID,
-		SessionMode:          models.SessionModeCustomerService,
-		Status:               "serving",
-		TechnicianID:         &tech1.ID,
-		StartedAt:            &startedAt,
-		ScheduledFinishAt:    &scheduledFinishAt,
-		DurationMinutes:      30,
-		AutoIdleAfterSeconds: 180,
-		CreatedAt:            &createdAt1,
-		UpdatedAt:            &createdAt1,
+		MerchantID:                 merchant.ID,
+		SessionMode:                models.SessionModeCustomerService,
+		Status:                     "serving",
+		LastTechnicianID:           &tech1.ID,
+		ServiceTechnicianIDs:       models.MerchantProjectDefaultServiceTechnicianIDs{tech1.ID},
+		StartConfirmedTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{tech1.ID},
+		StartedAt:                  &startedAt,
+		ScheduledFinishAt:          &scheduledFinishAt,
+		DurationMinutes:            30,
+		AutoIdleAfterSeconds:       180,
+		CreatedAt:                  &createdAt1,
+		UpdatedAt:                  &createdAt1,
 	}).Error; err != nil {
 		t.Fatalf("create serving session failed: %v", err)
 	}

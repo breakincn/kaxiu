@@ -111,15 +111,17 @@ func CompleteUnstartedServiceSession(tx *gorm.DB, usageID uint, merchantID uint,
 		return false, nil
 	}
 	var s struct {
-		ID               uint       `gorm:"column:id"`
-		Status           string     `gorm:"column:status"`
-		TechnicianID     *uint      `gorm:"column:technician_id"`
-		SourceType       string     `gorm:"column:source_type"`
-		SourceID         *uint      `gorm:"column:source_id"`
-		StartConfirmedAt *time.Time `gorm:"column:start_confirmed_at"`
+		ID                         uint                                          `gorm:"column:id"`
+		Status                     string                                        `gorm:"column:status"`
+		LastTechnicianID           *uint                                         `gorm:"column:last_technician_id"`
+		ServiceTechnicianIDs       models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:service_technician_ids"`
+		StartConfirmedTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:start_confirmed_technician_ids"`
+		SourceType                 string                                        `gorm:"column:source_type"`
+		SourceID                   *uint                                         `gorm:"column:source_id"`
+		StartConfirmedAt           *time.Time                                    `gorm:"column:start_confirmed_at"`
 	}
 	query := tx.Table("service_sessions").
-		Select("id,status,technician_id,source_type,source_id,start_confirmed_at").
+		Select("id,status,last_technician_id,service_technician_ids,start_confirmed_technician_ids,source_type,source_id,start_confirmed_at").
 		Where("initial_usage_id = ?", usageID).
 		Order("id desc").
 		Limit(1).
@@ -133,9 +135,17 @@ func CompleteUnstartedServiceSession(tx *gorm.DB, usageID uint, merchantID uint,
 	if s.StartConfirmedAt != nil {
 		return false, nil
 	}
-	if s.TechnicianID != nil && *s.TechnicianID > 0 {
+	techID := uint(0)
+	if len(s.StartConfirmedTechnicianIDs) > 0 {
+		techID = s.StartConfirmedTechnicianIDs[0]
+	} else if len(s.ServiceTechnicianIDs) > 0 {
+		techID = s.ServiceTechnicianIDs[0]
+	} else if s.LastTechnicianID != nil && *s.LastTechnicianID > 0 {
+		techID = *s.LastTechnicianID
+	}
+	if techID > 0 {
 		_ = tx.Model(&models.TechnicianAttendance{}).
-			Where("merchant_id = ? AND technician_id = ? AND status = ?", merchantID, *s.TechnicianID, "busy").
+			Where("merchant_id = ? AND technician_id = ? AND status = ?", merchantID, techID, "busy").
 			Updates(map[string]interface{}{"status": "idle"}).Error
 	}
 	if err := tx.Table("service_sessions").
@@ -143,7 +153,8 @@ func CompleteUnstartedServiceSession(tx *gorm.DB, usageID uint, merchantID uint,
 		Updates(map[string]interface{}{
 			"status":                  models.ApplyStatusPrefix(s.Status, "finished"),
 			"finished_at":             finishedAt,
-			"technician_id":           nil,
+			"service_technician_ids":  models.MerchantProjectDefaultServiceTechnicianIDs{},
+			"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 			"room_id":                 nil,
 			"room_locked_at":          nil,
 			"room_select_deadline_at": nil,

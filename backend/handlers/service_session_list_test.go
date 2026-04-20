@@ -203,9 +203,10 @@ func TestListServiceSessionsSelfOnlyForStaff(t *testing.T) {
 	}
 
 	sessions := []models.ServiceSession{
-		{MerchantID: merchant.ID, UserID: 1, CardID: 1, TechnicianID: &techA.ID, Status: "serving"},
+		{MerchantID: merchant.ID, UserID: 1, CardID: 1, LastTechnicianID: &techA.ID, ServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{techA.ID}, Status: "serving"},
 		{MerchantID: merchant.ID, UserID: 2, CardID: 2, LastTechnicianID: &techA.ID, Status: "canceled"},
-		{MerchantID: merchant.ID, UserID: 3, CardID: 3, TechnicianID: &techB.ID, Status: "finished"},
+		{MerchantID: merchant.ID, UserID: 4, CardID: 4, ServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{techA.ID, techB.ID}, Status: "delay_pending"},
+		{MerchantID: merchant.ID, UserID: 3, CardID: 3, LastTechnicianID: &techB.ID, ServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{techB.ID}, Status: "finished"},
 	}
 	if err := config.DB.Create(&sessions).Error; err != nil {
 		t.Fatalf("create sessions failed: %v", err)
@@ -224,11 +225,11 @@ func TestListServiceSessionsSelfOnlyForStaff(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response failed: %v", err)
 	}
-	if len(resp.Data) != 2 {
-		t.Fatalf("want 2 sessions, got %d", len(resp.Data))
+	if len(resp.Data) != 3 {
+		t.Fatalf("want 3 sessions, got %d", len(resp.Data))
 	}
 	for _, session := range resp.Data {
-		if session.ID == sessions[2].ID {
+		if session.ID == sessions[3].ID {
 			t.Fatalf("unexpected session %d in self_only response", session.ID)
 		}
 	}

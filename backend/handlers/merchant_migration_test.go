@@ -670,14 +670,15 @@ func TestUpdateCurrentMerchantServices_RejectsSwitchingToCustomerServiceModeWith
 	now := time.Now()
 	techID := uint(9)
 	s := models.ServiceSession{
-		MerchantID:       m.ID,
-		InitialUsageID:   206,
-		SessionMode:      models.SessionModeQueueManualSingle,
-		Status:           "qms_start_pending",
-		TechnicianID:     &techID,
-		StartConfirmedAt: nil,
-		CreatedAt:        &now,
-		UpdatedAt:        &now,
+		MerchantID:           m.ID,
+		InitialUsageID:       206,
+		SessionMode:          models.SessionModeQueueManualSingle,
+		Status:               "qms_start_pending",
+		LastTechnicianID:     &techID,
+		ServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{techID},
+		StartConfirmedAt:     nil,
+		CreatedAt:            &now,
+		UpdatedAt:            &now,
 	}
 	if err := config.DB.Create(&s).Error; err != nil {
 		t.Fatalf("create session failed: %v", err)
@@ -722,13 +723,14 @@ func TestUpdateCurrentMerchantServices_RejectsSwitchingToCustomerServiceModeWith
 	now := time.Now()
 	techID := uint(10)
 	s := models.ServiceSession{
-		MerchantID:     m.ID,
-		InitialUsageID: 207,
-		SessionMode:    models.SessionModeQueueAutoMulti,
-		Status:         "qm_start_pending",
-		TechnicianID:   &techID,
-		CreatedAt:      &now,
-		UpdatedAt:      &now,
+		MerchantID:           m.ID,
+		InitialUsageID:       207,
+		SessionMode:          models.SessionModeQueueAutoMulti,
+		Status:               "qm_start_pending",
+		LastTechnicianID:     &techID,
+		ServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{techID},
+		CreatedAt:            &now,
+		UpdatedAt:            &now,
 	}
 	if err := config.DB.Create(&s).Error; err != nil {
 		t.Fatalf("create session failed: %v", err)

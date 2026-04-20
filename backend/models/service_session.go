@@ -19,7 +19,6 @@ type ServiceSession struct {
 	PredictedAppointmentDelayMinutes int                                        `json:"predicted_appointment_delay_minutes" gorm:"column:predicted_appointment_delay_minutes;default:0;comment:预约到店后检测到的预计延迟分钟数"`
 	PredictedReadyAt                 *time.Time                                 `json:"predicted_ready_at" gorm:"column:predicted_ready_at;type:datetime(3);comment:预计可开始服务时间（用于延迟提示和兼容等待会话）"`
 	RoomID                           *uint                                      `json:"room_id" gorm:"index;comment:房间ID"`
-	TechnicianID                     *uint                                      `json:"technician_id" gorm:"index;comment:工作人员ID"`
 	LastTechnicianID                 *uint                                      `json:"last_technician_id" gorm:"column:last_technician_id;index;comment:最后一次队列分配的工作人员ID（用于过号等待等保留展示）"`
 	ServiceTechnicianIDs             MerchantProjectDefaultServiceTechnicianIDs `json:"service_technician_ids" gorm:"column:service_technician_ids;type:json;not null;comment:服务单绑定的服务人员ID列表（专业客服）"`
 	StartConfirmedTechnicianIDs      MerchantProjectDefaultServiceTechnicianIDs `json:"start_confirmed_technician_ids" gorm:"column:start_confirmed_technician_ids;type:json;not null;comment:已扫码确认待开始服务的服务人员ID列表"`
@@ -50,7 +49,6 @@ type ServiceSession struct {
 	UpdatedAt *time.Time `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
 
 	Room                *Room                        `json:"room" gorm:"foreignKey:RoomID"`
-	Technician          *Technician                  `json:"technician" gorm:"foreignKey:TechnicianID"`
 	LastTechnician      *Technician                  `json:"last_technician" gorm:"foreignKey:LastTechnicianID"`
 	ServiceTechnicians  []*Technician                `json:"service_technicians" gorm:"-"`
 	Project             *MerchantProject             `json:"project" gorm:"foreignKey:ProjectID"`

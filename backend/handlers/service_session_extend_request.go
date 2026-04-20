@@ -142,11 +142,11 @@ func handleServiceSessionExtendRequest(c *gin.Context, approve bool) {
 		if models.NormalizeSessionStatus(s.Status) != "serving" {
 			return apiErr{status: http.StatusBadRequest, msg: "当前服务已不在服务中"}
 		}
-		if s.TechnicianID != nil {
+		if techIDs := serviceSessionPrimaryTechnicianIDs(&s); len(techIDs) > 0 {
 			authType, _ := c.Get("auth_type")
 			technicianIDAny, _ := c.Get("technician_id")
 			technicianID, _ := technicianIDAny.(uint)
-			if authType == "staff" && technicianID > 0 && *s.TechnicianID != technicianID {
+			if authType == "staff" && technicianID > 0 && !uintIDInSlice(techIDs, technicianID) {
 				return apiErr{status: http.StatusForbidden, msg: "只能处理自己的服务加钟申请"}
 			}
 		}

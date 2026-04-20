@@ -28,6 +28,32 @@ const (
 	sessionAbandonTimeout = 60 * time.Minute
 )
 
+func schedulerAssignedTechnicianIDs(s *models.ServiceSession) []uint {
+	if s == nil {
+		return nil
+	}
+	if len(s.ServiceTechnicianIDs) > 0 {
+		return []uint(s.ServiceTechnicianIDs)
+	}
+	if s.LastTechnicianID != nil && *s.LastTechnicianID > 0 {
+		return []uint{*s.LastTechnicianID}
+	}
+	return nil
+}
+
+func schedulerPrimaryTechnicianID(s *models.ServiceSession) uint {
+	if s == nil {
+		return 0
+	}
+	if len(s.StartConfirmedTechnicianIDs) > 0 && s.StartConfirmedTechnicianIDs[0] > 0 {
+		return s.StartConfirmedTechnicianIDs[0]
+	}
+	if ids := schedulerAssignedTechnicianIDs(s); len(ids) > 0 {
+		return ids[0]
+	}
+	return 0
+}
+
 func resolveStaffSelectingTimeout(tx *gorm.DB, s *models.ServiceSession) time.Duration {
 	if s == nil {
 		return defaultStaffSelectingTimeout
@@ -131,7 +157,7 @@ func loadServiceSessionByID(tx *gorm.DB, sessionID uint) (*models.ServiceSession
 		return nil, nil
 	}
 	rows, err := tx.Table("service_sessions").
-		Select("id, merchant_id, user_id, card_id, project_id, initial_usage_id, verify_code, session_mode, source_type, source_id, occupies_next_appointment, next_appointment_id, predicted_appointment_delay_minutes, predicted_ready_at, room_id, technician_id, last_technician_id, service_technician_ids, start_timeout_count, start_timeout_last_at, staff_select_cooldown_until, staff_select_entered_at, start_pending_timeout_seconds, status, room_select_deadline_at, room_locked_at, start_confirmed_at, start_delay_seconds, scheduled_start_at, started_at, duration_minutes, scheduled_finish_at, finished_at, auto_finish_delay_seconds, auto_idle_after_seconds, created_at, updated_at").
+		Select("id, merchant_id, user_id, card_id, project_id, initial_usage_id, verify_code, session_mode, source_type, source_id, occupies_next_appointment, next_appointment_id, predicted_appointment_delay_minutes, predicted_ready_at, room_id, last_technician_id, service_technician_ids, start_timeout_count, start_timeout_last_at, staff_select_cooldown_until, staff_select_entered_at, start_pending_timeout_seconds, status, room_select_deadline_at, room_locked_at, start_confirmed_at, start_delay_seconds, scheduled_start_at, started_at, duration_minutes, scheduled_finish_at, finished_at, auto_finish_delay_seconds, auto_idle_after_seconds, created_at, updated_at").
 		Where("id = ?", sessionID).
 		Limit(1).
 		Rows()
@@ -149,7 +175,6 @@ func loadServiceSessionByID(tx *gorm.DB, sessionID uint) (*models.ServiceSession
 		nextAppointmentIDRaw        interface{}
 		predictedReadyAtRaw         interface{}
 		roomIDRaw                   interface{}
-		technicianIDRaw             interface{}
 		lastTechnicianIDRaw         interface{}
 		serviceTechnicianIDsRaw     interface{}
 		startTimeoutLastAtRaw       interface{}
@@ -181,7 +206,6 @@ func loadServiceSessionByID(tx *gorm.DB, sessionID uint) (*models.ServiceSession
 		&session.PredictedAppointmentDelayMinutes,
 		&predictedReadyAtRaw,
 		&roomIDRaw,
-		&technicianIDRaw,
 		&lastTechnicianIDRaw,
 		&serviceTechnicianIDsRaw,
 		&session.StartTimeoutCount,
@@ -220,9 +244,6 @@ func loadServiceSessionByID(tx *gorm.DB, sessionID uint) (*models.ServiceSession
 	}
 	if v, ok := schedulerValueToUint(roomIDRaw); ok {
 		session.RoomID = &v
-	}
-	if v, ok := schedulerValueToUint(technicianIDRaw); ok {
-		session.TechnicianID = &v
 	}
 	if v, ok := schedulerValueToUint(lastTechnicianIDRaw); ok {
 		session.LastTechnicianID = &v
@@ -298,8 +319,20 @@ func finalizeOverdueManualServingSessions(db *gorm.DB, now time.Time) error {
 		return nil
 	}
 	deadline := now.Add(-4 * time.Hour)
-	var sessions []models.ServiceSession
+	type servingLite struct {
+		ID                         uint
+		MerchantID                 uint
+		Status                     string
+		StartConfirmedAtRaw        string `gorm:"column:start_confirmed_at"`
+		StartedAtRaw               string `gorm:"column:started_at"`
+		LastTechnicianID           *uint  `gorm:"column:last_technician_id"`
+		ServiceTechnicianIDs       models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:service_technician_ids"`
+		StartConfirmedTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:start_confirmed_technician_ids"`
+	}
+	var sessions []servingLite
 	if err := db.
+		Table("service_sessions").
+		Select("id, merchant_id, status, start_confirmed_at, started_at, last_technician_id, service_technician_ids, start_confirmed_technician_ids").
 		Where("status IN ? AND start_confirmed_at IS NOT NULL AND started_at IS NOT NULL AND started_at <= ?", models.ExpandStatusWithKnownPrefixes("serving"), deadline).
 		Order("id asc").
 		Limit(schedulerBatchLimit).
@@ -310,7 +343,25 @@ func finalizeOverdueManualServingSessions(db *gorm.DB, now time.Time) error {
 		return nil
 	}
 	for i := range sessions {
-		s := sessions[i]
+		row := sessions[i]
+		startedAt, ok := parseSchedulerDBTimeValue(row.StartedAtRaw)
+		if !ok || startedAt == nil {
+			continue
+		}
+		startConfirmedAt, ok := parseSchedulerDBTimeValue(row.StartConfirmedAtRaw)
+		if !ok || startConfirmedAt == nil {
+			continue
+		}
+		s := models.ServiceSession{
+			ID:                         row.ID,
+			MerchantID:                 row.MerchantID,
+			Status:                     row.Status,
+			StartedAt:                  startedAt,
+			StartConfirmedAt:           startConfirmedAt,
+			LastTechnicianID:           row.LastTechnicianID,
+			ServiceTechnicianIDs:       row.ServiceTechnicianIDs,
+			StartConfirmedTechnicianIDs: row.StartConfirmedTechnicianIDs,
+		}
 		if s.MerchantID == 0 {
 			continue
 		}
@@ -349,14 +400,12 @@ func moveMultiQueueStartPendingToTimeoutWaiting(tx *gorm.DB, s *models.ServiceSe
 		return nil
 	}
 
-	techID := uint(0)
-	if s.TechnicianID != nil {
-		techID = *s.TechnicianID
-	}
+	techID := schedulerPrimaryTechnicianID(s)
 
 	updates := map[string]interface{}{
 		"status":                        models.ApplyStatusPrefix(s.Status, "timeout_waiting"),
-		"technician_id":                 nil,
+		"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{},
+		"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 		"start_confirmed_at":            nil,
 		"scheduled_start_at":            nil,
 		"staff_select_entered_at":       nil,
@@ -399,7 +448,9 @@ func releaseFinishedSessionTechnicians(db *gorm.DB, now time.Time) error {
 	type finishedLite struct {
 		ID                   uint
 		MerchantID           uint
-		TechnicianID         *uint
+		LastTechnicianID     *uint
+		ServiceTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs
+		StartConfirmedTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs
 		AutoIdleAfterSeconds int
 		Status               string
 		FinishedAtRaw        string `gorm:"column:finished_at"`
@@ -407,8 +458,8 @@ func releaseFinishedSessionTechnicians(db *gorm.DB, now time.Time) error {
 
 	var sessions []finishedLite
 	if err := db.Table("service_sessions").
-		Select("id", "merchant_id", "technician_id", "auto_idle_after_seconds", "status", "finished_at").
-		Where("status IN ? AND technician_id IS NOT NULL AND finished_at IS NOT NULL", models.ExpandStatusWithKnownPrefixes("finished")).
+		Select("id", "merchant_id", "last_technician_id", "service_technician_ids", "start_confirmed_technician_ids", "auto_idle_after_seconds", "status", "finished_at").
+		Where("status IN ? AND finished_at IS NOT NULL", models.ExpandStatusWithKnownPrefixes("finished")).
 		Order("id asc").
 		Limit(schedulerBatchLimit).
 		Find(&sessions).Error; err != nil {
@@ -433,11 +484,13 @@ func releaseFinishedSessionTechnicians(db *gorm.DB, now time.Time) error {
 				return nil
 			}
 			copy := models.ServiceSession{
-				ID:                   s.ID,
-				MerchantID:           s.MerchantID,
-				TechnicianID:         s.TechnicianID,
-				AutoIdleAfterSeconds: s.AutoIdleAfterSeconds,
-				FinishedAt:           &finishedAt,
+				ID:                         s.ID,
+				MerchantID:                 s.MerchantID,
+				LastTechnicianID:           s.LastTechnicianID,
+				ServiceTechnicianIDs:       s.ServiceTechnicianIDs,
+				StartConfirmedTechnicianIDs: s.StartConfirmedTechnicianIDs,
+				AutoIdleAfterSeconds:       s.AutoIdleAfterSeconds,
+				FinishedAt:                 &finishedAt,
 			}
 			return releaseTechnicianIfNeeded(tx, &copy, now)
 		}); err != nil {
@@ -541,10 +594,17 @@ func autoFinalizeStaleUsages(db *gorm.DB, now time.Time) error {
 		return nil
 	}
 	cutoff := now.Add(-12 * time.Hour)
-	var usages []models.Usage
+	type usageLite struct {
+		ID         uint
+		MerchantID uint
+		Status     string
+		UsedAtRaw  string `gorm:"column:used_at"`
+		ProjectID  *uint  `gorm:"column:project_id"`
+	}
+	var usages []usageLite
 	if err := db.
-		Preload("Merchant").
-		Preload("Project").
+		Table("usages").
+		Select("id, merchant_id, status, used_at, project_id").
 		Where("used_at IS NOT NULL AND used_at <= ? AND status <> ?", cutoff, "failed").
 		Order("id asc").
 		Limit(schedulerBatchLimit).
@@ -552,10 +612,16 @@ func autoFinalizeStaleUsages(db *gorm.DB, now time.Time) error {
 		return err
 	}
 	for i := range usages {
-		u := usages[i]
-		if u.UsedAt == nil {
+		row := usages[i]
+		usedAt, ok := parseSchedulerDBTimeValue(row.UsedAtRaw)
+		if !ok || usedAt == nil {
 			continue
 		}
+		var merchant models.Merchant
+		if err := db.First(&merchant, row.MerchantID).Error; err != nil {
+			continue
+		}
+		u := models.Usage{ID: row.ID, MerchantID: row.MerchantID, Status: row.Status, UsedAt: usedAt, Merchant: merchant}
 		if u.Merchant.SupportCustomerServiceMode {
 			finishedAt := u.UsedAt.Add(12 * time.Hour)
 			if err := db.Transaction(func(tx *gorm.DB) error {
@@ -625,19 +691,20 @@ func finishAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, finishedAt t
 		return err
 	}
 
-	if s.TechnicianID == nil || *s.TechnicianID == 0 {
+	techID := schedulerPrimaryTechnicianID(s)
+	if techID == 0 {
 		return nil
 	}
 	return tx.Model(&models.TechnicianAttendance{}).
-		Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+		Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, techID, "busy").
 		Updates(map[string]interface{}{"status": "idle"}).Error
 }
 
 func cancelAndReleaseSession(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
 	// 释放技师状态
-	if s.TechnicianID != nil && *s.TechnicianID > 0 {
+	if techID := schedulerPrimaryTechnicianID(s); techID > 0 {
 		if err := tx.Model(&models.TechnicianAttendance{}).
-			Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+			Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, techID, "busy").
 			Updates(map[string]interface{}{"status": "idle"}).Error; err != nil {
 			return err
 		}
@@ -675,7 +742,7 @@ func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now t
 		Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
 		Joins("JOIN service_roles sr ON sr.id = t.service_role_id").
 		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", s.MerchantID, start).
-		Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ?)", s.MerchantID, activeSessionStatuses).
+		Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND (JSON_CONTAINS(ss.service_technician_ids, JSON_ARRAY(technician_attendances.technician_id)) OR ss.last_technician_id = technician_attendances.technician_id) AND ss.status IN ?)", s.MerchantID, activeSessionStatuses).
 		Where("t.is_active = ?", true).
 		Where("sr.role_type = ? AND sr.`key` NOT IN ('store_manager','front_desk')", "professional").
 		Order("technician_attendances.updated_at asc").
@@ -706,15 +773,16 @@ func autoAssignTechnicianIfPossible(tx *gorm.DB, s *models.ServiceSession, now t
 	timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSecondsByRole(tx, s.MerchantID, cand.ServiceRoleID, s.ProjectID)
 
 	updates := map[string]interface{}{
-		"technician_id":                 cand.TechnicianID,
 		"last_technician_id":            cand.TechnicianID,
+		"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{cand.TechnicianID},
+		"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 		"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
 		"staff_select_cooldown_until":   nil,
 		"staff_select_entered_at":       nil,
 		"start_pending_timeout_seconds": timeoutSeconds,
 	}
 	if err := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND technician_id IS NULL AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
+		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
 		Updates(updates).Error; err != nil {
 		return false, err
 	}
@@ -753,7 +821,7 @@ func autoCallNextForMultiQueueIfPossible(tx *gorm.DB, merchant *models.Merchant,
 		Joins("JOIN technicians t ON t.id = technician_attendances.technician_id").
 		Joins("LEFT JOIN service_roles sr ON sr.id = t.service_role_id").
 		Where("technician_attendances.merchant_id = ? AND technician_attendances.checked_in_at >= ? AND technician_attendances.checked_out_at IS NULL AND technician_attendances.status IN ('idle')", merchant.ID, start).
-		Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND ss.technician_id = technician_attendances.technician_id AND ss.status IN ? AND ss.updated_at >= ?)", merchant.ID, activeSessionStatuses, start).
+		Where("NOT EXISTS (SELECT 1 FROM service_sessions ss WHERE ss.merchant_id = ? AND (JSON_CONTAINS(ss.service_technician_ids, JSON_ARRAY(technician_attendances.technician_id)) OR ss.last_technician_id = technician_attendances.technician_id) AND ss.status IN ? AND ss.updated_at >= ?)", merchant.ID, activeSessionStatuses, start).
 		Where("t.is_active = ?", true).
 		// 自动多客服叫号：按“可服务且在岗”选人，避免历史岗位 role_type 数据不一致导致空闲技师被误排除。
 		Where("(sr.id IS NULL OR sr.`key` NOT IN ('store_manager','front_desk'))").
@@ -785,7 +853,8 @@ func autoCallNextForMultiQueueIfPossible(tx *gorm.DB, merchant *models.Merchant,
 	}
 
 	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchant.ID, nextUsageID)
+		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL", merchant.ID, nextUsageID)
+	q = q.Where("COALESCE(service_technician_ids, '[]') IN ('[]', '', 'null')")
 	q = q.Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked", "timeout_waiting"}))
 
 	var nextSession models.ServiceSession
@@ -798,14 +867,16 @@ func autoCallNextForMultiQueueIfPossible(tx *gorm.DB, merchant *models.Merchant,
 	}
 
 	updates := map[string]interface{}{
-		"technician_id":                 cand.TechnicianID,
+		"last_technician_id":            cand.TechnicianID,
+		"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{cand.TechnicianID},
+		"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 		"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(merchant),
 	}
 	result := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchant.ID).
+		Where("id = ? AND merchant_id = ? AND start_confirmed_at IS NULL", nextSession.ID, merchant.ID).
 		Updates(updates)
 	if result.Error != nil {
 		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
@@ -922,15 +993,13 @@ func failStartPendingAndAssignNext(tx *gorm.DB, s *models.ServiceSession, mercha
 	if tx == nil || s == nil || merchant == nil {
 		return nil
 	}
-	techID := uint(0)
-	if s.TechnicianID != nil {
-		techID = *s.TechnicianID
-	}
+	techID := schedulerPrimaryTechnicianID(s)
 
 	updates := map[string]interface{}{
 		"status":                        models.ApplyStatusPrefix(s.Status, "canceled"),
 		"finished_at":                   now,
-		"technician_id":                 nil,
+		"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{},
+		"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 		"start_confirmed_at":            nil,
 		"scheduled_start_at":            nil,
 		"staff_select_entered_at":       nil,
@@ -999,7 +1068,7 @@ func advanceOne(db *gorm.DB, session *models.ServiceSession, now time.Time) erro
 		if baseAt == nil {
 			baseAt = s.CreatedAt
 		}
-		if s.TechnicianID == nil && s.StartedAt == nil && baseAt != nil {
+		if len(schedulerAssignedTechnicianIDs(&s)) == 0 && s.StartedAt == nil && baseAt != nil {
 			// timeout_waiting/timeout_failed 需要走专门的过期判断，不应被 60min 兜底取消逻辑抢跑
 			st := models.NormalizeSessionStatus(s.Status)
 			if st != "timeout_waiting" && st != "timeout_failed" {
@@ -1150,7 +1219,7 @@ func restoreProjectScheduledDefaultStaffSession(tx *gorm.DB, s *models.ServiceSe
 	if tx == nil || s == nil || s.ProjectID == nil || *s.ProjectID == 0 || s.StartConfirmedAt != nil {
 		return false, nil
 	}
-	if s.ScheduledStartAt != nil && len(s.ServiceTechnicianIDs) > 0 && s.TechnicianID != nil && *s.TechnicianID > 0 {
+	if s.ScheduledStartAt != nil && len(s.ServiceTechnicianIDs) > 0 {
 		return false, nil
 	}
 	baseStatus := models.NormalizeSessionStatus(s.Status)
@@ -1193,9 +1262,9 @@ func restoreProjectScheduledDefaultStaffSession(tx *gorm.DB, s *models.ServiceSe
 	techID := ids[0]
 	updates := map[string]interface{}{
 		"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
-		"technician_id":                 techID,
 		"last_technician_id":            techID,
 		"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs(ids),
+		"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 		"scheduled_start_at":            startAt,
 		"start_pending_timeout_seconds": 0,
 		"staff_select_entered_at":       nil,
@@ -1208,9 +1277,9 @@ func restoreProjectScheduledDefaultStaffSession(tx *gorm.DB, s *models.ServiceSe
 	}
 
 	s.Status = models.ApplyStatusPrefix(s.Status, "start_pending")
-	s.TechnicianID = &techID
 	s.LastTechnicianID = &techID
 	s.ServiceTechnicianIDs = models.MerchantProjectDefaultServiceTechnicianIDs(ids)
+	s.StartConfirmedTechnicianIDs = models.MerchantProjectDefaultServiceTechnicianIDs{}
 	s.ScheduledStartAt = startAt
 	s.StartPendingTimeoutSeconds = 0
 	s.StaffSelectEnteredAt = nil
@@ -1300,7 +1369,8 @@ func handleRoomLockedOrStaffSelecting(tx *gorm.DB, s *models.ServiceSession, now
 		startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 		updates := map[string]interface{}{
 			"status":                      models.ApplyStatusPrefix(s.Status, "delay_pending"),
-			"technician_id":               nil,
+			"service_technician_ids":      models.MerchantProjectDefaultServiceTechnicianIDs{},
+			"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 			"staff_select_cooldown_until": nil,
 			"staff_select_entered_at":     nil,
 			"start_confirmed_at":          &now,
@@ -1311,7 +1381,7 @@ func handleRoomLockedOrStaffSelecting(tx *gorm.DB, s *models.ServiceSession, now
 			Where("id = ? AND status IN ? AND start_confirmed_at IS NULL", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
 			Updates(updates).Error
 	}
-	if s.RoomID == nil || s.TechnicianID != nil || s.RoomLockedAt == nil {
+	if s.RoomID == nil || len(schedulerAssignedTechnicianIDs(s)) > 0 || s.RoomLockedAt == nil {
 		return nil
 	}
 	if s.StaffSelectCooldownUntil != nil && now.Before(*s.StaffSelectCooldownUntil) {
@@ -1340,7 +1410,7 @@ func handleRoomLockedOrStaffSelecting(tx *gorm.DB, s *models.ServiceSession, now
 		"staff_select_cooldown_until": &dl,
 	}
 	return tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND technician_id IS NULL AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
+		Where("id = ? AND status IN ?", s.ID, models.ExpandStatusesWithKnownPrefixes([]string{"room_locked", "staff_selecting"})).
 		Updates(updates).Error
 }
 
@@ -1350,7 +1420,7 @@ func handleRoomSelecting(tx *gorm.DB, s *models.ServiceSession, now time.Time) e
 		if baseAt == nil {
 			baseAt = s.CreatedAt
 		}
-		if s.TechnicianID == nil && s.StartedAt == nil && baseAt != nil && now.Sub(*baseAt) >= sessionAbandonTimeout {
+		if len(schedulerAssignedTechnicianIDs(s)) == 0 && s.StartedAt == nil && baseAt != nil && now.Sub(*baseAt) >= sessionAbandonTimeout {
 			var merchant models.Merchant
 			if err := tx.First(&merchant, s.MerchantID).Error; err == nil {
 				if merchant.SupportQueue && merchant.QueueMode == "manual" {
@@ -1390,16 +1460,17 @@ func handleStartPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 			startAt := now.Add(time.Duration(delaySeconds) * time.Second)
 			updates := map[string]interface{}{
 				"status":                        models.ApplyStatusPrefix(s.Status, "delay_pending"),
-				"technician_id":                 nil,
+				"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{},
+				"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 				"start_confirmed_at":            &now,
 				"scheduled_start_at":            &startAt,
 				"staff_select_entered_at":       nil,
 				"staff_select_cooldown_until":   nil,
 				"start_pending_timeout_seconds": 0,
 			}
-			if s.TechnicianID != nil && *s.TechnicianID > 0 {
+			if techID := schedulerPrimaryTechnicianID(s); techID > 0 {
 				_ = tx.Model(&models.TechnicianAttendance{}).
-					Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+					Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, techID, "busy").
 					Updates(map[string]interface{}{"status": "idle"}).Error
 			}
 			return tx.Model(&models.ServiceSession{}).
@@ -1456,7 +1527,8 @@ func handleStartPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 	}
 	updates := map[string]interface{}{
 		"status":                        models.ApplyStatusPrefix(s.Status, "staff_selecting"),
-		"technician_id":                 nil,
+		"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{},
+		"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 		"staff_select_entered_at":       nil,
 		"start_pending_timeout_seconds": 0,
 		"start_timeout_count":           gorm.Expr("start_timeout_count + ?", 1),
@@ -1471,9 +1543,9 @@ func handleStartPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 		date := now.Format("2006-01-02")
 		queue.Default.Uncall(s.MerchantID, date, queue.QueueTypeOnsite, s.InitialUsageID)
 	}
-	if s.TechnicianID != nil && *s.TechnicianID > 0 {
+	if techID := schedulerPrimaryTechnicianID(s); techID > 0 {
 		if err := tx.Model(&models.TechnicianAttendance{}).
-			Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+			Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, techID, "busy").
 			Updates(map[string]interface{}{"status": "idle"}).Error; err != nil {
 			return err
 		}
@@ -1487,7 +1559,7 @@ func handleDelayPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 		return err
 	}
 	if merchant.SupportQueue && merchant.QueueMode == "auto" && merchant.SupportMultiCustomerService {
-		if s.TechnicianID == nil || *s.TechnicianID == 0 {
+		if schedulerPrimaryTechnicianID(s) == 0 {
 			if queue.Default != nil && s.InitialUsageID > 0 {
 				date := now.Format("2006-01-02")
 				queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, s.InitialUsageID)
@@ -1496,7 +1568,8 @@ func handleDelayPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 				"status":                      models.ApplyStatusPrefix(s.Status, "staff_selecting"),
 				"start_confirmed_at":          nil,
 				"scheduled_start_at":          nil,
-				"technician_id":               nil,
+				"service_technician_ids":      models.MerchantProjectDefaultServiceTechnicianIDs{},
+				"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 				"staff_select_entered_at":     nil,
 				"staff_select_cooldown_until": nil,
 			}
@@ -1528,7 +1601,7 @@ func handleDelayPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 			}
 		}
 		if merchant.SupportQueue && merchant.QueueMode == "manual" && !merchant.SupportMultiCustomerService {
-			if s.TechnicianID == nil || *s.TechnicianID == 0 {
+			if schedulerPrimaryTechnicianID(s) == 0 {
 				start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 				var att models.TechnicianAttendance
 				attRes := tx.
@@ -1538,17 +1611,18 @@ func handleDelayPending(tx *gorm.DB, s *models.ServiceSession, now time.Time) er
 					Limit(1).
 					Find(&att)
 				if attRes.Error == nil && attRes.RowsAffected > 0 {
-					updates["technician_id"] = att.TechnicianID
 					updates["last_technician_id"] = att.TechnicianID
+					updates["service_technician_ids"] = models.MerchantProjectDefaultServiceTechnicianIDs{att.TechnicianID}
+					updates["start_confirmed_technician_ids"] = models.MerchantProjectDefaultServiceTechnicianIDs{}
 					_ = tx.Model(&models.TechnicianAttendance{}).
 						Where("id = ? AND merchant_id = ? AND technician_id = ? AND status = ?", att.ID, s.MerchantID, att.TechnicianID, "idle").
 						Updates(map[string]interface{}{"status": "busy"}).Error
 				}
 			}
 		}
-		if s.TechnicianID != nil && *s.TechnicianID > 0 {
+		if techID := schedulerPrimaryTechnicianID(s); techID > 0 {
 			_ = tx.Model(&models.TechnicianAttendance{}).
-				Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "idle").
+				Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, techID, "idle").
 				Updates(map[string]interface{}{"status": "busy"}).Error
 		}
 		if err := tx.Model(&models.ServiceSession{}).
@@ -1896,8 +1970,8 @@ func skipCurrentAndCallNext(tx *gorm.DB, s *models.ServiceSession, merchant *mod
 			"start_timeout_count":   gorm.Expr("start_timeout_count + ?", 1),
 			"start_timeout_last_at": now,
 		}
-		if s.TechnicianID != nil && *s.TechnicianID > 0 {
-			updates["last_technician_id"] = *s.TechnicianID
+		if techID := schedulerPrimaryTechnicianID(s); techID > 0 {
+			updates["last_technician_id"] = techID
 		}
 		if err := tx.Model(&models.ServiceSession{}).
 			Where("id = ? AND status IN ?", s.ID, models.ExpandStatusWithKnownPrefixes("delay_pending")).
@@ -1941,7 +2015,8 @@ func skipCurrentAndCallNext(tx *gorm.DB, s *models.ServiceSession, merchant *mod
 }
 
 func releaseTechnicianIfNeeded(tx *gorm.DB, s *models.ServiceSession, now time.Time) error {
-	if s.TechnicianID == nil || *s.TechnicianID == 0 {
+	techID := schedulerPrimaryTechnicianID(s)
+	if techID == 0 {
 		return nil
 	}
 	if s.FinishedAt == nil {
@@ -1955,7 +2030,7 @@ func releaseTechnicianIfNeeded(tx *gorm.DB, s *models.ServiceSession, now time.T
 	res := tx.
 		Select("id", "status", "next_status").
 		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, *s.TechnicianID, "busy").
+		Where("merchant_id = ? AND technician_id = ? AND status = ?", s.MerchantID, techID, "busy").
 		Limit(1).
 		Find(&att)
 	if res.Error != nil {
@@ -1979,8 +2054,8 @@ func releaseTechnicianIfNeeded(tx *gorm.DB, s *models.ServiceSession, now time.T
 		return err
 	}
 	if newAttStatus == "idle" {
-		if err := autoCallNextForTechnician(tx, s.MerchantID, *s.TechnicianID, now); err != nil {
-			log.Printf("auto call next failed: merchant=%d tech=%d err=%v", s.MerchantID, *s.TechnicianID, err)
+		if err := autoCallNextForTechnician(tx, s.MerchantID, techID, now); err != nil {
+			log.Printf("auto call next failed: merchant=%d tech=%d err=%v", s.MerchantID, techID, err)
 		}
 	}
 	return nil
@@ -2053,7 +2128,8 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 
 	var nextSession models.ServiceSession
 	q := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL AND technician_id IS NULL", merchantID, nextUsageID)
+		Where("merchant_id = ? AND initial_usage_id = ? AND start_confirmed_at IS NULL", merchantID, nextUsageID)
+	q = q.Where("COALESCE(service_technician_ids, '[]') IN ('[]', '', 'null')")
 	q = q.Where("status IN ?", models.ExpandStatusesWithKnownPrefixes([]string{"staff_selecting", "room_locked", "timeout_waiting"}))
 	if err := q.Order("id desc").First(&nextSession).Error; err != nil {
 		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)
@@ -2061,14 +2137,16 @@ func autoCallNextForTechnician(tx *gorm.DB, merchantID uint, technicianID uint, 
 	}
 
 	updates := map[string]interface{}{
-		"technician_id":                 technicianID,
+		"last_technician_id":            technicianID,
+		"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{technicianID},
+		"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
 		"status":                        models.ApplyStatusPrefix(nextSession.Status, "start_pending"),
 		"staff_select_entered_at":       nil,
 		"staff_select_cooldown_until":   nil,
 		"start_pending_timeout_seconds": config.MerchantQueueWaitingStartSeconds(&merchant),
 	}
 	result := tx.Model(&models.ServiceSession{}).
-		Where("id = ? AND merchant_id = ? AND technician_id IS NULL AND start_confirmed_at IS NULL", nextSession.ID, merchantID).
+		Where("id = ? AND merchant_id = ? AND start_confirmed_at IS NULL", nextSession.ID, merchantID).
 		Updates(updates)
 	if result.Error != nil {
 		queue.Default.Uncall(merchant.ID, date, queue.QueueTypeOnsite, nextUsageID)

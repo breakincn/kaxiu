@@ -691,38 +691,15 @@ func estimateAppointmentArrivalDelay(tx *gorm.DB, merchant models.Merchant, tech
 	return delayMinutes, &readyAt, nil
 }
 
-func loadEarliestTechnicianConflictSession(tx *gorm.DB, merchantID, technicianID uint, statuses []string) (*models.ServiceSession, error) {
-	if tx == nil || merchantID == 0 || technicianID == 0 || len(statuses) == 0 {
-		return nil, nil
-	}
-	rows, err := tx.Table("service_sessions").
-		Select("id, predicted_ready_at, scheduled_finish_at").
-		Where("merchant_id = ? AND technician_id = ? AND status IN ?", merchantID, technicianID, statuses).
-		Order("COALESCE(predicted_ready_at, scheduled_finish_at, updated_at) asc, id asc").
-		Limit(1).
-		Rows()
+func loadEarliestTechnicianConflictSession(tx *gorm.DB, merchantID uint, technicianID uint, statuses []string) (*models.ServiceSession, error) {
+	sessions, err := loadActiveServiceSessionsForTechnician(tx, merchantID, technicianID, 0, statuses)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	if !rows.Next() {
+	if len(sessions) == 0 {
 		return nil, nil
 	}
-	var (
-		session              models.ServiceSession
-		predictedReadyAtRaw  interface{}
-		scheduledFinishAtRaw interface{}
-	)
-	if err := rows.Scan(&session.ID, &predictedReadyAtRaw, &scheduledFinishAtRaw); err != nil {
-		return nil, err
-	}
-	if v, ok := parseDBTimeValue(predictedReadyAtRaw); ok {
-		session.PredictedReadyAt = &v
-	}
-	if v, ok := parseDBTimeValue(scheduledFinishAtRaw); ok {
-		session.ScheduledFinishAt = &v
-	}
-	return &session, nil
+	return &sessions[0], nil
 }
 
 func hasAppointmentProtectionBlock(tx *gorm.DB, appointmentID uint) (bool, error) {

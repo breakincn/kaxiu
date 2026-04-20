@@ -293,8 +293,8 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 	result.SessionID = session.ID
 	result.NextStep = nextStep
 	result.ShouldEnqueueOnsite = shouldEnqueueOnsite
-	if session.TechnicianID != nil {
-		result.BoundTechnicianID = *session.TechnicianID
+	if boundIDs := serviceSessionAssignedTechnicianIDs(&session); len(boundIDs) > 0 {
+		result.BoundTechnicianID = boundIDs[0]
 	}
 	if session.SourceType == serviceSessionSourceAppointment && session.SourceID != nil {
 		arrivedAt := now
@@ -427,8 +427,8 @@ func performAppointmentCheckInWithVerifyCode(tx *gorm.DB, merchant models.Mercha
 	result.AppointmentStatus = "arrived"
 	result.PredictedWaitMinutes = session.PredictedAppointmentDelayMinutes
 	result.SessionWaitState = models.NormalizeSessionStatus(session.Status)
-	if session.TechnicianID != nil {
-		result.BoundTechnicianID = *session.TechnicianID
+	if boundIDs := serviceSessionAssignedTechnicianIDs(&session); len(boundIDs) > 0 {
+		result.BoundTechnicianID = boundIDs[0]
 	}
 	return result, nil
 }
