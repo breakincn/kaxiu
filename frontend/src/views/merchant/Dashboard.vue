@@ -1026,7 +1026,7 @@
                 预约号：#{{ getUsageAppointmentNumber(usage) }}
               </div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
-              <div class="text-sm mt-1" :class="getUsageServiceStatusClass(usage)">状态：{{ getUsageServiceStatusText(usage) }}</div>
+              <div class="text-gray-500 text-sm mt-1">状态：<span :class="getUsageServiceStatusValueClass(usage)">{{ getUsageServiceStatusText(usage) }}</span></div>
               <div v-if="getUsageServiceTechnicianSegments(usage).length > 0" class="text-gray-500 text-sm mt-1">
                 服务人员：
                 <template v-for="(segment, idx) in getUsageServiceTechnicianSegments(usage)" :key="`${segment.text}-${idx}`">
@@ -1037,7 +1037,7 @@
                 {{ usage.service_technician_unavailable_reason || ('当前' + replaceTerms('客服', merchant) + '不可服务') }}
               </div>
               <div v-if="getUsageServiceRemainingSeconds(usage) !== null" class="text-gray-500 text-sm mt-1">
-                服务剩余：{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}
+                服务剩余：<span :class="getUsageServiceRemainingValueClass(usage)">{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}</span>
               </div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             </div>
@@ -1086,7 +1086,7 @@
               <div class="text-gray-500 text-sm mt-1">单号：{{ getUsageTrackingNumber(usage) }}</div>
               <div class="text-gray-500 text-sm mt-1">卡号：{{ usage.card?.card_no || '-' }}</div>
               <div class="text-gray-500 text-sm mt-1">项目：{{ usage.project?.name || '-' }}</div>
-              <div class="text-sm mt-1" :class="getUsageServiceStatusClass(usage)">状态：{{ getUsageServiceStatusText(usage) }}</div>
+              <div class="text-gray-500 text-sm mt-1">状态：<span :class="getUsageServiceStatusValueClass(usage)">{{ getUsageServiceStatusText(usage) }}</span></div>
               <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.finished_at) }}</div>
             </div>
             <div class="text-right">
@@ -1726,9 +1726,9 @@
             </div>
             <div
               v-if="shouldShowUsageServiceRemainingSeconds(usage)"
-              :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getUsageServiceRemainingSeconds(usage))]"
+              class="text-gray-500 text-sm mt-1"
             >
-              服务剩余：{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}
+              服务剩余：<span :class="['font-medium', getUsageServiceRemainingValueClass(usage)]">{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}</span>
             </div>
             <div
               v-if="getUsageStartPendingCountdownSeconds(usage) !== null"
@@ -1739,7 +1739,7 @@
             <div v-if="getUsageRoomOccupancyDurationText(usage)" class="text-gray-500 text-sm mt-1">
               房间占用时间：{{ getUsageRoomOccupancyDurationText(usage) }}
             </div>
-            <div class="text-sm mt-1" :class="getUsageServiceStatusClass(usage)">状态：{{ getUsageServiceStatusText(usage) }}</div>
+            <div class="text-gray-500 text-sm mt-1">状态：<span :class="getUsageServiceStatusValueClass(usage)">{{ getUsageServiceStatusText(usage) }}</span></div>
             <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             <button
               v-if="hasPendingExtendRequest(usage)"
@@ -4999,8 +4999,13 @@ const getUsageServiceStatusText = (usage) => {
   return '-'
 }
 
-const getUsageServiceStatusClass = (usage) => {
+const getUsageServiceStatusValueClass = (usage) => {
   return isCurrentTechnicianPendingServiceStartSign(usage) ? 'text-red-500' : 'text-gray-500'
+}
+
+const getUsageServiceRemainingValueClass = (usage) => {
+  if (isUsageCurrentServing(usage)) return 'text-green-600'
+  return getRemainingSecondsClass(getUsageServiceRemainingSeconds(usage))
 }
 
 // 获取核销次数显示文本（总次数 / 当前次数）

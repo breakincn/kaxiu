@@ -2829,14 +2829,6 @@ const openUsageQrModal = async (usage) => {
     selectedUsage.value = usage
     showUsageQrModal.value = true
     usageQrDataUrl.value = ''
-    usageQrPollSessionId = String(sessID)
-    usageQrPollTimer = setInterval(() => {
-      if (!showUsageQrModal.value || qrMode.value !== 'start') {
-        stopUsageQrPoll()
-        return
-      }
-      trySwitchUsageQrToFinish()
-    }, FAST_POLL_INTERVAL_MS)
     try {
       usageQrDataUrl.value = await QRCode.toDataURL(precheckCode.value, {
         margin: 1,
