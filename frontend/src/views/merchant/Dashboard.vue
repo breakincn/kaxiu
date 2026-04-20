@@ -1730,16 +1730,16 @@
             >
               服务剩余：<span :class="['font-medium', getUsageServiceRemainingValueClass(usage)]">{{ formatRemainingSeconds(getUsageServiceRemainingSeconds(usage)) }}</span>
             </div>
+            <div v-if="getUsageRoomOccupancyDurationText(usage)" class="text-gray-500 text-sm mt-1">
+              房间占用时间：{{ getUsageRoomOccupancyDurationText(usage) }}
+            </div>
+            <div class="text-gray-500 text-sm mt-1">状态：<span :class="getUsageServiceStatusValueClass(usage)">{{ getUsageServiceStatusText(usage) }}</span></div>
             <div
               v-if="getUsageStartPendingCountdownSeconds(usage) !== null"
               :class="['text-sm mt-1 font-medium', getRemainingSecondsClass(getUsageStartPendingCountdownSeconds(usage))]"
             >
               {{ getStartCountdownLabel(merchant, { queueMode: isQueueModeMerchant(merchant) }) }}：{{ formatStartCountdownSeconds(getUsageStartPendingCountdownSeconds(usage)) }}
             </div>
-            <div v-if="getUsageRoomOccupancyDurationText(usage)" class="text-gray-500 text-sm mt-1">
-              房间占用时间：{{ getUsageRoomOccupancyDurationText(usage) }}
-            </div>
-            <div class="text-gray-500 text-sm mt-1">状态：<span :class="getUsageServiceStatusValueClass(usage)">{{ getUsageServiceStatusText(usage) }}</span></div>
             <div class="text-gray-400 text-sm mt-1">{{ formatDateTime(usage.used_at) }}</div>
             <button
               v-if="hasPendingExtendRequest(usage)"
@@ -2732,8 +2732,7 @@ const getQueueServingItemRemainingClass = (it) => {
 const getStartPendingRemainingSeconds = (sessionLike) => {
   if (!sessionLike) return null
   const status = normalizeSessionStatus(sessionLike.session_status || sessionLike.status)
-  if (status !== 'start_pending') return null
-  if (sessionLike.start_confirmed_at) return null
+  if (status !== 'start_pending' && status !== 'delay_pending') return null
 
   const scheduledStartRaw = sessionLike.scheduled_start_at || sessionLike.service_session_scheduled_start_at
   if (scheduledStartRaw) {
@@ -2743,6 +2742,8 @@ const getStartPendingRemainingSeconds = (sessionLike) => {
       return Math.max(0, remain)
     }
   }
+
+  if (sessionLike.start_confirmed_at || sessionLike.service_session_start_confirmed_at || status === 'delay_pending') return null
 
   const timeoutSeconds = Number(sessionLike.start_pending_timeout_seconds || 0) > 0
     ? Number(sessionLike.start_pending_timeout_seconds)
@@ -4011,7 +4012,6 @@ const pendingStartServiceCount = computed(() => {
   if (!techId) return 0
   return (serviceSessions.value || []).filter((session) => {
     if (!isSessionAssignedToTechnician(session, techId)) return false
-    if (session?.start_confirmed_at) return false
     const status = normalizeSessionStatus(session?.status)
     return status === 'start_pending' || status === 'delay_pending'
   }).length
