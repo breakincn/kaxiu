@@ -28,11 +28,34 @@
             <span class="text-gray-500">卡类型</span>
             <span class="text-gray-800">{{ card.card_type }}</span>
           </div>
-          <div v-if="card.projects && card.projects.length > 0" class="flex justify-between">
-            <span class="text-gray-500">包含项目</span>
-            <span class="text-gray-800 text-right max-w-[70%]">
-              {{ card.projects.map(p => p.name).join('、') }}
-            </span>
+          <div v-if="card.projects && card.projects.length > 0" class="flex justify-between items-start gap-4">
+            <span class="text-gray-500 flex-shrink-0">包含项目</span>
+            <div class="text-gray-800 text-right max-w-[70%] space-y-2">
+              <div v-for="project in card.projects" :key="project.id || project.name" class="project-detail-item">
+                <button
+                  type="button"
+                  class="inline-flex items-center justify-end gap-1 text-right"
+                  @click="toggleCardProjectDetail(project)"
+                >
+                  <span>{{ project.name }}</span>
+                  <svg
+                    class="w-4 h-4 text-gray-400 transition-transform"
+                    :class="isCardProjectDetailExpanded(project) ? 'rotate-180' : ''"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                  </svg>
+                </button>
+                <div v-if="isCardProjectDetailExpanded(project)" class="mt-1 text-xs text-gray-500 leading-5">
+                  <div v-if="getProjectDurationText(project)">{{ getProjectDurationText(project) }}</div>
+                  <div v-if="getProjectServiceTimeLines(project).length > 0" class="grid grid-cols-2 gap-x-3 gap-y-0.5 justify-items-end">
+                    <span v-for="line in getProjectServiceTimeLines(project)" :key="line" class="whitespace-nowrap">{{ line }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="flex justify-between">
             <span class="text-gray-500">开卡/充值</span>
@@ -910,6 +933,7 @@ const canArriveNow = ref(false)
 const countdown = ref(0)
 const usageRecordsCollapsed = ref(false)
 const visibleUsageCount = ref(10)
+const expandedCardProjectKeys = ref([])
 const showAppointmentSettlementModal = ref(false)
 let countdownTimer = null
 const liveServiceStatus = ref(null)
@@ -1632,6 +1656,52 @@ const serviceTimeSlotMatchesDate = (slot, date) => {
   const jsDay = date.getDay()
   const weekday = jsDay === 0 ? 7 : jsDay
   return Number(slot?.weekday || 0) === weekday
+}
+
+const getCardProjectKey = (project) => {
+  const id = Number(project?.id || 0)
+  if (id > 0) return `id:${id}`
+  return `name:${String(project?.name || '').trim()}`
+}
+
+const isCardProjectDetailExpanded = (project) => {
+  const key = getCardProjectKey(project)
+  return expandedCardProjectKeys.value.includes(key)
+}
+
+const toggleCardProjectDetail = (project) => {
+  const key = getCardProjectKey(project)
+  if (!key) return
+  if (expandedCardProjectKeys.value.includes(key)) {
+    expandedCardProjectKeys.value = expandedCardProjectKeys.value.filter(item => item !== key)
+    return
+  }
+  expandedCardProjectKeys.value = [...expandedCardProjectKeys.value, key]
+}
+
+const getProjectDurationText = (project) => {
+  const duration = Number(project?.duration || 0)
+  if (!Number.isFinite(duration) || duration <= 0) return ''
+  return `时长 ${duration} 分钟`
+}
+
+const formatProjectServiceTimeSlot = (slot) => {
+  const startTime = String(slot?.start_time || '').trim()
+  if (!startTime) return ''
+  if (String(slot?.recurrence_type || 'weekly') === 'monthly') {
+    const monthDay = Number(slot?.month_day || 0)
+    if (!Number.isFinite(monthDay) || monthDay <= 0) return ''
+    return `${monthDay}号 ${startTime}`
+  }
+  const weekdays = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
+  const weekday = Number(slot?.weekday || 0)
+  const weekdayText = weekdays[weekday] || ''
+  return weekdayText ? `${weekdayText} ${startTime}` : startTime
+}
+
+const getProjectServiceTimeLines = (project) => {
+  const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
+  return slots.map(formatProjectServiceTimeSlot).filter(Boolean)
 }
 
 const isUsageProjectServiceTimeAllowed = (usage, now = new Date()) => {
