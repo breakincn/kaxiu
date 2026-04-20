@@ -44,20 +44,21 @@ func TestFinishServiceSessionUpdatesUsageAndMarksQueueDone(t *testing.T) {
 		t.Fatalf("create merchant failed: %v", err)
 	}
 	techID := uint(11)
+	verifierID := uint(12)
 	roomID := uint(22)
-	usage := models.Usage{MerchantID: merchant.ID, Status: "in_progress"}
+	usage := models.Usage{MerchantID: merchant.ID, Status: "in_progress", TechnicianID: &verifierID}
 	if err := db.Create(&usage).Error; err != nil {
 		t.Fatalf("create usage failed: %v", err)
 	}
 	session := models.ServiceSession{
-		MerchantID:                 merchant.ID,
-		InitialUsageID:             usage.ID,
-		Status:                     "serving",
-		LastTechnicianID:           &techID,
-		ServiceTechnicianIDs:       models.MerchantProjectDefaultServiceTechnicianIDs{techID},
+		MerchantID:                  merchant.ID,
+		InitialUsageID:              usage.ID,
+		Status:                      "serving",
+		LastTechnicianID:            &techID,
+		ServiceTechnicianIDs:        models.MerchantProjectDefaultServiceTechnicianIDs{techID},
 		StartConfirmedTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{techID},
-		RoomID:                     &roomID,
-		StartConfirmedAt:           &now,
+		RoomID:                      &roomID,
+		StartConfirmedAt:            &now,
 	}
 	if err := db.Create(&session).Error; err != nil {
 		t.Fatalf("create session failed: %v", err)
@@ -92,8 +93,8 @@ func TestFinishServiceSessionUpdatesUsageAndMarksQueueDone(t *testing.T) {
 	if gotUsage.Status != "success" {
 		t.Fatalf("want success usage, got %s", gotUsage.Status)
 	}
-	if gotUsage.TechnicianID == nil || *gotUsage.TechnicianID != techID {
-		t.Fatalf("want technician_id=%d, got %+v", techID, gotUsage.TechnicianID)
+	if gotUsage.TechnicianID == nil || *gotUsage.TechnicianID != verifierID {
+		t.Fatalf("finish must preserve usage verifier technician_id=%d, got %+v", verifierID, gotUsage.TechnicianID)
 	}
 	if len(stub.doneIDs) != 1 || stub.doneIDs[0] != usage.ID {
 		t.Fatalf("want queue MarkDone on usage %d, got %+v", usage.ID, stub.doneIDs)

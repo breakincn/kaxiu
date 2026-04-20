@@ -93,9 +93,6 @@ func FinishServiceSession(tx *gorm.DB, s *models.ServiceSession, merchant *model
 		"status":      "success",
 		"finished_at": finishedAt,
 	}
-	if ids := sessionflowServiceSessionPrimaryTechnicianIDs(s); len(ids) > 0 {
-		uUpdates["technician_id"] = ids[0]
-	}
 	if err := tx.Model(&models.Usage{}).
 		Where("id = ? AND status = ?", s.InitialUsageID, "in_progress").
 		Updates(uUpdates).Error; err != nil {
@@ -144,17 +141,17 @@ func FinalizeUsageAndSession(tx *gorm.DB, usageID uint, merchant *models.Merchan
 	}
 
 	var row struct {
-		ID                  uint   `gorm:"column:id"`
-		MerchantID          uint   `gorm:"column:merchant_id"`
-		InitialUsageID      uint   `gorm:"column:initial_usage_id"`
-		Status              string `gorm:"column:status"`
-		LastTechnicianID    *uint  `gorm:"column:last_technician_id"`
-		ServiceTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:service_technician_ids"`
+		ID                          uint                                              `gorm:"column:id"`
+		MerchantID                  uint                                              `gorm:"column:merchant_id"`
+		InitialUsageID              uint                                              `gorm:"column:initial_usage_id"`
+		Status                      string                                            `gorm:"column:status"`
+		LastTechnicianID            *uint                                             `gorm:"column:last_technician_id"`
+		ServiceTechnicianIDs        models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:service_technician_ids"`
 		StartConfirmedTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs `gorm:"column:start_confirmed_technician_ids"`
-		SourceType          string `gorm:"column:source_type"`
-		SourceID            *uint  `gorm:"column:source_id"`
-		StartConfirmedAtRaw string `gorm:"column:start_confirmed_at"`
-		FinishedAtRaw       string `gorm:"column:finished_at"`
+		SourceType                  string                                            `gorm:"column:source_type"`
+		SourceID                    *uint                                             `gorm:"column:source_id"`
+		StartConfirmedAtRaw         string                                            `gorm:"column:start_confirmed_at"`
+		FinishedAtRaw               string                                            `gorm:"column:finished_at"`
 	}
 	query := tx.
 		Table("service_sessions").
@@ -186,15 +183,15 @@ func FinalizeUsageAndSession(tx *gorm.DB, usageID uint, merchant *models.Merchan
 	}
 
 	s := models.ServiceSession{
-		ID:                         row.ID,
-		MerchantID:                 row.MerchantID,
-		InitialUsageID:             row.InitialUsageID,
-		Status:                     row.Status,
-		LastTechnicianID:           row.LastTechnicianID,
-		ServiceTechnicianIDs:       row.ServiceTechnicianIDs,
+		ID:                          row.ID,
+		MerchantID:                  row.MerchantID,
+		InitialUsageID:              row.InitialUsageID,
+		Status:                      row.Status,
+		LastTechnicianID:            row.LastTechnicianID,
+		ServiceTechnicianIDs:        row.ServiceTechnicianIDs,
 		StartConfirmedTechnicianIDs: row.StartConfirmedTechnicianIDs,
-		SourceType:                 row.SourceType,
-		SourceID:                   row.SourceID,
+		SourceType:                  row.SourceType,
+		SourceID:                    row.SourceID,
 	}
 	s.StartConfirmedAt = &finishedAt
 

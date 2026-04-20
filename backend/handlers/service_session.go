@@ -529,13 +529,6 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 				}
 			}
 
-			// 记录本次上号/服务人员（用于“今日上钟/服务记录”展示）
-			if s.InitialUsageID > 0 {
-				_ = tx.Model(&models.Usage{}).
-					Where("id = ? AND merchant_id = ?", s.InitialUsageID, merchantID).
-					Update("technician_id", scannerTechID).Error
-			}
-
 			if err := tx.First(&out, s.ID).Error; err != nil {
 				return err
 			}
@@ -692,13 +685,6 @@ func handleQueueModeStartScan(c *gin.Context, sessionID uint, merchantID uint, m
 		if err := promoteQueueSessionToServing(tx, &s, now, []string{"delay_pending", "timeout_waiting"}, false); err != nil {
 			return err
 		}
-		// 记录本次上号/服务人员（用于“今日上钟/服务记录”展示）
-		if s.InitialUsageID > 0 {
-			_ = tx.Model(&models.Usage{}).
-				Where("id = ? AND merchant_id = ?", s.InitialUsageID, merchantID).
-				Update("technician_id", scannerTechID).Error
-		}
-
 		if err := tx.First(&out, s.ID).Error; err != nil {
 			return err
 		}
@@ -1065,14 +1051,14 @@ func ChooseServiceSessionTechnician(c *gin.Context) {
 		}
 		timeoutSeconds := config.ResolveServiceSessionStartPendingTimeoutSeconds(tx, merchantID, input.TechnicianID, s.ProjectID)
 		updates := map[string]interface{}{
-			"last_technician_id":            input.TechnicianID,
-			"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{input.TechnicianID},
+			"last_technician_id":             input.TechnicianID,
+			"service_technician_ids":         models.MerchantProjectDefaultServiceTechnicianIDs{input.TechnicianID},
 			"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
-			"status":                        models.ApplyStatusPrefix(s.Status, "start_pending"),
-			"staff_select_entered_at":       nil,
-			"staff_select_cooldown_until":   nil,
-			"predicted_ready_at":            nil,
-			"start_pending_timeout_seconds": timeoutSeconds,
+			"status":                         models.ApplyStatusPrefix(s.Status, "start_pending"),
+			"staff_select_entered_at":        nil,
+			"staff_select_cooldown_until":    nil,
+			"predicted_ready_at":             nil,
+			"start_pending_timeout_seconds":  timeoutSeconds,
 		}
 		if err := tx.Model(&models.ServiceSession{}).Where("id = ?", s.ID).Updates(updates).Error; err != nil {
 			return err
