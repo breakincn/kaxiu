@@ -2768,7 +2768,7 @@ func CheckInAppointment(c *gin.Context) {
 		if err := tx.Create(&usage).Error; err != nil {
 			return err
 		}
-		session, nextStep, shouldEnqueueOnsite, err := createServiceSessionForUsage(tx, merchant, card, verifyCode, usage, now)
+		session, nextStep, shouldEnqueueOnsite, err := createServiceSessionForUsage(tx, merchant, card, verifyCode, usage, now, 0)
 		if err != nil {
 			return err
 		}

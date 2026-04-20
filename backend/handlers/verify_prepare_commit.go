@@ -188,7 +188,7 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 		Action:   "verify",
 	}
 	now := time.Now()
-	authType, _ := currentVerifyActor(c)
+	authType, verifierTechnicianID := currentVerifyActor(c)
 	effectiveSupportOrderComplete := merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete
 	isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
 	usageStatus := "success"
@@ -251,6 +251,9 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 		VerifyCodeExpireAt: verifyCode.ExpireAt,
 		Status:             usageStatus,
 	}
+	if authType == "staff" && verifierTechnicianID > 0 {
+		usage.TechnicianID = &verifierTechnicianID
+	}
 	applyUsageCardSnapshotFromCard(&usage, card)
 	if handCardNo != "" {
 		usage.HandCardNo = &handCardNo
@@ -283,7 +286,7 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 		return result, nil
 	}
 
-	session, nextStep, shouldEnqueueOnsite, err := createServiceSessionForUsage(tx, merchant, card, verifyCode, usage, now)
+	session, nextStep, shouldEnqueueOnsite, err := createServiceSessionForUsage(tx, merchant, card, verifyCode, usage, now, verifierTechnicianID)
 	if err != nil {
 		return result, err
 	}
@@ -385,7 +388,7 @@ func performAppointmentCheckInWithVerifyCode(tx *gorm.DB, merchant models.Mercha
 		return result, err
 	}
 
-	session, nextStep, shouldEnqueueOnsite, err := createServiceSessionForUsage(tx, merchant, card, verifyCode, usage, now)
+	session, nextStep, shouldEnqueueOnsite, err := createServiceSessionForUsage(tx, merchant, card, verifyCode, usage, now, 0)
 	if err != nil {
 		return result, err
 	}

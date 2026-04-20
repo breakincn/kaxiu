@@ -22,7 +22,7 @@ type serviceSessionSource struct {
 	Appointment *models.Appointment
 }
 
-func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card models.Card, verifyCode models.VerifyCode, usage models.Usage, now time.Time) (models.ServiceSession, string, bool, error) {
+func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card models.Card, verifyCode models.VerifyCode, usage models.Usage, now time.Time, verifierTechnicianID uint) (models.ServiceSession, string, bool, error) {
 	session := models.ServiceSession{}
 	if tx == nil {
 		return session, "", false, nil
@@ -48,6 +48,7 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 	durationMinutes, delaySeconds := resolveProjectServiceConfig(tx, merchant.ID, verifyCode.ProjectID, 50, 60)
 	var defaultServiceTechnicianID uint
 	var defaultServiceTechnicianIDs []uint
+	var startConfirmedTechnicianIDs models.MerchantProjectDefaultServiceTechnicianIDs
 	if merchant.SupportCustomerServiceMode && source.Appointment == nil {
 		var err error
 		defaultServiceTechnicianIDs, err = resolveProjectDefaultServiceTechnicianIDs(tx, merchant.ID, verifyCode.ProjectID)
@@ -116,6 +117,17 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		}
 		session.TechnicianID = &techID
 		session.LastTechnicianID = &techID
+		if !merchant.SupportRoom && verifierTechnicianID > 0 && uintIDInSlice(defaultServiceTechnicianIDs, verifierTechnicianID) {
+			status = models.WithCSPrefix("delay_pending")
+			startConfirmedAt = &now
+			startConfirmedTechnicianIDs = models.MerchantProjectDefaultServiceTechnicianIDs{verifierTechnicianID}
+			session.LastTechnicianID = &verifierTechnicianID
+			startPendingTimeoutSeconds = 0
+			if scheduledStartAt == nil {
+				startAt := now.Add(time.Duration(delaySeconds) * time.Second)
+				scheduledStartAt = &startAt
+			}
+		}
 	}
 
 	session = models.ServiceSession{
@@ -131,6 +143,7 @@ func createServiceSessionForUsage(tx *gorm.DB, merchant models.Merchant, card mo
 		TechnicianID:                     session.TechnicianID,
 		LastTechnicianID:                 session.LastTechnicianID,
 		ServiceTechnicianIDs:             models.MerchantProjectDefaultServiceTechnicianIDs(defaultServiceTechnicianIDs),
+		StartConfirmedTechnicianIDs:      startConfirmedTechnicianIDs,
 		Status:                           status,
 		RoomSelectDeadlineAt:             roomSelectDeadlineAt,
 		StartConfirmedAt:                 startConfirmedAt,

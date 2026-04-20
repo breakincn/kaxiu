@@ -110,6 +110,81 @@ func TestChooseServiceSessionRoomSkipsStaffSelectWithProjectDefaultTechnicians(t
 	}
 }
 
+func TestCreateServiceSessionAutoConfirmsVerifierWhenProjectDefaultTechnician(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupServiceSessionFactoryTestDB(t)
+
+	now := time.Now().Truncate(time.Second)
+	merchant := models.Merchant{
+		Name:                       "m",
+		Phone:                      "18800000005",
+		Password:                   "pwd",
+		SupportCustomerServiceMode: true,
+	}
+	if err := config.DB.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	role := models.ServiceRole{RoleType: "professional", Key: "teacher", Name: "专业客服", IsActive: true}
+	if err := config.DB.Create(&role).Error; err != nil {
+		t.Fatalf("create role failed: %v", err)
+	}
+	firstTech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "朱古丽", Code: "0001", Account: "jsls0001", IsActive: true}
+	secondTech := models.Technician{MerchantID: merchant.ID, ServiceRoleID: role.ID, Name: "671", Code: "0002", Account: "bls0001", IsActive: true}
+	if err := config.DB.Create(&firstTech).Error; err != nil {
+		t.Fatalf("create first technician failed: %v", err)
+	}
+	if err := config.DB.Create(&secondTech).Error; err != nil {
+		t.Fatalf("create second technician failed: %v", err)
+	}
+	project := models.MerchantProject{
+		MerchantID:                  merchant.ID,
+		Name:                        "爵士舞课",
+		Duration:                    15,
+		ServiceCapacity:             15,
+		DefaultServiceTechnicianIDs: models.MerchantProjectDefaultServiceTechnicianIDs{firstTech.ID, secondTech.ID},
+	}
+	if err := config.DB.Create(&project).Error; err != nil {
+		t.Fatalf("create project failed: %v", err)
+	}
+	card := models.Card{MerchantID: merchant.ID, UserID: 1001, RemainTimes: 10}
+	if err := config.DB.Create(&card).Error; err != nil {
+		t.Fatalf("create card failed: %v", err)
+	}
+	verifyCode := models.VerifyCode{CardID: card.ID, ProjectID: &project.ID, Code: "VC-1"}
+	usage := models.Usage{MerchantID: merchant.ID, CardID: card.ID, ProjectID: &project.ID, TechnicianID: &secondTech.ID, Status: "in_progress"}
+	if err := config.DB.Create(&usage).Error; err != nil {
+		t.Fatalf("create usage failed: %v", err)
+	}
+
+	session, nextStep, _, err := createServiceSessionForUsage(config.DB, merchant, card, verifyCode, usage, now, secondTech.ID)
+	if err != nil {
+		t.Fatalf("create session failed: %v", err)
+	}
+	if nextStep != "" {
+		t.Fatalf("want no manual next step, got %q", nextStep)
+	}
+	if session.Status != "cs_delay_pending" {
+		t.Fatalf("want cs_delay_pending, got %s", session.Status)
+	}
+	if session.StartConfirmedAt == nil || !session.StartConfirmedAt.Equal(now) {
+		t.Fatalf("want start_confirmed_at %v, got %+v", now, session.StartConfirmedAt)
+	}
+	if !reflect.DeepEqual([]uint(session.StartConfirmedTechnicianIDs), []uint{secondTech.ID}) {
+		t.Fatalf("want start-confirmed technicians [%d], got %+v", secondTech.ID, session.StartConfirmedTechnicianIDs)
+	}
+	if session.TechnicianID == nil || *session.TechnicianID != firstTech.ID {
+		t.Fatalf("want primary technician %d, got %+v", firstTech.ID, session.TechnicianID)
+	}
+	if session.LastTechnicianID == nil || *session.LastTechnicianID != secondTech.ID {
+		t.Fatalf("want last technician %d, got %+v", secondTech.ID, session.LastTechnicianID)
+	}
+	if session.ScheduledStartAt == nil || !session.ScheduledStartAt.Equal(now.Add(time.Duration(session.StartDelaySeconds)*time.Second)) {
+		t.Fatalf("want scheduled start based on delay seconds, got %+v", session.ScheduledStartAt)
+	}
+}
+
 func TestServiceSessionStartScanAllowsAnyProjectDefaultProfessionalTechnician(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB
