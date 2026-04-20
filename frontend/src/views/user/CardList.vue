@@ -222,14 +222,14 @@
             {{ selectedCardCanArriveNow ? '出示预约签到码' : '查看预约' }}
           </button>
           <button
-            v-if="!selectedCardCanArriveNow"
+            v-if="shouldShowSelectedCardVerifyButton"
             @click="openVerifyCodeFlowFromAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
           >
             {{ selectedCardMerchantClosed ? '暂停营业' : '生成核销码' }}
           </button>
           <button
-            v-if="!hasActiveAppointment"
+            v-if="!hasActiveAppointment && !selectedCardHasServiceTimeProject"
             @click="handleAppointmentAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
           >
@@ -689,6 +689,13 @@ const displayedTechnicians = computed(() => {
 const selectedCardMerchantClosed = computed(() => selectedCard.value?.merchant?.is_open === false)
 const selectedCardHasStartPendingUsage = computed(() => Boolean(selectedCard.value?.hasStartPendingUsage && selectedCard.value?.startPendingUsageSessionId))
 const selectedCardScanStartLabel = computed(() => getScanStartLabel(selectedCard.value?.merchant))
+const selectedCardHasServiceTimeProject = computed(() => getCardServiceTimeProjects(selectedCard.value).length > 0)
+const shouldShowSelectedCardVerifyButton = computed(() => {
+  if (selectedCardCanArriveNow.value) return false
+  if (!selectedCard.value) return false
+  if (!selectedCardHasServiceTimeProject.value) return true
+  return isCardOnServiceDay(selectedCard.value, new Date(nowTick.value))
+})
 
 const getSelectedCardMerchantClosedMessage = () => {
   const merchantName = selectedCard.value?.merchant?.name || '商户'
@@ -1097,6 +1104,14 @@ const verifyCodeModalHint = computed(() => {
   return '请向工作人员出示此码，由工作人员扫码完成到店核销'
 })
 
+const getCardServiceTimeProjects = (card) => {
+  const projects = Array.isArray(card?.projects) ? card.projects : []
+  return projects.filter((project) => {
+    const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
+    return slots.length > 0
+  })
+}
+
 const projectServiceTimeAllowed = (project, now = new Date()) => {
   const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
   if (slots.length === 0) return true
@@ -1127,6 +1142,15 @@ const projectServiceTimeAllowed = (project, now = new Date()) => {
   }
 
   return false
+}
+
+const isCardOnServiceDay = (card, now = new Date()) => {
+  const serviceTimeProjects = getCardServiceTimeProjects(card)
+  if (serviceTimeProjects.length === 0) return true
+  return serviceTimeProjects.some(project => {
+    const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
+    return slots.some(slot => serviceTimeSlotMatchesDate(slot, now))
+  })
 }
 
 const getProjectServiceSlotsByUpcomingTime = (project, limit = 1, now = new Date(nowTick.value)) => {
@@ -1183,11 +1207,7 @@ const formatServiceTimeSlotForCard = (slot) => {
 }
 
 const getCardServiceTimeLines = (card) => {
-  const projects = Array.isArray(card?.projects) ? card.projects : []
-  const serviceTimeProjects = projects.filter((project) => {
-    const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
-    return slots.length > 0
-  })
+  const serviceTimeProjects = getCardServiceTimeProjects(card)
 
   if (serviceTimeProjects.length === 0) return []
   if (serviceTimeProjects.length === 1) {
