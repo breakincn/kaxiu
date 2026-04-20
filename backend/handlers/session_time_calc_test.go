@@ -53,6 +53,31 @@ func TestComputeStartPendingRemainingSecondsForSession(t *testing.T) {
 		}
 	})
 
+	t.Run("scheduled_start_at_takes_priority", func(t *testing.T) {
+		updated := now.Add(-30 * time.Second)
+		scheduled := now.Add(37*time.Minute + 15*time.Second)
+		s := &models.ServiceSession{
+			Status:                     "start_pending",
+			UpdatedAt:                  &updated,
+			ScheduledStartAt:           &scheduled,
+			StartPendingTimeoutSeconds: 120,
+		}
+		if got := computeStartPendingRemainingSecondsForSession(s, now); got != 2235 {
+			t.Fatalf("expected 2235, got %d", got)
+		}
+	})
+
+	t.Run("elapsed_scheduled_start_at_returns_zero", func(t *testing.T) {
+		scheduled := now.Add(-time.Second)
+		s := &models.ServiceSession{
+			Status:           "start_pending",
+			ScheduledStartAt: &scheduled,
+		}
+		if got := computeStartPendingRemainingSecondsForSession(s, now); got != 0 {
+			t.Fatalf("expected 0, got %d", got)
+		}
+	})
+
 	t.Run("timeout_elapsed_returns_zero", func(t *testing.T) {
 		updated := now.Add(-121 * time.Second)
 		s := &models.ServiceSession{

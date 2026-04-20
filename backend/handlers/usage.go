@@ -505,6 +505,7 @@ func enrichUsagesWithServiceSession(usages *[]models.Usage) {
 				StartPendingTimeoutSeconds: s.StartPendingTimeoutSeconds,
 				CreatedAt:                  s.CreatedAt,
 				UpdatedAt:                  s.UpdatedAt,
+				ScheduledStartAt:           s.ScheduledStartAt,
 			}
 			u.ServiceSessionStartPendingRemainingSeconds = computeStartPendingRemainingSecondsForSession(&sessForRemain, remainNow)
 			u.StartTimeoutCount = s.StartTimeoutCount

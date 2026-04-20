@@ -2732,6 +2732,15 @@ const getStartPendingRemainingSeconds = (sessionLike) => {
   if (status !== 'start_pending') return null
   if (sessionLike.start_confirmed_at) return null
 
+  const scheduledStartRaw = sessionLike.scheduled_start_at || sessionLike.service_session_scheduled_start_at
+  if (scheduledStartRaw) {
+    const scheduledStartAt = new Date(scheduledStartRaw).getTime()
+    if (Number.isFinite(scheduledStartAt) && scheduledStartAt > 0) {
+      const remain = Math.floor((scheduledStartAt - currentTime.value) / 1000)
+      return Math.max(0, remain)
+    }
+  }
+
   const timeoutSeconds = Number(sessionLike.start_pending_timeout_seconds || 0) > 0
     ? Number(sessionLike.start_pending_timeout_seconds)
     : 180
@@ -4829,6 +4838,7 @@ const getUsageStartPendingCountdownSeconds = (usage) => {
     start_confirmed_at: usage.service_session_start_confirmed_at,
     start_pending_timeout_seconds: usage.service_session_start_pending_timeout_seconds,
     start_pending_remaining_seconds: usage.service_session_start_pending_remaining_seconds,
+    scheduled_start_at: usage.service_session_scheduled_start_at,
     updated_at: usage.service_session_updated_at,
     created_at: usage.service_session_created_at,
     _countdown_fetched_at: usage._countdown_fetched_at

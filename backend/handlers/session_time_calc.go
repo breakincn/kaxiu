@@ -17,7 +17,11 @@ func computeStartPendingRemainingSecondsForSession(s *models.ServiceSession, now
 		return 0
 	}
 	if s.ScheduledStartAt != nil {
-		return 0
+		remain := int(s.ScheduledStartAt.Sub(now).Seconds())
+		if remain <= 0 {
+			return 0
+		}
+		return remain
 	}
 	baseAt := s.UpdatedAt
 	if baseAt == nil {
