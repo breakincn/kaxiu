@@ -50,7 +50,7 @@
                 </button>
                 <div v-if="isCardProjectDetailExpanded(project)" class="mt-1 text-xs text-gray-500 leading-5">
                   <div v-if="getProjectDurationText(project)">{{ getProjectDurationText(project) }}</div>
-                  <div v-if="getProjectServiceTimeLines(project).length > 0" class="grid grid-cols-2 gap-x-3 gap-y-0.5 justify-items-end">
+                  <div v-if="getProjectServiceTimeLines(project).length > 0" class="grid grid-cols-3 gap-x-3 gap-y-0.5 justify-items-end">
                     <span v-for="line in getProjectServiceTimeLines(project)" :key="line" class="whitespace-nowrap">{{ line }}</span>
                   </div>
                 </div>
