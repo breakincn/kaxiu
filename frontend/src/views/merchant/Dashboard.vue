@@ -3933,12 +3933,48 @@ const serviceSessions = ref([])
 const sessionLoading = ref(false)
 const sessionStatusFilter = ref('')
 
+const getSessionServiceTechnicianIDs = (session) => {
+  const ids = []
+  if (Array.isArray(session?.service_technicians)) {
+    ids.push(...session.service_technicians.map(technician => Number(technician?.id || 0)))
+  }
+  if (Array.isArray(session?.service_technician_ids)) {
+    ids.push(...session.service_technician_ids.map(id => Number(id || 0)))
+  }
+  if (Array.isArray(session?.start_confirmed_technician_ids)) {
+    ids.push(...session.start_confirmed_technician_ids.map(id => Number(id || 0)))
+  }
+  if (session?.technician_id) {
+    ids.push(Number(session.technician_id || 0))
+  }
+  return Array.from(new Set(ids.filter(id => Number.isFinite(id) && id > 0)))
+}
+
+const isSessionAssignedToTechnician = (session, techId) => {
+  const id = Number(techId || 0)
+  if (!id) return false
+  return getSessionServiceTechnicianIDs(session).includes(id)
+}
+
+const isSessionConfirmedForTechnician = (session, techId) => {
+  const id = Number(techId || 0)
+  if (!id) return false
+  if (Number(session?.technician_id || 0) === id) return true
+  if (Array.isArray(session?.start_confirmed_technician_ids) && session.start_confirmed_technician_ids.some(item => Number(item || 0) === id)) {
+    return true
+  }
+  if (Array.isArray(session?.service_technicians)) {
+    return session.service_technicians.some(technician => Number(technician?.id || 0) === id && technician?.service_start_confirmed === true)
+  }
+  return false
+}
+
 const pendingStartSession = computed(() => {
   if (!isTechnicianAuth()) return null
   const techId = getTechnicianId()
   if (!techId) return null
   const sess = serviceSessions.value
-    .filter(s => s.technician_id === techId && normalizeSessionStatus(s.status) === 'start_pending' && !s.start_confirmed_at)
+    .filter(s => isSessionAssignedToTechnician(s, techId) && normalizeSessionStatus(s.status) === 'start_pending' && !s.start_confirmed_at)
     .sort((a, b) => b.id - a.id)[0]
   return sess || null
 })
@@ -3949,7 +3985,7 @@ const roomManageSession = computed(() => {
   if (!techId) return null
   const activeStatuses = ['start_pending', 'delay_pending', 'serving', 'auto_finishing']
   const sess = serviceSessions.value
-    .filter(s => s.technician_id === techId && activeStatuses.includes(normalizeSessionStatus(s.status)))
+    .filter(s => isSessionAssignedToTechnician(s, techId) && activeStatuses.includes(normalizeSessionStatus(s.status)))
     .sort((a, b) => b.id - a.id)[0]
   return sess || null
 })
@@ -3974,7 +4010,7 @@ const pendingStartServiceCount = computed(() => {
   const techId = getTechnicianId()
   if (!techId) return 0
   return (serviceSessions.value || []).filter((session) => {
-    if (Number(session?.technician_id || 0) !== Number(techId)) return false
+    if (!isSessionAssignedToTechnician(session, techId)) return false
     if (session?.start_confirmed_at) return false
     const status = normalizeSessionStatus(session?.status)
     return status === 'start_pending' || status === 'delay_pending'
@@ -4126,7 +4162,14 @@ const technicianCurrentStatus = computed(() => {
   if (!isTechnicianAuth()) return null
   const techId = getTechnicianId()
   if (!techId) return null
-  const sess = serviceSessions.value.find(s => s.technician_id === techId && ['room_selecting', 'room_locked', 'staff_selecting', 'start_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(normalizeSessionStatus(s.status)))
+  const sess = serviceSessions.value.find(s => {
+    const status = normalizeSessionStatus(s.status)
+    if (!['room_selecting', 'room_locked', 'staff_selecting', 'start_pending', 'delay_pending', 'serving', 'auto_finishing'].includes(status)) return false
+    if (status === 'serving' || status === 'auto_finishing') {
+      return isSessionConfirmedForTechnician(s, techId)
+    }
+    return isSessionAssignedToTechnician(s, techId)
+  })
   if (!sess) {
     // 没有活跃会话，返回服务器中的签到状态 idle/paused
     return serverAttendanceStatus.value
@@ -4171,9 +4214,9 @@ const hasActiveServingSession = computed(() => {
   const techId = Number(getTechnicianId() || 0)
   if (!techId) return false
   return (serviceSessions.value || []).some((session) => {
-    if (Number(session?.technician_id || 0) !== techId) return false
     const status = normalizeSessionStatus(session?.status)
-    return status === 'serving' || status === 'auto_finishing'
+    if (status !== 'serving' && status !== 'auto_finishing') return false
+    return isSessionConfirmedForTechnician(session, techId)
   })
 })
 
@@ -4306,7 +4349,14 @@ const myServingSessions = computed(() => {
   if (!isTechnicianAuth()) return []
   const techId = getTechnicianId()
   if (!techId) return []
-  return serviceSessions.value.filter(s => s.technician_id === techId && ['delay_pending', 'serving', 'auto_finishing'].includes(normalizeSessionStatus(s.status)))
+  return serviceSessions.value.filter(s => {
+    const status = normalizeSessionStatus(s.status)
+    if (!['delay_pending', 'serving', 'auto_finishing'].includes(status)) return false
+    if (status === 'serving' || status === 'auto_finishing') {
+      return isSessionConfirmedForTechnician(s, techId)
+    }
+    return isSessionAssignedToTechnician(s, techId)
+  })
 })
 
 // 其他会话（技师视角）或全部会话（商户视角）
