@@ -106,6 +106,18 @@
                 <div class="flex items-start gap-2">
                   <div class="text-5xl font-bold leading-none">{{ item.card_type?.includes('储值') ? `¥${(item.remain_balance / 100).toFixed(2)}` : item.remain_times }}</div>
                   <span v-if="item.hasAppointment" class="mt-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded flex-shrink-0 leading-none">预约</span>
+                  <div v-if="getCardServiceTimeLines(item).length > 0" class="pt-1 max-w-[180px] text-left">
+                    <div class="text-gray-500 text-xs mb-0.5">服务时间</div>
+                    <div class="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                      <div
+                        v-for="line in getCardServiceTimeLines(item)"
+                        :key="line"
+                        class="text-xs text-gray-700 leading-4 whitespace-nowrap"
+                      >
+                        {{ line }}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div class="text-right">
@@ -756,7 +768,20 @@ const fetchCards = async () => {
         hasAppointment: false,
         hasServingUsage: false,
         hasStartPendingUsage: false,
-        startPendingUsageSessionId: ''
+        startPendingUsageSessionId: '',
+        projects: Array.isArray(card.projects) ? card.projects : []
+      }
+
+      if (enrichedCard.id) {
+        try {
+          const detailRes = await cardApi.getCard(enrichedCard.id)
+          const detail = detailRes?.data?.data || {}
+          if (Array.isArray(detail.projects)) {
+            enrichedCard.projects = detail.projects
+          }
+        } catch (err) {
+          console.error('获取卡片项目失败:', err)
+        }
       }
 
       if (enrichedCard.merchant_id) {
@@ -1103,6 +1128,108 @@ const projectServiceTimeAllowed = (project, now = new Date()) => {
   }
 
   return false
+}
+
+const getProjectServiceTimes = (project, limit = 1, now = new Date(nowTick.value)) => {
+  const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
+  if (slots.length === 0 || limit <= 0) return []
+
+  const times = []
+  const seen = new Set()
+  for (const slot of slots) {
+    const startTime = String(slot?.start_time || '').trim()
+    const match = startTime.match(/^(\d{2}):(\d{2})$/)
+    if (!match) continue
+    const hour = Number(match[1])
+    const minute = Number(match[2])
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) continue
+
+    for (let offset = 0; offset <= 370; offset++) {
+      const candidateDate = new Date(now)
+      candidateDate.setDate(candidateDate.getDate() + offset)
+      if (!serviceTimeSlotMatchesDate(slot, candidateDate)) continue
+
+      const startAt = new Date(candidateDate)
+      startAt.setHours(hour, minute, 0, 0)
+      if (startAt.getTime() < now.getTime()) continue
+      const key = String(startAt.getTime())
+      if (!seen.has(key)) {
+        seen.add(key)
+        times.push(startAt)
+      }
+    }
+  }
+
+  return times
+    .sort((a, b) => a.getTime() - b.getTime())
+    .slice(0, limit)
+}
+
+const getProjectServiceSlotTimes = (project, limit = 4, now = new Date(nowTick.value)) => {
+  const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
+  if (slots.length === 0 || limit <= 0) return []
+
+  return slots.map((slot, index) => {
+    const startTime = String(slot?.start_time || '').trim()
+    const match = startTime.match(/^(\d{2}):(\d{2})$/)
+    if (!match) return null
+    const hour = Number(match[1])
+    const minute = Number(match[2])
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null
+
+    for (let offset = 0; offset <= 370; offset++) {
+      const candidateDate = new Date(now)
+      candidateDate.setDate(candidateDate.getDate() + offset)
+      if (!serviceTimeSlotMatchesDate(slot, candidateDate)) continue
+
+      const startAt = new Date(candidateDate)
+      startAt.setHours(hour, minute, 0, 0)
+      if (startAt.getTime() < now.getTime()) continue
+      return { startAt, index }
+    }
+    return null
+  })
+    .filter(Boolean)
+    .sort((a, b) => {
+      const diff = a.startAt.getTime() - b.startAt.getTime()
+      return diff !== 0 ? diff : a.index - b.index
+    })
+    .slice(0, limit)
+    .map(item => item.startAt)
+}
+
+const formatServiceTimeForCard = (date, now = new Date(nowTick.value)) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return ''
+  const today = new Date(now)
+  today.setHours(0, 0, 0, 0)
+  const target = new Date(date)
+  target.setHours(0, 0, 0, 0)
+  const dayDiff = Math.round((target.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
+  const timeText = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  if (dayDiff === 0) return `今日 ${timeText}`
+  if (dayDiff === 1) return `明日 ${timeText}`
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return `${weekdays[date.getDay()]} ${timeText}`
+}
+
+const getCardServiceTimeLines = (card) => {
+  const projects = Array.isArray(card?.projects) ? card.projects : []
+  const serviceTimeProjects = projects.filter((project) => {
+    const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
+    return slots.length > 0
+  })
+
+  if (serviceTimeProjects.length === 0) return []
+  if (serviceTimeProjects.length === 1) {
+    return getProjectServiceSlotTimes(serviceTimeProjects[0], 4).map((time) => formatServiceTimeForCard(time))
+  }
+
+  return serviceTimeProjects.map((project) => {
+    const nextTime = getProjectServiceTimes(project, 1)[0]
+    if (!nextTime) return ''
+    const name = String(project?.name || '').trim() || '项目'
+    return `${name}：${formatServiceTimeForCard(nextTime)}`
+  }).filter(Boolean)
 }
 
 const serviceTimeSlotMatchesDate = (slot, date) => {
