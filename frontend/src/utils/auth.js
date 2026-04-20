@@ -14,14 +14,14 @@ export const setMerchantActiveAuth = (type) => {
 export const getMerchantToken = () => {
   const active = getMerchantActiveAuth()
   return active === 'staff'
-    ? localStorage.getItem('technicianToken')
+    ? sessionStorage.getItem('technicianToken')
     : localStorage.getItem('merchantToken')
 }
 
 export const getMerchantId = () => {
   const active = getMerchantActiveAuth()
   return active === 'staff'
-    ? localStorage.getItem('technicianMerchantId')
+    ? sessionStorage.getItem('technicianMerchantId')
     : localStorage.getItem('merchantId')
 }
 
@@ -60,15 +60,24 @@ export const clearMerchantAuth = () => {
   const active = getMerchantActiveAuth()
 
   if (active === 'staff') {
+    sessionStorage.removeItem('technicianToken')
+    sessionStorage.removeItem('technicianMerchantId')
+    sessionStorage.removeItem('technicianMerchantName')
+    sessionStorage.removeItem('technicianMerchantPhone')
+    sessionStorage.removeItem('technicianStartTerm')
+    sessionStorage.removeItem('technicianFinishTerm')
     localStorage.removeItem('technicianToken')
     localStorage.removeItem('technicianMerchantId')
     localStorage.removeItem('technicianMerchantName')
     localStorage.removeItem('technicianMerchantPhone')
+    localStorage.removeItem('technicianStartTerm')
+    localStorage.removeItem('technicianFinishTerm')
 
     sessionStorage.removeItem('technicianId')
     sessionStorage.removeItem('technicianName')
     sessionStorage.removeItem('technicianCode')
     sessionStorage.removeItem('technicianAccount')
+    sessionStorage.removeItem('technicianRoleName')
     sessionStorage.removeItem('technicianPasswordNeedReset')
     sessionStorage.removeItem('technicianShopSlug')
     sessionStorage.removeItem('merchantActiveAuth')

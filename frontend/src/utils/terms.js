@@ -16,13 +16,15 @@ export const getFinishTerm = (merchant) => {
 export const getStartTermFromStorage = () => {
   const active = getMerchantActiveAuth()
   const k = active === 'staff' ? 'technicianStartTerm' : 'merchantStartTerm'
-  return normalizeTerm(localStorage.getItem(k), '起单')
+  const storage = active === 'staff' ? sessionStorage : localStorage
+  return normalizeTerm(storage.getItem(k), '起单')
 }
 
 export const getFinishTermFromStorage = () => {
   const active = getMerchantActiveAuth()
   const k = active === 'staff' ? 'technicianFinishTerm' : 'merchantFinishTerm'
-  return normalizeTerm(localStorage.getItem(k), '结单')
+  const storage = active === 'staff' ? sessionStorage : localStorage
+  return normalizeTerm(storage.getItem(k), '结单')
 }
 
 export const isQueueModeMerchant = (merchant) => {

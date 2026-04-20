@@ -256,13 +256,19 @@ const handleLogin = async () => {
       setMerchantActiveAuth('staff')
       setTechnicianShopSlug(shopSlug.value)
 
-      localStorage.setItem('technicianToken', res.data.token)
-      localStorage.setItem('technicianMerchantId', res.data.merchant.id)
-      localStorage.setItem('technicianMerchantName', res.data.merchant.name)
-      localStorage.setItem('technicianMerchantPhone', res.data.merchant.phone)
+      sessionStorage.setItem('technicianToken', res.data.token)
+      sessionStorage.setItem('technicianMerchantId', res.data.merchant.id)
+      sessionStorage.setItem('technicianMerchantName', res.data.merchant.name || '')
+      sessionStorage.setItem('technicianMerchantPhone', res.data.merchant.phone || '')
 
-      localStorage.setItem('technicianStartTerm', res.data.merchant.start_term || '')
-      localStorage.setItem('technicianFinishTerm', res.data.merchant.finish_term || '')
+      sessionStorage.setItem('technicianStartTerm', res.data.merchant.start_term || '')
+      sessionStorage.setItem('technicianFinishTerm', res.data.merchant.finish_term || '')
+      localStorage.removeItem('technicianToken')
+      localStorage.removeItem('technicianMerchantId')
+      localStorage.removeItem('technicianMerchantName')
+      localStorage.removeItem('technicianMerchantPhone')
+      localStorage.removeItem('technicianStartTerm')
+      localStorage.removeItem('technicianFinishTerm')
 
       sessionStorage.setItem('technicianId', res.data.technician.id)
       sessionStorage.setItem('technicianName', res.data.technician.name || '')
@@ -299,8 +305,8 @@ const handleLogin = async () => {
     console.log('登录信息已保存，准备跳转...')
     console.log('merchantToken:', localStorage.getItem('merchantToken'))
     console.log('merchantId:', localStorage.getItem('merchantId'))
-    console.log('technicianToken:', localStorage.getItem('technicianToken'))
-    console.log('technicianMerchantId:', localStorage.getItem('technicianMerchantId'))
+    console.log('technicianToken:', sessionStorage.getItem('technicianToken'))
+    console.log('technicianMerchantId:', sessionStorage.getItem('technicianMerchantId'))
     
     if (res.data.technician?.password_need_reset) {
       alert('请先修改初始密码')

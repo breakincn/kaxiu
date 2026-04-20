@@ -113,7 +113,7 @@ const merchantRoutes = [
     beforeEnter: (to) => {
       const hasUserToken = !!localStorage.getItem('userToken')
       const hasMerchantToken = !!localStorage.getItem('merchantToken')
-      const hasTechnicianToken = !!localStorage.getItem('technicianToken')
+      const hasTechnicianToken = !!sessionStorage.getItem('technicianToken')
       
       // 如果有用户登录态，继续访问店铺页面
       if (hasUserToken) {
@@ -135,7 +135,7 @@ const merchantRoutes = [
     beforeEnter: (to) => {
       const hasUserToken = !!localStorage.getItem('userToken')
       const hasMerchantToken = !!localStorage.getItem('merchantToken')
-      const hasTechnicianToken = !!localStorage.getItem('technicianToken')
+      const hasTechnicianToken = !!sessionStorage.getItem('technicianToken')
       
       // 如果有用户登录态，继续访问店铺页面
       if (hasUserToken) {
@@ -302,7 +302,7 @@ router.beforeEach((to) => {
   if (isMerchantPublic) return true
 
   const hasMerchantToken = !!localStorage.getItem('merchantToken')
-  const hasTechnicianToken = !!localStorage.getItem('technicianToken')
+  const hasTechnicianToken = !!sessionStorage.getItem('technicianToken')
   if (!(hasMerchantToken || hasTechnicianToken)) {
     const m = to.path.match(/^\/s\/([^/]+)(?:\/.*)?$/)
     if (m && m[1] && !to.path.endsWith('/login')) return `/s/${m[1]}/login`
