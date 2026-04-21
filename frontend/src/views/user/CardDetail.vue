@@ -116,6 +116,9 @@
                 {{ getProjectNearestServiceTimeText(project) }}
               </div>
             </div>
+            <div v-if="getProjectServiceStaffNames(project).length > 0" class="multi-service-staff">
+              <span v-for="name in getProjectServiceStaffNames(project)" :key="name">{{ name }}</span>
+            </div>
             <div class="multi-service-metrics">
               <div>
                 <span>已核销</span>
@@ -1022,6 +1025,36 @@ const getProjectParticipants = (project) => {
 
 const hasProjectAttendanceWarning = (project) => {
   return String(getProjectMultiOverview(project).default_service_attendance_warning || '').trim() !== ''
+}
+
+const getProjectServiceStaffNames = (project) => {
+  const overviewTechnicians = getProjectMultiOverview(project).default_service_technicians
+  if (Array.isArray(overviewTechnicians) && overviewTechnicians.length > 0) {
+    return overviewTechnicians
+      .map(item => String(item?.name || item?.account || '').trim())
+      .filter(Boolean)
+  }
+
+  const defaultIds = Array.isArray(project?.default_service_technician_ids) ? project.default_service_technician_ids.map(id => Number(id || 0)).filter(Boolean) : []
+  if (defaultIds.length === 0) return []
+
+  const byId = new Map()
+  for (const usage of usages.value || []) {
+    const usageProjectId = Number(usage?.project?.id || usage?.project_id || 0)
+    if (usageProjectId !== Number(project?.id || 0)) continue
+    const serviceTechnicians = Array.isArray(usage?.service_technicians) ? usage.service_technicians : []
+    for (const technician of serviceTechnicians) {
+      const id = Number(technician?.id || 0)
+      const name = String(technician?.name || technician?.account || '').trim()
+      if (id > 0 && name) byId.set(id, name)
+    }
+    const single = usage?.service_technician
+    const singleId = Number(single?.id || 0)
+    const singleName = String(single?.name || single?.account || '').trim()
+    if (singleId > 0 && singleName) byId.set(singleId, singleName)
+  }
+
+  return defaultIds.map(id => byId.get(id)).filter(Boolean)
 }
 
 const isProjectInServiceTimeWindow = (project, now = new Date(nowTick.value)) => {
@@ -5207,6 +5240,32 @@ onUnmounted(() => {
   min-width: 0;
   text-align: right;
   white-space: nowrap;
+}
+
+.multi-service-staff {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 8px;
+  margin-top: 9px;
+}
+
+.multi-service-staff span {
+  border-radius: 8px;
+  background: rgba(34, 197, 94, 0.1);
+  color: #166534;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  padding: 6px 8px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-service-card.is-warning .multi-service-staff span {
+  background: rgba(249, 115, 22, 0.1);
+  color: #9a3412;
 }
 
 .multi-service-metrics {
