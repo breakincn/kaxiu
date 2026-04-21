@@ -112,6 +112,9 @@
               <div>
                 <div class="multi-service-title">{{ project.name }}</div>
               </div>
+              <div v-if="getProjectNearestServiceTimeText(project)" class="multi-service-next-time">
+                {{ getProjectNearestServiceTimeText(project) }}
+              </div>
             </div>
             <div class="multi-service-metrics">
               <div>
@@ -1834,6 +1837,51 @@ const formatProjectServiceTimeSlot = (slot) => {
 const getProjectServiceTimeLines = (project) => {
   const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
   return slots.map(formatProjectServiceTimeSlot).filter(Boolean)
+}
+
+const getProjectServiceSlotsByUpcomingTime = (project, limit = 1, now = new Date(nowTick.value)) => {
+  const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
+  if (slots.length === 0 || limit <= 0) return []
+
+  const times = []
+  const seen = new Set()
+  for (const [slotIndex, slot] of slots.entries()) {
+    const startTime = String(slot?.start_time || '').trim()
+    const match = startTime.match(/^(\d{2}):(\d{2})$/)
+    if (!match) continue
+    const hour = Number(match[1])
+    const minute = Number(match[2])
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) continue
+
+    for (let offset = 0; offset <= 370; offset++) {
+      const candidateDate = new Date(now)
+      candidateDate.setDate(candidateDate.getDate() + offset)
+      if (!serviceTimeSlotMatchesDate(slot, candidateDate)) continue
+
+      const startAt = new Date(candidateDate)
+      startAt.setHours(hour, minute, 0, 0)
+      if (startAt.getTime() < now.getTime()) continue
+      const key = `${slotIndex}:${startAt.getTime()}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        times.push({ slot, startAt, slotIndex })
+      }
+      break
+    }
+  }
+
+  return times
+    .sort((a, b) => {
+      const diff = a.startAt.getTime() - b.startAt.getTime()
+      return diff !== 0 ? diff : a.slotIndex - b.slotIndex
+    })
+    .slice(0, limit)
+}
+
+const getProjectNearestServiceTimeText = (project) => {
+  const nextItem = getProjectServiceSlotsByUpcomingTime(project, 1)[0]
+  if (!nextItem) return ''
+  return formatProjectServiceTimeSlot(nextItem.slot)
 }
 
 const isUsageProjectServiceTimeAllowed = (usage, now = new Date()) => {
@@ -5148,6 +5196,17 @@ onUnmounted(() => {
   font-size: 15px;
   font-weight: 700;
   line-height: 1.4;
+}
+
+.multi-service-next-time {
+  color: #4b5563;
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  min-width: 0;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .multi-service-metrics {
