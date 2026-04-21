@@ -128,6 +128,34 @@ type MerchantProject struct {
 	SortOrder                        int                                        `json:"sort_order" gorm:"default:0;index;comment:排序顺序"`
 	CreatedAt                        *time.Time                                 `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt                        *time.Time                                 `json:"updated_at" gorm:"autoUpdateTime;comment:更新时间"`
+
+	MultiServiceOverview *MerchantProjectMultiServiceOverview `json:"multi_service_overview,omitempty" gorm:"-"`
+}
+
+type MerchantProjectMultiServiceParticipant struct {
+	UserID   uint   `json:"user_id"`
+	Nickname string `json:"nickname"`
+}
+
+type MerchantProjectDefaultServiceTechnicianStatus struct {
+	ID              uint   `json:"id"`
+	Name            string `json:"name"`
+	Account         string `json:"account"`
+	ServiceRoleName string `json:"service_role_name"`
+	CheckedIn       bool   `json:"checked_in"`
+}
+
+type MerchantProjectMultiServiceOverview struct {
+	Visible                              bool                                            `json:"visible"`
+	InServiceTimeWindow                  bool                                            `json:"in_service_time_window"`
+	ServiceCapacity                      int                                             `json:"service_capacity"`
+	UsedCount                            int                                             `json:"used_count"`
+	RemainingCount                       int                                             `json:"remaining_count"`
+	Participants                         []MerchantProjectMultiServiceParticipant        `json:"participants"`
+	DefaultServiceTechnicians            []MerchantProjectDefaultServiceTechnicianStatus `json:"default_service_technicians"`
+	AnyDefaultServiceTechnicianCheckedIn bool                                            `json:"any_default_service_technician_checked_in"`
+	DefaultServiceAttendanceWarning      string                                          `json:"default_service_attendance_warning"`
+	DefaultServiceAttendanceRoleName     string                                          `json:"default_service_attendance_role_name"`
 }
 
 func (MerchantProject) TableName() string {

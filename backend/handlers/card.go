@@ -138,6 +138,206 @@ func merchantProjectServiceTimeAllowed(project models.MerchantProject, now time.
 	return false
 }
 
+func merchantProjectCurrentServiceWindow(project models.MerchantProject, now time.Time) (time.Time, time.Time, bool) {
+	if len(project.ServiceTimeSlots) == 0 {
+		return time.Time{}, time.Time{}, false
+	}
+
+	loc := config.ProjectServiceTimeLocation()
+	localNow := now.In(loc)
+	duration := time.Duration(project.Duration) * time.Minute
+	if duration <= 0 {
+		return time.Time{}, time.Time{}, false
+	}
+
+	for _, slot := range project.ServiceTimeSlots {
+		startClock, err := time.ParseInLocation("15:04", strings.TrimSpace(slot.StartTime), loc)
+		if err != nil {
+			continue
+		}
+		for offset := -1; offset <= 1; offset++ {
+			candidateDate := localNow.AddDate(0, 0, offset)
+			if !config.MerchantProjectServiceTimeSlotMatchesDate(slot, candidateDate) {
+				continue
+			}
+			startAt := time.Date(candidateDate.Year(), candidateDate.Month(), candidateDate.Day(), startClock.Hour(), startClock.Minute(), 0, 0, loc)
+			windowStart := startAt.Add(-1 * time.Hour)
+			windowEnd := startAt.Add(duration).Add(-3 * time.Minute)
+			if !localNow.Before(windowStart) && !localNow.After(windowEnd) {
+				return windowStart, windowEnd, true
+			}
+		}
+	}
+
+	return time.Time{}, time.Time{}, false
+}
+
+func enrichCardProjectsWithMultiServiceOverview(card *models.Card, now time.Time) {
+	if card == nil || len(card.Projects) == 0 {
+		return
+	}
+
+	defaultTechnicianIDs := make([]uint, 0)
+	seenTechnicianIDs := make(map[uint]struct{})
+	for _, project := range card.Projects {
+		if project.ServiceCapacity <= 1 {
+			continue
+		}
+		for _, id := range project.DefaultServiceTechnicianIDs {
+			if id == 0 {
+				continue
+			}
+			if _, ok := seenTechnicianIDs[id]; ok {
+				continue
+			}
+			seenTechnicianIDs[id] = struct{}{}
+			defaultTechnicianIDs = append(defaultTechnicianIDs, id)
+		}
+	}
+
+	techniciansByID := make(map[uint]models.Technician)
+	if len(defaultTechnicianIDs) > 0 {
+		var technicians []models.Technician
+		if err := config.DB.
+			Preload("ServiceRole").
+			Where("merchant_id = ? AND id IN ?", card.MerchantID, defaultTechnicianIDs).
+			Find(&technicians).Error; err == nil {
+			for _, technician := range technicians {
+				techniciansByID[technician.ID] = technician
+			}
+		}
+	}
+
+	checkedInByTechnicianID := make(map[uint]bool)
+	if len(defaultTechnicianIDs) > 0 {
+		loc := config.ProjectServiceTimeLocation()
+		localNow := now.In(loc)
+		todayStart := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, loc)
+		var attendances []models.TechnicianAttendance
+		if err := config.DB.
+			Where("merchant_id = ? AND technician_id IN ? AND checked_in_at >= ? AND checked_out_at IS NULL", card.MerchantID, defaultTechnicianIDs, todayStart).
+			Find(&attendances).Error; err == nil {
+			for _, attendance := range attendances {
+				checkedInByTechnicianID[attendance.TechnicianID] = true
+			}
+		}
+	}
+
+	activeStatuses := models.ExpandStatusesWithKnownPrefixes([]string{
+		"room_selecting",
+		"room_locked",
+		"staff_selecting",
+		"start_pending",
+		"delay_pending",
+		"serving",
+		"auto_finishing",
+		"timeout_waiting",
+	})
+
+	for i := range card.Projects {
+		project := &card.Projects[i]
+		if project.ServiceCapacity <= 1 {
+			continue
+		}
+
+		overview := &models.MerchantProjectMultiServiceOverview{
+			ServiceCapacity:     project.ServiceCapacity,
+			RemainingCount:      project.ServiceCapacity,
+			Participants:        []models.MerchantProjectMultiServiceParticipant{},
+			InServiceTimeWindow: len(project.ServiceTimeSlots) == 0,
+			Visible:             len(project.ServiceTimeSlots) == 0,
+		}
+
+		var windowStart, windowEnd time.Time
+		if len(project.ServiceTimeSlots) > 0 {
+			start, end, ok := merchantProjectCurrentServiceWindow(*project, now)
+			overview.InServiceTimeWindow = ok
+			overview.Visible = ok
+			windowStart = start
+			windowEnd = end
+		}
+
+		for _, id := range project.DefaultServiceTechnicianIDs {
+			technician, ok := techniciansByID[id]
+			if !ok {
+				continue
+			}
+			status := models.MerchantProjectDefaultServiceTechnicianStatus{
+				ID:              technician.ID,
+				Name:            technician.Name,
+				Account:         technician.Account,
+				ServiceRoleName: strings.TrimSpace(technician.ServiceRole.Name),
+				CheckedIn:       checkedInByTechnicianID[technician.ID],
+			}
+			if status.CheckedIn {
+				overview.AnyDefaultServiceTechnicianCheckedIn = true
+			}
+			overview.DefaultServiceTechnicians = append(overview.DefaultServiceTechnicians, status)
+		}
+
+		if len(project.ServiceTimeSlots) > 0 && len(overview.DefaultServiceTechnicians) > 0 && !overview.AnyDefaultServiceTechnicianCheckedIn {
+			roleName := ""
+			for _, technician := range overview.DefaultServiceTechnicians {
+				if strings.TrimSpace(technician.ServiceRoleName) != "" {
+					roleName = strings.TrimSpace(technician.ServiceRoleName)
+					break
+				}
+			}
+			if roleName == "" {
+				roleName = "客服"
+			}
+			overview.DefaultServiceAttendanceRoleName = roleName
+			overview.DefaultServiceAttendanceWarning = fmt.Sprintf("%s 尚未签到", roleName)
+		}
+
+		if overview.Visible {
+			type participantRow struct {
+				UserID   uint   `gorm:"column:user_id"`
+				Nickname string `gorm:"column:nickname"`
+			}
+			var rows []participantRow
+			query := config.DB.
+				Table("service_sessions ss").
+				Select("ss.user_id, COALESCE(NULLIF(users.nickname, ''), users.username) AS nickname").
+				Joins("JOIN users ON users.id = ss.user_id").
+				Where("ss.merchant_id = ? AND ss.project_id = ? AND ss.status IN ?", card.MerchantID, project.ID, activeStatuses)
+			if len(project.ServiceTimeSlots) > 0 {
+				query = query.Where(
+					"(ss.scheduled_start_at BETWEEN ? AND ? OR ss.started_at BETWEEN ? AND ? OR ss.created_at BETWEEN ? AND ?)",
+					windowStart, windowEnd, windowStart, windowEnd, windowStart, windowEnd,
+				)
+			}
+			if err := query.Order("ss.created_at ASC, ss.id ASC").Scan(&rows).Error; err == nil {
+				seenUsers := make(map[uint]struct{})
+				for _, row := range rows {
+					if row.UserID == 0 {
+						continue
+					}
+					if _, seen := seenUsers[row.UserID]; seen {
+						continue
+					}
+					seenUsers[row.UserID] = struct{}{}
+					nickname := strings.TrimSpace(row.Nickname)
+					if nickname == "" {
+						nickname = fmt.Sprintf("用户%d", row.UserID)
+					}
+					overview.Participants = append(overview.Participants, models.MerchantProjectMultiServiceParticipant{
+						UserID:   row.UserID,
+						Nickname: nickname,
+					})
+				}
+			}
+			overview.UsedCount = len(overview.Participants)
+			overview.RemainingCount = overview.ServiceCapacity - overview.UsedCount
+			if overview.RemainingCount < 0 {
+				overview.RemainingCount = 0
+			}
+		}
+
+		project.MultiServiceOverview = overview
+	}
+}
+
 func GetCards(c *gin.Context) {
 	userID, ok := mustUserID(c)
 	if !ok {
@@ -183,6 +383,7 @@ func GetCard(c *gin.Context) {
 		}
 	}
 	card.Projects = projects
+	enrichCardProjectsWithMultiServiceOverview(&card, time.Now())
 
 	c.JSON(http.StatusOK, gin.H{"data": card})
 }

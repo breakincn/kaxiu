@@ -50,8 +50,8 @@
                 </button>
                 <div v-if="isCardProjectDetailExpanded(project)" class="mt-1 text-xs text-gray-500 leading-5">
                   <div v-if="getProjectDurationText(project)">{{ getProjectDurationText(project) }}</div>
-                  <div v-if="getProjectServiceTimeLines(project).length > 0" class="grid grid-cols-3 gap-x-3 gap-y-0.5 justify-items-end">
-                    <span v-for="line in getProjectServiceTimeLines(project)" :key="line" class="whitespace-nowrap">{{ line }}</span>
+                  <div v-if="getProjectServiceTimeLines(project).length > 0" class="project-service-time-grid">
+                    <span v-for="line in getProjectServiceTimeLines(project)" :key="line">{{ line }}</span>
                   </div>
                 </div>
               </div>
@@ -101,7 +101,43 @@
           </div>
         </div>
 
-        <div class="live-service-section pt-4 mt-4 border-t border-gray-100">
+        <div v-if="visibleMultiServiceProjects.length > 0" class="multi-service-section pt-4 mt-4 border-t border-gray-100">
+          <div
+            v-for="project in visibleMultiServiceProjects"
+            :key="project.id"
+            class="multi-service-card"
+            :class="{ 'is-warning': hasProjectAttendanceWarning(project) }"
+          >
+            <div class="multi-service-header">
+              <div>
+                <div class="multi-service-title">{{ project.name }}</div>
+              </div>
+            </div>
+            <div class="multi-service-metrics">
+              <div>
+                <span>已核销</span>
+                <strong>{{ getProjectMultiOverview(project).used_count || 0 }}</strong>
+              </div>
+              <div>
+                <span>剩余</span>
+                <strong>{{ getProjectMultiOverview(project).remaining_count || 0 }}</strong>
+              </div>
+              <div>
+                <span>总人数</span>
+                <strong>{{ getProjectMultiOverview(project).service_capacity || 0 }}</strong>
+              </div>
+            </div>
+            <div v-if="hasProjectAttendanceWarning(project)" class="multi-service-warning">
+              {{ getProjectMultiOverview(project).default_service_attendance_warning }}
+            </div>
+            <div v-if="getProjectParticipants(project).length > 0" class="multi-service-users">
+              <span v-for="participant in getProjectParticipants(project)" :key="participant.user_id || participant.nickname">{{ participant.nickname }}</span>
+            </div>
+            <div v-else class="multi-service-empty">暂无核销用户</div>
+          </div>
+        </div>
+
+        <div v-if="!hasMultiServiceProject" class="live-service-section pt-4 mt-4 border-t border-gray-100">
           <div class="live-service-card" :class="`is-${getLiveServiceStatusLevel(liveServiceStatus)}`">
             <div class="live-service-header">
               <div class="min-w-0">
@@ -952,6 +988,102 @@ const getAppointmentDisplayWaitState = (appt) => String(appt?.display_wait_state
 const getAppointmentDisplayWaitMessage = (appt) => String(appt?.display_wait_message || '').trim()
 
 const getAppointmentCurrentEstimatedDelayMinutes = (appt) => Number(appt?.current_estimated_delay_minutes || appt?.predicted_delay_minutes || 0)
+
+const multiServiceProjects = computed(() => {
+  const projects = Array.isArray(card.value?.projects) ? card.value.projects : []
+  return projects.filter(project => Number(project?.service_capacity || 0) > 1)
+})
+
+const hasMultiServiceProject = computed(() => multiServiceProjects.value.length > 0)
+
+const getProjectMultiOverview = (project) => {
+  const overview = project?.multi_service_overview
+  if (overview) return overview
+  return buildFallbackProjectMultiOverview(project)
+}
+
+const visibleMultiServiceProjects = computed(() => {
+  return multiServiceProjects.value.filter(project => getProjectMultiOverview(project).visible)
+})
+
+const getProjectParticipants = (project) => {
+  const participants = getProjectMultiOverview(project).participants
+  if (!Array.isArray(participants)) return []
+  return participants
+    .map(item => ({
+      user_id: Number(item?.user_id || 0),
+      nickname: String(item?.nickname || '').trim()
+    }))
+    .filter(item => item.nickname)
+}
+
+const hasProjectAttendanceWarning = (project) => {
+  return String(getProjectMultiOverview(project).default_service_attendance_warning || '').trim() !== ''
+}
+
+const isProjectInServiceTimeWindow = (project, now = new Date(nowTick.value)) => {
+  const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
+  if (slots.length === 0) return true
+
+  const durationMinutes = Number(project?.duration || 0)
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return false
+
+  for (const slot of slots) {
+    const startTime = String(slot?.start_time || '').trim()
+    const match = startTime.match(/^(\d{2}):(\d{2})$/)
+    if (!match) continue
+
+    const hour = Number(match[1])
+    const minute = Number(match[2])
+    for (let offset = -1; offset <= 1; offset++) {
+      const candidateDate = new Date(now)
+      candidateDate.setDate(candidateDate.getDate() + offset)
+      if (!serviceTimeSlotMatchesDate(slot, candidateDate)) continue
+
+      const startAt = new Date(candidateDate)
+      startAt.setHours(hour, minute, 0, 0)
+      const windowStart = new Date(startAt.getTime() - 60 * 60 * 1000)
+      const windowEnd = new Date(startAt.getTime() + durationMinutes * 60 * 1000 - 3 * 60 * 1000)
+      if (now >= windowStart && now <= windowEnd) return true
+    }
+  }
+
+  return false
+}
+
+const buildFallbackProjectMultiOverview = (project) => {
+  const serviceCapacity = Number(project?.service_capacity || 0)
+  const visible = serviceCapacity > 1 && isProjectInServiceTimeWindow(project)
+  const participants = []
+  const seen = new Set()
+
+  if (visible) {
+    const projectId = Number(project?.id || 0)
+    for (const usage of usages.value || []) {
+      const usageProjectId = Number(usage?.project?.id || usage?.project_id || 0)
+      if (!projectId || usageProjectId !== projectId) continue
+      const users = Array.isArray(usage?.service_participant_users) ? usage.service_participant_users : []
+      for (const item of users) {
+        const userId = Number(item?.user_id || 0)
+        const nickname = String(item?.nickname || '').trim()
+        const key = userId > 0 ? `id:${userId}` : `name:${nickname}`
+        if (!nickname || seen.has(key)) continue
+        seen.add(key)
+        participants.push({ user_id: userId, nickname })
+      }
+    }
+  }
+
+  const usedCount = participants.length
+  return {
+    visible,
+    in_service_time_window: visible,
+    service_capacity: serviceCapacity,
+    used_count: usedCount,
+    remaining_count: Math.max(serviceCapacity - usedCount, 0),
+    participants
+  }
+}
 
 const getAppointmentTimeMs = (appt) => {
   const raw = appt?.appointment_time
@@ -2151,7 +2283,9 @@ const startUsageLivePollIfNeeded = () => {
 
 const handleVisibilityRefresh = () => {
   if (document.hidden) return
-  refreshLiveServiceStatus()
+  if (!hasMultiServiceProject.value) {
+    refreshLiveServiceStatus()
+  }
   if (shouldLivePollUsages()) {
     fetchUsages()
   }
@@ -3664,11 +3798,14 @@ const fetchCard = async () => {
     const res = await cardApi.getCard(route.params.id)
     card.value = res.data.data
     
-    if (card.value.merchant_id) {
+    if (card.value.merchant_id && !hasMultiServiceProject.value) {
       fetchNotices(card.value.merchant_id)
       await loadLiveServiceStatus(card.value.merchant_id)
       startLiveServicePolling()
     } else {
+      if (card.value.merchant_id) {
+        fetchNotices(card.value.merchant_id)
+      }
       stopLiveServicePolling()
       liveServiceStatus.value = null
       liveServiceError.value = ''
@@ -3717,6 +3854,7 @@ const stopLiveServicePolling = () => {
 
 const startLiveServicePolling = () => {
   stopLiveServicePolling()
+  if (hasMultiServiceProject.value) return
   const merchantId = card.value?.merchant_id || card.value?.merchant?.id
   if (!merchantId) return
 
@@ -3727,6 +3865,7 @@ const startLiveServicePolling = () => {
 }
 
 const refreshLiveServiceStatus = async () => {
+  if (hasMultiServiceProject.value) return
   const merchantId = card.value?.merchant_id || card.value?.merchant?.id
   if (!merchantId || liveServiceLoading.value) return
   await loadLiveServiceStatus(merchantId)
@@ -4958,6 +5097,138 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.project-service-time-grid {
+  display: inline-grid;
+  grid-template-columns: repeat(4, max-content);
+  column-gap: 12px;
+  row-gap: 2px;
+  justify-content: end;
+  justify-items: end;
+  margin-left: auto;
+  width: max-content;
+  max-width: 100%;
+  text-align: right;
+}
+
+.project-service-time-grid span {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.multi-service-section {
+  margin-left: -10px;
+  margin-right: -10px;
+}
+
+.multi-service-card {
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+  padding: 12px;
+}
+
+.multi-service-card + .multi-service-card {
+  margin-top: 10px;
+}
+
+.multi-service-card.is-warning {
+  border-color: #fed7aa;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+}
+
+.multi-service-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.multi-service-title {
+  color: #111827;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.multi-service-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.multi-service-metrics > div {
+  border: 1px solid #dcfce7;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.multi-service-card.is-warning .multi-service-metrics > div {
+  border-color: #ffedd5;
+}
+
+.multi-service-metrics span {
+  color: #6b7280;
+  display: block;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.multi-service-metrics strong {
+  color: #111827;
+  display: block;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.1;
+  margin-top: 6px;
+}
+
+.multi-service-warning {
+  border-radius: 8px;
+  background: #ffedd5;
+  color: #c2410c;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  margin-top: 10px;
+  padding: 7px 9px;
+}
+
+.multi-service-users {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 8px;
+  margin-top: 10px;
+}
+
+.multi-service-users span {
+  border-radius: 8px;
+  background: rgba(34, 197, 94, 0.1);
+  color: #166534;
+  font-size: 12px;
+  line-height: 1.3;
+  overflow: hidden;
+  padding: 6px 7px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-service-card.is-warning .multi-service-users span {
+  background: rgba(249, 115, 22, 0.1);
+  color: #9a3412;
+}
+
+.multi-service-empty {
+  color: #9ca3af;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 10px;
+}
+
 .live-service-section {
   margin-left: -10px;
   margin-right: -10px;
