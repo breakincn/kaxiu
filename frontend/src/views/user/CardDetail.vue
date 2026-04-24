@@ -143,7 +143,13 @@
               {{ getProjectMultiOverview(project).default_service_attendance_warning }}
             </div>
             <div v-if="getProjectParticipants(project).length > 0" class="multi-service-users">
-              <span v-for="participant in getProjectParticipants(project)" :key="participant.user_id || participant.nickname">{{ participant.nickname }}</span>
+              <span
+                v-for="participant in getProjectParticipants(project)"
+                :key="participant.user_id || participant.nickname"
+                :class="participant.checked_in ? 'is-checked-in' : 'is-not-checked-in'"
+              >
+                {{ participant.nickname }}
+              </span>
             </div>
             <div v-else class="multi-service-empty">暂无核销用户</div>
           </div>
@@ -1024,7 +1030,8 @@ const getProjectParticipants = (project) => {
   return participants
     .map(item => ({
       user_id: Number(item?.user_id || 0),
-      nickname: String(item?.nickname || '').trim()
+      nickname: String(item?.nickname || '').trim(),
+      checked_in: item?.checked_in === true
     }))
     .filter(item => item.nickname)
 }
@@ -1124,7 +1131,7 @@ const buildFallbackProjectMultiOverview = (project) => {
         const key = userId > 0 ? `id:${userId}` : `name:${nickname}`
         if (!nickname || seen.has(key)) continue
         seen.add(key)
-        participants.push({ user_id: userId, nickname })
+        participants.push({ user_id: userId, nickname, checked_in: true })
       }
     }
   }
@@ -5365,8 +5372,7 @@ onUnmounted(() => {
 
 .multi-service-users span {
   border-radius: 8px;
-  background: rgba(34, 197, 94, 0.1);
-  color: #166534;
+  border: 1px solid transparent;
   font-size: 12px;
   line-height: 1.3;
   overflow: hidden;
@@ -5376,9 +5382,16 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.multi-service-card.is-warning .multi-service-users span {
-  background: rgba(249, 115, 22, 0.1);
-  color: #9a3412;
+.multi-service-users span.is-checked-in {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.12);
+  color: #166534;
+}
+
+.multi-service-users span.is-not-checked-in {
+  background: transparent;
+  border-color: #bbf7d0;
+  color: #374151;
 }
 
 .multi-service-empty {

@@ -133,8 +133,9 @@ type MerchantProject struct {
 }
 
 type MerchantProjectMultiServiceParticipant struct {
-	UserID   uint   `json:"user_id"`
-	Nickname string `json:"nickname"`
+	UserID    uint   `json:"user_id"`
+	Nickname  string `json:"nickname"`
+	CheckedIn bool   `json:"checked_in"`
 }
 
 type MerchantProjectDefaultServiceTechnicianStatus struct {

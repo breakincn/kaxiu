@@ -296,6 +296,7 @@ func enrichCardProjectsWithMultiServiceOverview(card *models.Card, now time.Time
 				Nickname string `gorm:"column:nickname"`
 			}
 			var rows []participantRow
+			checkedInUsers := make(map[uint]struct{})
 			query := config.DB.
 				Table("service_sessions ss").
 				Select("ss.user_id, COALESCE(NULLIF(users.nickname, ''), users.username) AS nickname").
@@ -308,26 +309,41 @@ func enrichCardProjectsWithMultiServiceOverview(card *models.Card, now time.Time
 				)
 			}
 			if err := query.Order("ss.created_at ASC, ss.id ASC").Scan(&rows).Error; err == nil {
-				seenUsers := make(map[uint]struct{})
 				for _, row := range rows {
 					if row.UserID == 0 {
 						continue
 					}
-					if _, seen := seenUsers[row.UserID]; seen {
-						continue
-					}
-					seenUsers[row.UserID] = struct{}{}
-					nickname := strings.TrimSpace(row.Nickname)
-					if nickname == "" {
-						nickname = fmt.Sprintf("用户%d", row.UserID)
-					}
-					overview.Participants = append(overview.Participants, models.MerchantProjectMultiServiceParticipant{
-						UserID:   row.UserID,
-						Nickname: nickname,
-					})
+					checkedInUsers[row.UserID] = struct{}{}
 				}
 			}
-			overview.UsedCount = len(overview.Participants)
+
+			cardUsers := loadMerchantProjectCardUsers(card.MerchantID, project.ID)
+			seenUsers := make(map[uint]struct{})
+			for _, row := range cardUsers {
+				if row.UserID == 0 {
+					continue
+				}
+				if _, seen := seenUsers[row.UserID]; seen {
+					continue
+				}
+				seenUsers[row.UserID] = struct{}{}
+				nickname := strings.TrimSpace(row.Nickname)
+				if nickname == "" {
+					nickname = fmt.Sprintf("用户%d", row.UserID)
+				}
+				_, checkedIn := checkedInUsers[row.UserID]
+				overview.Participants = append(overview.Participants, models.MerchantProjectMultiServiceParticipant{
+					UserID:    row.UserID,
+					Nickname:  nickname,
+					CheckedIn: checkedIn,
+				})
+			}
+			overview.UsedCount = 0
+			for _, participant := range overview.Participants {
+				if participant.CheckedIn {
+					overview.UsedCount++
+				}
+			}
 			overview.RemainingCount = overview.ServiceCapacity - overview.UsedCount
 			if overview.RemainingCount < 0 {
 				overview.RemainingCount = 0
@@ -336,6 +352,73 @@ func enrichCardProjectsWithMultiServiceOverview(card *models.Card, now time.Time
 
 		project.MultiServiceOverview = overview
 	}
+}
+
+type merchantProjectCardUserRow struct {
+	CardID    uint   `gorm:"column:card_id"`
+	UserID    uint   `gorm:"column:user_id"`
+	Nickname  string `gorm:"column:nickname"`
+	ProjectID uint   `gorm:"column:project_id"`
+}
+
+func loadMerchantProjectCardUsers(merchantID uint, targetProjectID uint) []merchantProjectCardUserRow {
+	if merchantID == 0 || targetProjectID == 0 {
+		return nil
+	}
+
+	var rows []merchantProjectCardUserRow
+	if err := config.DB.
+		Table("cards").
+		Select("cards.id AS card_id, cards.user_id, COALESCE(NULLIF(users.nickname, ''), users.username) AS nickname, cp.project_id").
+		Joins("JOIN users ON users.id = cards.user_id").
+		Joins("JOIN card_projects cp ON cp.card_id = cards.id").
+		Where("cards.merchant_id = ? AND cp.project_id = ?", merchantID, targetProjectID).
+		Order("cards.id ASC").
+		Scan(&rows).Error; err != nil {
+		return nil
+	}
+
+	cardHasBoundProject := make(map[uint]struct{}, len(rows))
+	for _, row := range rows {
+		cardHasBoundProject[row.CardID] = struct{}{}
+	}
+
+	defaultProjectID := uint(0)
+	if defaultProject, err := config.GetDefaultMerchantProject(config.DB, merchantID); err == nil && defaultProject != nil && defaultProject.ID > 0 {
+		defaultProjectID = defaultProject.ID
+	}
+
+	type cardBaseRow struct {
+		CardID   uint   `gorm:"column:card_id"`
+		UserID   uint   `gorm:"column:user_id"`
+		Nickname string `gorm:"column:nickname"`
+	}
+	var baseCards []cardBaseRow
+	if err := config.DB.
+		Table("cards").
+		Select("cards.id AS card_id, cards.user_id, COALESCE(NULLIF(users.nickname, ''), users.username) AS nickname").
+		Joins("JOIN users ON users.id = cards.user_id").
+		Where("cards.merchant_id = ?", merchantID).
+		Order("cards.id ASC").
+		Scan(&baseCards).Error; err != nil {
+		return rows
+	}
+
+	if defaultProjectID == targetProjectID {
+		for _, base := range baseCards {
+			if _, hasBound := cardHasBoundProject[base.CardID]; hasBound {
+				continue
+			}
+			rows = append(rows, merchantProjectCardUserRow{
+				CardID:    base.CardID,
+				UserID:    base.UserID,
+				Nickname:  base.Nickname,
+				ProjectID: targetProjectID,
+			})
+		}
+	}
+
+	return rows
 }
 
 func GetCards(c *gin.Context) {
