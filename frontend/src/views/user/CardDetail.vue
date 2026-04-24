@@ -116,8 +116,14 @@
                 {{ getProjectNearestServiceTimeText(project) }}
               </div>
             </div>
-            <div v-if="getProjectServiceStaffNames(project).length > 0" class="multi-service-staff">
-              <span v-for="name in getProjectServiceStaffNames(project)" :key="name">{{ name }}</span>
+            <div v-if="getProjectServiceStaffItems(project).length > 0" class="multi-service-staff">
+              <span
+                v-for="staff in getProjectServiceStaffItems(project)"
+                :key="staff.key"
+                :class="staff.checked_in === true ? 'is-checked-in' : 'is-not-checked-in'"
+              >
+                {{ staff.name }}<em v-if="staff.checked_in === false">未签到</em>
+              </span>
             </div>
             <div class="multi-service-metrics">
               <div>
@@ -1027,12 +1033,20 @@ const hasProjectAttendanceWarning = (project) => {
   return String(getProjectMultiOverview(project).default_service_attendance_warning || '').trim() !== ''
 }
 
-const getProjectServiceStaffNames = (project) => {
+const getProjectServiceStaffItems = (project) => {
   const overviewTechnicians = getProjectMultiOverview(project).default_service_technicians
   if (Array.isArray(overviewTechnicians) && overviewTechnicians.length > 0) {
     return overviewTechnicians
-      .map(item => String(item?.name || item?.account || '').trim())
-      .filter(Boolean)
+      .map(item => {
+        const name = String(item?.name || item?.account || '').trim()
+        const id = Number(item?.id || 0)
+        return {
+          key: id > 0 ? `id:${id}` : `name:${name}`,
+          name,
+          checked_in: item?.checked_in === true
+        }
+      })
+      .filter(item => item.name)
   }
 
   const defaultIds = Array.isArray(project?.default_service_technician_ids) ? project.default_service_technician_ids.map(id => Number(id || 0)).filter(Boolean) : []
@@ -1054,7 +1068,12 @@ const getProjectServiceStaffNames = (project) => {
     if (singleId > 0 && singleName) byId.set(singleId, singleName)
   }
 
-  return defaultIds.map(id => byId.get(id)).filter(Boolean)
+  return defaultIds
+    .map(id => {
+      const name = byId.get(id)
+      return name ? { key: `id:${id}`, name, checked_in: null } : null
+    })
+    .filter(Boolean)
 }
 
 const isProjectInServiceTimeWindow = (project, now = new Date(nowTick.value)) => {
@@ -5250,9 +5269,13 @@ onUnmounted(() => {
 }
 
 .multi-service-staff span {
+  align-items: center;
   border-radius: 8px;
   background: rgba(34, 197, 94, 0.1);
   color: #166534;
+  display: inline-flex;
+  gap: 4px;
+  justify-content: center;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.3;
@@ -5263,7 +5286,25 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.multi-service-card.is-warning .multi-service-staff span {
+.multi-service-staff span em {
+  color: inherit;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.multi-service-card .multi-service-staff span.is-checked-in {
+  background: rgba(34, 197, 94, 0.1);
+  color: #166534;
+}
+
+.multi-service-card .multi-service-staff span.is-not-checked-in,
+.multi-service-card.is-warning .multi-service-staff span.is-not-checked-in {
+  background: rgba(107, 114, 128, 0.1);
+  color: #4b5563;
+}
+
+.multi-service-card.is-warning .multi-service-staff span.is-checked-in {
   background: rgba(249, 115, 22, 0.1);
   color: #9a3412;
 }
