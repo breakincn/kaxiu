@@ -24,7 +24,7 @@ func setupCardServiceTimeTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Merchant{}, &models.Card{}, &models.MerchantProject{}, &models.CardProject{}, &models.VerifyCode{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Merchant{}, &models.Card{}, &models.MerchantProject{}, &models.CardProject{}, &models.VerifyCode{}, &models.Usage{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 	return db
@@ -126,5 +126,79 @@ func TestGenerateVerifyCodeAllowsWithinProjectServiceTime(t *testing.T) {
 	}
 	if strings.TrimSpace(payload.Data.Code) == "" {
 		t.Fatalf("want verify code, body=%s", rec.Body.String())
+	}
+}
+
+func TestGenerateVerifyCodeRejectsDuplicateMultiServiceCodeInSameWindow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	config.DB = setupCardServiceTimeTestDB(t)
+	now := time.Now().In(appointmentLocation())
+	user, card, project := seedCardServiceTimeFixture(t, config.DB, now.Add(30*time.Minute))
+	project.ServiceCapacity = 15
+	if err := config.DB.Model(&models.MerchantProject{}).Where("id = ?", project.ID).Update("service_capacity", 15).Error; err != nil {
+		t.Fatalf("update project service capacity failed: %v", err)
+	}
+	verifyCode := models.VerifyCode{
+		CardID:    card.ID,
+		ProjectID: &project.ID,
+		Code:      "DUPLICATE01",
+		ExpireAt:  now.Add(5 * time.Minute).Unix(),
+		Used:      false,
+		CreatedAt: &now,
+	}
+	if err := config.DB.Create(&verifyCode).Error; err != nil {
+		t.Fatalf("create verify code failed: %v", err)
+	}
+
+	body := fmt.Sprintf(`{"project_id":%d}`, project.ID)
+	c, rec := newUserVerifyCodeContext(http.MethodPost, "/user/cards/1/verify-code", user.ID, body)
+	c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", card.ID)}}
+	GenerateVerifyCode(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "当前服务时间段已生成核销码") {
+		t.Fatalf("unexpected body=%s", rec.Body.String())
+	}
+}
+
+func TestGenerateVerifyCodeRejectsUsedMultiServiceCodeInSameWindow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	config.DB = setupCardServiceTimeTestDB(t)
+	now := time.Now().In(appointmentLocation())
+	user, card, project := seedCardServiceTimeFixture(t, config.DB, now.Add(30*time.Minute))
+	project.ServiceCapacity = 15
+	if err := config.DB.Model(&models.MerchantProject{}).Where("id = ?", project.ID).Update("service_capacity", 15).Error; err != nil {
+		t.Fatalf("update project service capacity failed: %v", err)
+	}
+	usedAt := now.Add(-2 * time.Minute)
+	verifyCode := models.VerifyCode{
+		CardID:    card.ID,
+		ProjectID: &project.ID,
+		Code:      "USEDVC01",
+		ExpireAt:  now.Add(5 * time.Minute).Unix(),
+		Used:      true,
+		UsedAt:    &usedAt,
+		CreatedAt: &now,
+	}
+	if err := config.DB.Create(&verifyCode).Error; err != nil {
+		t.Fatalf("create verify code failed: %v", err)
+	}
+
+	body := fmt.Sprintf(`{"project_id":%d}`, project.ID)
+	c, rec := newUserVerifyCodeContext(http.MethodPost, "/user/cards/1/verify-code", user.ID, body)
+	c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", card.ID)}}
+	GenerateVerifyCode(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "当前服务时间段已核销") {
+		t.Fatalf("unexpected body=%s", rec.Body.String())
 	}
 }

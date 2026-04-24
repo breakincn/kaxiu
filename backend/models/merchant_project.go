@@ -149,6 +149,7 @@ type MerchantProjectDefaultServiceTechnicianStatus struct {
 type MerchantProjectMultiServiceOverview struct {
 	Visible                              bool                                            `json:"visible"`
 	InServiceTimeWindow                  bool                                            `json:"in_service_time_window"`
+	CurrentWindowVerifyCodeGenerated     bool                                            `json:"current_window_verify_code_generated"`
 	ServiceCapacity                      int                                             `json:"service_capacity"`
 	UsedCount                            int                                             `json:"used_count"`
 	RemainingCount                       int                                             `json:"remaining_count"`

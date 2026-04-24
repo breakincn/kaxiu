@@ -222,7 +222,7 @@
             {{ selectedCardCanArriveNow ? '出示预约签到码' : '查看预约' }}
           </button>
           <button
-            v-if="shouldShowSelectedCardVerifyButton"
+            v-if="shouldShowSelectedCardVerifyButton && !selectedCardHasCurrentWindowGeneratedVerifyCode"
             @click="openVerifyCodeFlowFromAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
           >
@@ -690,6 +690,13 @@ const selectedCardMerchantClosed = computed(() => selectedCard.value?.merchant?.
 const selectedCardHasStartPendingUsage = computed(() => Boolean(selectedCard.value?.hasStartPendingUsage && selectedCard.value?.startPendingUsageSessionId))
 const selectedCardScanStartLabel = computed(() => getScanStartLabel(selectedCard.value?.merchant))
 const selectedCardHasServiceTimeProject = computed(() => getCardServiceTimeProjects(selectedCard.value).length > 0)
+const selectedCardHasCurrentWindowGeneratedVerifyCode = computed(() => {
+  const projects = Array.isArray(selectedCard.value?.projects) ? selectedCard.value.projects : []
+  return projects.some(project => {
+    if (Number(project?.service_capacity || 0) <= 1) return false
+    return project?.multi_service_overview?.current_window_verify_code_generated === true
+  })
+})
 const shouldShowSelectedCardVerifyButton = computed(() => {
   if (selectedCardCanArriveNow.value) return false
   if (!selectedCard.value) return false

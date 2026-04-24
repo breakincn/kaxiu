@@ -255,6 +255,11 @@ func enrichCardProjectsWithMultiServiceOverview(card *models.Card, now time.Time
 			overview.Visible = ok
 			windowStart = start
 			windowEnd = end
+			if ok {
+				if existing := findMultiServiceProjectVerifyCodeInWindow(card.ID, project.ID, windowStart, windowEnd); existing != nil && !existing.Used {
+					overview.CurrentWindowVerifyCodeGenerated = true
+				}
+			}
 		}
 
 		for _, id := range project.DefaultServiceTechnicianIDs {
@@ -419,6 +424,40 @@ func loadMerchantProjectCardUsers(merchantID uint, targetProjectID uint) []merch
 	}
 
 	return rows
+}
+
+func findMultiServiceProjectVerifyCodeInWindow(cardID uint, projectID uint, windowStart time.Time, windowEnd time.Time) *models.VerifyCode {
+	if cardID == 0 || projectID == 0 || windowEnd.Before(windowStart) {
+		return nil
+	}
+	type verifyCodeWindowRow struct {
+		ID        uint      `gorm:"column:id"`
+		CardID    uint      `gorm:"column:card_id"`
+		ProjectID *uint     `gorm:"column:project_id"`
+		Code      string    `gorm:"column:code"`
+		ExpireAt  int64     `gorm:"column:expire_at"`
+		Used      bool      `gorm:"column:used"`
+		CreatedAt time.Time `gorm:"column:created_at"`
+	}
+	var row verifyCodeWindowRow
+	err := config.DB.
+		Table("verify_codes").
+		Select("id, card_id, project_id, code, expire_at, used, created_at").
+		Where("card_id = ? AND project_id = ? AND created_at >= ? AND created_at <= ?", cardID, projectID, windowStart, windowEnd).
+		Order("created_at desc, id desc").
+		First(&row).Error
+	if err != nil {
+		return nil
+	}
+	return &models.VerifyCode{
+		ID:        row.ID,
+		CardID:    row.CardID,
+		ProjectID: row.ProjectID,
+		Code:      row.Code,
+		ExpireAt:  row.ExpireAt,
+		Used:      row.Used,
+		CreatedAt: &row.CreatedAt,
+	}
 }
 
 func GetCards(c *gin.Context) {
@@ -1092,6 +1131,18 @@ func GenerateVerifyCode(c *gin.Context) {
 		} else if !merchantProjectServiceTimeAllowed(project, now) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "当前不在卡片项目服务时间"})
 			return
+		} else if project.ServiceCapacity > 1 {
+			if windowStart, windowEnd, ok := merchantProjectCurrentServiceWindow(project, now); ok {
+				existing := findMultiServiceProjectVerifyCodeInWindow(card.ID, project.ID, windowStart, windowEnd)
+				if existing != nil {
+					if existing.Used {
+						c.JSON(http.StatusBadRequest, gin.H{"error": "当前服务时间段已核销，不能重复生成核销码"})
+						return
+					}
+					c.JSON(http.StatusBadRequest, gin.H{"error": "当前服务时间段已生成核销码，不能重复生成"})
+					return
+				}
+			}
 		}
 	}
 
