@@ -289,8 +289,8 @@
           <button class="text-gray-400" @click="closeVerifyProjectModal">×</button>
         </div>
         <div class="p-4 max-h-[60vh] overflow-y-auto">
-          <div v-if="!selectedCard?.projects || selectedCard.projects.length === 0" class="text-center text-gray-400 py-6">暂无可选项目</div>
-          <label v-for="p in selectedCard.projects" :key="p.id" class="flex items-center gap-3 py-2">
+          <div v-if="selectedCardVerifyableProjects.length === 0" class="text-center text-gray-400 py-6">当前暂无可生成核销码的项目</div>
+          <label v-for="p in selectedCardVerifyableProjects" :key="p.id" class="flex items-center gap-3 py-2">
             <input type="radio" name="verify_project" :value="p.id" v-model="selectedVerifyProjectId" />
             <div class="flex-1">
               <div class="text-gray-800">{{ p.name }}</div>
@@ -697,11 +697,15 @@ const selectedCardHasCurrentWindowGeneratedVerifyCode = computed(() => {
     return project?.multi_service_overview?.current_window_verify_code_generated === true
   })
 })
+const selectedCardVerifyableProjects = computed(() => {
+  const projects = Array.isArray(selectedCard.value?.projects) ? selectedCard.value.projects : []
+  const now = new Date(nowTick.value)
+  return projects.filter(project => projectServiceTimeAllowed(project, now))
+})
 const shouldShowSelectedCardVerifyButton = computed(() => {
   if (selectedCardCanArriveNow.value) return false
   if (!selectedCard.value) return false
-  if (!selectedCardHasServiceTimeProject.value) return true
-  return isCardOnServiceDay(selectedCard.value, new Date(nowTick.value))
+  return selectedCardVerifyableProjects.value.length > 0
 })
 
 const getSelectedCardMerchantClosedMessage = () => {
@@ -1149,15 +1153,6 @@ const projectServiceTimeAllowed = (project, now = new Date()) => {
   }
 
   return false
-}
-
-const isCardOnServiceDay = (card, now = new Date()) => {
-  const serviceTimeProjects = getCardServiceTimeProjects(card)
-  if (serviceTimeProjects.length === 0) return true
-  return serviceTimeProjects.some(project => {
-    const slots = Array.isArray(project?.service_time_slots) ? project.service_time_slots : []
-    return slots.some(slot => serviceTimeSlotMatchesDate(slot, now))
-  })
 }
 
 const getProjectServiceSlotsByUpcomingTime = (project, limit = 1, now = new Date(nowTick.value)) => {
