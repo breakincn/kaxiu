@@ -150,8 +150,6 @@
                 @click="handleParticipantTagClick(participant)"
               >
                 {{ participant.nickname }}
-                <em v-if="participant.booked && !participant.checked_in">已预约</em>
-                <em v-else-if="participant.checked_in">已核销</em>
                 <strong v-if="participant.show_no_show_count && participant.recent_no_show_count > 0" class="participant-no-show-count">{{ participant.recent_no_show_count }}</strong>
               </span>
             </div>
@@ -5407,10 +5405,8 @@ onUnmounted(() => {
   border: 1px solid transparent;
   font-size: 12px;
   line-height: 1.3;
-  overflow: hidden;
   padding: 6px 7px;
   text-align: center;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -5427,9 +5423,9 @@ onUnmounted(() => {
 }
 
 .multi-service-users span.is-booked {
-  background: rgba(59, 130, 246, 0.08);
-  border-color: rgba(59, 130, 246, 0.16);
-  color: #1d4ed8;
+  background: #eefdf2;
+  border-color: #bdecc9;
+  color: #1f8a47;
 }
 
 .participant-no-show-count {
