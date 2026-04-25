@@ -147,6 +147,19 @@
                 <div class="mt-1 text-xs text-gray-400">同一项目单次可服务的人数，如舞蹈课可设置为 15。</div>
               </div>
 
+              <div v-if="Number(project.service_capacity || 1) > 1">
+                <div class="text-sm font-medium text-gray-700 mb-2">多人项目预约取消截止（分钟）</div>
+                <input
+                  v-model.number="project.multi_service_booking_cancel_deadline_minutes_before_start"
+                  type="number"
+                  min="0"
+                  max="1440"
+                  placeholder="如 60"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <div class="mt-1 text-xs text-gray-400">仅作用于多人项目课程预约。距开课超过该时间可直接取消，默认 60 分钟。</div>
+              </div>
+
               <div>
                 <div class="flex items-center justify-between">
                   <div class="text-sm font-medium text-gray-700 leading-5">展示用户</div>
@@ -480,6 +493,7 @@ const normalizeProjectsState = (projects, removedIds = []) => JSON.stringify({
     room_select_timeout_minutes: Number(project.room_select_timeout_minutes ?? 1.5),
     start_pending_timeout_minutes: Number(project.start_pending_timeout_minutes ?? 5),
     service_capacity: Number(project.service_capacity ?? 1),
+    multi_service_booking_cancel_deadline_minutes_before_start: Number(project.multi_service_booking_cancel_deadline_minutes_before_start ?? 60),
     show_participants: project.show_participants !== false,
     default_service_technician_ids: normalizeServiceTechnicianIds(project.default_service_technician_ids),
     service_time_slots: normalizeServiceTimeSlots(project.service_time_slots),
@@ -579,6 +593,7 @@ const load = async () => {
           room_select_timeout_minutes: Number(p.room_select_timeout_seconds ?? 90) / 60,
           start_pending_timeout_minutes: Number(p.start_pending_timeout_seconds ?? 300) / 60,
           service_capacity: Number(p.service_capacity ?? 1),
+          multi_service_booking_cancel_deadline_minutes_before_start: Number(p.multi_service_booking_cancel_deadline_minutes_before_start ?? 60),
           show_participants: p.show_participants !== false,
           default_service_technician_ids: normalizeServiceTechnicianIds(p.default_service_technician_ids),
           service_time_slot_mode: 'weekly',
@@ -612,6 +627,7 @@ const addProject = () => {
     room_select_timeout_minutes: 1.5,
     start_pending_timeout_minutes: 5,
     service_capacity: 1,
+    multi_service_booking_cancel_deadline_minutes_before_start: 60,
     show_participants: true,
     default_service_technician_ids: [],
     service_time_slot_mode: 'weekly',
@@ -721,6 +737,11 @@ const save = async () => {
       alert(`项目 ${i + 1} 的服务人数必须在 1-999 之间`)
       return
     }
+    const multiServiceBookingCancelDeadlineMinutesBeforeStart = Number(project.multi_service_booking_cancel_deadline_minutes_before_start ?? 60)
+    if (!Number.isFinite(multiServiceBookingCancelDeadlineMinutesBeforeStart) || multiServiceBookingCancelDeadlineMinutesBeforeStart < 0 || multiServiceBookingCancelDeadlineMinutesBeforeStart > 1440) {
+      alert(`项目 ${i + 1} 的多人项目预约取消截止时间必须在 0-1440 分钟之间`)
+      return
+    }
     const serviceTimeSlots = Array.isArray(project.service_time_slots) ? project.service_time_slots : []
     for (let j = 0; j < serviceTimeSlots.length; j++) {
       const slot = serviceTimeSlots[j]
@@ -795,6 +816,7 @@ const save = async () => {
         room_select_timeout_seconds: Math.round(Number(p.room_select_timeout_minutes ?? 1.5) * 60),
         start_pending_timeout_seconds: Number(p.start_pending_timeout_minutes ?? 5) * 60,
         service_capacity: Number(p.service_capacity ?? 1),
+        multi_service_booking_cancel_deadline_minutes_before_start: Number(p.multi_service_booking_cancel_deadline_minutes_before_start ?? 60),
         show_participants: p.show_participants !== false,
         default_service_technician_ids: normalizeServiceTechnicianIds(p.default_service_technician_ids),
         service_time_slots: normalizeServiceTimeSlots(p.service_time_slots),

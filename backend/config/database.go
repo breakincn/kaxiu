@@ -208,6 +208,7 @@ func InitDB() {
 	// merchant_projects: 项目级服务人数与固定服务时间
 	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `service_capacity` int NOT NULL DEFAULT 1 COMMENT '服务人数'")
 	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `show_participants` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '用户端是否展示参与服务用户'")
+	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `multi_service_booking_cancel_deadline_minutes_before_start` int NOT NULL DEFAULT 60 COMMENT '多人项目课程预约取消截止时间（距开课前分钟数）'")
 	DB.Exec("ALTER TABLE `merchant_projects` ADD COLUMN `service_time_slots` JSON NULL COMMENT '服务时间槽'")
 	DB.Exec("UPDATE `merchant_projects` SET `service_time_slots` = JSON_ARRAY() WHERE `service_time_slots` IS NULL")
 	DB.Exec("ALTER TABLE `merchant_projects` MODIFY COLUMN `service_time_slots` JSON NOT NULL COMMENT '服务时间槽'")
@@ -229,6 +230,8 @@ func InitDB() {
 
 	// usages: 手牌绑定与归还
 	DB.Exec("ALTER TABLE `usages` ADD COLUMN `hand_card_no` varchar(20) NULL DEFAULT NULL COMMENT '手牌号（商户核销后输入绑定）'")
+	DB.Exec("ALTER TABLE `usages` ADD COLUMN `source_type` varchar(40) NOT NULL DEFAULT '' COMMENT '使用记录来源类型'")
+	DB.Exec("ALTER TABLE `usages` ADD COLUMN `source_note` varchar(255) NOT NULL DEFAULT '' COMMENT '使用记录来源备注'")
 	// 兼容已存在字段：将空字符串改为 NULL（未分配）
 	DB.Exec("UPDATE `usages` SET `hand_card_no` = NULL WHERE `hand_card_no` = ''")
 	DB.Exec("ALTER TABLE `usages` MODIFY COLUMN `hand_card_no` varchar(20) NULL DEFAULT NULL COMMENT '手牌号（商户核销后输入绑定）'")
@@ -238,6 +241,8 @@ func InitDB() {
 	DB.Exec("ALTER TABLE `usages` ADD COLUMN `hand_card_active` tinyint GENERATED ALWAYS AS (IF(hand_card_no IS NOT NULL AND hand_card_returned_at IS NULL, 1, NULL)) STORED COMMENT '手牌占用标记（1-占用；NULL-不占用）'")
 	DB.Exec("ALTER TABLE `usages` DROP INDEX `idx_usages_hand_card_no`")
 	DB.Exec("ALTER TABLE `usages` ADD INDEX `idx_usages_hand_card_no` (`hand_card_no`)")
+	DB.Exec("CREATE TABLE IF NOT EXISTS `multi_service_bookings` (`id` bigint unsigned NOT NULL AUTO_INCREMENT,`merchant_id` bigint unsigned NOT NULL,`project_id` bigint unsigned NOT NULL,`card_id` bigint unsigned NOT NULL,`user_id` bigint unsigned NOT NULL,`slot_start_at` datetime(3) NULL DEFAULT NULL,`slot_end_at` datetime(3) NULL DEFAULT NULL,`status` varchar(20) NOT NULL DEFAULT 'booked' COMMENT '状态（booked/canceled/attended/no_show）',`booked_at` datetime(3) NULL DEFAULT NULL,`canceled_at` datetime(3) NULL DEFAULT NULL,`cancel_reason` varchar(255) NOT NULL DEFAULT '',`cancel_penalty` BOOLEAN NOT NULL DEFAULT 0,`attended_at` datetime(3) NULL DEFAULT NULL,`no_show_at` datetime(3) NULL DEFAULT NULL,`usage_id` bigint unsigned NULL DEFAULT NULL,`created_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),`updated_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),PRIMARY KEY (`id`),UNIQUE KEY `uk_msb_slot_user` (`project_id`,`slot_start_at`,`user_id`),KEY `idx_msb_merchant_id` (`merchant_id`),KEY `idx_msb_project_id` (`project_id`),KEY `idx_msb_card_id` (`card_id`),KEY `idx_msb_user_id` (`user_id`),KEY `idx_msb_slot_start_at` (`slot_start_at`),KEY `idx_msb_status` (`status`),KEY `idx_msb_usage_id` (`usage_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多人项目课程预约表'")
+	DB.Exec("CREATE TABLE IF NOT EXISTS `multi_service_penalty_ledgers` (`id` bigint unsigned NOT NULL AUTO_INCREMENT,`merchant_id` bigint unsigned NOT NULL,`project_id` bigint unsigned NOT NULL,`card_id` bigint unsigned NOT NULL,`user_id` bigint unsigned NOT NULL,`booking_id` bigint unsigned NULL DEFAULT NULL,`penalty_type` varchar(30) NOT NULL DEFAULT '' COMMENT '惩罚类型（late_cancel/no_show/over_limit）',`counts_toward_no_show` BOOLEAN NOT NULL DEFAULT 0 COMMENT '是否计入半年失约累计',`charged_times` int NOT NULL DEFAULT 0 COMMENT '扣减次数',`charged_amount` int NOT NULL DEFAULT 0 COMMENT '扣减额度',`usage_id` bigint unsigned NULL DEFAULT NULL,`remark` varchar(255) NOT NULL DEFAULT '' COMMENT '备注',`penalty_at` datetime(3) NULL DEFAULT NULL,`created_at` datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),PRIMARY KEY (`id`),KEY `idx_mspl_merchant_id` (`merchant_id`),KEY `idx_mspl_project_id` (`project_id`),KEY `idx_mspl_card_id` (`card_id`),KEY `idx_mspl_user_id` (`user_id`),KEY `idx_mspl_booking_id` (`booking_id`),KEY `idx_mspl_penalty_type` (`penalty_type`),KEY `idx_mspl_usage_id` (`usage_id`),KEY `idx_mspl_penalty_at` (`penalty_at`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多人项目课程失约惩罚账本'")
 	// 同一商户同一手牌号：在“未归还”(hand_card_returned_at 为 NULL)期间不允许重复；归还后允许复用
 	DB.Exec("ALTER TABLE `usages` DROP INDEX `uidx_usages_merchant_hand_card_no`")
 	DB.Exec("ALTER TABLE `usages` DROP INDEX `uidx_usages_merchant_hand_card_active`")

@@ -245,18 +245,23 @@ func enrichCardProjectsWithMultiServiceOverview(card *models.Card, now time.Time
 			RemainingCount:      project.ServiceCapacity,
 			Participants:        []models.MerchantProjectMultiServiceParticipant{},
 			InServiceTimeWindow: len(project.ServiceTimeSlots) == 0,
+			InBookingWindow:     len(project.ServiceTimeSlots) == 0,
 			Visible:             len(project.ServiceTimeSlots) == 0,
 		}
 
 		var windowStart, windowEnd time.Time
 		if len(project.ServiceTimeSlots) > 0 {
-			start, end, ok := merchantProjectCurrentServiceWindow(*project, now)
-			overview.InServiceTimeWindow = ok
+			relevantSlot, ok := findProjectRelevantSummarySlot(*project, now)
 			overview.Visible = ok
-			windowStart = start
-			windowEnd = end
+			overview.InBookingWindow = ok
 			if ok {
-				if existing := findMultiServiceProjectVerifyCodeInWindow(card.ID, project.ID, windowStart, windowEnd); existing != nil && !existing.Used {
+				overview.CurrentSlotStartAt = &relevantSlot.SlotStartAt
+				overview.CurrentSlotEndAt = &relevantSlot.SlotEndAt
+				overview.BookingOpenAt = &relevantSlot.BookingOpenAt
+				windowStart = relevantSlot.BookingOpenAt
+				windowEnd = relevantSlot.SlotEndAt
+				overview.InServiceTimeWindow = !now.In(config.ProjectServiceTimeLocation()).Before(relevantSlot.SlotStartAt) && !now.In(config.ProjectServiceTimeLocation()).After(relevantSlot.SlotEndAt)
+				if existing := findMultiServiceProjectVerifyCodeInWindow(card.ID, project.ID, relevantSlot.SlotStartAt.Add(-1*time.Hour), relevantSlot.SlotEndAt); existing != nil && !existing.Used {
 					overview.CurrentWindowVerifyCodeGenerated = true
 				}
 			}
@@ -296,6 +301,31 @@ func enrichCardProjectsWithMultiServiceOverview(card *models.Card, now time.Time
 		}
 
 		if overview.Visible {
+			slotStart := overview.CurrentSlotStartAt
+			bookingsByUserID := make(map[uint]models.MultiServiceBooking)
+			if slotStart != nil {
+				if bookings, err := loadSlotBookings(config.DB, project.ID, *slotStart); err == nil {
+					overview.BookedCount = countSlotBookedOccupancy(bookings)
+					overview.UsedCount = countSlotCheckedIn(bookings)
+					overview.RemainingCount = overview.ServiceCapacity - overview.BookedCount
+					if overview.RemainingCount < 0 {
+						overview.RemainingCount = 0
+					}
+					if booking := findUserSlotBooking(bookings, card.UserID); booking != nil {
+						overview.CurrentUserBooked = strings.TrimSpace(booking.Status) != multiServiceBookingStatusCanceled
+						overview.CurrentUserBookingStatus = strings.TrimSpace(booking.Status)
+						overview.CurrentUserBookingID = &booking.ID
+						if overview.CurrentUserBooked && booking.Status == multiServiceBookingStatusBooked {
+							cancelDeadline := merchantProjectCancelDeadline(*project, *slotStart)
+							overview.CurrentUserCancelDeadlineAt = &cancelDeadline
+							overview.CurrentUserCanCancel = time.Now().In(config.ProjectServiceTimeLocation()).Before(*slotStart)
+						}
+					}
+					for _, booking := range bookings {
+						bookingsByUserID[booking.UserID] = booking
+					}
+				}
+			}
 			type participantRow struct {
 				UserID   uint   `gorm:"column:user_id"`
 				Nickname string `gorm:"column:nickname"`
@@ -323,6 +353,7 @@ func enrichCardProjectsWithMultiServiceOverview(card *models.Card, now time.Time
 			}
 
 			cardUsers := loadMerchantProjectCardUsers(card.MerchantID, project.ID)
+			userIDs := make([]uint, 0, len(cardUsers))
 			seenUsers := make(map[uint]struct{})
 			for _, row := range cardUsers {
 				if row.UserID == 0 {
@@ -332,26 +363,53 @@ func enrichCardProjectsWithMultiServiceOverview(card *models.Card, now time.Time
 					continue
 				}
 				seenUsers[row.UserID] = struct{}{}
+				userIDs = append(userIDs, row.UserID)
+			}
+			recentNoShowCountByUserID := listRecentNoShowCountsByUser(config.DB, card.MerchantID, userIDs, now)
+			for _, row := range cardUsers {
+				if row.UserID == 0 {
+					continue
+				}
+				if _, seen := seenUsers[row.UserID]; !seen {
+					continue
+				}
+				delete(seenUsers, row.UserID)
 				nickname := strings.TrimSpace(row.Nickname)
 				if nickname == "" {
 					nickname = fmt.Sprintf("用户%d", row.UserID)
 				}
 				_, checkedIn := checkedInUsers[row.UserID]
+				booking := bookingsByUserID[row.UserID]
+				booked := false
+				bookingStatus := ""
+				if booking.ID > 0 {
+					bookingStatus = strings.TrimSpace(booking.Status)
+					booked = bookingStatus == multiServiceBookingStatusBooked || bookingStatus == multiServiceBookingStatusAttended || bookingStatus == multiServiceBookingStatusNoShow
+				}
 				overview.Participants = append(overview.Participants, models.MerchantProjectMultiServiceParticipant{
-					UserID:    row.UserID,
-					Nickname:  nickname,
-					CheckedIn: checkedIn,
+					UserID:            row.UserID,
+					Nickname:          nickname,
+					Booked:            booked,
+					BookingStatus:     bookingStatus,
+					CheckedIn:         checkedIn,
+					RecentNoShowCount: recentNoShowCountByUserID[row.UserID],
+					ShowNoShowCount:   row.UserID == card.UserID,
 				})
 			}
-			overview.UsedCount = 0
-			for _, participant := range overview.Participants {
-				if participant.CheckedIn {
-					overview.UsedCount++
+			if overview.BookedCount == 0 {
+				overview.UsedCount = 0
+				for _, participant := range overview.Participants {
+					if participant.CheckedIn {
+						overview.UsedCount++
+					}
+					if participant.Booked || participant.CheckedIn {
+						overview.BookedCount++
+					}
 				}
-			}
-			overview.RemainingCount = overview.ServiceCapacity - overview.UsedCount
-			if overview.RemainingCount < 0 {
-				overview.RemainingCount = 0
+				overview.RemainingCount = overview.ServiceCapacity - overview.BookedCount
+				if overview.RemainingCount < 0 {
+					overview.RemainingCount = 0
+				}
 			}
 		}
 
@@ -1130,6 +1188,14 @@ func GenerateVerifyCode(c *gin.Context) {
 			}
 		} else if !merchantProjectServiceTimeAllowed(project, now) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "当前不在卡片项目服务时间"})
+			return
+		} else if _, _, err := validateMultiServiceVerifyEligibility(config.DB, card, project, now.In(config.ProjectServiceTimeLocation())); err != nil {
+			var ae apiErr
+			if errors.As(err, &ae) {
+				c.JSON(ae.status, gin.H{"error": ae.msg})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "检查课程预约容量失败"})
 			return
 		} else if project.ServiceCapacity > 1 {
 			if windowStart, windowEnd, ok := merchantProjectCurrentServiceWindow(project, now); ok {

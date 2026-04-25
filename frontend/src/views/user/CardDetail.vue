@@ -127,12 +127,12 @@
             </div>
             <div class="multi-service-metrics">
               <div>
-                <span>已核销</span>
-                <strong>{{ getProjectMultiOverview(project).used_count || 0 }}</strong>
+                <span>已预约</span>
+                <strong>{{ getProjectMultiOverview(project).booked_count || 0 }}</strong>
               </div>
               <div>
-                <span>剩余</span>
-                <strong>{{ getProjectMultiOverview(project).remaining_count || 0 }}</strong>
+                <span>已核销</span>
+                <strong>{{ getProjectMultiOverview(project).used_count || 0 }}</strong>
               </div>
               <div>
                 <span>总人数</span>
@@ -146,9 +146,13 @@
               <span
                 v-for="participant in getProjectParticipants(project)"
                 :key="participant.user_id || participant.nickname"
-                :class="participant.checked_in ? 'is-checked-in' : 'is-not-checked-in'"
+                :class="getParticipantTagClass(participant)"
+                @click="handleParticipantTagClick(participant)"
               >
                 {{ participant.nickname }}
+                <em v-if="participant.booked && !participant.checked_in">已预约</em>
+                <em v-else-if="participant.checked_in">已核销</em>
+                <strong v-if="participant.show_no_show_count && participant.recent_no_show_count > 0" class="participant-no-show-count">{{ participant.recent_no_show_count }}</strong>
               </span>
             </div>
             <div v-else class="multi-service-empty">暂无核销用户</div>
@@ -452,6 +456,9 @@
               </div>
               <div v-if="getUsageSyntheticStatusText(usage)" class="text-gray-400 text-sm mt-0.5">
                 状态：{{ getUsageSyntheticStatusText(usage) }}
+              </div>
+              <div v-if="getUsageSourceNoteText(usage)" class="text-gray-400 text-sm mt-0.5">
+                备注：{{ getUsageSourceNoteText(usage) }}
               </div>
               <div v-if="getUsageQueueDisplayText(usage)" class="text-sm mt-0.5 font-medium">
                 叫号：<span :class="getUsageQueueNoClass(usage)">{{ getUsageQueueDisplayText(usage) }}</span>
@@ -1031,9 +1038,23 @@ const getProjectParticipants = (project) => {
     .map(item => ({
       user_id: Number(item?.user_id || 0),
       nickname: String(item?.nickname || '').trim(),
-      checked_in: item?.checked_in === true
+      checked_in: item?.checked_in === true,
+      booked: item?.booked === true,
+      recent_no_show_count: Number(item?.recent_no_show_count || 0),
+      show_no_show_count: item?.show_no_show_count === true
     }))
     .filter(item => item.nickname)
+}
+
+const getParticipantTagClass = (participant) => {
+  if (participant?.checked_in) return 'is-checked-in'
+  if (participant?.booked) return 'is-booked'
+  return 'is-not-checked-in'
+}
+
+const handleParticipantTagClick = (participant) => {
+  if (!participant?.show_no_show_count || Number(participant?.recent_no_show_count || 0) <= 0) return
+  alert('半年内失约达到3次则扣除核销1次')
 }
 
 const hasProjectAttendanceWarning = (project) => {
@@ -1140,7 +1161,9 @@ const buildFallbackProjectMultiOverview = (project) => {
   return {
     visible,
     in_service_time_window: visible,
+    in_booking_window: visible,
     service_capacity: serviceCapacity,
+    booked_count: usedCount,
     used_count: usedCount,
     remaining_count: Math.max(serviceCapacity - usedCount, 0),
     participants
@@ -2231,6 +2254,8 @@ const getSyntheticUsageAppointment = (usage) => {
 }
 
 const getUsageSyntheticStatusText = (usage) => {
+  const sourceNote = String(usage?.source_note || '').trim()
+  if (sourceNote) return sourceNote
   const appt = getSyntheticUsageAppointment(usage)
   if (!appt) return ''
   const status = String(appt.status || '').trim()
@@ -2239,6 +2264,13 @@ const getUsageSyntheticStatusText = (usage) => {
     return '失约-用户未到店'
   }
   return ''
+}
+
+const getUsageSourceNoteText = (usage) => {
+  const sourceNote = String(usage?.source_note || '').trim()
+  if (!sourceNote) return ''
+  if (getUsageSyntheticStatusText(usage) === sourceNote) return ''
+  return sourceNote
 }
 
 const getUsageSyntheticServiceEndText = (usage) => {
@@ -5392,6 +5424,19 @@ onUnmounted(() => {
   background: transparent;
   border-color: #bbf7d0;
   color: #374151;
+}
+
+.multi-service-users span.is-booked {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.16);
+  color: #1d4ed8;
+}
+
+.participant-no-show-count {
+  color: #dc2626;
+  font-size: 12px;
+  font-weight: 700;
+  margin-left: 4px;
 }
 
 .multi-service-empty {

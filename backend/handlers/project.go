@@ -125,27 +125,28 @@ func CreateMerchantProject(c *gin.Context) {
 	}
 
 	var input struct {
-		Name                             string                                            `json:"name" binding:"required"`
-		Duration                         int                                               `json:"duration" binding:"required,min=1"`
-		BookableOnline                   *bool                                             `json:"bookable_online"`
-		ServiceGapMinutes                *int                                              `json:"service_gap_minutes"`
-		StartDelaySeconds                *int                                              `json:"start_delay_seconds"`
-		RoomSelectTimeoutSeconds         *int                                              `json:"room_select_timeout_seconds"`
-		StartPendingTimeoutSeconds       *int                                              `json:"start_pending_timeout_seconds"`
-		ServiceCapacity                  *int                                              `json:"service_capacity"`
-		ShowParticipants                 *bool                                             `json:"show_participants"`
-		ServiceTimeSlots                 models.MerchantProjectServiceTimeSlots            `json:"service_time_slots"`
-		DefaultServiceTechnicianIDs      models.MerchantProjectDefaultServiceTechnicianIDs `json:"default_service_technician_ids"`
-		AutoAssignTechnicianDelayMinutes *int                                              `json:"auto_assign_technician_delay_minutes"`
-		DelayToleranceMinutes            *int                                              `json:"delay_tolerance_minutes"`
-		DelayCompensationMode            *string                                           `json:"delay_compensation_mode"`
-		DelayRedeemThresholdPercent      *int                                              `json:"delay_redeem_threshold_percent"`
-		DelayFixedUnitValue              *int                                              `json:"delay_fixed_unit_value"`
-		IsDefault                        *bool                                             `json:"is_default"`
-		Price                            float64                                           `json:"price"`
-		Description                      string                                            `json:"description"`
-		IsActive                         *bool                                             `json:"is_active"`
-		SortOrder                        *int                                              `json:"sort_order"`
+		Name                                                string                                            `json:"name" binding:"required"`
+		Duration                                            int                                               `json:"duration" binding:"required,min=1"`
+		BookableOnline                                      *bool                                             `json:"bookable_online"`
+		ServiceGapMinutes                                   *int                                              `json:"service_gap_minutes"`
+		StartDelaySeconds                                   *int                                              `json:"start_delay_seconds"`
+		RoomSelectTimeoutSeconds                            *int                                              `json:"room_select_timeout_seconds"`
+		StartPendingTimeoutSeconds                          *int                                              `json:"start_pending_timeout_seconds"`
+		ServiceCapacity                                     *int                                              `json:"service_capacity"`
+		MultiServiceBookingCancelDeadlineMinutesBeforeStart *int                                              `json:"multi_service_booking_cancel_deadline_minutes_before_start"`
+		ShowParticipants                                    *bool                                             `json:"show_participants"`
+		ServiceTimeSlots                                    models.MerchantProjectServiceTimeSlots            `json:"service_time_slots"`
+		DefaultServiceTechnicianIDs                         models.MerchantProjectDefaultServiceTechnicianIDs `json:"default_service_technician_ids"`
+		AutoAssignTechnicianDelayMinutes                    *int                                              `json:"auto_assign_technician_delay_minutes"`
+		DelayToleranceMinutes                               *int                                              `json:"delay_tolerance_minutes"`
+		DelayCompensationMode                               *string                                           `json:"delay_compensation_mode"`
+		DelayRedeemThresholdPercent                         *int                                              `json:"delay_redeem_threshold_percent"`
+		DelayFixedUnitValue                                 *int                                              `json:"delay_fixed_unit_value"`
+		IsDefault                                           *bool                                             `json:"is_default"`
+		Price                                               float64                                           `json:"price"`
+		Description                                         string                                            `json:"description"`
+		IsActive                                            *bool                                             `json:"is_active"`
+		SortOrder                                           *int                                              `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -208,6 +209,14 @@ func CreateMerchantProject(c *gin.Context) {
 	showParticipants := true
 	if input.ShowParticipants != nil {
 		showParticipants = *input.ShowParticipants
+	}
+	multiServiceBookingCancelDeadlineMinutesBeforeStart := 60
+	if input.MultiServiceBookingCancelDeadlineMinutesBeforeStart != nil {
+		if *input.MultiServiceBookingCancelDeadlineMinutesBeforeStart < 0 || *input.MultiServiceBookingCancelDeadlineMinutesBeforeStart > 24*60 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "多人项目预约取消截止时间范围应为 0-1440 分钟"})
+			return
+		}
+		multiServiceBookingCancelDeadlineMinutesBeforeStart = *input.MultiServiceBookingCancelDeadlineMinutesBeforeStart
 	}
 	serviceTimeSlots, err := normalizeMerchantProjectServiceTimeSlots(input.ServiceTimeSlots)
 	if err != nil {
@@ -287,15 +296,16 @@ func CreateMerchantProject(c *gin.Context) {
 	}
 
 	p := models.MerchantProject{
-		MerchantID:                       merchantID,
-		Name:                             name,
-		Duration:                         input.Duration,
-		BookableOnline:                   bookableOnline,
-		ServiceGapMinutes:                serviceGapMinutes,
-		StartDelaySeconds:                startDelaySeconds,
-		RoomSelectTimeoutSeconds:         roomSelectTimeoutSeconds,
-		StartPendingTimeoutSeconds:       startPendingTimeoutSeconds,
-		ServiceCapacity:                  serviceCapacity,
+		MerchantID:                 merchantID,
+		Name:                       name,
+		Duration:                   input.Duration,
+		BookableOnline:             bookableOnline,
+		ServiceGapMinutes:          serviceGapMinutes,
+		StartDelaySeconds:          startDelaySeconds,
+		RoomSelectTimeoutSeconds:   roomSelectTimeoutSeconds,
+		StartPendingTimeoutSeconds: startPendingTimeoutSeconds,
+		ServiceCapacity:            serviceCapacity,
+		MultiServiceBookingCancelDeadlineMinutesBeforeStart: multiServiceBookingCancelDeadlineMinutesBeforeStart,
 		ShowParticipants:                 showParticipants,
 		ServiceTimeSlots:                 serviceTimeSlots,
 		DefaultServiceTechnicianIDs:      defaultServiceTechnicianIDs,
@@ -345,27 +355,28 @@ func UpdateMerchantProject(c *gin.Context) {
 	}
 
 	var input struct {
-		Name                             *string                                            `json:"name"`
-		Duration                         *int                                               `json:"duration"`
-		BookableOnline                   *bool                                              `json:"bookable_online"`
-		ServiceGapMinutes                *int                                               `json:"service_gap_minutes"`
-		StartDelaySeconds                *int                                               `json:"start_delay_seconds"`
-		RoomSelectTimeoutSeconds         *int                                               `json:"room_select_timeout_seconds"`
-		StartPendingTimeoutSeconds       *int                                               `json:"start_pending_timeout_seconds"`
-		ServiceCapacity                  *int                                               `json:"service_capacity"`
-		ShowParticipants                 *bool                                              `json:"show_participants"`
-		ServiceTimeSlots                 *models.MerchantProjectServiceTimeSlots            `json:"service_time_slots"`
-		DefaultServiceTechnicianIDs      *models.MerchantProjectDefaultServiceTechnicianIDs `json:"default_service_technician_ids"`
-		AutoAssignTechnicianDelayMinutes *int                                               `json:"auto_assign_technician_delay_minutes"`
-		DelayToleranceMinutes            *int                                               `json:"delay_tolerance_minutes"`
-		DelayCompensationMode            *string                                            `json:"delay_compensation_mode"`
-		DelayRedeemThresholdPercent      *int                                               `json:"delay_redeem_threshold_percent"`
-		DelayFixedUnitValue              *int                                               `json:"delay_fixed_unit_value"`
-		IsDefault                        *bool                                              `json:"is_default"`
-		Price                            *float64                                           `json:"price"`
-		Description                      *string                                            `json:"description"`
-		IsActive                         *bool                                              `json:"is_active"`
-		SortOrder                        *int                                               `json:"sort_order"`
+		Name                                                *string                                            `json:"name"`
+		Duration                                            *int                                               `json:"duration"`
+		BookableOnline                                      *bool                                              `json:"bookable_online"`
+		ServiceGapMinutes                                   *int                                               `json:"service_gap_minutes"`
+		StartDelaySeconds                                   *int                                               `json:"start_delay_seconds"`
+		RoomSelectTimeoutSeconds                            *int                                               `json:"room_select_timeout_seconds"`
+		StartPendingTimeoutSeconds                          *int                                               `json:"start_pending_timeout_seconds"`
+		ServiceCapacity                                     *int                                               `json:"service_capacity"`
+		MultiServiceBookingCancelDeadlineMinutesBeforeStart *int                                               `json:"multi_service_booking_cancel_deadline_minutes_before_start"`
+		ShowParticipants                                    *bool                                              `json:"show_participants"`
+		ServiceTimeSlots                                    *models.MerchantProjectServiceTimeSlots            `json:"service_time_slots"`
+		DefaultServiceTechnicianIDs                         *models.MerchantProjectDefaultServiceTechnicianIDs `json:"default_service_technician_ids"`
+		AutoAssignTechnicianDelayMinutes                    *int                                               `json:"auto_assign_technician_delay_minutes"`
+		DelayToleranceMinutes                               *int                                               `json:"delay_tolerance_minutes"`
+		DelayCompensationMode                               *string                                            `json:"delay_compensation_mode"`
+		DelayRedeemThresholdPercent                         *int                                               `json:"delay_redeem_threshold_percent"`
+		DelayFixedUnitValue                                 *int                                               `json:"delay_fixed_unit_value"`
+		IsDefault                                           *bool                                              `json:"is_default"`
+		Price                                               *float64                                           `json:"price"`
+		Description                                         *string                                            `json:"description"`
+		IsActive                                            *bool                                              `json:"is_active"`
+		SortOrder                                           *int                                               `json:"sort_order"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -422,6 +433,13 @@ func UpdateMerchantProject(c *gin.Context) {
 			return
 		}
 		updates["service_capacity"] = *input.ServiceCapacity
+	}
+	if input.MultiServiceBookingCancelDeadlineMinutesBeforeStart != nil {
+		if *input.MultiServiceBookingCancelDeadlineMinutesBeforeStart < 0 || *input.MultiServiceBookingCancelDeadlineMinutesBeforeStart > 24*60 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "多人项目预约取消截止时间范围应为 0-1440 分钟"})
+			return
+		}
+		updates["multi_service_booking_cancel_deadline_minutes_before_start"] = *input.MultiServiceBookingCancelDeadlineMinutesBeforeStart
 	}
 	if input.ShowParticipants != nil {
 		updates["show_participants"] = *input.ShowParticipants

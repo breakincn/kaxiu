@@ -24,7 +24,7 @@ func setupCardServiceTimeTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Merchant{}, &models.Card{}, &models.MerchantProject{}, &models.CardProject{}, &models.VerifyCode{}, &models.Usage{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Merchant{}, &models.Card{}, &models.MerchantProject{}, &models.CardProject{}, &models.VerifyCode{}, &models.Usage{}, &models.MultiServiceBooking{}, &models.MultiServicePenaltyLedger{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 	return db

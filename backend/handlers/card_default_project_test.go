@@ -23,7 +23,7 @@ func setupCardDefaultProjectTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite failed: %v", err)
 	}
-	if err := db.AutoMigrate(&models.User{}, &models.Merchant{}, &models.Card{}, &models.MerchantProject{}, &models.CardProject{}, &models.ServiceSession{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.Merchant{}, &models.Card{}, &models.MerchantProject{}, &models.CardProject{}, &models.ServiceSession{}, &models.VerifyCode{}, &models.MultiServiceBooking{}, &models.MultiServicePenaltyLedger{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 	return db

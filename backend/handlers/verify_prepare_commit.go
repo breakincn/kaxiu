@@ -188,11 +188,26 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 		Action:   "verify",
 	}
 	now := time.Now()
+	var multiServiceProject *models.MerchantProject
+	var multiServiceSlot *multiServiceSlotView
 	authType, verifierTechnicianID := currentVerifyActor(c)
 	effectiveSupportOrderComplete := merchant.SupportCustomerServiceMode && merchant.SupportOrderComplete
 	isQueueMode := !merchant.SupportCustomerServiceMode && merchant.SupportQueue && (merchant.QueueMode == "auto" || merchant.QueueMode == "manual")
 	usageStatus := "success"
 	autoFinish := false
+
+	if verifyCode.ProjectID != nil && *verifyCode.ProjectID > 0 {
+		if project, err := config.ResolveMerchantProject(tx, merchant.ID, verifyCode.ProjectID); err == nil && project != nil {
+			multiServiceProject = project
+			slot, _, err := validateMultiServiceVerifyEligibility(tx, card, *project, now.In(config.ProjectServiceTimeLocation()))
+			if err != nil {
+				return result, err
+			}
+			multiServiceSlot = slot
+		} else if err != nil {
+			return result, err
+		}
+	}
 
 	if merchant.SupportCustomerServiceMode {
 		usageStatus = "in_progress"
@@ -263,6 +278,11 @@ func performVerifyCommit(tx *gorm.DB, c *gin.Context, merchant models.Merchant, 
 		return result, err
 	}
 	result.UsageID = usage.ID
+	if multiServiceProject != nil && multiServiceSlot != nil {
+		if err := markMultiServiceBookingAttendance(tx, card, *multiServiceProject, multiServiceSlot, usage.ID, now.In(config.ProjectServiceTimeLocation())); err != nil {
+			return result, err
+		}
+	}
 
 	if !isQueueMode && !merchant.SupportCustomerServiceMode && !effectiveSupportOrderComplete {
 		finishedAt := now

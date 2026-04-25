@@ -18,6 +18,17 @@ type dbMigration struct {
 
 var defaultMigrations = []dbMigration{
 	{
+		Version: "2026042501",
+		Name:    "add_multi_service_booking_system",
+		Statements: []string{
+			"ALTER TABLE merchant_projects ADD COLUMN multi_service_booking_cancel_deadline_minutes_before_start INT NOT NULL DEFAULT 60 COMMENT '多人项目课程预约取消截止时间（距开课前分钟数）'",
+			"ALTER TABLE usages ADD COLUMN source_type varchar(40) NOT NULL DEFAULT '' COMMENT '使用记录来源类型'",
+			"ALTER TABLE usages ADD COLUMN source_note varchar(255) NOT NULL DEFAULT '' COMMENT '使用记录来源备注'",
+			"CREATE TABLE IF NOT EXISTS multi_service_bookings (\n  id bigint unsigned NOT NULL AUTO_INCREMENT,\n  merchant_id bigint unsigned NOT NULL,\n  project_id bigint unsigned NOT NULL,\n  card_id bigint unsigned NOT NULL,\n  user_id bigint unsigned NOT NULL,\n  slot_start_at datetime(3) NULL DEFAULT NULL,\n  slot_end_at datetime(3) NULL DEFAULT NULL,\n  status varchar(20) NOT NULL DEFAULT 'booked' COMMENT '状态（booked/canceled/attended/no_show）',\n  booked_at datetime(3) NULL DEFAULT NULL,\n  canceled_at datetime(3) NULL DEFAULT NULL,\n  cancel_reason varchar(255) NOT NULL DEFAULT '',\n  cancel_penalty BOOLEAN NOT NULL DEFAULT 0,\n  attended_at datetime(3) NULL DEFAULT NULL,\n  no_show_at datetime(3) NULL DEFAULT NULL,\n  usage_id bigint unsigned NULL DEFAULT NULL,\n  created_at datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),\n  updated_at datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),\n  PRIMARY KEY (id),\n  UNIQUE KEY uk_msb_slot_user (project_id, slot_start_at, user_id),\n  KEY idx_msb_merchant_id (merchant_id),\n  KEY idx_msb_project_id (project_id),\n  KEY idx_msb_card_id (card_id),\n  KEY idx_msb_user_id (user_id),\n  KEY idx_msb_slot_start_at (slot_start_at),\n  KEY idx_msb_status (status),\n  KEY idx_msb_usage_id (usage_id)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多人项目课程预约表'",
+			"CREATE TABLE IF NOT EXISTS multi_service_penalty_ledgers (\n  id bigint unsigned NOT NULL AUTO_INCREMENT,\n  merchant_id bigint unsigned NOT NULL,\n  project_id bigint unsigned NOT NULL,\n  card_id bigint unsigned NOT NULL,\n  user_id bigint unsigned NOT NULL,\n  booking_id bigint unsigned NULL DEFAULT NULL,\n  penalty_type varchar(30) NOT NULL DEFAULT '' COMMENT '惩罚类型（late_cancel/no_show/over_limit）',\n  counts_toward_no_show BOOLEAN NOT NULL DEFAULT 0 COMMENT '是否计入半年失约累计',\n  charged_times int NOT NULL DEFAULT 0 COMMENT '扣减次数',\n  charged_amount int NOT NULL DEFAULT 0 COMMENT '扣减额度',\n  usage_id bigint unsigned NULL DEFAULT NULL,\n  remark varchar(255) NOT NULL DEFAULT '' COMMENT '备注',\n  penalty_at datetime(3) NULL DEFAULT NULL,\n  created_at datetime(3) NULL DEFAULT CURRENT_TIMESTAMP(3),\n  PRIMARY KEY (id),\n  KEY idx_mspl_merchant_id (merchant_id),\n  KEY idx_mspl_project_id (project_id),\n  KEY idx_mspl_card_id (card_id),\n  KEY idx_mspl_user_id (user_id),\n  KEY idx_mspl_booking_id (booking_id),\n  KEY idx_mspl_penalty_type (penalty_type),\n  KEY idx_mspl_usage_id (usage_id),\n  KEY idx_mspl_penalty_at (penalty_at)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多人项目课程失约惩罚账本'",
+		},
+	},
+	{
 		Version: "2026030501",
 		Name:    "add_technician_password_need_reset",
 		Statements: []string{

@@ -229,6 +229,13 @@
             {{ selectedCardMerchantClosed ? '暂停营业' : '生成核销码' }}
           </button>
           <button
+            v-if="hasBookableMultiServiceSlots"
+            @click="openMultiServiceBookingModalFromAction"
+            class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
+          >
+            预约
+          </button>
+          <button
             v-if="!hasActiveAppointment && !selectedCardHasServiceTimeProject"
             @click="handleAppointmentAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
@@ -333,6 +340,70 @@
           <p v-if="codeExpireTime" class="text-center text-gray-400 text-sm mt-2">
             有效期至 {{ codeExpireTime }}
           </p>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showMultiServiceBookingModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[56]" @click.self="closeMultiServiceBookingModal">
+      <div class="bg-white rounded-2xl w-11/12 max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
+        <div class="bg-primary text-white px-5 py-4 flex items-center justify-between flex-shrink-0">
+          <h3 class="font-medium text-lg">预约 {{ appointmentCardTitle }}</h3>
+          <button @click="closeMultiServiceBookingModal" class="text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="overflow-y-auto flex-1 px-5 py-4">
+          <div v-if="loadingMultiServiceBookingSlots" class="py-10 text-center text-gray-400">正在加载可预约场次...</div>
+          <div v-else-if="multiServiceBookingSlots.length === 0" class="py-10 text-center text-gray-400">当前暂无可预约的多人项目场次</div>
+          <div v-else class="space-y-3">
+            <div
+              v-for="slot in multiServiceBookingSlots"
+              :key="getMultiServiceBookingSlotKey(slot)"
+              class="rounded-xl border border-gray-200 p-4"
+            >
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <div class="text-gray-800 font-medium">{{ slot.project_name }}</div>
+                  <div class="text-gray-500 text-sm mt-1">{{ formatMultiServiceSlotDateTime(slot.slot_start_at) }}</div>
+                  <div class="text-gray-400 text-xs mt-1">
+                    已预约 {{ slot.booked_count || 0 }} / {{ slot.service_capacity || 0 }}
+                    <span v-if="slot.checked_in_count">，已核销 {{ slot.checked_in_count }}</span>
+                  </div>
+                  <div class="flex flex-wrap gap-2 mt-2">
+                    <span v-if="slot.current_user_booked" class="px-2 py-0.5 rounded-full bg-green-50 text-green-600 text-xs">已预约</span>
+                    <span v-if="slot.is_full && !slot.current_user_booked" class="px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-xs">已满</span>
+                    <span v-else-if="!slot.current_user_booked" class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs">可预约</span>
+                    <span v-if="slot.current_user_booked && !slot.current_user_can_cancel" class="px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 text-xs">当前取消计失约</span>
+                  </div>
+                </div>
+                <div class="flex-shrink-0">
+                  <button
+                    v-if="slot.current_user_booked"
+                    type="button"
+                    class="px-4 py-2 rounded-lg border border-red-200 text-red-600 disabled:opacity-50"
+                    :disabled="submittingMultiServiceBooking"
+                    @click="cancelMultiServiceBooking(slot)"
+                  >
+                    取消预约
+                  </button>
+                  <button
+                    v-else
+                    type="button"
+                    class="px-4 py-2 rounded-lg bg-primary text-white disabled:opacity-50"
+                    :disabled="submittingMultiServiceBooking || slot.is_full"
+                    @click="createMultiServiceBooking(slot)"
+                  >
+                    预约
+                  </button>
+                </div>
+              </div>
+              <div v-if="slot.current_user_booked && slot.current_user_cancel_deadline_at" class="text-xs text-gray-400 mt-3">
+                无责任取消截止：{{ formatMultiServiceSlotDateTime(slot.current_user_cancel_deadline_at) }}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -489,6 +560,7 @@ const showCardQrModal = ref(false)
 const showActionSheet = ref(false)
 const showVerifyProjectModal = ref(false)
 const showVerifyCodeModal = ref(false)
+const showMultiServiceBookingModal = ref(false)
 const showAppointmentModal = ref(false)
 const showAppointmentConfirmModal = ref(false)
 const skipNextAppointmentProjectReload = ref(false)
@@ -515,6 +587,9 @@ const selectedTimeSlot = ref('')
 const timeSlots = ref([])
 const timeSlotError = ref('')
 const availableTechnicians = ref([])
+const loadingMultiServiceBookingSlots = ref(false)
+const submittingMultiServiceBooking = ref(false)
+const multiServiceBookingSlots = ref([])
 
 const prevBodyStyle = {
   userSelect: '',
@@ -707,6 +782,7 @@ const shouldShowSelectedCardVerifyButton = computed(() => {
   if (!selectedCard.value) return false
   return selectedCardVerifyableProjects.value.length > 0
 })
+const hasBookableMultiServiceSlots = computed(() => (multiServiceBookingSlots.value || []).length > 0)
 
 const getSelectedCardMerchantClosedMessage = () => {
   const merchantName = selectedCard.value?.merchant?.name || '商户'
@@ -1055,8 +1131,10 @@ const openActionSheet = (card) => {
   hasActiveAppointment.value = false
   selectedCardAppointment.value = null
   selectedCardCanArriveNow.value = false
+  multiServiceBookingSlots.value = []
   showActionSheet.value = true
   fetchCardAppointmentStatus(card?.id)
+  fetchSelectedCardMultiServiceBookingSlots(card?.id)
 }
 
 const closeActionSheet = () => {
@@ -1102,6 +1180,11 @@ const closeVerifyCodeModal = () => {
   verifyCodeProject.value = null
   verifyCodeMode.value = 'verify'
   stopVerifyStatusPoll()
+}
+
+const closeMultiServiceBookingModal = () => {
+  if (submittingMultiServiceBooking.value) return
+  showMultiServiceBookingModal.value = false
 }
 
 const verifyCodeModalTitle = computed(() => {
@@ -1317,6 +1400,7 @@ const closeAllOverlayModals = () => {
   showCardQrModal.value = false
   showVerifyProjectModal.value = false
   showVerifyCodeModal.value = false
+  showMultiServiceBookingModal.value = false
   showAppointmentConfirmModal.value = false
   showAppointmentModal.value = false
   stopVerifyStatusPoll()
@@ -1332,6 +1416,9 @@ const closeAllOverlayModals = () => {
   timeSlots.value = []
   timeSlotError.value = ''
   availableTechnicians.value = []
+  multiServiceBookingSlots.value = []
+  loadingMultiServiceBookingSlots.value = false
+  submittingMultiServiceBooking.value = false
   hasActiveAppointment.value = false
   selectedCardAppointment.value = null
   selectedCardCanArriveNow.value = false
@@ -1453,6 +1540,78 @@ const openVerifyCodeFlowFromAction = async () => {
     alert(err.response?.data?.error || '生成核销码失败')
   } finally {
     generatingVerifyCode.value = false
+  }
+}
+
+const getMultiServiceBookingSlotKey = (slot) => `${Number(slot?.project_id || 0)}:${String(slot?.slot_start_at || '').trim()}`
+
+const formatMultiServiceSlotDateTime = (value) => formatDateTime(value)
+
+const fetchSelectedCardMultiServiceBookingSlots = async (cardId) => {
+  const id = Number(cardId || selectedCard.value?.id || 0)
+  if (!id) {
+    multiServiceBookingSlots.value = []
+    return
+  }
+  loadingMultiServiceBookingSlots.value = true
+  try {
+    const res = await cardApi.getMultiServiceBookingSlots(id)
+    multiServiceBookingSlots.value = Array.isArray(res?.data?.data) ? res.data.data : []
+  } catch (_) {
+    multiServiceBookingSlots.value = []
+  } finally {
+    loadingMultiServiceBookingSlots.value = false
+  }
+}
+
+const openMultiServiceBookingModalFromAction = async () => {
+  closeActionSheet()
+  const cardId = Number(selectedCard.value?.id || 0)
+  if (!cardId) return
+  await ensureSelectedCardForAppointment()
+  await fetchSelectedCardMultiServiceBookingSlots(cardId)
+  showMultiServiceBookingModal.value = true
+}
+
+const refreshSelectedCardAfterMultiServiceBookingChange = async () => {
+  const cardId = Number(selectedCard.value?.id || 0)
+  if (!cardId) return
+  await Promise.all([
+    ensureSelectedCardForAppointment(),
+    fetchSelectedCardMultiServiceBookingSlots(cardId),
+    fetchCards()
+  ])
+}
+
+const createMultiServiceBooking = async (slot) => {
+  const cardId = Number(selectedCard.value?.id || 0)
+  if (!cardId) return
+  submittingMultiServiceBooking.value = true
+  try {
+    await cardApi.createMultiServiceBooking(cardId, {
+      project_id: Number(slot?.project_id || 0),
+      slot_start_at: String(slot?.slot_start_at || '').trim()
+    })
+    await refreshSelectedCardAfterMultiServiceBookingChange()
+  } catch (err) {
+    alert(err.response?.data?.error || '预约失败')
+  } finally {
+    submittingMultiServiceBooking.value = false
+  }
+}
+
+const cancelMultiServiceBooking = async (slot) => {
+  const cardId = Number(selectedCard.value?.id || 0)
+  const bookingId = Number(slot?.current_user_booking_id || 0)
+  if (!cardId || !bookingId) return
+  submittingMultiServiceBooking.value = true
+  try {
+    await cardApi.cancelMultiServiceBooking(cardId, bookingId)
+    await refreshSelectedCardAfterMultiServiceBookingChange()
+  } catch (err) {
+    alert(err.response?.data?.error || '取消预约失败')
+  } finally {
+    submittingMultiServiceBooking.value = false
   }
 }
 

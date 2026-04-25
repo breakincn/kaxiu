@@ -160,6 +160,8 @@ type Usage struct {
 	CardTotalTimesSnapshot  *int   `json:"card_total_times_snapshot" gorm:"comment:核销后卡片总次数快照"`
 	CardUsedTimesSnapshot   *int   `json:"card_used_times_snapshot" gorm:"comment:核销后卡片已用次数快照"`
 	CardRemainTimesSnapshot *int   `json:"card_remain_times_snapshot" gorm:"comment:核销后卡片剩余次数快照"`
+	SourceType              string `json:"source_type" gorm:"size:40;default:'';comment:使用记录来源类型"`
+	SourceNote              string `json:"source_note" gorm:"size:255;default:'';comment:使用记录来源备注"`
 
 	ServiceSessionID                           *uint                        `json:"service_session_id" gorm:"-"`
 	ServiceSessionStatus                       string                       `json:"service_session_status" gorm:"-"`

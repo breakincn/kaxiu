@@ -520,7 +520,10 @@ func runAppointmentAssignOnce(db *gorm.DB) error {
 	if err := runMerchantBreachCompensation(db, now); err != nil {
 		return err
 	}
-	return runAppointmentDelayLedgerSettlement(db, now)
+	if err := runAppointmentDelayLedgerSettlement(db, now); err != nil {
+		return err
+	}
+	return runMultiServiceBookingSettlementOnce(db, now)
 }
 
 func runAppointmentNoShowOnce(db *gorm.DB, now time.Time) error {
