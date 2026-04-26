@@ -1595,7 +1595,8 @@ const createMultiServiceBooking = async (slot) => {
       project_id: Number(slot?.project_id || 0),
       slot_start_at: String(slot?.slot_start_at || '').trim()
     })
-    await refreshSelectedCardAfterMultiServiceBookingChange()
+    closeAllOverlayModals()
+    await fetchCards()
   } catch (err) {
     alert(err.response?.data?.error || '预约失败')
   } finally {
