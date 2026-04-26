@@ -230,7 +230,7 @@ func UserRegister(c *gin.Context) {
 		return
 	}
 
-	if input.Phone != "" && input.Code == "" {
+	if input.Phone != "" && input.Code == "" && !config.UserRegisterSMSVerificationDisabled() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入验证码"})
 		return
 	}
@@ -253,7 +253,7 @@ func UserRegister(c *gin.Context) {
 
 	// 校验并消耗验证码（仅当用户提供手机号时）
 	if err := config.DB.Transaction(func(tx *gorm.DB) error {
-		if input.Phone != "" {
+		if input.Phone != "" && !config.UserRegisterSMSVerificationDisabled() {
 			if err := consumeSMSCode(tx, input.Phone, "user_register", input.Code); err != nil {
 				return err
 			}
