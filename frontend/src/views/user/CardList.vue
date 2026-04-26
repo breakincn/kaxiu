@@ -105,15 +105,23 @@
                 <div class="text-gray-500 text-xs mb-0.5">{{ item.card_type?.includes('储值') ? '剩余余额' : '剩余次数' }}</div>
                 <div class="flex items-start gap-2">
                   <div class="text-5xl font-bold leading-none">{{ item.card_type?.includes('储值') ? `¥${(item.remain_balance / 100).toFixed(2)}` : item.remain_times }}</div>
-                  <span v-if="item.hasAppointment" class="mt-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded flex-shrink-0 leading-none">预约</span>
-                  <div v-if="getCardServiceTimeLines(item).length > 0" class="pt-1 max-w-[180px] text-left">
+                  <div v-if="getCardServiceTimeLineItems(item).length > 0" class="pt-1 max-w-[180px] text-left">
                     <div class="grid grid-cols-2 gap-x-3 gap-y-0.5">
                       <div
-                        v-for="line in getCardServiceTimeLines(item)"
-                        :key="line"
-                        class="text-xs text-gray-700 leading-4 whitespace-nowrap"
+                        v-for="line in getCardServiceTimeLineItems(item)"
+                        :key="line.text"
+                        :class="line.highlighted
+                          ? 'inline-flex w-fit px-2 py-0.5 rounded border border-green-300 bg-green-50 text-xs text-green-700 leading-4 whitespace-nowrap'
+                          : 'text-xs text-gray-700 leading-4 whitespace-nowrap'"
                       >
-                        {{ line }}
+                        {{ line.text }}
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="item.appointmentSlotLine" class="pt-1 max-w-[180px] text-left">
+                    <div class="flex flex-wrap gap-1.5">
+                      <div class="px-2 py-0.5 rounded border border-green-300 bg-green-50 text-xs text-green-700 leading-4 whitespace-nowrap">
+                        {{ item.appointmentSlotLine }}
                       </div>
                     </div>
                   </div>
@@ -366,7 +374,7 @@
               <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0">
                   <div class="text-gray-800 font-medium">{{ slot.project_name }}</div>
-                  <div class="text-gray-500 text-sm mt-1">{{ formatMultiServiceSlotDateTime(slot.slot_start_at) }}</div>
+                  <div class="text-gray-500 text-sm mt-1">{{ formatMultiServiceSlotDateTime(slot.slot_start_at, { withWeekday: true }) }}</div>
                   <div class="text-gray-400 text-xs mt-1">
                     已预约 {{ slot.booked_count || 0 }} / {{ slot.service_capacity || 0 }}
                     <span v-if="slot.checked_in_count">，已核销 {{ slot.checked_in_count }}</span>
@@ -400,7 +408,7 @@
                 </div>
               </div>
               <div v-if="slot.current_user_booked && slot.current_user_cancel_deadline_at" class="text-xs text-gray-400 mt-3">
-                无责任取消截止：{{ formatMultiServiceSlotDateTime(slot.current_user_cancel_deadline_at) }}
+                无责任取消截止：{{ formatMultiServiceSlotDateTime(slot.current_user_cancel_deadline_at, { withWeekday: true }) }}
               </div>
             </div>
           </div>
@@ -862,6 +870,8 @@ const fetchCards = async () => {
         ...card,
         pinnedNotice: null,
         hasAppointment: false,
+        appointmentSlotLine: '',
+        bookedMultiServiceSlotLines: [],
         hasServingUsage: false,
         hasStartPendingUsage: false,
         startPendingUsageSessionId: '',
@@ -898,8 +908,23 @@ const fetchCards = async () => {
             appointment &&
             ['pending', 'confirmed'].includes(String(appointment.status || '').trim())
           )
+          enrichedCard.appointmentSlotLine = enrichedCard.hasAppointment
+            ? formatAppointmentSlotLine(appointment?.appointment_time || appointment?.reserved_start_at)
+            : ''
         } catch (_) {
           enrichedCard.hasAppointment = false
+          enrichedCard.appointmentSlotLine = ''
+        }
+
+        try {
+          const multiServiceRes = await cardApi.getMultiServiceBookingSlots(enrichedCard.id)
+          const slots = Array.isArray(multiServiceRes?.data?.data) ? multiServiceRes.data.data : []
+          enrichedCard.bookedMultiServiceSlotLines = slots
+            .filter(slot => slot?.current_user_booked)
+            .map(slot => formatAppointmentSlotLine(slot?.slot_start_at))
+            .filter(Boolean)
+        } catch (_) {
+          enrichedCard.bookedMultiServiceSlotLines = []
         }
 
         try {
@@ -1310,6 +1335,20 @@ const getCardServiceTimeLines = (card) => {
   }).filter(Boolean)
 }
 
+const getCardServiceTimeLineItems = (card) => {
+  const lines = getCardServiceTimeLines(card)
+  const highlighted = new Set(
+    Array.isArray(card?.bookedMultiServiceSlotLines)
+      ? card.bookedMultiServiceSlotLines.filter(Boolean)
+      : []
+  )
+
+  return lines.map((text) => ({
+    text,
+    highlighted: highlighted.has(text)
+  }))
+}
+
 const serviceTimeSlotMatchesDate = (slot, date) => {
   if (String(slot?.recurrence_type || 'weekly') === 'monthly') {
     return Number(slot?.month_day || 0) === date.getDate()
@@ -1548,7 +1587,13 @@ const openVerifyCodeFlowFromAction = async () => {
 
 const getMultiServiceBookingSlotKey = (slot) => `${Number(slot?.project_id || 0)}:${String(slot?.slot_start_at || '').trim()}`
 
-const formatMultiServiceSlotDateTime = (value) => formatDateTime(value)
+const formatMultiServiceSlotDateTime = (value, options = {}) => {
+  const base = formatDateTime(value)
+  if (!base) return ''
+  if (!options?.withWeekday) return base
+  const weekday = getWeekdayText(value)
+  return weekday ? `${weekday} ${base}` : base
+}
 
 const fetchSelectedCardMultiServiceBookingSlots = async (cardId) => {
   const id = Number(cardId || selectedCard.value?.id || 0)
@@ -1915,6 +1960,21 @@ function formatDateTime(dateTime) {
   const minutes = String(date.getMinutes()).padStart(2, '0')
   
   return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+function getWeekdayText(dateTime) {
+  if (!dateTime) return ''
+  const date = new Date(dateTime)
+  if (isNaN(date.getTime())) return ''
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return weekdays[date.getDay()] || ''
+}
+
+function formatAppointmentSlotLine(dateTime) {
+  const base = formatDateTime(dateTime)
+  if (!base) return ''
+  const weekday = getWeekdayText(dateTime)
+  return weekday ? `${weekday} ${base.slice(11, 16)}` : base.slice(11, 16)
 }
 
 watch(currentStatus, async () => {
