@@ -233,7 +233,7 @@
             @click="openMultiServiceBookingModalFromAction"
             class="w-full py-3 rounded-xl border-2 border-primary text-primary font-medium"
           >
-            预约
+            {{ selectedCardHasBookedMultiServiceSlot ? '已预约' : '预约' }}
           </button>
           <button
             v-if="!hasActiveAppointment && !selectedCardHasServiceTimeProject"
@@ -783,6 +783,9 @@ const shouldShowSelectedCardVerifyButton = computed(() => {
   return selectedCardVerifyableProjects.value.length > 0
 })
 const hasBookableMultiServiceSlots = computed(() => (multiServiceBookingSlots.value || []).length > 0)
+const selectedCardHasBookedMultiServiceSlot = computed(() => {
+  return (multiServiceBookingSlots.value || []).some(slot => slot?.current_user_booked)
+})
 
 const getSelectedCardMerchantClosedMessage = () => {
   const merchantName = selectedCard.value?.merchant?.name || '商户'
@@ -1604,10 +1607,13 @@ const cancelMultiServiceBooking = async (slot) => {
   const cardId = Number(selectedCard.value?.id || 0)
   const bookingId = Number(slot?.current_user_booking_id || 0)
   if (!cardId || !bookingId) return
+  const confirmed = window.confirm('确定要取消预约吗？')
+  closeAllOverlayModals()
+  if (!confirmed) return
   submittingMultiServiceBooking.value = true
   try {
     await cardApi.cancelMultiServiceBooking(cardId, bookingId)
-    await refreshSelectedCardAfterMultiServiceBookingChange()
+    await fetchCards()
   } catch (err) {
     alert(err.response?.data?.error || '取消预约失败')
   } finally {
