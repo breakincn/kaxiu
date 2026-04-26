@@ -530,18 +530,107 @@ func CreateCardMultiServiceBooking(c *gin.Context) {
 		if now.Before(slot.BookingOpenAt) || !now.Before(slot.SlotStartAt) {
 			return apiErr{status: http.StatusBadRequest, msg: "当前不在可预约时间窗口内"}
 		}
-		var existing models.MultiServiceBooking
-		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		parseNullableTime := func(value sql.NullString) *time.Time {
+			if !value.Valid {
+				return nil
+			}
+			raw := strings.TrimSpace(value.String)
+			if raw == "" {
+				return nil
+			}
+			layouts := []string{
+				"2006-01-02 15:04:05.999999999-07:00",
+				"2006-01-02 15:04:05.999999999",
+				"2006-01-02 15:04:05.999",
+				"2006-01-02 15:04:05",
+				time.RFC3339Nano,
+				time.RFC3339,
+			}
+			loc := config.ProjectServiceTimeLocation()
+			for _, layout := range layouts {
+				if parsed, err := time.ParseInLocation(layout, raw, loc); err == nil {
+					return &parsed
+				}
+			}
+			return nil
+		}
+		type existingBookingRow struct {
+			ID            uint           `gorm:"column:id"`
+			MerchantID    uint           `gorm:"column:merchant_id"`
+			ProjectID     uint           `gorm:"column:project_id"`
+			CardID        uint           `gorm:"column:card_id"`
+			UserID        uint           `gorm:"column:user_id"`
+			SlotStartAt   sql.NullString `gorm:"column:slot_start_at"`
+			SlotEndAt     sql.NullString `gorm:"column:slot_end_at"`
+			Status        string         `gorm:"column:status"`
+			BookedAt      sql.NullString `gorm:"column:booked_at"`
+			CanceledAt    sql.NullString `gorm:"column:canceled_at"`
+			CancelReason  string         `gorm:"column:cancel_reason"`
+			CancelPenalty bool           `gorm:"column:cancel_penalty"`
+			AttendedAt    sql.NullString `gorm:"column:attended_at"`
+			NoShowAt      sql.NullString `gorm:"column:no_show_at"`
+			UsageID       *uint          `gorm:"column:usage_id"`
+			CreatedAt     sql.NullString `gorm:"column:created_at"`
+			UpdatedAt     sql.NullString `gorm:"column:updated_at"`
+		}
+		var existingRows []existingBookingRow
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Table("multi_service_bookings").
+			Select("id, merchant_id, project_id, card_id, user_id, slot_start_at, slot_end_at, status, booked_at, canceled_at, cancel_reason, cancel_penalty, attended_at, no_show_at, usage_id, created_at, updated_at").
 			Where("project_id = ? AND slot_start_at = ? AND user_id = ?", project.ID, slot.SlotStartAt, userID).
-			First(&existing).Error
-		if err == nil {
+			Order("id desc").
+			Limit(1).
+			Scan(&existingRows).Error; err != nil {
+			return err
+		}
+		if len(existingRows) > 0 {
+			row := existingRows[0]
+			existing := models.MultiServiceBooking{
+				ID:            row.ID,
+				MerchantID:    row.MerchantID,
+				ProjectID:     row.ProjectID,
+				CardID:        row.CardID,
+				UserID:        row.UserID,
+				SlotStartAt:   parseNullableTime(row.SlotStartAt),
+				SlotEndAt:     parseNullableTime(row.SlotEndAt),
+				Status:        row.Status,
+				BookedAt:      parseNullableTime(row.BookedAt),
+				CanceledAt:    parseNullableTime(row.CanceledAt),
+				CancelReason:  row.CancelReason,
+				CancelPenalty: row.CancelPenalty,
+				AttendedAt:    parseNullableTime(row.AttendedAt),
+				NoShowAt:      parseNullableTime(row.NoShowAt),
+				UsageID:       row.UsageID,
+				CreatedAt:     parseNullableTime(row.CreatedAt),
+				UpdatedAt:     parseNullableTime(row.UpdatedAt),
+			}
 			if strings.TrimSpace(existing.Status) == multiServiceBookingStatusCanceled {
-				return apiErr{status: http.StatusBadRequest, msg: "当前场次预约已取消，请勿重复预约"}
+				bookings, err := loadSlotBookings(tx, project.ID, slot.SlotStartAt)
+				if err != nil {
+					return err
+				}
+				if countSlotBookedOccupancy(bookings) >= project.ServiceCapacity {
+					return apiErr{status: http.StatusBadRequest, msg: "当前场次预约已满"}
+				}
+				updates := map[string]interface{}{
+					"status":         multiServiceBookingStatusBooked,
+					"booked_at":      &now,
+					"canceled_at":    nil,
+					"cancel_reason":  "",
+					"cancel_penalty": false,
+				}
+				if err := tx.Model(&models.MultiServiceBooking{}).Where("id = ?", existing.ID).Updates(updates).Error; err != nil {
+					return err
+				}
+				created = existing
+				created.Status = multiServiceBookingStatusBooked
+				created.BookedAt = &now
+				created.CanceledAt = nil
+				created.CancelReason = ""
+				created.CancelPenalty = false
+				return nil
 			}
 			return apiErr{status: http.StatusBadRequest, msg: "你已预约该场次"}
-		}
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
 		}
 		bookings, err := loadSlotBookings(tx, project.ID, slot.SlotStartAt)
 		if err != nil {

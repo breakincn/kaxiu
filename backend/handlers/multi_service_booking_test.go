@@ -139,6 +139,145 @@ func TestCreateCardMultiServiceBookingRejectsWhenSlotFull(t *testing.T) {
 	}
 }
 
+func TestCreateCardMultiServiceBookingAllowsRebookAfterCancelWhenSlotHasCapacity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupMultiServiceBookingTestDB(t)
+
+	merchant, project, users, slotStart := seedMultiServiceBookingFixture(t, config.DB, 2, 2*time.Hour)
+	var card models.Card
+	if err := config.DB.Where("user_id = ?", users[0].ID).First(&card).Error; err != nil {
+		t.Fatalf("load card failed: %v", err)
+	}
+
+	now := time.Now().In(config.ProjectServiceTimeLocation())
+	booking := models.MultiServiceBooking{
+		MerchantID:    merchant.ID,
+		ProjectID:     project.ID,
+		CardID:        card.ID,
+		UserID:        users[0].ID,
+		SlotStartAt:   &slotStart,
+		SlotEndAt:     ptrHandlerTime(slotStart.Add(57 * time.Minute)),
+		Status:        multiServiceBookingStatusCanceled,
+		BookedAt:      ptrHandlerTime(now.Add(-30 * time.Minute)),
+		CanceledAt:    ptrHandlerTime(now.Add(-10 * time.Minute)),
+		CancelReason:  "用户取消",
+		CancelPenalty: true,
+	}
+	if err := config.DB.Create(&booking).Error; err != nil {
+		t.Fatalf("create canceled booking failed: %v", err)
+	}
+
+	body, _ := json.Marshal(gin.H{"project_id": project.ID, "slot_start_at": slotStart.Format("2006-01-02 15:04:05")})
+	c, rec := newMultiServiceBookingContext(http.MethodPost, fmt.Sprintf("/user/cards/%d/multi-service-bookings", card.ID), users[0].ID, body)
+	c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", card.ID)}}
+	CreateCardMultiServiceBooking(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got struct {
+		Status        string
+		CanceledAt    *time.Time `gorm:"column:canceled_at"`
+		CancelReason  string     `gorm:"column:cancel_reason"`
+		CancelPenalty bool       `gorm:"column:cancel_penalty"`
+	}
+	if err := config.DB.Table("multi_service_bookings").
+		Select("status, canceled_at, cancel_reason, cancel_penalty").
+		Where("id = ?", booking.ID).
+		Scan(&got).Error; err != nil {
+		t.Fatalf("reload booking failed: %v", err)
+	}
+	if got.Status != multiServiceBookingStatusBooked {
+		t.Fatalf("want booking restored to booked, got %s", got.Status)
+	}
+	if got.CanceledAt != nil {
+		t.Fatalf("want canceled_at cleared, got %+v", got.CanceledAt)
+	}
+	if got.CancelReason != "" {
+		t.Fatalf("want cancel_reason cleared, got %q", got.CancelReason)
+	}
+	if got.CancelPenalty {
+		t.Fatalf("want cancel_penalty reset false after rebook")
+	}
+}
+
+func TestCreateCardMultiServiceBookingRejectsRebookAfterCancelWhenSlotIsFull(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupMultiServiceBookingTestDB(t)
+
+	merchant, project, users, slotStart := seedMultiServiceBookingFixture(t, config.DB, 2, 2*time.Hour)
+	var firstCard models.Card
+	if err := config.DB.Where("user_id = ?", users[0].ID).First(&firstCard).Error; err != nil {
+		t.Fatalf("load first card failed: %v", err)
+	}
+	var secondCard models.Card
+	if err := config.DB.Where("user_id = ?", users[1].ID).First(&secondCard).Error; err != nil {
+		t.Fatalf("load second card failed: %v", err)
+	}
+
+	now := time.Now().In(config.ProjectServiceTimeLocation())
+	canceled := models.MultiServiceBooking{
+		MerchantID:    merchant.ID,
+		ProjectID:     project.ID,
+		CardID:        firstCard.ID,
+		UserID:        users[0].ID,
+		SlotStartAt:   &slotStart,
+		SlotEndAt:     ptrHandlerTime(slotStart.Add(57 * time.Minute)),
+		Status:        multiServiceBookingStatusCanceled,
+		BookedAt:      ptrHandlerTime(now.Add(-30 * time.Minute)),
+		CanceledAt:    ptrHandlerTime(now.Add(-10 * time.Minute)),
+		CancelPenalty: true,
+	}
+	if err := config.DB.Create(&canceled).Error; err != nil {
+		t.Fatalf("create canceled booking failed: %v", err)
+	}
+	occupied := models.MultiServiceBooking{
+		MerchantID:  merchant.ID,
+		ProjectID:   project.ID,
+		CardID:      secondCard.ID,
+		UserID:      users[1].ID,
+		SlotStartAt: &slotStart,
+		SlotEndAt:   ptrHandlerTime(slotStart.Add(57 * time.Minute)),
+		Status:      multiServiceBookingStatusBooked,
+		BookedAt:    ptrHandlerTime(now.Add(-5 * time.Minute)),
+	}
+	if err := config.DB.Create(&occupied).Error; err != nil {
+		t.Fatalf("create occupied booking failed: %v", err)
+	}
+	var thirdCard models.Card
+	if err := config.DB.Where("user_id = ?", users[2].ID).First(&thirdCard).Error; err != nil {
+		t.Fatalf("load third card failed: %v", err)
+	}
+	occupied2 := models.MultiServiceBooking{
+		MerchantID:  merchant.ID,
+		ProjectID:   project.ID,
+		CardID:      thirdCard.ID,
+		UserID:      users[2].ID,
+		SlotStartAt: &slotStart,
+		SlotEndAt:   ptrHandlerTime(slotStart.Add(57 * time.Minute)),
+		Status:      multiServiceBookingStatusBooked,
+		BookedAt:    ptrHandlerTime(now.Add(-3 * time.Minute)),
+	}
+	if err := config.DB.Create(&occupied2).Error; err != nil {
+		t.Fatalf("create second occupied booking failed: %v", err)
+	}
+
+	body, _ := json.Marshal(gin.H{"project_id": project.ID, "slot_start_at": slotStart.Format("2006-01-02 15:04:05")})
+	c, rec := newMultiServiceBookingContext(http.MethodPost, fmt.Sprintf("/user/cards/%d/multi-service-bookings", firstCard.ID), users[0].ID, body)
+	c.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", firstCard.ID)}}
+	CreateCardMultiServiceBooking(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "当前场次预约已满") {
+		t.Fatalf("unexpected body=%s", rec.Body.String())
+	}
+}
+
 func TestValidateMultiServiceVerifyEligibilityRejectsUnbookedUserWhenSlotFull(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupMultiServiceBookingTestDB(t)
