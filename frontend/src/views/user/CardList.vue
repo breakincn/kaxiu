@@ -1280,7 +1280,7 @@ const getProjectServiceSlotsByUpcomingTime = (project, limit = 1, now = new Date
 const formatServiceTimeSlotForCard = (slot) => {
   const startTime = String(slot?.start_time || '').trim()
   if (!startTime) return ''
-  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  const weekdays = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日']
   if (String(slot?.recurrence_type || 'weekly') === 'monthly') {
     const monthDay = Number(slot?.month_day || 0)
     if (!Number.isFinite(monthDay) || monthDay <= 0) return ''
