@@ -117,26 +117,13 @@
                 <div>
                   <label class="block text-gray-700 text-sm font-medium mb-2">{{ rewardValueLabel }}</label>
                   <input
-                    v-model.number="promotionForm.reward_value"
-                    type="number"
-                    min="1"
-                    :placeholder="rewardValuePlaceholder"
-                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                      v-model.number="promotionForm.reward_value"
+                      type="number"
+                      min="1"
+                      :placeholder="rewardValuePlaceholder"
+                      class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
                   />
                 </div>
-                <div>
-                  <label class="block text-gray-700 text-sm font-medium mb-2">发卡数量</label>
-                  <input
-                    v-model.number="promotionForm.reward_card_quantity"
-                    type="number"
-                    min="1"
-                    placeholder="奖励卡总库存"
-                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-                  />
-                </div>
-              </div>
-
-              <div class="grid grid-cols-2 gap-3">
                 <div>
                   <label class="block text-gray-700 text-sm font-medium mb-2">推广数量</label>
                   <input
@@ -144,6 +131,30 @@
                     type="number"
                     min="1"
                     placeholder="达标门槛"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-gray-700 text-sm font-medium mb-2">推广发卡数量</label>
+                <input
+                  v-model.number="promotionForm.reward_card_quantity"
+                  type="number"
+                  min="1"
+                  placeholder="奖励卡总库存"
+                  class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-gray-700 text-sm font-medium mb-2">促销发卡数量</label>
+                  <input
+                    v-model.number="promotionForm.promo_quantity"
+                    type="number"
+                    min="0"
+                    placeholder="促销资格库存"
                     class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
                   />
                 </div>
@@ -160,25 +171,13 @@
                 </div>
               </div>
 
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="block text-gray-700 text-sm font-medium mb-2">促销发卡数量</label>
-                  <input
-                    v-model.number="promotionForm.promo_quantity"
-                    type="number"
-                    min="0"
-                    placeholder="促销资格库存"
-                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-                  />
-                </div>
-                <div>
-                  <label class="block text-gray-700 text-sm font-medium mb-2">促销截止日期</label>
-                  <input
-                    v-model="promotionForm.promo_ends_at"
-                    type="datetime-local"
-                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-                  />
-                </div>
+              <div>
+                <label class="block text-gray-700 text-sm font-medium mb-2">促销截止日期</label>
+                <input
+                  v-model="promotionForm.promo_ends_at"
+                  type="datetime-local"
+                  class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                />
               </div>
 
               <button
@@ -283,7 +282,7 @@ const selectedTemplate = computed(() => {
 
 const canShowPromotionToggle = computed(() => Boolean(selectedTemplate.value && !phoneQuery.value.trim()))
 const rewardValueLabel = computed(() => {
-  return selectedTemplate.value?.card_type === 'balance' ? '奖励额度（元）' : '奖励次数'
+  return selectedTemplate.value?.card_type === 'balance' ? '推广卡额度（元）' : '推广卡次数'
 })
 const rewardValuePlaceholder = computed(() => {
   return selectedTemplate.value?.card_type === 'balance' ? '填写奖励额度' : '填写奖励次数'
