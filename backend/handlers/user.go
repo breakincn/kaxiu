@@ -209,11 +209,13 @@ func CreateUser(c *gin.Context) {
 
 func UserRegister(c *gin.Context) {
 	var input struct {
-		Username string `json:"username" binding:"required"`
-		Phone    string `json:"phone"`
-		Password string `json:"password" binding:"required,min=6"`
-		Code     string `json:"code"`
-		Nickname string `json:"nickname"`
+		Username              string `json:"username" binding:"required"`
+		Phone                 string `json:"phone"`
+		Password              string `json:"password" binding:"required,min=6"`
+		Code                  string `json:"code"`
+		Nickname              string `json:"nickname"`
+		PromotionCampaignSlug string `json:"promotion_campaign_slug"`
+		ReferralCode          string `json:"referral_code"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -224,6 +226,8 @@ func UserRegister(c *gin.Context) {
 	input.Phone = strings.TrimSpace(input.Phone)
 	input.Code = strings.TrimSpace(input.Code)
 	input.Nickname = strings.TrimSpace(input.Nickname)
+	input.PromotionCampaignSlug = strings.TrimSpace(input.PromotionCampaignSlug)
+	input.ReferralCode = strings.TrimSpace(input.ReferralCode)
 
 	if input.Username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供用户名"})
@@ -275,6 +279,9 @@ func UserRegister(c *gin.Context) {
 			user.Phone = &phone
 		}
 		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		if err := maybeCountPromotionRegistration(tx, input.PromotionCampaignSlug, input.ReferralCode, user.ID, time.Now()); err != nil {
 			return err
 		}
 		c.Set("_registered_user", user)

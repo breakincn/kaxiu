@@ -188,11 +188,11 @@
       </div>
       
       <div v-else class="order-list">
-        <div v-for="order in orders" :key="order.id" class="order-card" :class="{ 'paid-order': order.status === 'paid' }">
+        <div v-for="order in orders" :key="order.id" class="order-card" :class="{ 'paid-order': order.status === 'paid' || order.status === 'store_pending_confirm' }">
           <div class="order-header">
             <span class="order-no">{{ order.order_no }}</span>
             <button
-              v-if="order.status === 'paid'"
+              v-if="order.status === 'paid' || order.status === 'store_pending_confirm'"
               type="button"
               class="order-status confirm-order"
               :class="order.status"
@@ -215,7 +215,10 @@
             <span v-if="order.status === 'paid'" class="paid-elapsed">
               已付款 {{ formatElapsed(order.paid_at) }}
             </span>
-            <span class="payment-method">{{ order.payment_method === 'alipay' ? '支付宝' : '微信' }}</span>
+            <span v-else-if="order.status === 'store_pending_confirm'" class="paid-elapsed">
+              到店付款待确认
+            </span>
+            <span class="payment-method">{{ getPaymentMethodLabel(order.payment_method) }}</span>
           </div>
         </div>
       </div>
@@ -544,8 +547,13 @@ function getCardTypeLabel(type) {
 }
 
 function getOrderStatusLabel(status) {
-  const labels = { pending: '待支付', paid: '待确认', confirmed: '已完成', canceled: '已取消' }
+  const labels = { pending: '待支付', paid: '待确认', confirmed: '已完成', canceled: '已取消', store_pending_confirm: '到店付款待确认' }
   return labels[status] || status
+}
+
+function getPaymentMethodLabel(method) {
+  const labels = { alipay: '支付宝', wechat: '微信', store: '到店付款' }
+  return labels[method] || method
 }
 
 function formatTime(time) {

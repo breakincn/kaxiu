@@ -527,6 +527,16 @@ export const appointmentApi = {
   createDirectPurchase: (data) => api.post('/user/direct-purchase', data),
   confirmDirectPurchase: (orderNo, data) => api.post(`/user/direct-purchase/${orderNo}/confirm`, data),
   getDirectPurchases: () => api.get('/user/direct-purchases'),
+
+  // 推广卡活动
+  listPromotionCampaigns: (params) => api.get('/merchant/promotion-campaigns', { params }),
+  getPromotionCampaign: (id) => api.get(`/merchant/promotion-campaigns/${id}`),
+  createPromotionCampaign: (data) => api.post('/merchant/promotion-campaigns', data),
+  updatePromotionCampaign: (id, data) => api.put(`/merchant/promotion-campaigns/${id}`, data),
+  getPublicPromotionCampaign: (slug, ref) => api.get(`/user/promotion-campaigns/${slug}`, { params: ref ? { ref } : {} }),
+  claimPromotionCampaign: (slug, ref) => api.post(`/user/promotion-campaigns/${slug}/claim`, null, { params: ref ? { ref } : {} }),
+  getPromotionRefLink: (slug, ref) => api.post(`/user/promotion-campaigns/${slug}/ref-link`, null, { params: ref ? { ref } : {} }),
+  claimPromotionReward: (slug) => api.post(`/user/promotion-campaigns/${slug}/claim-reward`),
   
   // 商户营业状态
   toggleBusinessStatus: (data) => api.put('/merchant/business-status', data),

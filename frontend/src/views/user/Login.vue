@@ -47,7 +47,7 @@
         <div class="mt-6 text-center">
           <div class="mb-2">
             <span class="text-sm text-gray-500">还没有账号？</span>
-            <router-link to="/user/register" class="text-sm text-primary hover:underline ml-1">
+            <router-link :to="registerLink" class="text-sm text-primary hover:underline ml-1">
               立即注册
             </router-link>
           </div>
@@ -68,6 +68,11 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 
+const registerLink = {
+  path: '/user/register',
+  query: route.query.redirect ? { redirect: route.query.redirect } : {}
+}
+
 const handleLogin = async () => {
   loading.value = true
   
@@ -80,8 +85,9 @@ const handleLogin = async () => {
     localStorage.setItem('userId', user_id)
     localStorage.setItem('userName', nickname || username.value)
     
-    // 优先跳转到 redirect 参数，否则默认卡片列表
-    const redirectTo = route.query.redirect
+    const redirectTo = route.query.redirect || localStorage.getItem('redirectAfterLogin')
+    localStorage.removeItem('redirectAfterLogin')
+    localStorage.removeItem('promotionReferralContext')
     router.push(redirectTo || '/user/cards')
   } catch (err) {
     alert(err.response?.data?.error || '登录失败，请重试')

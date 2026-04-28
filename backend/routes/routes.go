@@ -31,6 +31,7 @@ func SetupUserRoutes(r *gin.Engine) {
 	user.GET("/s/:slug", handlers.GetShopInfo)
 	user.GET("/s/id/:id", handlers.GetShopInfoByID)
 	user.GET("/merchants/:id/live-service-status", handlers.GetMerchantLiveServiceStatus)
+	user.GET("/promotion-campaigns/:slug", handlers.GetPromotionCampaignBySlug)
 
 	// 需要认证的接口（用户端）
 	auth := user.Group("")
@@ -89,6 +90,9 @@ func SetupUserRoutes(r *gin.Engine) {
 	auth.POST("/direct-purchase", handlers.CreateDirectPurchase)
 	auth.POST("/direct-purchase/:order_no/confirm", handlers.ConfirmDirectPurchase)
 	auth.GET("/direct-purchases", handlers.GetDirectPurchases)
+	auth.POST("/promotion-campaigns/:slug/claim", handlers.ClaimPromotionCampaign)
+	auth.POST("/promotion-campaigns/:slug/ref-link", handlers.GetPromotionCampaignRefLink)
+	auth.POST("/promotion-campaigns/:slug/claim-reward", handlers.ClaimPromotionCampaignReward)
 
 	// 兼容：用户端创建用户（历史接口）
 	user.POST("/users", handlers.CreateUser)
@@ -302,6 +306,10 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	// 商户端：直购订单
 	auth.GET("/direct-purchases", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.GetMerchantDirectPurchases)
 	auth.POST("/direct-purchases/:order_no/confirm", middleware.RequirePermission("merchant.direct_sale.manage"), handlers.MerchantConfirmDirectPurchase)
+	auth.GET("/promotion-campaigns", middleware.RequirePermission("merchant.card.issue"), handlers.ListMerchantPromotionCampaigns)
+	auth.GET("/promotion-campaigns/:id", middleware.RequirePermission("merchant.card.issue"), handlers.GetMerchantPromotionCampaign)
+	auth.POST("/promotion-campaigns", middleware.RequirePermission("merchant.card.issue"), handlers.CreateMerchantPromotionCampaign)
+	auth.PUT("/promotion-campaigns/:id", middleware.RequirePermission("merchant.card.issue"), handlers.UpdateMerchantPromotionCampaign)
 }
 
 func SetupAdminRoutes(r *gin.Engine) {

@@ -57,19 +57,27 @@ func (CardTemplate) TableComment() string {
 // DirectPurchase 直购订单记录
 // 用户通过扫码购买卡片的订单记录
 type DirectPurchase struct {
-	ID                 uint       `json:"id" gorm:"primaryKey;comment:订单ID"`
-	OrderNo            string     `json:"order_no" gorm:"size:50;uniqueIndex;comment:订单号"`
-	MerchantID         uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
-	SellerTechnicianID *uint      `json:"seller_technician_id" gorm:"index;comment:售卖技师ID（technicians表主键，可为空）"`
-	UserID             uint       `json:"user_id" gorm:"index;comment:用户ID（外键关联users表）"`
-	CardTemplateID     uint       `json:"card_template_id" gorm:"index;comment:卡片模板ID（外键关联card_templates表）"`
-	CardID             *uint      `json:"card_id" gorm:"index;comment:生成的卡片ID（外键关联cards表，确认后填充）"`
-	Price              int        `json:"price" gorm:"comment:购买价格（单位：分）"`
-	PaymentMethod      string     `json:"payment_method" gorm:"size:20;comment:支付方式（alipay-支付宝，wechat-微信）"`
-	Status             string     `json:"status" gorm:"size:20;default:pending;comment:订单状态（pending-待支付，paid-已付款待确认，confirmed-已确认，canceled-已取消）"`
-	PaidAt             *time.Time `json:"paid_at" gorm:"type:datetime(3);comment:用户点击已完成付款时间"`
-	ConfirmedAt        *time.Time `json:"confirmed_at" gorm:"type:datetime(3);comment:用户确认付款时间"`
-	CreatedAt          *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
+	ID                  uint       `json:"id" gorm:"primaryKey;comment:订单ID"`
+	OrderNo             string     `json:"order_no" gorm:"size:50;uniqueIndex;comment:订单号"`
+	MerchantID          uint       `json:"merchant_id" gorm:"index;comment:商户ID（外键关联merchants表）"`
+	SellerTechnicianID  *uint      `json:"seller_technician_id" gorm:"index;comment:售卖技师ID（technicians表主键，可为空）"`
+	UserID              uint       `json:"user_id" gorm:"index;comment:用户ID（外键关联users表）"`
+	CardTemplateID      uint       `json:"card_template_id" gorm:"index;comment:卡片模板ID（外键关联card_templates表）"`
+	CardID              *uint      `json:"card_id" gorm:"index;comment:生成的卡片ID（外键关联cards表，确认后填充）"`
+	Price               int        `json:"price" gorm:"comment:购买价格（单位：分）"`
+	PaymentMethod       string     `json:"payment_method" gorm:"size:20;comment:支付方式（alipay-支付宝，wechat-微信）"`
+	Status              string     `json:"status" gorm:"size:20;default:pending;comment:订单状态（pending-待支付，paid-已付款待确认，confirmed-已确认，canceled-已取消）"`
+	SourceType          string     `json:"source_type" gorm:"size:40;default:'';comment:订单来源类型"`
+	SourceID            *uint      `json:"source_id" gorm:"index;comment:来源业务ID"`
+	PromotionCampaignID *uint      `json:"promotion_campaign_id" gorm:"index;comment:推广活动ID"`
+	PromotionClaimID    *uint      `json:"promotion_claim_id" gorm:"index;comment:促销领取资格ID"`
+	ReferrerUserID      *uint      `json:"referrer_user_id" gorm:"index;comment:推广人用户ID"`
+	PromotionCode       string     `json:"promotion_code" gorm:"size:20;default:'';comment:推广码"`
+	OriginalPrice       int        `json:"original_price" gorm:"comment:原价（单位：分）"`
+	AppliedPrice        int        `json:"applied_price" gorm:"comment:成交价（单位：分）"`
+	PaidAt              *time.Time `json:"paid_at" gorm:"type:datetime(3);comment:用户点击已完成付款时间"`
+	ConfirmedAt         *time.Time `json:"confirmed_at" gorm:"type:datetime(3);comment:用户确认付款时间"`
+	CreatedAt           *time.Time `json:"created_at" gorm:"autoCreateTime;comment:创建时间"`
 
 	Merchant         Merchant      `json:"merchant" gorm:"foreignKey:MerchantID"`
 	SellerTechnician *Technician   `json:"seller_technician" gorm:"foreignKey:SellerTechnicianID"`

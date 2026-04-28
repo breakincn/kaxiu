@@ -85,6 +85,11 @@ const userRoutes = [
     path: '/s/id/:id',
     name: 'ShopById',
     component: () => import('../views/user/Shop.vue')
+  },
+  {
+    path: '/promo/:slug',
+    name: 'PromotionCampaign',
+    component: () => import('../views/user/PromotionCampaign.vue')
   }
 ]
 

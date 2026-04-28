@@ -86,7 +86,7 @@
         </form>
 
         <div class="mt-6 text-center">
-          <router-link to="/login" class="text-sm text-primary hover:underline">
+          <router-link :to="loginLink" class="text-sm text-primary hover:underline">
             返回登录
           </router-link>
         </div>
@@ -96,11 +96,12 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { authApi, smsApi } from '../../api'
 
 const router = useRouter()
+const route = useRoute()
 
 const form = ref({
   username: '',
@@ -115,6 +116,11 @@ const registering = ref(false)
 
 const countdown = ref(0)
 let timer = null
+
+const loginLink = computed(() => ({
+  path: '/login',
+  query: route.query.redirect ? { redirect: route.query.redirect } : {}
+}))
 
 const startCountdown = () => {
   countdown.value = 60
@@ -160,14 +166,28 @@ const sendCode = async () => {
 const handleRegister = async () => {
   registering.value = true
   try {
-    const res = await authApi.register(form.value)
+    const promotionReferralContext = (() => {
+      try {
+        return JSON.parse(localStorage.getItem('promotionReferralContext') || 'null')
+      } catch (_) {
+        return null
+      }
+    })()
+    const payload = {
+      ...form.value,
+      promotion_campaign_slug: promotionReferralContext?.campaignSlug || '',
+      referral_code: promotionReferralContext?.referralCode || ''
+    }
+    const res = await authApi.register(payload)
     const { token, user_id, nickname, username } = res.data.data
 
     localStorage.setItem('userToken', token)
     localStorage.setItem('userId', user_id)
     localStorage.setItem('userName', nickname || username)
-
-    router.push('/user/cards')
+    const redirectTo = route.query.redirect || localStorage.getItem('redirectAfterLogin')
+    localStorage.removeItem('redirectAfterLogin')
+    localStorage.removeItem('promotionReferralContext')
+    router.push(redirectTo || '/user/cards')
   } catch (err) {
     alert(err.response?.data?.error || '注册失败，请重试')
   } finally {

@@ -28,9 +28,7 @@
           </button>
         </div>
 
-        <div v-if="searchError" class="mt-3 text-sm text-gray-700">
-          {{ searchError }}
-        </div>
+        <div v-if="searchError" class="mt-3 text-sm text-gray-700">{{ searchError }}</div>
 
         <div v-if="users.length > 0" class="mt-4 space-y-2">
           <button
@@ -49,12 +47,10 @@
           </button>
         </div>
 
-        <div v-else-if="searched" class="mt-4 text-center text-gray-400">
-          未找到用户
-        </div>
+        <div v-else-if="searched" class="mt-4 text-center text-gray-400">未找到用户</div>
       </div>
 
-      <div class="bg-white rounded-xl p-4 shadow-sm" v-if="selectedUser">
+      <div v-if="selectedUser" class="bg-white rounded-xl p-4 shadow-sm">
         <div class="flex items-start justify-between">
           <div>
             <div class="font-medium text-gray-800">已选择用户</div>
@@ -81,11 +77,7 @@
               class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
             >
               <option :value="0">请选择售卡模板</option>
-              <option
-                v-for="tpl in templates"
-                :key="tpl.id"
-                :value="tpl.id"
-              >
+              <option v-for="tpl in templates" :key="tpl.id" :value="tpl.id">
                 {{ tpl.name }}（¥{{ (tpl.price / 100).toFixed(2) }}）
               </option>
             </select>
@@ -93,8 +85,117 @@
 
           <div v-if="selectedTemplate" class="px-4 py-3 border border-gray-100 rounded-lg bg-gray-50">
             <div class="text-sm text-gray-700">类型：{{ getCardTypeLabel(selectedTemplate.card_type) }}</div>
-            <div v-if="selectedTemplate.card_type !== 'balance'" class="text-sm text-gray-700">次数：{{ selectedTemplate.total_times }}</div>
+            <div v-if="selectedTemplate.card_type !== 'balance'" class="text-sm text-gray-700">
+              次数：{{ selectedTemplate.total_times }}
+            </div>
+            <div v-else class="text-sm text-gray-700">额度：¥{{ (selectedTemplate.recharge_amount / 100).toFixed(2) }}</div>
             <div class="text-sm text-gray-700">售价：¥{{ (selectedTemplate.price / 100).toFixed(2) }}</div>
+          </div>
+
+          <div v-if="canShowPromotionToggle" class="rounded-lg border border-orange-200 bg-orange-50 p-4 space-y-3">
+            <label class="flex items-center justify-between gap-3">
+              <div>
+                <div class="font-medium text-gray-800">推广卡</div>
+                <div class="text-xs text-gray-500">未输入手机号时，可直接生成推广活动链接</div>
+              </div>
+              <input v-model="promotionEnabled" type="checkbox" class="h-5 w-5 accent-primary" />
+            </label>
+
+            <div v-if="promotionEnabled" class="space-y-3">
+              <div>
+                <label class="block text-gray-700 text-sm font-medium mb-2">推广（促销）标题</label>
+                <input
+                  v-model="promotionForm.title"
+                  type="text"
+                  maxlength="120"
+                  placeholder="可选，最多120个中文字"
+                  class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-gray-700 text-sm font-medium mb-2">{{ rewardValueLabel }}</label>
+                  <input
+                    v-model.number="promotionForm.reward_value"
+                    type="number"
+                    min="1"
+                    :placeholder="rewardValuePlaceholder"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label class="block text-gray-700 text-sm font-medium mb-2">发卡数量</label>
+                  <input
+                    v-model.number="promotionForm.reward_card_quantity"
+                    type="number"
+                    min="1"
+                    placeholder="奖励卡总库存"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-gray-700 text-sm font-medium mb-2">推广数量</label>
+                  <input
+                    v-model.number="promotionForm.reward_threshold"
+                    type="number"
+                    min="1"
+                    placeholder="达标门槛"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label class="block text-gray-700 text-sm font-medium mb-2">项目促销价格（元）</label>
+                  <input
+                    v-model.number="promotionForm.promo_price_yuan"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="留空则不做促销价"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-gray-700 text-sm font-medium mb-2">促销发卡数量</label>
+                  <input
+                    v-model.number="promotionForm.promo_quantity"
+                    type="number"
+                    min="0"
+                    placeholder="促销资格库存"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label class="block text-gray-700 text-sm font-medium mb-2">促销截止日期</label>
+                  <input
+                    v-model="promotionForm.promo_ends_at"
+                    type="datetime-local"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <button
+                @click="savePromotionCampaign"
+                :disabled="promotionSaving || !selectedTemplate"
+                class="w-full py-3 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50"
+              >
+                {{ promotionSaving ? '提交中...' : (currentCampaign ? '更新推广链接' : '生成推广链接') }}
+              </button>
+
+              <div v-if="promotionError" class="text-sm text-red-500">{{ promotionError }}</div>
+              <div v-if="promotionLink" class="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-gray-700">
+                <div class="font-medium text-green-700 mb-1">推广链接已生成</div>
+                <div class="break-all">{{ promotionLink }}</div>
+                <button @click="copyPromotionLink" class="mt-2 text-primary text-sm">复制链接</button>
+              </div>
+            </div>
           </div>
 
           <div class="grid grid-cols-2 gap-3">
@@ -119,18 +220,14 @@
 
           <button
             @click="submit"
-            :disabled="submitting || !canSubmit"
+            :disabled="submitting || promotionEnabled || !canSubmit"
             class="w-full mt-2 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
           >
             {{ submitting ? '提交中...' : '确认发卡' }}
           </button>
 
-          <div v-if="submitError" class="text-sm text-gray-700">
-            {{ submitError }}
-          </div>
-          <div v-if="submitSuccess" class="text-sm text-primary">
-            {{ submitSuccess }}
-          </div>
+          <div v-if="submitError" class="text-sm text-gray-700">{{ submitError }}</div>
+          <div v-if="submitSuccess" class="text-sm text-primary">{{ submitSuccess }}</div>
         </div>
       </div>
     </div>
@@ -141,7 +238,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { cardApi, merchantApi, shopApi } from '../../api'
-
 import { getMerchantId, getMerchantToken, hasMerchantPermission } from '../../utils/auth'
 
 const router = useRouter()
@@ -157,17 +253,40 @@ const submitting = ref(false)
 const submitError = ref('')
 const submitSuccess = ref('')
 
+const promotionEnabled = ref(false)
+const promotionSaving = ref(false)
+const promotionError = ref('')
+const promotionLink = ref('')
+const currentCampaign = ref(null)
+
 const cardForm = ref({
   template_id: 0,
   start_date: '',
   end_date: ''
 })
 
+const promotionForm = ref({
+  title: '',
+  reward_value: '',
+  reward_card_quantity: '',
+  reward_threshold: '',
+  promo_price_yuan: '',
+  promo_quantity: '',
+  promo_ends_at: ''
+})
+
 const templates = ref([])
 const selectedTemplate = computed(() => {
   const id = Number(cardForm.value.template_id || 0)
-  if (!id) return null
   return (templates.value || []).find(t => Number(t.id) === id) || null
+})
+
+const canShowPromotionToggle = computed(() => Boolean(selectedTemplate.value && !phoneQuery.value.trim()))
+const rewardValueLabel = computed(() => {
+  return selectedTemplate.value?.card_type === 'balance' ? '奖励额度（元）' : '奖励次数'
+})
+const rewardValuePlaceholder = computed(() => {
+  return selectedTemplate.value?.card_type === 'balance' ? '填写奖励额度' : '填写奖励次数'
 })
 
 const loadTemplates = async () => {
@@ -175,7 +294,7 @@ const loadTemplates = async () => {
     const res = await shopApi.getCardTemplates()
     const list = res.data.data || []
     templates.value = list.filter(t => t && (t.card_type === 'times' || t.card_type === 'lesson' || t.card_type === 'balance'))
-  } catch (e) {
+  } catch (_) {
     templates.value = []
   }
 }
@@ -208,46 +327,51 @@ watch(
   }
 )
 
+watch(
+  () => phoneQuery.value,
+  (value) => {
+    if (value.trim()) {
+      promotionEnabled.value = false
+    }
+  }
+)
+
+watch(
+  () => cardForm.value.template_id,
+  async () => {
+    promotionEnabled.value = false
+    promotionLink.value = ''
+    currentCampaign.value = null
+    resetPromotionForm()
+    if (selectedTemplate.value) {
+      await loadCurrentCampaign()
+    }
+  }
+)
+
 const canSubmit = computed(() => {
-  return Boolean(
-    selectedUser.value &&
-      selectedUser.value.id &&
-      selectedTemplate.value &&
-      cardForm.value.end_date
-  )
+  return Boolean(selectedUser.value && selectedUser.value.id && selectedTemplate.value && cardForm.value.end_date)
 })
 
-const goBack = () => {
-  router.back()
-}
+const goBack = () => router.back()
 
 const ensureMerchantLogin = () => {
   const storedMerchantId = getMerchantId()
   const storedToken = getMerchantToken()
-
   if (!storedMerchantId || !storedToken) {
     router.replace('/merchant/login')
     return false
   }
-
-  const parsedMerchantId = Number.parseInt(storedMerchantId, 10)
-  if (Number.isNaN(parsedMerchantId) || parsedMerchantId <= 0) {
-    router.replace('/merchant/login')
-    return false
-  }
-
   return true
 }
 
 const searchUsers = async () => {
   if (!ensureMerchantLogin()) return
   if (!phoneQuery.value || searching.value) return
-
   searching.value = true
   searched.value = false
   searchError.value = ''
   users.value = []
-
   try {
     const res = await merchantApi.searchUsersByPhone(phoneQuery.value)
     users.value = res.data.data || []
@@ -275,21 +399,13 @@ const clearSelectedUser = () => {
 const submit = async () => {
   if (!ensureMerchantLogin()) return
   if (!canSubmit.value || submitting.value) return
-
   submitting.value = true
   submitError.value = ''
   submitSuccess.value = ''
-
   try {
     const tpl = selectedTemplate.value
-    if (!tpl) {
-      submitError.value = '请选择卡片模板'
-      return
-    }
-
     const startDate = cardForm.value.start_date || new Date().toISOString().split('T')[0]
     const endDate = calcEndDate(startDate, tpl.valid_days)
-
     const payload = {
       user_id: selectedUser.value.id,
       card_type: tpl.name,
@@ -299,21 +415,7 @@ const submit = async () => {
       end_date: endDate,
       project_ids: Array.isArray(tpl.project_ids) ? tpl.project_ids : []
     }
-
-    if (tpl.card_type === 'balance' && (!payload.recharge_amount || payload.recharge_amount <= 0)) {
-      submitError.value = '充值卡充值金额必须大于0'
-      return
-    }
-
-    if (tpl.card_type !== 'balance' && (!payload.total_times || payload.total_times <= 0)) {
-      submitError.value = '总次数必须大于0'
-      return
-    }
-
-    const res = await cardApi.createCard(payload)
-    const card = res.data.data
-    alert(`发卡成功：卡号 ${card?.card_no || ''}`)
-    // 跳转到卡片管理页
+    await cardApi.createCard(payload)
     router.push('/merchant?tab=cards')
   } catch (err) {
     submitError.value = err.response?.data?.error || '发卡失败'
@@ -322,19 +424,108 @@ const submit = async () => {
   }
 }
 
-onMounted(() => {
+const resetPromotionForm = () => {
+  promotionForm.value = {
+    title: '',
+    reward_value: '',
+    reward_card_quantity: '',
+    reward_threshold: '',
+    promo_price_yuan: '',
+    promo_quantity: '',
+    promo_ends_at: ''
+  }
+}
+
+const fillPromotionForm = (campaign) => {
+  if (!campaign || !selectedTemplate.value) {
+    resetPromotionForm()
+    return
+  }
+  const isBalance = selectedTemplate.value.card_type === 'balance'
+  promotionForm.value = {
+    title: campaign.title || '',
+    reward_value: isBalance ? ((campaign.reward_recharge_amount || 0) / 100) : (campaign.reward_total_times || ''),
+    reward_card_quantity: campaign.reward_card_quantity || '',
+    reward_threshold: campaign.reward_threshold || '',
+    promo_price_yuan: campaign.promo_price ? (campaign.promo_price / 100) : '',
+    promo_quantity: campaign.promo_quantity || '',
+    promo_ends_at: campaign.promo_ends_at ? formatDateTimeLocal(campaign.promo_ends_at) : ''
+  }
+  promotionLink.value = `${window.location.origin}${campaign.share_path || `/promo/${campaign.slug}`}`
+}
+
+const formatDateTimeLocal = (value) => {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const offset = date.getTimezoneOffset()
+  const local = new Date(date.getTime() - offset * 60000)
+  return local.toISOString().slice(0, 16)
+}
+
+const loadCurrentCampaign = async () => {
+  if (!selectedTemplate.value) return
+  try {
+    const res = await shopApi.listPromotionCampaigns({ template_id: selectedTemplate.value.id })
+    const list = res.data.data || []
+    const latest = list.find(item => item.status === 'active') || list[0] || null
+    currentCampaign.value = latest
+    fillPromotionForm(latest)
+  } catch (_) {
+    currentCampaign.value = null
+    promotionLink.value = ''
+    resetPromotionForm()
+  }
+}
+
+const savePromotionCampaign = async () => {
+  if (!selectedTemplate.value || promotionSaving.value) return
+  promotionSaving.value = true
+  promotionError.value = ''
+  try {
+    const isBalance = selectedTemplate.value.card_type === 'balance'
+    const payload = {
+      card_template_id: selectedTemplate.value.id,
+      title: promotionForm.value.title || '',
+      reward_total_times: isBalance ? 0 : Number(promotionForm.value.reward_value || 0),
+      reward_recharge_amount: isBalance ? Math.round(Number(promotionForm.value.reward_value || 0) * 100) : 0,
+      reward_card_quantity: Number(promotionForm.value.reward_card_quantity || 0),
+      reward_threshold: Number(promotionForm.value.reward_threshold || 0),
+      promo_price: promotionForm.value.promo_price_yuan === '' ? 0 : Math.round(Number(promotionForm.value.promo_price_yuan || 0) * 100),
+      promo_quantity: Number(promotionForm.value.promo_quantity || 0),
+      promo_ends_at: promotionForm.value.promo_ends_at || '',
+      status: 'active'
+    }
+    const res = currentCampaign.value
+      ? await shopApi.updatePromotionCampaign(currentCampaign.value.id, payload)
+      : await shopApi.createPromotionCampaign(payload)
+    currentCampaign.value = res.data.data
+    fillPromotionForm(currentCampaign.value)
+    promotionEnabled.value = true
+  } catch (err) {
+    promotionError.value = err.response?.data?.error || '生成推广链接失败'
+  } finally {
+    promotionSaving.value = false
+  }
+}
+
+const copyPromotionLink = async () => {
+  if (!promotionLink.value) return
+  try {
+    await navigator.clipboard.writeText(promotionLink.value)
+    alert('已复制推广链接')
+  } catch (_) {
+    alert('复制失败，请手动复制')
+  }
+}
+
+onMounted(async () => {
   ensureMerchantLogin()
-  
-  // 检查发卡权限
   if (!hasMerchantPermission('merchant.card.issue')) {
     alert('您没有发卡权限，请联系管理员开通')
     goBack()
     return
   }
-  
-  loadTemplates()
-  // 设置默认开始日期为今天
-  const today = new Date().toISOString().split('T')[0]
-  cardForm.value.start_date = today
+  await loadTemplates()
+  cardForm.value.start_date = new Date().toISOString().split('T')[0]
 })
 </script>

@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func fillCardTemplateProjectIDs(tx *gorm.DB, t *models.CardTemplate) {
@@ -605,6 +606,10 @@ func CreateDirectPurchase(c *gin.Context) {
 		CardTemplateID     uint   `json:"card_template_id" binding:"required"`
 		SellerTechnicianID *uint  `json:"seller_technician_id"`
 		PaymentMethod      string `json:"payment_method" binding:"required"`
+		CampaignID         *uint  `json:"campaign_id"`
+		ClaimID            *uint  `json:"claim_id"`
+		ReferralCode       string `json:"referral_code"`
+		UsePromo           bool   `json:"use_promo"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -612,7 +617,7 @@ func CreateDirectPurchase(c *gin.Context) {
 		return
 	}
 
-	if input.PaymentMethod != "alipay" && input.PaymentMethod != "wechat" {
+	if input.PaymentMethod != "alipay" && input.PaymentMethod != "wechat" && input.PaymentMethod != "store" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的支付方式"})
 		return
 	}
@@ -642,13 +647,14 @@ func CreateDirectPurchase(c *gin.Context) {
 
 	// 获取商户收款配置
 	var paymentConfig models.PaymentConfig
-	if err := config.DB.Where("merchant_id = ?", template.MerchantID).First(&paymentConfig).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "商户未配置收款信息"})
-		return
+	if input.PaymentMethod != "store" {
+		if err := config.DB.Where("merchant_id = ?", template.MerchantID).First(&paymentConfig).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "商户未配置收款信息"})
+			return
+		}
 	}
 
-	// 验证商户是否配置了对应的支付方式
-	var paymentURL string
+	paymentURL := ""
 	if input.PaymentMethod == "alipay" {
 		if paymentConfig.AlipayQRCode != "" {
 			paymentURL = paymentConfig.AlipayQRCode
@@ -656,7 +662,7 @@ func CreateDirectPurchase(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "商户未配置支付宝收款"})
 			return
 		}
-	} else {
+	} else if input.PaymentMethod == "wechat" {
 		if paymentConfig.WechatQRCode != "" {
 			paymentURL = paymentConfig.WechatQRCode
 		} else {
@@ -665,30 +671,155 @@ func CreateDirectPurchase(c *gin.Context) {
 		}
 	}
 
-	orderNo := fmt.Sprintf("DP%s%s", time.Now().Format("20060102150405"), uuid.New().String()[:6])
-	purchase := models.DirectPurchase{
-		OrderNo:            orderNo,
-		MerchantID:         template.MerchantID,
-		SellerTechnicianID: input.SellerTechnicianID,
-		UserID:             userID,
-		CardTemplateID:     template.ID,
-		Price:              template.Price,
-		PaymentMethod:      input.PaymentMethod,
-		Status:             "pending",
-	}
-	if err := config.DB.Create(&purchase).Error; err != nil {
+	var purchase models.DirectPurchase
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		orderNo := fmt.Sprintf("DP%s%s", time.Now().Format("20060102150405"), uuid.New().String()[:6])
+		price := template.Price
+		status := "pending"
+		sourceType := ""
+		var sourceID *uint
+		var campaignID *uint
+		var claimID *uint
+		var referrerUserID *uint
+		referralCode := strings.TrimSpace(input.ReferralCode)
+		originalPrice := template.Price
+		appliedPrice := template.Price
+
+		if input.CampaignID != nil && *input.CampaignID > 0 {
+			var campaign models.PromotionCardCampaign
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND merchant_id = ? AND card_template_id = ?", *input.CampaignID, template.MerchantID, template.ID).
+				First(&campaign).Error; err != nil {
+				return apiErr{status: http.StatusBadRequest, msg: "推广活动不存在"}
+			}
+			if err := refreshPromotionCampaignState(tx, campaign.ID, now); err != nil {
+				return err
+			}
+			sourceType = directPurchaseSourcePromotion
+			campaignID = &campaign.ID
+			sourceID = &campaign.ID
+
+			if input.ClaimID != nil && *input.ClaimID > 0 {
+				var claim models.PromotionCardClaim
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+					Where("id = ? AND campaign_id = ? AND user_id = ?", *input.ClaimID, campaign.ID, userID).
+					First(&claim).Error; err != nil {
+					return apiErr{status: http.StatusBadRequest, msg: "活动资格不存在"}
+				}
+				if claim.Status != promotionCardClaimStatusActive {
+					return apiErr{status: http.StatusBadRequest, msg: "活动资格不可用"}
+				}
+				if claim.ExpiresAt == nil || !claim.ExpiresAt.After(now) {
+					claim.Status = promotionCardClaimStatusExpired
+					claim.ExpiredAt = &now
+					if err := tx.Save(&claim).Error; err != nil {
+						return err
+					}
+					return apiErr{status: http.StatusBadRequest, msg: "活动资格已过期"}
+				}
+				claimID = &claim.ID
+				referrerUserID = claim.ReferrerUserID
+				if referralCode == "" {
+					referralCode = claim.PromotionCode
+				}
+				if campaign.PromoPrice > 0 && campaign.PromoEndsAt != nil && campaign.PromoEndsAt.After(now) {
+					appliedPrice = campaign.PromoPrice
+				}
+			} else if input.UsePromo && input.PaymentMethod != "store" && campaign.PromoPrice > 0 && campaign.PromoQuantity > 0 && campaign.PromoEndsAt != nil && campaign.PromoEndsAt.After(now) {
+				if err := validateClaimableCampaign(tx, &campaign, userID, now); err == nil {
+					referrerUserID, normalizedRefCode, err := resolveCampaignReferrer(tx, campaign.ID, userID, referralCode)
+					if err != nil {
+						return err
+					}
+					expiresAt := now.Add(24 * time.Hour)
+					claim := models.PromotionCardClaim{
+						CampaignID:     campaign.ID,
+						UserID:         userID,
+						ReferrerUserID: referrerUserID,
+						PromotionCode:  normalizedRefCode,
+						Status:         promotionCardClaimStatusActive,
+						ClaimedAt:      &now,
+						ExpiresAt:      &expiresAt,
+					}
+					if err := tx.Create(&claim).Error; err != nil {
+						return err
+					}
+					claimID = &claim.ID
+					referrerUserID = claim.ReferrerUserID
+					referralCode = claim.PromotionCode
+					appliedPrice = campaign.PromoPrice
+				}
+			} else {
+				resolvedReferrerUserID, normalizedRefCode, err := resolveCampaignReferrer(tx, campaign.ID, userID, referralCode)
+				if err != nil {
+					return err
+				}
+				referrerUserID = resolvedReferrerUserID
+				referralCode = normalizedRefCode
+			}
+		}
+
+		if input.PaymentMethod == "store" {
+			if claimID == nil {
+				return apiErr{status: http.StatusBadRequest, msg: "到店付款需先领取活动"}
+			}
+			status = directPurchaseStatusStoreWait
+		}
+
+		price = appliedPrice
+		purchase = models.DirectPurchase{
+			OrderNo:             orderNo,
+			MerchantID:          template.MerchantID,
+			SellerTechnicianID:  input.SellerTechnicianID,
+			UserID:              userID,
+			CardTemplateID:      template.ID,
+			Price:               price,
+			PaymentMethod:       input.PaymentMethod,
+			Status:              status,
+			SourceType:          sourceType,
+			PromotionCampaignID: campaignID,
+			PromotionClaimID:    claimID,
+			ReferrerUserID:      referrerUserID,
+			PromotionCode:       referralCode,
+			OriginalPrice:       originalPrice,
+			AppliedPrice:        appliedPrice,
+			SourceID:            sourceID,
+		}
+		if err := tx.Create(&purchase).Error; err != nil {
+			return err
+		}
+
+		if claimID != nil {
+			if err := tx.Model(&models.PromotionCardClaim{}).
+				Where("id = ?", *claimID).
+				Updates(map[string]interface{}{"order_id": purchase.ID}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		if ae, ok := err.(apiErr); ok {
+			c.JSON(ae.status, gin.H{"error": ae.msg})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建订单失败"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
-			"order_no":             orderNo,
+			"order_no":             purchase.OrderNo,
 			"card_template_id":     template.ID,
 			"seller_technician_id": input.SellerTechnicianID,
-			"price":                template.Price,
+			"price":                purchase.Price,
+			"original_price":       purchase.OriginalPrice,
+			"applied_price":        purchase.AppliedPrice,
 			"payment_url":          paymentURL,
 			"payment_method":       input.PaymentMethod,
+			"claim_id":             purchase.PromotionClaimID,
+			"campaign_id":          purchase.PromotionCampaignID,
+			"status":               purchase.Status,
 		},
 	})
 }
@@ -716,7 +847,7 @@ func ConfirmDirectPurchase(c *gin.Context) {
 		return
 	}
 
-	if purchase.Status == "paid" {
+	if purchase.Status == "paid" || purchase.Status == directPurchaseStatusStoreWait {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "已提交付款，等待商户确认",
 			"data":    purchase,
@@ -732,12 +863,29 @@ func ConfirmDirectPurchase(c *gin.Context) {
 	}
 
 	now := time.Now()
-	if err := config.DB.Model(&models.DirectPurchase{}).
-		Where("id = ? AND user_id = ? AND status = ?", purchase.ID, userID, "pending").
-		Updates(map[string]interface{}{
-			"status":  "paid",
-			"paid_at": &now,
-		}).Error; err != nil {
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.DirectPurchase{}).
+			Where("id = ? AND user_id = ? AND status = ?", purchase.ID, userID, "pending").
+			Updates(map[string]interface{}{
+				"status":  "paid",
+				"paid_at": &now,
+			}).Error; err != nil {
+			return err
+		}
+		if purchase.PromotionClaimID != nil {
+			if err := tx.Model(&models.PromotionCardClaim{}).
+				Where("id = ? AND status = ?", *purchase.PromotionClaimID, promotionCardClaimStatusActive).
+				Updates(map[string]interface{}{
+					"status":  promotionCardClaimStatusPaid,
+					"paid_at": &now,
+				}).Error; err != nil {
+				return err
+			}
+		}
+		purchase.Status = "paid"
+		purchase.PaidAt = &now
+		return maybeCountPromotionPayment(tx, &purchase, now)
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交失败"})
 		return
 	}
@@ -776,7 +924,7 @@ func MerchantConfirmDirectPurchase(c *gin.Context) {
 		return
 	}
 
-	if purchase.Status != "paid" {
+	if purchase.Status != "paid" && purchase.Status != directPurchaseStatusStoreWait {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "订单状态无效"})
 		return
 	}
@@ -846,12 +994,39 @@ func MerchantConfirmDirectPurchase(c *gin.Context) {
 			}
 		}
 
+		if purchase.Status == directPurchaseStatusStoreWait {
+			if purchase.PromotionClaimID != nil {
+				var claim models.PromotionCardClaim
+				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", *purchase.PromotionClaimID).First(&claim).Error; err != nil {
+					return apiErr{status: http.StatusBadRequest, msg: "活动资格不存在"}
+				}
+				if claim.ExpiresAt == nil || !claim.ExpiresAt.After(now) || claim.Status == promotionCardClaimStatusExpired {
+					return apiErr{status: http.StatusBadRequest, msg: "活动资格已过期，不能再按促销价开卡"}
+				}
+			}
+			purchase.Status = "paid"
+			purchase.PaidAt = &now
+			if err := maybeCountPromotionPayment(tx, &purchase, now); err != nil {
+				return err
+			}
+		}
+
 		if err := tx.Model(&purchase).Updates(map[string]interface{}{
 			"status":       "confirmed",
 			"confirmed_at": &confirmedAt,
 			"card_id":      card.ID,
 		}).Error; err != nil {
 			return err
+		}
+		if purchase.PromotionClaimID != nil {
+			if err := tx.Model(&models.PromotionCardClaim{}).
+				Where("id = ?", *purchase.PromotionClaimID).
+				Updates(map[string]interface{}{
+					"status":  promotionCardClaimStatusConfirmed,
+					"paid_at": &now,
+				}).Error; err != nil {
+				return err
+			}
 		}
 
 		return nil
