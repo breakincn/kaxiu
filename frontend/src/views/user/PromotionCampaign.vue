@@ -5,7 +5,7 @@
     <div v-else class="max-w-2xl mx-auto px-4 py-6 space-y-4">
       <div class="rounded-3xl bg-white shadow-sm p-5 space-y-3">
         <div class="text-xs uppercase tracking-[0.3em] text-orange-400">推广卡活动</div>
-        <div v-if="campaign.title" class="rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 text-white p-4 text-xl font-semibold flex items-center gap-0.5">
+        <div v-if="campaign.title" class="rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 text-white p-4 text-xl font-semibold flex items-center justify-center gap-0.5 text-center">
           <span>{{ campaign.title }}</span>
           <span
             class="inline-flex items-start justify-center w-6 h-6 text-[#ff3b30] text-[28px] leading-none font-black rotate-12 -translate-y-[2px] -ml-[4px]"
