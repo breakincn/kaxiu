@@ -71,7 +71,7 @@
         </div>
         <button
           v-if="campaign.can_share"
-          class="w-full rounded-2xl bg-gray-900 text-white px-4 py-3 font-medium"
+          class="w-full rounded-2xl bg-green-600 text-white px-4 py-3 font-medium"
           @click="handleShareAction"
         >
           转发领卡
