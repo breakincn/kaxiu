@@ -283,7 +283,7 @@ func GetPromotionCampaignRefLink(c *gin.Context) {
 		return
 	}
 
-	sharePath := fmt.Sprintf("/promo/%s?ref=%s", campaign.Slug, referrer.PromotionCode)
+	sharePath := fmt.Sprintf("/promo/%s/%s", campaign.Slug, referrer.PromotionCode)
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"campaign_id":    campaign.ID,

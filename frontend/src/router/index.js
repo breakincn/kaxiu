@@ -87,7 +87,7 @@ const userRoutes = [
     component: () => import('../views/user/Shop.vue')
   },
   {
-    path: '/promo/:slug',
+    path: '/promo/:slug/:refCode?',
     name: 'PromotionCampaign',
     component: () => import('../views/user/PromotionCampaign.vue')
   }

@@ -149,7 +149,7 @@ const showPromoPrice = computed(() => Boolean(campaign.value?.promo_active && ca
 const loadCampaign = async () => {
   loading.value = true
   try {
-    const res = await shopApi.getPublicPromotionCampaign(route.params.slug, route.query.ref)
+    const res = await shopApi.getPublicPromotionCampaign(route.params.slug, route.params.refCode)
     campaign.value = res.data.data
   } catch (err) {
     campaign.value = null
@@ -164,7 +164,7 @@ const ensureUserAction = () => {
   localStorage.setItem('redirectAfterLogin', route.fullPath)
   localStorage.setItem('promotionReferralContext', JSON.stringify({
     campaignSlug: route.params.slug,
-    referralCode: String(route.query.ref || '').trim()
+    referralCode: String(route.params.refCode || '').trim()
   }))
   loginModalVisible.value = true
   return false
@@ -197,7 +197,7 @@ const createOriginalPurchase = async (method) => {
     const res = await shopApi.createDirectPurchase({
       card_template_id: campaign.value.card_template_id,
       campaign_id: campaign.value.id,
-      referral_code: route.query.ref || '',
+      referral_code: route.params.refCode || '',
       use_promo: false,
       payment_method: method
     })
@@ -215,7 +215,7 @@ const createPromoPurchase = async () => {
     const payload = {
       card_template_id: campaign.value.card_template_id,
       campaign_id: campaign.value.id,
-      referral_code: route.query.ref || '',
+      referral_code: route.params.refCode || '',
       use_promo: true,
       payment_method: campaign.value.payment_config.default_method || (campaign.value.payment_config.has_alipay ? 'alipay' : 'wechat')
     }
@@ -237,14 +237,14 @@ const claimOrCreateStoreOrder = async () => {
   try {
     let claimId = campaign.value.my_claim?.id
     if (!claimId) {
-      const claimRes = await shopApi.claimPromotionCampaign(route.params.slug, route.query.ref)
+      const claimRes = await shopApi.claimPromotionCampaign(route.params.slug, route.params.refCode)
       claimId = claimRes.data.data.id
     }
     await shopApi.createDirectPurchase({
       card_template_id: campaign.value.card_template_id,
       campaign_id: campaign.value.id,
       claim_id: claimId,
-      referral_code: route.query.ref || '',
+      referral_code: route.params.refCode || '',
       use_promo: true,
       payment_method: 'store'
     })
@@ -278,7 +278,7 @@ const closePaymentModal = () => {
 const handleShareAction = async () => {
   if (!ensureUserAction()) return
   try {
-    const res = await shopApi.getPromotionRefLink(route.params.slug, route.query.ref)
+    const res = await shopApi.getPromotionRefLink(route.params.slug, route.params.refCode)
     shareLink.value = `${window.location.origin}${res.data.data.share_path}`
     await navigator.clipboard.writeText(shareLink.value)
     alert('专属推广链接已复制')
