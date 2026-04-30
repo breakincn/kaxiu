@@ -185,7 +185,7 @@
                 :disabled="promotionSaving || !selectedTemplate"
                 class="w-full py-3 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50"
               >
-                {{ promotionSaving ? '提交中...' : (currentCampaign ? '更新推广链接' : '生成推广链接') }}
+                {{ promotionSaving ? '提交中...' : '生成推广链接' }}
               </button>
 
               <div v-if="promotionError" class="text-sm text-red-500">{{ promotionError }}</div>
@@ -218,8 +218,9 @@
           </div>
 
           <button
+            v-if="!promotionEnabled"
             @click="submit"
-            :disabled="submitting || promotionEnabled || !canSubmit"
+            :disabled="submitting || !canSubmit"
             class="w-full mt-2 py-3 bg-primary text-white rounded-lg font-medium disabled:opacity-50"
           >
             {{ submitting ? '提交中...' : '确认发卡' }}

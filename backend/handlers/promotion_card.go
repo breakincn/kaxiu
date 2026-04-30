@@ -193,7 +193,7 @@ func GetPromotionCampaignBySlug(c *gin.Context) {
 	}
 
 	userID := optionalUserIDFromAuthHeader(c)
-	refCode := strings.TrimSpace(c.Query("ref"))
+	refCode := strings.TrimSpace(c.Param("refCode"))
 	detail, err := buildPromotionCampaignDetail(config.DB, &campaign, userID, refCode)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取活动失败"})
@@ -209,7 +209,7 @@ func ClaimPromotionCampaign(c *gin.Context) {
 	}
 
 	slug := strings.TrimSpace(c.Param("slug"))
-	refCode := strings.TrimSpace(c.Query("ref"))
+	refCode := strings.TrimSpace(c.Param("refCode"))
 	now := time.Now()
 
 	var result models.PromotionCardClaim
@@ -432,6 +432,7 @@ func savePromotionCampaign(id uint, merchantID uint, templateID uint, title stri
 				First(&campaign).Error; err != nil {
 				return fmt.Errorf("活动不存在")
 			}
+			campaign.Slug = normalizePromotionCampaignSlug(campaign.Slug, merchantID, templateID)
 		} else {
 			campaign = models.PromotionCardCampaign{
 				MerchantID:     merchantID,
@@ -908,7 +909,7 @@ func newPromotionCampaignSlug(tx *gorm.DB, merchantID uint, templateID uint) (st
 		if err != nil {
 			return "", err
 		}
-		slug := fmt.Sprintf("promo-%d-%d-%s", merchantID, templateID, code)
+		slug := fmt.Sprintf("%d-%d-%s", merchantID, templateID, code)
 		var count int64
 		if err := tx.Model(&models.PromotionCardCampaign{}).Where("slug = ?", slug).Count(&count).Error; err != nil {
 			return "", err
@@ -918,6 +919,18 @@ func newPromotionCampaignSlug(tx *gorm.DB, merchantID uint, templateID uint) (st
 		}
 	}
 	return "", fmt.Errorf("生成活动链接失败")
+}
+
+func normalizePromotionCampaignSlug(slug string, merchantID uint, templateID uint) string {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return slug
+	}
+	prefix := fmt.Sprintf("promo-%d-%d-", merchantID, templateID)
+	if strings.HasPrefix(slug, prefix) {
+		return strings.TrimPrefix(slug, "promo-")
+	}
+	return slug
 }
 
 func newPromotionCode(tx *gorm.DB, campaignID uint) (string, error) {

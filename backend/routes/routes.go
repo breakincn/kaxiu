@@ -32,6 +32,7 @@ func SetupUserRoutes(r *gin.Engine) {
 	user.GET("/s/id/:id", handlers.GetShopInfoByID)
 	user.GET("/merchants/:id/live-service-status", handlers.GetMerchantLiveServiceStatus)
 	user.GET("/promotion-campaigns/:slug", handlers.GetPromotionCampaignBySlug)
+	user.GET("/promotion-campaigns/:slug/:refCode", handlers.GetPromotionCampaignBySlug)
 
 	// 需要认证的接口（用户端）
 	auth := user.Group("")
@@ -91,7 +92,9 @@ func SetupUserRoutes(r *gin.Engine) {
 	auth.POST("/direct-purchase/:order_no/confirm", handlers.ConfirmDirectPurchase)
 	auth.GET("/direct-purchases", handlers.GetDirectPurchases)
 	auth.POST("/promotion-campaigns/:slug/claim", handlers.ClaimPromotionCampaign)
+	auth.POST("/promotion-campaigns/:slug/:refCode/claim", handlers.ClaimPromotionCampaign)
 	auth.POST("/promotion-campaigns/:slug/ref-link", handlers.GetPromotionCampaignRefLink)
+	auth.POST("/promotion-campaigns/:slug/:refCode/ref-link", handlers.GetPromotionCampaignRefLink)
 	auth.POST("/promotion-campaigns/:slug/claim-reward", handlers.ClaimPromotionCampaignReward)
 
 	// 兼容：用户端创建用户（历史接口）
