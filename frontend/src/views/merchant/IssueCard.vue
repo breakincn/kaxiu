@@ -219,7 +219,16 @@
               <div v-if="promotionLink" class="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-gray-700">
                 <div class="font-medium text-green-700 mb-1">推广链接已生成</div>
                 <div class="break-all">{{ promotionLink }}</div>
-                <button @click="copyPromotionLink" class="mt-2 text-primary text-sm">复制链接</button>
+                <div class="mt-3 flex flex-wrap gap-3">
+                  <button @click="copyPromotionLink" class="text-primary text-sm">复制链接</button>
+                  <button
+                    @click="generatePromotionPoster"
+                    :disabled="generatingPoster"
+                    class="text-primary text-sm disabled:opacity-50"
+                  >
+                    {{ generatingPoster ? '生成中...' : '生成图片' }}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -244,6 +253,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import QRCode from 'qrcode'
 import { cardApi, merchantApi, shopApi } from '../../api'
 import { getMerchantId, getMerchantToken, hasMerchantPermission } from '../../utils/auth'
 
@@ -265,6 +275,7 @@ const promotionSaving = ref(false)
 const promotionError = ref('')
 const promotionLink = ref('')
 const currentCampaign = ref(null)
+const generatingPoster = ref(false)
 let promotionSaveTimer = null
 let isFillingPromotionForm = false
 const lastSavedPromotionPayload = ref('')
@@ -531,14 +542,22 @@ const formatDateTimeLocal = (value) => {
   return local.toISOString().slice(0, 16)
 }
 
+const loadPromotionCampaignDetail = async (campaignId) => {
+  const id = Number(campaignId || 0)
+  if (!id) return null
+  const res = await shopApi.getPromotionCampaign(id)
+  return res?.data?.data || null
+}
+
 const loadCurrentCampaign = async () => {
   if (!selectedTemplate.value) return
   try {
     const res = await shopApi.listPromotionCampaigns({ template_id: selectedTemplate.value.id })
     const list = res.data.data || []
     const latest = list.find(item => item.status === 'active') || list[0] || null
-    currentCampaign.value = latest
-    fillPromotionForm(latest)
+    const detail = latest?.id ? await loadPromotionCampaignDetail(latest.id) : null
+    currentCampaign.value = detail
+    fillPromotionForm(detail)
   } catch (_) {
     currentCampaign.value = null
     promotionLink.value = ''
@@ -608,6 +627,352 @@ const copyPromotionLink = async () => {
     alert('已复制推广链接')
   } catch (_) {
     alert('复制失败，请手动复制')
+  }
+}
+
+const formatPosterDateTime = (value) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).replace(/\//g, '/')
+}
+
+const wrapPosterText = (ctx, text, maxWidth) => {
+  const value = String(text || '').trim()
+  if (!value) return []
+  const chars = Array.from(value)
+  const lines = []
+  let current = ''
+  for (const char of chars) {
+    const candidate = `${current}${char}`
+    if (ctx.measureText(candidate).width <= maxWidth || !current) {
+      current = candidate
+      continue
+    }
+    lines.push(current)
+    current = char
+  }
+  if (current) lines.push(current)
+  return lines
+}
+
+const drawRoundedRect = (ctx, x, y, width, height, radius, fillStyle, strokeStyle = '') => {
+  const r = Math.min(radius, width / 2, height / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.arcTo(x + width, y, x + width, y + height, r)
+  ctx.arcTo(x + width, y + height, x, y + height, r)
+  ctx.arcTo(x, y + height, x, y, r)
+  ctx.arcTo(x, y, x + width, y, r)
+  ctx.closePath()
+  if (fillStyle) {
+    ctx.fillStyle = fillStyle
+    ctx.fill()
+  }
+  if (strokeStyle) {
+    ctx.strokeStyle = strokeStyle
+    ctx.stroke()
+  }
+}
+
+const canvasToBlob = (canvas) => new Promise((resolve, reject) => {
+  canvas.toBlob((blob) => {
+    if (blob) {
+      resolve(blob)
+      return
+    }
+    reject(new Error('blob create failed'))
+  }, 'image/png')
+})
+
+const downloadBlobImage = (blob, filename) => {
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+}
+
+const savePosterBlob = async (blob, filename) => {
+  if (navigator.share && window.File) {
+    try {
+      const file = new File([blob], filename, { type: blob.type || 'image/png' })
+      await navigator.share({ files: [file], title: '推广卡活动海报' })
+      alert('图片已生成，请在系统面板中保存到相册')
+      return
+    } catch (_) {
+      // 用户取消或系统不支持文件分享时，回退为下载
+    }
+  }
+  downloadBlobImage(blob, filename)
+  alert('图片已生成并开始下载')
+}
+
+const generatePromotionPoster = async () => {
+  if (!currentCampaign.value || !promotionLink.value || generatingPoster.value) return
+
+  generatingPoster.value = true
+  try {
+    const campaign = currentCampaign.value?.id
+      ? (await loadPromotionCampaignDetail(currentCampaign.value.id)) || currentCampaign.value
+      : currentCampaign.value
+    if (!campaign?.card_template || !campaign?.merchant) {
+      throw new Error('campaign detail missing')
+    }
+    currentCampaign.value = campaign
+    fillPromotionForm(campaign)
+
+    const cardTemplate = campaign.card_template || {}
+    const merchant = campaign.merchant || {}
+    const cardType = getCardTypeLabel(cardTemplate.card_type)
+    const showPromoPrice = Boolean(campaign.promo_active && Number(campaign.promo_price || 0) > 0)
+    const viewportWidth = typeof window !== 'undefined' ? Number(window.innerWidth || 0) : 0
+    const posterWidth = Math.min(Math.max(viewportWidth || 390, 375), 430)
+    const scale = 3
+    const pagePadding = 16
+    const sectionGap = 16
+    const sectionWidth = posterWidth - pagePadding * 2
+    const sectionPadding = 16
+    const descriptionProbeCanvas = document.createElement('canvas')
+    const descriptionProbeCtx = descriptionProbeCanvas.getContext('2d')
+    if (!descriptionProbeCtx) throw new Error('canvas unsupported')
+    descriptionProbeCtx.font = '400 14px sans-serif'
+    const descriptionLines = wrapPosterText(descriptionProbeCtx, cardTemplate.description || '', sectionWidth - sectionPadding * 2).slice(0, 2)
+    const shareDesc = `邀请新用户注册成功 +1，首次付款成功再 +1，达到 ${Number(campaign.reward_threshold || 0)} 后可在3天内领取奖励卡。`
+    const shareProbeCanvas = document.createElement('canvas')
+    const shareProbeCtx = shareProbeCanvas.getContext('2d')
+    if (!shareProbeCtx) throw new Error('canvas unsupported')
+    shareProbeCtx.font = '400 14px sans-serif'
+    const shareDescLines = wrapPosterText(shareProbeCtx, shareDesc, sectionWidth - sectionPadding * 2).slice(0, 3)
+    const shareStatsHeight = 76
+    const topSectionHeight = 230 + Math.max(descriptionLines.length - 1, 0) * 20 + (showPromoPrice ? 22 : 0)
+    const purchaseSectionHeight = showPromoPrice ? 258 : 146
+    const shareSectionHeight = 212 + Math.max(shareDescLines.length - 2, 0) * 20 + shareStatsHeight
+    const qrSectionHeight = 254
+    const posterHeight = pagePadding + topSectionHeight + sectionGap + purchaseSectionHeight + sectionGap + shareSectionHeight + sectionGap + qrSectionHeight + pagePadding
+    const canvas = document.createElement('canvas')
+    canvas.width = posterWidth * scale
+    canvas.height = posterHeight * scale
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('canvas unsupported')
+    ctx.scale(scale, scale)
+
+    ctx.fillStyle = '#f7f4ef'
+    ctx.fillRect(0, 0, posterWidth, posterHeight)
+    let y = pagePadding
+
+    const topSectionY = y
+    drawRoundedRect(ctx, pagePadding, topSectionY, sectionWidth, topSectionHeight, 26, '#ffffff')
+    ctx.fillStyle = '#fb923c'
+    ctx.font = '500 16px sans-serif'
+    ctx.fillText('推广卡活动', pagePadding + sectionPadding, topSectionY + 28)
+
+    const titleBarX = pagePadding + sectionPadding
+    const titleBarY = topSectionY + 42
+    const titleBarWidth = sectionWidth - sectionPadding * 2
+    const titleBarHeight = 54
+    const gradient = ctx.createLinearGradient(titleBarX, titleBarY, titleBarX + titleBarWidth, titleBarY)
+    gradient.addColorStop(0, '#f97316')
+    gradient.addColorStop(1, '#fbbf24')
+    drawRoundedRect(ctx, titleBarX, titleBarY, titleBarWidth, titleBarHeight, 20, gradient)
+    const posterTitle = String(campaign.title || '推广卡活动').trim()
+    ctx.fillStyle = '#ffffff'
+    ctx.font = '700 22px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(posterTitle, posterWidth / 2, titleBarY + titleBarHeight / 2)
+    ctx.fillStyle = '#ff5a36'
+    ctx.font = '900 28px sans-serif'
+    ctx.fillText('!', titleBarX + titleBarWidth - 26, titleBarY + titleBarHeight / 2 + 1)
+    ctx.textAlign = 'start'
+    ctx.textBaseline = 'alphabetic'
+
+    const cardNameLines = wrapPosterText(ctx, cardTemplate.name || '', sectionWidth - sectionPadding * 2).slice(0, 2)
+    ctx.fillStyle = '#1f2937'
+    ctx.font = '700 23px sans-serif'
+    cardNameLines.forEach((line, index) => {
+      ctx.fillText(line, pagePadding + sectionPadding, topSectionY + 122 + index * 30)
+    })
+    const cardNameBlockHeight = Math.max(cardNameLines.length, 1) * 30
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '400 15px sans-serif'
+    ctx.fillText(`${merchant.name || ''} · ${cardType}`, pagePadding + sectionPadding, topSectionY + 122 + cardNameBlockHeight + 8)
+
+    const priceRowY = topSectionY + 122 + cardNameBlockHeight + 58
+    const originalPrice = Number(cardTemplate.price || 0)
+    const promoPrice = Number(showPromoPrice ? campaign.promo_price || 0 : cardTemplate.price || 0)
+    let priceStartX = pagePadding + sectionPadding
+    if (showPromoPrice && originalPrice > 0) {
+      const originalPriceText = `¥${(originalPrice / 100).toFixed(2)}`
+      ctx.fillStyle = '#9ca3af'
+      ctx.font = '400 15px sans-serif'
+      ctx.fillText(originalPriceText, priceStartX, priceRowY)
+      const strikeWidth = ctx.measureText(originalPriceText).width
+      ctx.strokeStyle = '#9ca3af'
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.moveTo(priceStartX, priceRowY - 7)
+      ctx.lineTo(priceStartX + strikeWidth, priceRowY - 7)
+      ctx.stroke()
+      priceStartX += strikeWidth + 18
+    }
+    ctx.fillStyle = '#f97316'
+    ctx.font = '700 29px sans-serif'
+    ctx.fillText(`¥${(promoPrice / 100).toFixed(2)}`, priceStartX, priceRowY)
+
+    let metaY = priceRowY + 24
+    if (showPromoPrice && Number(campaign.promo_remaining || 0) > 0 && campaign.promo_ends_at) {
+      ctx.fillStyle = '#f97316'
+      ctx.font = '500 14px sans-serif'
+      ctx.fillText(`促销剩余 ${campaign.promo_remaining} 份，截止 ${formatPosterDateTime(campaign.promo_ends_at)}`, pagePadding + sectionPadding, metaY)
+      metaY += 28
+    }
+
+    const baseInfo = cardTemplate.card_type === 'balance'
+      ? `原卡额度：¥${(Number(cardTemplate.recharge_amount || 0) / 100).toFixed(2)}`
+      : `原卡次数：${Number(cardTemplate.total_times || 0)}`
+    const validity = Number(cardTemplate.valid_days || 0) > 0 ? `${cardTemplate.valid_days}天有效` : '长期有效'
+    ctx.fillStyle = '#374151'
+    ctx.font = '400 16px sans-serif'
+    ctx.fillText(`${baseInfo}   ${validity}`, pagePadding + sectionPadding, metaY)
+    if (descriptionLines.length > 0) {
+      ctx.fillStyle = '#6b7280'
+      ctx.font = '400 14px sans-serif'
+      descriptionLines.forEach((line, index) => {
+        ctx.fillText(line, pagePadding + sectionPadding, metaY + 30 + index * 20)
+      })
+    }
+
+    y += topSectionHeight + sectionGap
+
+    const purchaseSectionY = y
+    drawRoundedRect(ctx, pagePadding, purchaseSectionY, sectionWidth, purchaseSectionHeight, 26, '#ffffff')
+    ctx.fillStyle = '#1f2937'
+    ctx.font = '700 20px sans-serif'
+    ctx.fillText('购买方式', pagePadding + sectionPadding, purchaseSectionY + 38)
+
+    const optionCardY = purchaseSectionY + 62
+    const optionGap = 12
+    const optionWidth = (sectionWidth - sectionPadding * 2 - optionGap) / 2
+    drawRoundedRect(ctx, pagePadding + sectionPadding, optionCardY, optionWidth, 78, 18, '#ffffff', '#d9deea')
+    drawRoundedRect(ctx, pagePadding + sectionPadding + optionWidth + optionGap, optionCardY, optionWidth, 78, 18, '#ffffff', '#d9deea')
+    ctx.fillStyle = '#1f2937'
+    ctx.font = '600 16px sans-serif'
+    ctx.fillText('原价支付宝购买', pagePadding + sectionPadding + 14, optionCardY + 31)
+    ctx.fillText('原价微信购买', pagePadding + sectionPadding + optionWidth + optionGap + 14, optionCardY + 31)
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '400 12px sans-serif'
+    ctx.fillText('始终可用', pagePadding + sectionPadding + 14, optionCardY + 53)
+    ctx.fillText('始终可用', pagePadding + sectionPadding + optionWidth + optionGap + 14, optionCardY + 53)
+
+    if (showPromoPrice) {
+      const promoButtonY = purchaseSectionY + 152
+      drawRoundedRect(ctx, pagePadding + sectionPadding, promoButtonY, sectionWidth - sectionPadding * 2, 66, 18, '#ff6d00')
+      ctx.fillStyle = '#ffffff'
+      ctx.font = '700 18px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('促销价线上购买', posterWidth / 2, promoButtonY + 33)
+      ctx.textAlign = 'start'
+      ctx.textBaseline = 'alphabetic'
+
+      const storeButtonY = promoButtonY + 84
+      drawRoundedRect(ctx, pagePadding + sectionPadding, storeButtonY, sectionWidth - sectionPadding * 2, 66, 18, '#ffffff', '#f59e0b')
+      ctx.fillStyle = '#ea580c'
+      ctx.font = '700 17px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('领取活动后到店付款', posterWidth / 2, storeButtonY + 33)
+      ctx.textAlign = 'start'
+      ctx.textBaseline = 'alphabetic'
+    }
+
+    y += purchaseSectionHeight + sectionGap
+
+    const shareSectionY = y
+    drawRoundedRect(ctx, pagePadding, shareSectionY, sectionWidth, shareSectionHeight, 26, '#ffffff')
+    ctx.fillStyle = '#1f2937'
+    ctx.font = '700 20px sans-serif'
+    ctx.fillText('转发领卡', pagePadding + sectionPadding, shareSectionY + 38)
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '400 14px sans-serif'
+    shareDescLines.forEach((line, index) => {
+      ctx.fillText(line, pagePadding + sectionPadding, shareSectionY + 74 + index * 22)
+    })
+    const shareButtonY = shareSectionY + 122 + Math.max(shareDescLines.length - 2, 0) * 20
+    drawRoundedRect(ctx, pagePadding + sectionPadding, shareButtonY, sectionWidth - sectionPadding * 2, 60, 18, '#16a34a')
+    ctx.fillStyle = '#ffffff'
+    ctx.font = '700 18px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('转发领卡', posterWidth / 2, shareButtonY + 30)
+    ctx.textAlign = 'start'
+    ctx.textBaseline = 'alphabetic'
+
+    const statsCardY = shareButtonY + 74
+    drawRoundedRect(ctx, pagePadding + sectionPadding, statsCardY, sectionWidth - sectionPadding * 2, shareStatsHeight, 16, '#f5f7fb')
+    ctx.fillStyle = '#1f2937'
+    ctx.font = '400 14px sans-serif'
+    ctx.fillText('注册数：0', pagePadding + sectionPadding + 16, statsCardY + 28)
+    ctx.fillText('付款数：0', pagePadding + sectionPadding + 16 + (sectionWidth - sectionPadding * 2) / 2, statsCardY + 28)
+    ctx.fillText('累计进度：0', pagePadding + sectionPadding + 16, statsCardY + 56)
+
+    y += shareSectionHeight + sectionGap
+
+    const qrSectionY = y
+    drawRoundedRect(ctx, pagePadding, qrSectionY, sectionWidth, qrSectionHeight, 26, '#ffffff')
+    ctx.fillStyle = '#1f2937'
+    ctx.font = '700 18px sans-serif'
+    ctx.fillText('活动页面二维码', pagePadding + sectionPadding, qrSectionY + 34)
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '400 13px sans-serif'
+    ctx.fillText('微信识别二维码打开当前推广卡活动页', pagePadding + sectionPadding, qrSectionY + 58)
+
+    const qrCodeSize = 148
+    const qrDataUrl = await QRCode.toDataURL(promotionLink.value, {
+      width: qrCodeSize,
+      margin: 1,
+      color: {
+        dark: '#111827',
+        light: '#ffffff'
+      }
+    })
+    const qrImage = await new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => resolve(img)
+      img.onerror = reject
+      img.src = qrDataUrl
+    })
+
+    const qrCardWidth = 210
+    const qrCardHeight = 176
+    const qrCardX = (posterWidth - qrCardWidth) / 2
+    const qrCardY = qrSectionY + 66
+    drawRoundedRect(ctx, qrCardX, qrCardY, qrCardWidth, qrCardHeight, 22, '#f9fafb')
+    ctx.drawImage(qrImage, (posterWidth - qrCodeSize) / 2, qrCardY + 16, qrCodeSize, qrCodeSize)
+    ctx.fillStyle = '#374151'
+    ctx.font = '500 12px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('微信识别二维码打开活动页', posterWidth / 2, qrCardY + 156)
+    ctx.textAlign = 'start'
+
+    const blob = await canvasToBlob(canvas)
+    const filename = `promotion_poster_${campaign.slug || Date.now()}.png`
+    await savePosterBlob(blob, filename)
+  } catch (err) {
+    alert('生成图片失败')
+  } finally {
+    generatingPoster.value = false
   }
 }
 
