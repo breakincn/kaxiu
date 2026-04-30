@@ -276,7 +276,7 @@
                 :disabled="promotionSaving || !canAutoSavePromotion"
                 class="w-full rounded-lg bg-primary py-3 text-white font-medium disabled:opacity-50"
               >
-                {{ promotionSaving ? '处理中...' : (editingCampaignId ? '保存推广活动' : '生成推广发布') }}
+                {{ promotionSaving ? '处理中...' : (editingCampaignId ? '更新推广活动' : '生成推广发布') }}
               </button>
 
               <div v-if="promotionError" class="text-sm text-red-500">{{ promotionError }}</div>
