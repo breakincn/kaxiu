@@ -89,8 +89,10 @@
           转发领卡
         </button>
         <div v-if="campaign.my_referral" class="rounded-2xl bg-gray-50 p-4 text-sm space-y-1">
-          <div>注册数：{{ campaign.my_referral.register_count }}</div>
-          <div>付款数：{{ campaign.my_referral.paid_count }}</div>
+          <div class="flex items-center gap-8">
+            <div class="flex-1">注册数：{{ campaign.my_referral.register_count }}</div>
+            <div class="flex-1">付款数：{{ campaign.my_referral.paid_count }}</div>
+          </div>
           <div>累计进度：{{ campaign.my_referral.progress_count }}</div>
           <div v-if="campaign.my_referral.reward_status === 'claimable'" class="text-orange-500">
             奖励待领取，截止 {{ formatDateTime(campaign.my_referral.reward_expires_at) }}
