@@ -754,7 +754,6 @@ const generatePromotionPoster = async () => {
     const shareDescLines = wrapPosterText(measureCtx, shareDesc, sectionWidth - sectionPadding * 2).slice(0, 3)
     measureCtx.font = '700 23px sans-serif'
     const cardNameLines = wrapPosterText(measureCtx, cardTemplate.name || '', sectionWidth - sectionPadding * 2).slice(0, 2)
-    const shareStatsHeight = 76
     const topSectionY = pagePadding
     const cardNameLineHeight = 30
     const cardNameFirstBaseline = topSectionY + 122
@@ -795,8 +794,7 @@ const generatePromotionPoster = async () => {
     const shareDescFirstBaseline = shareSectionY + 74
     const shareDescLastBaseline = shareDescFirstBaseline + Math.max(shareDescLines.length - 1, 0) * 22
     const shareButtonY = shareDescLastBaseline + 24
-    const statsCardY = shareButtonY + 76
-    const shareSectionHeight = statsCardY + shareStatsHeight - shareSectionY + sectionPadding
+    const shareSectionHeight = shareButtonY + 60 - shareSectionY + sectionPadding
 
     const qrSectionY = shareSectionY + shareSectionHeight + sectionGap
     const qrCardHeight = 212
@@ -955,13 +953,6 @@ const generatePromotionPoster = async () => {
     ctx.fillText('转发领卡', posterWidth / 2, shareButtonY + 30)
     ctx.textAlign = 'start'
     ctx.textBaseline = 'alphabetic'
-
-    drawRoundedRect(ctx, pagePadding + sectionPadding, statsCardY, sectionWidth - sectionPadding * 2, shareStatsHeight, 16, '#f5f7fb')
-    ctx.fillStyle = '#1f2937'
-    ctx.font = '400 14px sans-serif'
-    ctx.fillText('注册数：0', pagePadding + sectionPadding + 16, statsCardY + 28)
-    ctx.fillText('付款数：0', pagePadding + sectionPadding + 16 + (sectionWidth - sectionPadding * 2) / 2, statsCardY + 28)
-    ctx.fillText('累计进度：0', pagePadding + sectionPadding + 16, statsCardY + 56)
 
     drawRoundedRect(ctx, pagePadding, qrSectionY, sectionWidth, qrSectionHeight, 26, '#ffffff')
     ctx.fillStyle = '#1f2937'
