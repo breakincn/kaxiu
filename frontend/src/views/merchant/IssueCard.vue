@@ -826,14 +826,26 @@ const generatePromotionPoster = async () => {
     gradient.addColorStop(1, '#fbbf24')
     drawRoundedRect(ctx, titleBarX, titleBarY, titleBarWidth, titleBarHeight, 20, gradient)
     const posterTitle = String(campaign.title || '推广卡活动').trim()
+    const posterBang = '!'
+    ctx.font = '700 22px sans-serif'
+    const titleWidth = ctx.measureText(posterTitle).width
+    ctx.font = '900 28px sans-serif'
+    const bangWidth = ctx.measureText(posterBang).width
+    const titleGroupGap = 2
+    const titleGroupWidth = titleWidth + titleGroupGap + bangWidth
+    const titleGroupStartX = titleBarX + (titleBarWidth - titleGroupWidth) / 2
     ctx.fillStyle = '#ffffff'
     ctx.font = '700 22px sans-serif'
-    ctx.textAlign = 'center'
+    ctx.textAlign = 'start'
     ctx.textBaseline = 'middle'
-    ctx.fillText(posterTitle, posterWidth / 2, titleBarY + titleBarHeight / 2)
+    ctx.fillText(posterTitle, titleGroupStartX, titleBarY + titleBarHeight / 2)
+    ctx.save()
     ctx.fillStyle = '#ff5a36'
     ctx.font = '900 28px sans-serif'
-    ctx.fillText('!', titleBarX + titleBarWidth - 26, titleBarY + titleBarHeight / 2 + 1)
+    ctx.translate(titleGroupStartX + titleWidth + titleGroupGap, titleBarY + titleBarHeight / 2 - 2)
+    ctx.rotate(12 * Math.PI / 180)
+    ctx.fillText(posterBang, 0, 0)
+    ctx.restore()
     ctx.textAlign = 'start'
     ctx.textBaseline = 'alphabetic'
 
