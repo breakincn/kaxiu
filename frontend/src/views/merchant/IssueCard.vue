@@ -159,7 +159,12 @@
                     编辑中
                   </button>
                 </div>
-                <div class="mt-1 truncate text-gray-700">{{ getCampaignLink(campaignItem) }}</div>
+                <div
+                  class="mt-1 truncate"
+                  :class="isEditingCampaign(campaignItem) ? 'text-red-500' : 'text-gray-700'"
+                >
+                  {{ getCampaignLink(campaignItem) }}
+                </div>
                 <div class="mt-3 flex items-center gap-3">
                   <button @click="copyPromotionLink(campaignItem)" class="text-primary text-sm">复制链接</button>
                   <button
