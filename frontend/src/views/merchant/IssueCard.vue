@@ -86,10 +86,12 @@
           <div v-if="selectedTemplate" class="px-4 py-3 border border-gray-100 rounded-lg bg-gray-50">
             <div class="text-sm text-gray-700">类型：{{ getCardTypeLabel(selectedTemplate.card_type) }}</div>
             <div v-if="selectedTemplate.card_type !== 'balance'" class="text-sm text-gray-700">
-              次数：{{ selectedTemplate.total_times }}
+              次数：{{ promotionEnabled ? (promotionForm.reward_value || 0) : selectedTemplate.total_times }}
             </div>
-            <div v-else class="text-sm text-gray-700">额度：¥{{ (selectedTemplate.recharge_amount / 100).toFixed(2) }}</div>
-            <div class="text-sm text-gray-700">售价：¥{{ (selectedTemplate.price / 100).toFixed(2) }}</div>
+            <div v-else class="text-sm text-gray-700">
+              额度：¥{{ ((promotionEnabled ? Number(promotionForm.reward_value || 0) : selectedTemplate.recharge_amount / 100) || 0).toFixed(2) }}
+            </div>
+            <div v-if="!promotionEnabled" class="text-sm text-gray-700">售价：¥{{ (selectedTemplate.price / 100).toFixed(2) }}</div>
           </div>
 
           <div class="grid grid-cols-2 gap-3">
