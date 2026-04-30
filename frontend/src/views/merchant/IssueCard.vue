@@ -95,22 +95,28 @@
           </div>
 
           <div class="grid grid-cols-2 gap-3">
-            <div>
+            <div class="min-w-0">
               <label class="block text-gray-700 text-sm font-medium mb-2">开始日期（可选）</label>
-              <input
-                v-model="cardForm.start_date"
-                type="date"
-                class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-              />
+              <div class="promo-date-field relative">
+                <input
+                  v-model="cardForm.start_date"
+                  type="date"
+                  class="promo-date-native absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                />
+                <div class="promo-date-display w-full px-4 py-3 border border-gray-200 rounded-lg">
+                  <span :class="cardForm.start_date ? 'text-gray-900' : 'text-gray-500'">
+                    {{ getCardDateDisplayText(cardForm.start_date, '年/月/日') }}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div>
+            <div class="min-w-0">
               <label class="block text-gray-700 text-sm font-medium mb-2">结束日期</label>
-              <input
-                v-model="cardForm.end_date"
-                type="date"
-                disabled
-                class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary bg-gray-50 text-gray-500"
-              />
+              <div class="promo-date-display w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-50">
+                <span :class="cardForm.end_date ? 'text-gray-500' : 'text-gray-400'">
+                  {{ getCardDateDisplayText(cardForm.end_date, '年/月/日') }}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -592,6 +598,12 @@ const formatDateTimeLocal = (value) => {
   const offset = date.getTimezoneOffset()
   const local = new Date(date.getTime() - offset * 60000)
   return local.toISOString().slice(0, 16)
+}
+
+const getCardDateDisplayText = (value, fallback = '年/月/日') => {
+  if (!value) return fallback
+  const [year = '年', month = '月', day = '日'] = String(value).split('-')
+  return `${year}年${Number(month)}月${Number(day)}日`
 }
 
 const getPromotionEndDisplayText = () => {
@@ -1180,6 +1192,23 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.promo-date-field {
+  min-width: 0;
+}
+
+.promo-date-display {
+  min-height: 50px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  background-color: #ffffff;
+}
+
+.promo-date-native {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .promo-datetime-field {
   min-width: 0;
 }
