@@ -216,6 +216,83 @@ func TestListMyPromotionRewardCardsReturnsActiveProgressItem(t *testing.T) {
 	}
 }
 
+func TestListMerchantPromotionCampaignsReturnsProgressCount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	db := setupPromotionCardTestDB(t)
+	config.DB = db
+
+	merchant := models.Merchant{Name: "测试商户", Phone: "13800000029", Password: "x", Type: "理发", SupportDirectSale: true}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	template := models.CardTemplate{
+		MerchantID: merchant.ID,
+		Name:       "测试课时卡",
+		CardType:   "lesson",
+		Price:      10000,
+		TotalTimes: 10,
+		IsActive:   true,
+	}
+	if err := db.Create(&template).Error; err != nil {
+		t.Fatalf("create template failed: %v", err)
+	}
+	campaign := models.PromotionCardCampaign{
+		MerchantID:         merchant.ID,
+		CardTemplateID:     template.ID,
+		RewardTotalTimes:   5,
+		RewardCardQuantity: 20,
+		RewardThreshold:    10,
+		Slug:               "merchant-progress-campaign",
+		Status:             "active",
+	}
+	if err := db.Create(&campaign).Error; err != nil {
+		t.Fatalf("create campaign failed: %v", err)
+	}
+	if err := db.Create(&models.PromotionCardReferrer{
+		CampaignID:    campaign.ID,
+		UserID:        101,
+		PromotionCode: "111111",
+		ProgressCount: 1,
+	}).Error; err != nil {
+		t.Fatalf("create first referrer failed: %v", err)
+	}
+	if err := db.Create(&models.PromotionCardReferrer{
+		CampaignID:    campaign.ID,
+		UserID:        102,
+		PromotionCode: "222222",
+		ProgressCount: 2,
+	}).Error; err != nil {
+		t.Fatalf("create second referrer failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/merchant/promotion-campaigns?template_id=1", nil)
+	c.Set("merchant_id", merchant.ID)
+
+	ListMerchantPromotionCampaigns(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data []merchantPromotionCampaignListItem `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("want 1 campaign item, got %d body=%s", len(resp.Data), rec.Body.String())
+	}
+	if resp.Data[0].ProgressCount != 3 {
+		t.Fatalf("want progress_count=3, got %+v", resp.Data[0])
+	}
+}
+
 func TestDirectPurchaseStorePendingStatusFitsColumnAndSupportsLegacyValue(t *testing.T) {
 	if len(directPurchaseStatusStoreWait) > 20 {
 		t.Fatalf("store pending status too long for direct_purchases.status: %s (%d)", directPurchaseStatusStoreWait, len(directPurchaseStatusStoreWait))

@@ -188,10 +188,16 @@
                   >
                     {{ generatingPoster && editingCampaignId === Number(campaignItem.id) ? '生成中...' : getPosterActionLabel(campaignItem) }}
                   </button>
+                  <div
+                    v-if="Number(campaignItem.progress_count || 0) > 0"
+                    class="ml-auto text-xs text-gray-500"
+                  >
+                    推广进度: {{ Number(campaignItem.progress_count || 0) }}
+                  </div>
                   <button
                     v-if="campaignItem.can_delete"
                     type="button"
-                    class="ml-auto rounded border border-red-200 px-2 py-0.5 text-xs text-red-500 disabled:opacity-50"
+                    class="rounded border border-red-200 px-2 py-0.5 text-xs text-red-500 disabled:opacity-50"
                     :disabled="deletingCampaignId === Number(campaignItem.id)"
                     @click="deleteCampaign(campaignItem)"
                   >

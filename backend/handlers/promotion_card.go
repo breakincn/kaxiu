@@ -85,7 +85,8 @@ type promotionRewardListItem struct {
 
 type merchantPromotionCampaignListItem struct {
 	models.PromotionCardCampaign
-	CanDelete bool `json:"can_delete"`
+	ProgressCount int  `json:"progress_count"`
+	CanDelete     bool `json:"can_delete"`
 }
 
 func ListMerchantPromotionCampaigns(c *gin.Context) {
@@ -104,6 +105,30 @@ func ListMerchantPromotionCampaigns(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询活动失败"})
 		return
 	}
+
+	progressByCampaign := map[uint]int{}
+	if len(campaigns) > 0 {
+		ids := make([]uint, 0, len(campaigns))
+		for _, campaign := range campaigns {
+			ids = append(ids, campaign.ID)
+		}
+		var rows []struct {
+			CampaignID    uint `json:"campaign_id"`
+			ProgressCount int  `json:"progress_count"`
+		}
+		if err := config.DB.Model(&models.PromotionCardReferrer{}).
+			Select("campaign_id, COALESCE(SUM(progress_count), 0) AS progress_count").
+			Where("campaign_id IN ?", ids).
+			Group("campaign_id").
+			Scan(&rows).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询活动失败"})
+			return
+		}
+		for _, row := range rows {
+			progressByCampaign[row.CampaignID] = row.ProgressCount
+		}
+	}
+
 	items := make([]merchantPromotionCampaignListItem, 0, len(campaigns))
 	for _, campaign := range campaigns {
 		canDelete, err := canDeletePromotionCampaign(config.DB, campaign.ID)
@@ -113,6 +138,7 @@ func ListMerchantPromotionCampaigns(c *gin.Context) {
 		}
 		items = append(items, merchantPromotionCampaignListItem{
 			PromotionCardCampaign: campaign,
+			ProgressCount:         progressByCampaign[campaign.ID],
 			CanDelete:             canDelete,
 		})
 	}
