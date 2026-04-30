@@ -263,11 +263,21 @@
 
               <div>
                 <label class="block text-gray-700 text-sm font-medium mb-2">促销截止日期</label>
-                <input
-                  v-model="promotionForm.promo_ends_at"
-                  type="datetime-local"
-                  class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-                />
+                <div class="promo-datetime-field relative">
+                  <input
+                    v-model="promotionForm.promo_ends_at"
+                    type="datetime-local"
+                    class="promo-datetime-native absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  />
+                  <div class="promo-datetime-display w-full px-4 py-3 border border-gray-200 rounded-lg">
+                    <span :class="promotionForm.promo_ends_at ? 'text-gray-900' : 'text-gray-500'">
+                      {{ getPromotionEndDisplayText() }}
+                    </span>
+                    <svg class="h-5 w-5 shrink-0 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10m-11 9h12a2 2 0 002-2V7a2 2 0 00-2-2H6a2 2 0 00-2 2v11a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                </div>
               </div>
 
               <button
@@ -582,6 +592,15 @@ const formatDateTimeLocal = (value) => {
   const offset = date.getTimezoneOffset()
   const local = new Date(date.getTime() - offset * 60000)
   return local.toISOString().slice(0, 16)
+}
+
+const getPromotionEndDisplayText = () => {
+  const value = promotionForm.value.promo_ends_at
+  if (!value) return '年/月/日 --:--'
+  const [datePart = '', timePart = ''] = value.split('T')
+  if (!datePart) return '年/月/日 --:--'
+  const [year = '年', month = '月', day = '日'] = datePart.split('-')
+  return `${year}/${month}/${day} ${timePart || '--:--'}`
 }
 
 const isCampaignCurrentlyValid = (campaign) => {
@@ -1159,3 +1178,19 @@ onMounted(async () => {
   cardForm.value.start_date = new Date().toISOString().split('T')[0]
 })
 </script>
+
+<style scoped>
+.promo-datetime-field {
+  min-width: 0;
+}
+
+.promo-datetime-display {
+  min-height: 50px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background-color: #ffffff;
+}
+</style>
