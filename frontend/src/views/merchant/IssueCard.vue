@@ -736,29 +736,72 @@ const generatePromotionPoster = async () => {
     const merchant = campaign.merchant || {}
     const cardType = getCardTypeLabel(cardTemplate.card_type)
     const showPromoPrice = Boolean(campaign.promo_active && Number(campaign.promo_price || 0) > 0)
-    const viewportWidth = typeof window !== 'undefined' ? Number(window.innerWidth || 0) : 0
+    const viewportWidth = typeof window !== 'undefined'
+      ? Number(window.innerWidth || document.documentElement?.clientWidth || 0)
+      : 0
     const posterWidth = Math.min(Math.max(viewportWidth || 390, 375), 430)
     const scale = 3
     const pagePadding = 16
     const sectionGap = 16
     const sectionWidth = posterWidth - pagePadding * 2
     const sectionPadding = 16
-    const descriptionProbeCanvas = document.createElement('canvas')
-    const descriptionProbeCtx = descriptionProbeCanvas.getContext('2d')
-    if (!descriptionProbeCtx) throw new Error('canvas unsupported')
-    descriptionProbeCtx.font = '400 14px sans-serif'
-    const descriptionLines = wrapPosterText(descriptionProbeCtx, cardTemplate.description || '', sectionWidth - sectionPadding * 2).slice(0, 2)
+    const measureCanvas = document.createElement('canvas')
+    const measureCtx = measureCanvas.getContext('2d')
+    if (!measureCtx) throw new Error('canvas unsupported')
+    measureCtx.font = '400 14px sans-serif'
+    const descriptionLines = wrapPosterText(measureCtx, cardTemplate.description || '', sectionWidth - sectionPadding * 2).slice(0, 2)
     const shareDesc = `邀请新用户注册成功 +1，首次付款成功再 +1，达到 ${Number(campaign.reward_threshold || 0)} 后可在3天内领取奖励卡。`
-    const shareProbeCanvas = document.createElement('canvas')
-    const shareProbeCtx = shareProbeCanvas.getContext('2d')
-    if (!shareProbeCtx) throw new Error('canvas unsupported')
-    shareProbeCtx.font = '400 14px sans-serif'
-    const shareDescLines = wrapPosterText(shareProbeCtx, shareDesc, sectionWidth - sectionPadding * 2).slice(0, 3)
+    const shareDescLines = wrapPosterText(measureCtx, shareDesc, sectionWidth - sectionPadding * 2).slice(0, 3)
+    measureCtx.font = '700 23px sans-serif'
+    const cardNameLines = wrapPosterText(measureCtx, cardTemplate.name || '', sectionWidth - sectionPadding * 2).slice(0, 2)
     const shareStatsHeight = 76
-    const topSectionHeight = 230 + Math.max(descriptionLines.length - 1, 0) * 20 + (showPromoPrice ? 22 : 0)
-    const purchaseSectionHeight = showPromoPrice ? 258 : 146
-    const shareSectionHeight = 212 + Math.max(shareDescLines.length - 2, 0) * 20 + shareStatsHeight
-    const qrSectionHeight = 254
+    const topSectionY = pagePadding
+    const cardNameLineHeight = 30
+    const cardNameFirstBaseline = topSectionY + 122
+    const cardNameLastBaseline = cardNameFirstBaseline + Math.max(cardNameLines.length - 1, 0) * cardNameLineHeight
+    const merchantBaseline = cardNameLastBaseline + 34
+    const priceRowY = merchantBaseline + 50
+    let topContentBottom = priceRowY
+    let promoMetaY = 0
+    if (showPromoPrice && Number(campaign.promo_remaining || 0) > 0 && campaign.promo_ends_at) {
+      promoMetaY = priceRowY + 24
+      topContentBottom = promoMetaY
+    }
+    const baseInfoY = topContentBottom + (showPromoPrice ? 28 : 30)
+    topContentBottom = baseInfoY
+    if (descriptionLines.length > 0) {
+      const descriptionFirstBaseline = baseInfoY + 30
+      const descriptionLastBaseline = descriptionFirstBaseline + Math.max(descriptionLines.length - 1, 0) * 20
+      topContentBottom = descriptionLastBaseline
+    }
+    const topSectionHeight = topContentBottom - topSectionY + 28
+
+    const purchaseSectionY = topSectionY + topSectionHeight + sectionGap
+    const optionCardY = purchaseSectionY + 62
+    const optionCardHeight = 78
+    const optionCardBottom = optionCardY + optionCardHeight
+    let purchaseContentBottom = optionCardBottom
+    let promoButtonY = 0
+    let storeButtonY = 0
+    if (showPromoPrice) {
+      promoButtonY = optionCardBottom + 18
+      const promoButtonBottom = promoButtonY + 66
+      storeButtonY = promoButtonBottom + 18
+      purchaseContentBottom = storeButtonY + 66
+    }
+    const purchaseSectionHeight = purchaseContentBottom - purchaseSectionY + sectionPadding
+
+    const shareSectionY = purchaseSectionY + purchaseSectionHeight + sectionGap
+    const shareDescFirstBaseline = shareSectionY + 74
+    const shareDescLastBaseline = shareDescFirstBaseline + Math.max(shareDescLines.length - 1, 0) * 22
+    const shareButtonY = shareDescLastBaseline + 24
+    const statsCardY = shareButtonY + 76
+    const shareSectionHeight = statsCardY + shareStatsHeight - shareSectionY + sectionPadding
+
+    const qrSectionY = shareSectionY + shareSectionHeight + sectionGap
+    const qrCardHeight = 212
+    const qrCardY = qrSectionY + 76
+    const qrSectionHeight = qrCardY + qrCardHeight - qrSectionY + sectionPadding
     const posterHeight = pagePadding + topSectionHeight + sectionGap + purchaseSectionHeight + sectionGap + shareSectionHeight + sectionGap + qrSectionHeight + pagePadding
     const canvas = document.createElement('canvas')
     canvas.width = posterWidth * scale
@@ -769,9 +812,6 @@ const generatePromotionPoster = async () => {
 
     ctx.fillStyle = '#f7f4ef'
     ctx.fillRect(0, 0, posterWidth, posterHeight)
-    let y = pagePadding
-
-    const topSectionY = y
     drawRoundedRect(ctx, pagePadding, topSectionY, sectionWidth, topSectionHeight, 26, '#ffffff')
     ctx.fillStyle = '#fb923c'
     ctx.font = '500 16px sans-serif'
@@ -797,18 +837,15 @@ const generatePromotionPoster = async () => {
     ctx.textAlign = 'start'
     ctx.textBaseline = 'alphabetic'
 
-    const cardNameLines = wrapPosterText(ctx, cardTemplate.name || '', sectionWidth - sectionPadding * 2).slice(0, 2)
     ctx.fillStyle = '#1f2937'
     ctx.font = '700 23px sans-serif'
     cardNameLines.forEach((line, index) => {
-      ctx.fillText(line, pagePadding + sectionPadding, topSectionY + 122 + index * 30)
+      ctx.fillText(line, pagePadding + sectionPadding, cardNameFirstBaseline + index * cardNameLineHeight)
     })
-    const cardNameBlockHeight = Math.max(cardNameLines.length, 1) * 30
     ctx.fillStyle = '#6b7280'
     ctx.font = '400 15px sans-serif'
-    ctx.fillText(`${merchant.name || ''} · ${cardType}`, pagePadding + sectionPadding, topSectionY + 122 + cardNameBlockHeight + 8)
+    ctx.fillText(`${merchant.name || ''} · ${cardType}`, pagePadding + sectionPadding, merchantBaseline)
 
-    const priceRowY = topSectionY + 122 + cardNameBlockHeight + 58
     const originalPrice = Number(cardTemplate.price || 0)
     const promoPrice = Number(showPromoPrice ? campaign.promo_price || 0 : cardTemplate.price || 0)
     let priceStartX = pagePadding + sectionPadding
@@ -830,12 +867,10 @@ const generatePromotionPoster = async () => {
     ctx.font = '700 29px sans-serif'
     ctx.fillText(`¥${(promoPrice / 100).toFixed(2)}`, priceStartX, priceRowY)
 
-    let metaY = priceRowY + 24
-    if (showPromoPrice && Number(campaign.promo_remaining || 0) > 0 && campaign.promo_ends_at) {
+    if (promoMetaY > 0) {
       ctx.fillStyle = '#f97316'
       ctx.font = '500 14px sans-serif'
-      ctx.fillText(`促销剩余 ${campaign.promo_remaining} 份，截止 ${formatPosterDateTime(campaign.promo_ends_at)}`, pagePadding + sectionPadding, metaY)
-      metaY += 28
+      ctx.fillText(`促销剩余 ${campaign.promo_remaining} 份，截止 ${formatPosterDateTime(campaign.promo_ends_at)}`, pagePadding + sectionPadding, promoMetaY)
     }
 
     const baseInfo = cardTemplate.card_type === 'balance'
@@ -844,28 +879,24 @@ const generatePromotionPoster = async () => {
     const validity = Number(cardTemplate.valid_days || 0) > 0 ? `${cardTemplate.valid_days}天有效` : '长期有效'
     ctx.fillStyle = '#374151'
     ctx.font = '400 16px sans-serif'
-    ctx.fillText(`${baseInfo}   ${validity}`, pagePadding + sectionPadding, metaY)
+    ctx.fillText(`${baseInfo}   ${validity}`, pagePadding + sectionPadding, baseInfoY)
     if (descriptionLines.length > 0) {
       ctx.fillStyle = '#6b7280'
       ctx.font = '400 14px sans-serif'
       descriptionLines.forEach((line, index) => {
-        ctx.fillText(line, pagePadding + sectionPadding, metaY + 30 + index * 20)
+        ctx.fillText(line, pagePadding + sectionPadding, baseInfoY + 30 + index * 20)
       })
     }
 
-    y += topSectionHeight + sectionGap
-
-    const purchaseSectionY = y
     drawRoundedRect(ctx, pagePadding, purchaseSectionY, sectionWidth, purchaseSectionHeight, 26, '#ffffff')
     ctx.fillStyle = '#1f2937'
     ctx.font = '700 20px sans-serif'
     ctx.fillText('购买方式', pagePadding + sectionPadding, purchaseSectionY + 38)
 
-    const optionCardY = purchaseSectionY + 62
     const optionGap = 12
     const optionWidth = (sectionWidth - sectionPadding * 2 - optionGap) / 2
-    drawRoundedRect(ctx, pagePadding + sectionPadding, optionCardY, optionWidth, 78, 18, '#ffffff', '#d9deea')
-    drawRoundedRect(ctx, pagePadding + sectionPadding + optionWidth + optionGap, optionCardY, optionWidth, 78, 18, '#ffffff', '#d9deea')
+    drawRoundedRect(ctx, pagePadding + sectionPadding, optionCardY, optionWidth, optionCardHeight, 18, '#ffffff', '#d9deea')
+    drawRoundedRect(ctx, pagePadding + sectionPadding + optionWidth + optionGap, optionCardY, optionWidth, optionCardHeight, 18, '#ffffff', '#d9deea')
     ctx.fillStyle = '#1f2937'
     ctx.font = '600 16px sans-serif'
     ctx.fillText('原价支付宝购买', pagePadding + sectionPadding + 14, optionCardY + 31)
@@ -876,7 +907,6 @@ const generatePromotionPoster = async () => {
     ctx.fillText('始终可用', pagePadding + sectionPadding + optionWidth + optionGap + 14, optionCardY + 53)
 
     if (showPromoPrice) {
-      const promoButtonY = purchaseSectionY + 152
       drawRoundedRect(ctx, pagePadding + sectionPadding, promoButtonY, sectionWidth - sectionPadding * 2, 66, 18, '#ff6d00')
       ctx.fillStyle = '#ffffff'
       ctx.font = '700 18px sans-serif'
@@ -886,7 +916,6 @@ const generatePromotionPoster = async () => {
       ctx.textAlign = 'start'
       ctx.textBaseline = 'alphabetic'
 
-      const storeButtonY = promoButtonY + 84
       drawRoundedRect(ctx, pagePadding + sectionPadding, storeButtonY, sectionWidth - sectionPadding * 2, 66, 18, '#ffffff', '#f59e0b')
       ctx.fillStyle = '#ea580c'
       ctx.font = '700 17px sans-serif'
@@ -897,9 +926,6 @@ const generatePromotionPoster = async () => {
       ctx.textBaseline = 'alphabetic'
     }
 
-    y += purchaseSectionHeight + sectionGap
-
-    const shareSectionY = y
     drawRoundedRect(ctx, pagePadding, shareSectionY, sectionWidth, shareSectionHeight, 26, '#ffffff')
     ctx.fillStyle = '#1f2937'
     ctx.font = '700 20px sans-serif'
@@ -907,9 +933,8 @@ const generatePromotionPoster = async () => {
     ctx.fillStyle = '#6b7280'
     ctx.font = '400 14px sans-serif'
     shareDescLines.forEach((line, index) => {
-      ctx.fillText(line, pagePadding + sectionPadding, shareSectionY + 74 + index * 22)
+      ctx.fillText(line, pagePadding + sectionPadding, shareDescFirstBaseline + index * 22)
     })
-    const shareButtonY = shareSectionY + 122 + Math.max(shareDescLines.length - 2, 0) * 20
     drawRoundedRect(ctx, pagePadding + sectionPadding, shareButtonY, sectionWidth - sectionPadding * 2, 60, 18, '#16a34a')
     ctx.fillStyle = '#ffffff'
     ctx.font = '700 18px sans-serif'
@@ -919,7 +944,6 @@ const generatePromotionPoster = async () => {
     ctx.textAlign = 'start'
     ctx.textBaseline = 'alphabetic'
 
-    const statsCardY = shareButtonY + 74
     drawRoundedRect(ctx, pagePadding + sectionPadding, statsCardY, sectionWidth - sectionPadding * 2, shareStatsHeight, 16, '#f5f7fb')
     ctx.fillStyle = '#1f2937'
     ctx.font = '400 14px sans-serif'
@@ -927,9 +951,6 @@ const generatePromotionPoster = async () => {
     ctx.fillText('付款数：0', pagePadding + sectionPadding + 16 + (sectionWidth - sectionPadding * 2) / 2, statsCardY + 28)
     ctx.fillText('累计进度：0', pagePadding + sectionPadding + 16, statsCardY + 56)
 
-    y += shareSectionHeight + sectionGap
-
-    const qrSectionY = y
     drawRoundedRect(ctx, pagePadding, qrSectionY, sectionWidth, qrSectionHeight, 26, '#ffffff')
     ctx.fillStyle = '#1f2937'
     ctx.font = '700 18px sans-serif'
@@ -955,15 +976,13 @@ const generatePromotionPoster = async () => {
     })
 
     const qrCardWidth = 210
-    const qrCardHeight = 176
     const qrCardX = (posterWidth - qrCardWidth) / 2
-    const qrCardY = qrSectionY + 66
     drawRoundedRect(ctx, qrCardX, qrCardY, qrCardWidth, qrCardHeight, 22, '#f9fafb')
     ctx.drawImage(qrImage, (posterWidth - qrCodeSize) / 2, qrCardY + 16, qrCodeSize, qrCodeSize)
     ctx.fillStyle = '#374151'
     ctx.font = '500 12px sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText('微信识别二维码打开活动页', posterWidth / 2, qrCardY + 156)
+    ctx.fillText('微信识别二维码打开活动页', posterWidth / 2, qrCardY + 188)
     ctx.textAlign = 'start'
 
     const blob = await canvasToBlob(canvas)
