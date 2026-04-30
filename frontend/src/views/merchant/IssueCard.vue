@@ -140,9 +140,13 @@
                 v-if="currentCampaign && promotionLink"
                 class="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-gray-700"
               >
-                <div class="font-medium text-green-700 truncate">
+                <button
+                  type="button"
+                  class="block w-full truncate text-left font-medium text-green-700"
+                  @click="startEditingCurrentCampaign"
+                >
                   {{ currentCampaign.title || '推广卡活动' }}
-                </div>
+                </button>
                 <div class="mt-1 truncate text-gray-700">{{ promotionLink }}</div>
                 <div class="mt-3 flex flex-wrap gap-3">
                   <button @click="copyPromotionLink" class="text-primary text-sm">复制链接</button>
@@ -526,6 +530,25 @@ const togglePromotionEnabled = () => {
   }
 }
 
+const fillPromotionForm = (campaign) => {
+  if (!campaign || !selectedTemplate.value) {
+    resetPromotionForm()
+    return
+  }
+  const isBalance = selectedTemplate.value.card_type === 'balance'
+  promotionForm.value = {
+    title: campaign.title || '',
+    reward_value: isBalance ? ((campaign.reward_recharge_amount || 0) / 100) : (campaign.reward_total_times || ''),
+    reward_card_quantity: campaign.reward_card_quantity || '',
+    reward_threshold: campaign.reward_threshold || '',
+    promo_price_yuan: campaign.promo_price ? (campaign.promo_price / 100) : '',
+    promo_quantity: campaign.promo_quantity || '',
+    promo_ends_at: campaign.promo_ends_at ? formatDateTimeLocal(campaign.promo_ends_at) : ''
+  }
+  const payload = buildPromotionPayload()
+  lastSavedPromotionPayload.value = getPromotionPayloadSignature(payload)
+}
+
 const formatDateTimeLocal = (value) => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
@@ -555,6 +578,21 @@ const loadSavedPosterData = (campaign) => {
     return
   }
   savedPosterDataUrl.value = localStorage.getItem(key) || ''
+}
+
+const startEditingCurrentCampaign = async () => {
+  if (!currentCampaign.value?.id || !selectedTemplate.value) return
+  try {
+    const detail = await loadPromotionCampaignDetail(currentCampaign.value.id)
+    const campaign = detail || currentCampaign.value
+    currentCampaign.value = campaign
+    promotionLink.value = `${window.location.origin}${campaign.share_path || `/promo/${campaign.slug}`}`
+    loadSavedPosterData(campaign)
+    editingCampaignId.value = Number(campaign.id || 0)
+    fillPromotionForm(campaign)
+  } catch (_) {
+    promotionError.value = '加载推广活动失败'
+  }
 }
 
 const loadPromotionCampaignDetail = async (campaignId) => {
