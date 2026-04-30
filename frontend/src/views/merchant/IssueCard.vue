@@ -158,6 +158,12 @@
                   >
                     编辑中
                   </button>
+                  <span
+                    v-else-if="isNewCampaign(campaignItem)"
+                    class="shrink-0 rounded bg-orange-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-white"
+                  >
+                    new
+                  </span>
                 </div>
                 <div
                   class="mt-1 truncate"
@@ -323,6 +329,7 @@ const currentCampaign = ref(null)
 const generatingPoster = ref(false)
 const editingCampaignId = ref(0)
 const deletingCampaignId = ref(0)
+const newlyCreatedCampaignId = ref(0)
 const lastSavedPromotionPayload = ref('')
 
 const cardForm = ref({
@@ -409,6 +416,7 @@ watch(
     publishedCampaigns.value = []
     currentCampaign.value = null
     editingCampaignId.value = 0
+    newlyCreatedCampaignId.value = 0
     lastSavedPromotionPayload.value = ''
     resetPromotionForm()
     if (selectedTemplate.value) {
@@ -611,6 +619,7 @@ const getPosterActionLabel = (campaign) => {
 }
 
 const isEditingCampaign = (campaignItem) => Number(campaignItem?.id || 0) > 0 && editingCampaignId.value === Number(campaignItem.id)
+const isNewCampaign = (campaignItem) => Number(campaignItem?.id || 0) > 0 && newlyCreatedCampaignId.value === Number(campaignItem.id)
 
 const stopEditingCampaign = () => {
   currentCampaign.value = null
@@ -702,6 +711,7 @@ const savePromotionCampaign = async () => {
   try {
     const payload = buildPromotionPayload()
     const payloadSignature = getPromotionPayloadSignature(payload)
+    const creatingNew = !editingCampaignId.value
     const res = editingCampaignId.value
       ? await shopApi.updatePromotionCampaign(editingCampaignId.value, payload)
       : await shopApi.createPromotionCampaign(payload)
@@ -709,10 +719,15 @@ const savePromotionCampaign = async () => {
     editingCampaignId.value = Number(res.data.data?.id || 0)
     lastSavedPromotionPayload.value = payloadSignature
     promotionEnabled.value = true
+    if (creatingNew) {
+      newlyCreatedCampaignId.value = editingCampaignId.value
+    }
     await loadCurrentCampaign()
-    if (currentCampaign.value?.id !== editingCampaignId.value) {
+    if (!creatingNew && currentCampaign.value?.id !== editingCampaignId.value) {
       currentCampaign.value = await loadPromotionCampaignDetail(editingCampaignId.value) || res.data.data
       fillPromotionForm(currentCampaign.value)
+    } else if (creatingNew) {
+      stopEditingCampaign()
     }
   } catch (err) {
     promotionError.value = err.response?.data?.error || '生成推广链接失败'
