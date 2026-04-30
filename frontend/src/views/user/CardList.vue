@@ -172,6 +172,55 @@
         </template>
 
         <div
+          v-else-if="item._type === 'promotion'"
+          class="rounded-2xl p-4 bg-white border border-orange-100 shadow-sm cursor-pointer transition-transform select-none"
+          @click="openPromotionCampaign(item)"
+        >
+          <div class="flex justify-between items-start mb-1">
+            <div>
+              <h3 class="text-lg font-bold text-gray-800">{{ item.merchant_name }}</h3>
+              <p class="text-gray-500 text-xs mt-0.5">{{ item.card_name }}</p>
+            </div>
+            <div class="px-2.5 py-0.5 rounded-full bg-orange-50 text-orange-600">
+              <span class="text-xs font-medium">转发领卡</span>
+            </div>
+          </div>
+
+          <div class="flex justify-between items-end mb-3">
+            <div>
+              <div class="text-gray-500 text-xs mb-0.5">推广进度</div>
+              <div class="text-4xl font-bold leading-none text-gray-900">{{ item.progress_count }}/{{ item.reward_threshold }}</div>
+              <div class="text-xs text-gray-500 mt-2">
+                注册 {{ item.register_count }} · 付款 {{ item.paid_count }}
+              </div>
+            </div>
+            <div class="text-right">
+              <div class="text-gray-500 text-xs mb-0.5">奖励内容</div>
+              <div class="text-sm font-medium text-gray-800">{{ formatPromotionReward(item) }}</div>
+              <div
+                class="text-xs mt-2"
+                :class="item.reward_status === 'claimable' ? 'text-orange-500' : 'text-gray-500'"
+              >
+                {{ getPromotionProgressHint(item) }}
+              </div>
+            </div>
+          </div>
+
+          <div class="pt-2 border-t border-orange-100">
+            <div class="flex items-center gap-2 mb-1">
+              <svg class="w-3 h-3 text-orange-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <span class="text-orange-600 font-medium text-xs truncate flex-1">{{ item.title || '转发领卡活动' }}</span>
+              <span class="text-[11px] text-orange-400">查看详情</span>
+            </div>
+            <div class="text-xs pl-5" :class="item.reward_status === 'claimable' ? 'text-orange-500' : 'text-gray-500'">
+              {{ getPromotionDeadlineText(item) }}
+            </div>
+          </div>
+        </div>
+
+        <div
           v-else
           class="rounded-2xl p-4 card-gradient-yellow cursor-not-allowed"
         >
@@ -561,6 +610,7 @@ const router = useRouter()
 const userName = ref('')
 const currentStatus = ref('active')
 const cards = ref([])
+const promotionCards = ref([])
 const pendingPaidOrders = ref([])
 const userId = ref(null)
 
@@ -684,6 +734,9 @@ const displayItems = computed(() => {
       merchant_name: o.merchant?.name || '商户',
       card_name: o.card_template?.name || '卡片'
     })
+  }
+  for (const p of promotionCards.value || []) {
+    items.push({ ...p, _type: 'promotion', _key: `promotion-${p.referrer_id}` })
   }
   for (const c of cards.value || []) {
     items.push({ ...c, _type: 'card', _key: `card-${c.id}` })
@@ -834,10 +887,59 @@ const getCardNoTagClass = (card) => {
   return 'bg-gray-100 text-gray-700'
 }
 
+const formatPromotionReward = (item) => {
+  const rewardRechargeAmount = Number(item?.reward_recharge_amount || 0)
+  if (rewardRechargeAmount > 0) {
+    return `¥${(rewardRechargeAmount / 100).toFixed(2)} 储值卡`
+  }
+  const rewardTotalTimes = Number(item?.reward_total_times || 0)
+  if (rewardTotalTimes > 0) {
+    return `${rewardTotalTimes} 次奖励卡`
+  }
+  return '奖励卡'
+}
+
+const getPromotionProgressHint = (item) => {
+  if (item?.reward_status === 'claimable') return '已达标'
+  const remaining = Math.max(Number(item?.reward_threshold || 0) - Number(item?.progress_count || 0), 0)
+  if (remaining <= 0) return '等待领取'
+  return `还差 ${remaining}`
+}
+
+const getPromotionDeadlineText = (item) => {
+  if (item?.reward_status === 'claimable' && item?.reward_expires_at) {
+    return `达标后 3 天内可领取，截止 ${formatDateTime(item.reward_expires_at)}`
+  }
+  if (item?.reward_status === 'expired') {
+    return '奖励领取资格已失效'
+  }
+  if (item?.campaign_status && item.campaign_status !== 'active') {
+    return '活动已结束'
+  }
+  return '邀请新用户注册成功 +1，首次付款成功再 +1'
+}
+
+const openPromotionCampaign = (item) => {
+  const slug = String(item?.slug || '').trim()
+  if (!slug) return
+  router.push(`/promo/${slug}`)
+}
+
+const fetchPromotionCards = async () => {
+  try {
+    const res = await shopApi.getMyPromotionRewardCards(currentStatus.value)
+    promotionCards.value = Array.isArray(res?.data?.data) ? res.data.data : []
+  } catch (err) {
+    console.error('获取转发领卡进度失败:', err)
+    promotionCards.value = []
+  }
+}
+
 const fetchCards = async () => {
   if (!userId.value) return
   
   try {
+    await fetchPromotionCards()
     const res = await cardApi.getUserCards(userId.value, currentStatus.value)
     let cardsData = res.data.data || []
 

@@ -59,6 +59,30 @@ type promotionCampaignDetail struct {
 	CurrentRefCode       string      `json:"current_ref_code"`
 }
 
+type promotionRewardListItem struct {
+	ListItemType         string     `json:"list_item_type"`
+	ReferrerID           uint       `json:"referrer_id"`
+	CampaignID           uint       `json:"campaign_id"`
+	MerchantID           uint       `json:"merchant_id"`
+	MerchantName         string     `json:"merchant_name"`
+	CardName             string     `json:"card_name"`
+	CardTemplateType     string     `json:"card_template_type"`
+	Title                string     `json:"title"`
+	Slug                 string     `json:"slug"`
+	CampaignStatus       string     `json:"campaign_status"`
+	RewardThreshold      int        `json:"reward_threshold"`
+	RewardTotalTimes     int        `json:"reward_total_times"`
+	RewardRechargeAmount int        `json:"reward_recharge_amount"`
+	RegisterCount        int        `json:"register_count"`
+	PaidCount            int        `json:"paid_count"`
+	ProgressCount        int        `json:"progress_count"`
+	RewardStatus         string     `json:"reward_status"`
+	RewardQualifiedAt    *time.Time `json:"reward_qualified_at"`
+	RewardExpiresAt      *time.Time `json:"reward_expires_at"`
+	RewardClaimedAt      *time.Time `json:"reward_claimed_at"`
+	UpdatedAt            *time.Time `json:"updated_at"`
+}
+
 func ListMerchantPromotionCampaigns(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
@@ -200,6 +224,20 @@ func GetPromotionCampaignBySlug(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": detail})
+}
+
+func ListMyPromotionRewardCards(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		return
+	}
+
+	items, err := listPromotionRewardCards(config.DB, userID, strings.TrimSpace(c.Query("status")), time.Now())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取转发领卡进度失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": items})
 }
 
 func ClaimPromotionCampaign(c *gin.Context) {
@@ -733,6 +771,81 @@ func createPromotionRewardCard(tx *gorm.DB, template *models.CardTemplate, campa
 		}
 	}
 	return card, nil
+}
+
+func listPromotionRewardCards(db *gorm.DB, userID uint, status string, now time.Time) ([]promotionRewardListItem, error) {
+	if db == nil || userID == 0 {
+		return []promotionRewardListItem{}, nil
+	}
+
+	var campaignIDs []uint
+	if err := db.Model(&models.PromotionCardReferrer{}).
+		Where("user_id = ?", userID).
+		Distinct().
+		Pluck("campaign_id", &campaignIDs).Error; err != nil {
+		return nil, err
+	}
+	if len(campaignIDs) == 0 {
+		return []promotionRewardListItem{}, nil
+	}
+	for _, campaignID := range campaignIDs {
+		if campaignID == 0 {
+			continue
+		}
+		if err := refreshPromotionCampaignState(db, campaignID, now); err != nil {
+			return nil, err
+		}
+	}
+
+	items := make([]promotionRewardListItem, 0)
+	query := db.Table("promotion_card_referrers").
+		Select(strings.Join([]string{
+			"'promotion_reward' AS list_item_type",
+			"promotion_card_referrers.id AS referrer_id",
+			"promotion_card_referrers.campaign_id",
+			"promotion_card_campaigns.merchant_id",
+			"merchants.name AS merchant_name",
+			"card_templates.name AS card_name",
+			"card_templates.card_type AS card_template_type",
+			"promotion_card_campaigns.title",
+			"promotion_card_campaigns.slug",
+			"promotion_card_campaigns.status AS campaign_status",
+			"promotion_card_campaigns.reward_threshold",
+			"promotion_card_campaigns.reward_total_times",
+			"promotion_card_campaigns.reward_recharge_amount",
+			"promotion_card_referrers.register_count",
+			"promotion_card_referrers.paid_count",
+			"promotion_card_referrers.progress_count",
+			"promotion_card_referrers.reward_status",
+			"promotion_card_referrers.reward_qualified_at",
+			"promotion_card_referrers.reward_expires_at",
+			"promotion_card_referrers.reward_claimed_at",
+			"promotion_card_referrers.updated_at",
+		}, ", ")).
+		Joins("JOIN promotion_card_campaigns ON promotion_card_campaigns.id = promotion_card_referrers.campaign_id").
+		Joins("JOIN merchants ON merchants.id = promotion_card_campaigns.merchant_id").
+		Joins("JOIN card_templates ON card_templates.id = promotion_card_campaigns.card_template_id").
+		Where("promotion_card_referrers.user_id = ?", userID).
+		Where("COALESCE(promotion_card_referrers.reward_status, '') <> ?", promotionCardRewardStatusClaimed)
+
+	switch status {
+	case "expired":
+		query = query.Where("(promotion_card_referrers.reward_status = ? OR promotion_card_campaigns.status <> ?)", promotionCardRewardStatusExpired, "active")
+	default:
+		query = query.Where("promotion_card_campaigns.status = ?", "active")
+		query = query.Where("COALESCE(promotion_card_referrers.reward_status, '') IN ?", []string{"", promotionCardRewardStatusClaimable})
+	}
+
+	if err := query.
+		Order("CASE WHEN promotion_card_referrers.reward_status = 'claimable' THEN 0 ELSE 1 END").
+		Order("promotion_card_referrers.updated_at DESC").
+		Scan(&items).Error; err != nil {
+		return nil, err
+	}
+	if items == nil {
+		return []promotionRewardListItem{}, nil
+	}
+	return items, nil
 }
 
 func refreshPromotionCampaignState(db *gorm.DB, campaignID uint, now time.Time) error {

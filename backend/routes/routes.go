@@ -91,6 +91,7 @@ func SetupUserRoutes(r *gin.Engine) {
 	auth.POST("/direct-purchase", handlers.CreateDirectPurchase)
 	auth.POST("/direct-purchase/:order_no/confirm", handlers.ConfirmDirectPurchase)
 	auth.GET("/direct-purchases", handlers.GetDirectPurchases)
+	auth.GET("/promotion-reward-cards", handlers.ListMyPromotionRewardCards)
 	auth.POST("/promotion-campaigns/:slug/claim", handlers.ClaimPromotionCampaign)
 	auth.POST("/promotion-campaigns/:slug/:refCode/claim", handlers.ClaimPromotionCampaign)
 	auth.POST("/promotion-campaigns/:slug/ref-link", handlers.GetPromotionCampaignRefLink)

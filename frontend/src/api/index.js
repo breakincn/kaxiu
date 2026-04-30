@@ -536,6 +536,7 @@ export const appointmentApi = {
   getPublicPromotionCampaign: (slug, refCode) => api.get(refCode ? `/user/promotion-campaigns/${slug}/${refCode}` : `/user/promotion-campaigns/${slug}`),
   claimPromotionCampaign: (slug, refCode) => api.post(refCode ? `/user/promotion-campaigns/${slug}/${refCode}/claim` : `/user/promotion-campaigns/${slug}/claim`),
   getPromotionRefLink: (slug, refCode) => api.post(refCode ? `/user/promotion-campaigns/${slug}/${refCode}/ref-link` : `/user/promotion-campaigns/${slug}/ref-link`),
+  getMyPromotionRewardCards: (status) => api.get('/user/promotion-reward-cards', { params: { status } }),
   claimPromotionReward: (slug) => api.post(`/user/promotion-campaigns/${slug}/claim-reward`),
   
   // 商户营业状态
