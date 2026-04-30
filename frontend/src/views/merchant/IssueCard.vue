@@ -92,6 +92,26 @@
             <div class="text-sm text-gray-700">售价：¥{{ (selectedTemplate.price / 100).toFixed(2) }}</div>
           </div>
 
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-gray-700 text-sm font-medium mb-2">开始日期（可选）</label>
+              <input
+                v-model="cardForm.start_date"
+                type="date"
+                class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label class="block text-gray-700 text-sm font-medium mb-2">结束日期</label>
+              <input
+                v-model="cardForm.end_date"
+                type="date"
+                disabled
+                class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary bg-gray-50 text-gray-500"
+              />
+            </div>
+          </div>
+
           <div v-if="canShowPromotionToggle" class="rounded-2xl border border-orange-200 bg-orange-50 p-4 space-y-3">
             <div class="rounded-2xl bg-white px-4 py-3 shadow-sm">
               <div class="flex items-center justify-between gap-3">
@@ -110,7 +130,7 @@
                   />
                 </button>
               </div>
-              <div class="mt-1 text-xs leading-4 text-gray-500">未输入手机号时，可直接生成推广活动链接</div>
+              <div class="mt-1 text-xs leading-4 text-gray-500">未指定用户手机号时，可打开生成推广卡</div>
             </div>
 
             <div v-if="promotionEnabled" class="space-y-3">
@@ -129,11 +149,11 @@
                 <div>
                   <label class="block text-gray-700 text-sm font-medium mb-2">{{ rewardValueLabel }}</label>
                   <input
-                      v-model.number="promotionForm.reward_value"
-                      type="number"
-                      min="1"
-                      :placeholder="rewardValuePlaceholder"
-                      class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                    v-model.number="promotionForm.reward_value"
+                    type="number"
+                    min="1"
+                    :placeholder="rewardValuePlaceholder"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
                   />
                 </div>
                 <div>
@@ -199,26 +219,6 @@
                 <div class="break-all">{{ promotionLink }}</div>
                 <button @click="copyPromotionLink" class="mt-2 text-primary text-sm">复制链接</button>
               </div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-gray-700 text-sm font-medium mb-2">开始日期（可选）</label>
-              <input
-                v-model="cardForm.start_date"
-                type="date"
-                class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
-              />
-            </div>
-            <div>
-              <label class="block text-gray-700 text-sm font-medium mb-2">结束日期</label>
-              <input
-                v-model="cardForm.end_date"
-                type="date"
-                disabled
-                class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary bg-gray-50 text-gray-500"
-              />
             </div>
           </div>
 
