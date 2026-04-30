@@ -83,6 +83,11 @@ type promotionRewardListItem struct {
 	UpdatedAt            *time.Time `json:"updated_at"`
 }
 
+type merchantPromotionCampaignListItem struct {
+	models.PromotionCardCampaign
+	CanDelete bool `json:"can_delete"`
+}
+
 func ListMerchantPromotionCampaigns(c *gin.Context) {
 	merchantID, ok := getMerchantID(c)
 	if !ok {
@@ -99,8 +104,20 @@ func ListMerchantPromotionCampaigns(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询活动失败"})
 		return
 	}
+	items := make([]merchantPromotionCampaignListItem, 0, len(campaigns))
+	for _, campaign := range campaigns {
+		canDelete, err := canDeletePromotionCampaign(config.DB, campaign.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询活动失败"})
+			return
+		}
+		items = append(items, merchantPromotionCampaignListItem{
+			PromotionCardCampaign: campaign,
+			CanDelete:             canDelete,
+		})
+	}
 
-	c.JSON(http.StatusOK, gin.H{"data": campaigns})
+	c.JSON(http.StatusOK, gin.H{"data": items})
 }
 
 func GetMerchantPromotionCampaign(c *gin.Context) {
@@ -201,6 +218,58 @@ func UpdateMerchantPromotionCampaign(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": detail})
+}
+
+func DeleteMerchantPromotionCampaign(c *gin.Context) {
+	merchantID, ok := getMerchantID(c)
+	if !ok {
+		return
+	}
+
+	campaignID, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || campaignID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "活动不存在"})
+		return
+	}
+
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		var campaign models.PromotionCardCampaign
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND merchant_id = ?", uint(campaignID), merchantID).
+			First(&campaign).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return apiErr{status: http.StatusNotFound, msg: "活动不存在"}
+			}
+			return err
+		}
+
+		canDelete, err := canDeletePromotionCampaign(tx, campaign.ID)
+		if err != nil {
+			return err
+		}
+		if !canDelete {
+			return apiErr{status: http.StatusBadRequest, msg: "当前活动已有领取、购买或转发进度，不能删除"}
+		}
+
+		if err := tx.Where("campaign_id = ?", campaign.ID).Delete(&models.PromotionCardReferral{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("campaign_id = ?", campaign.ID).Delete(&models.PromotionCardReferrer{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("campaign_id = ?", campaign.ID).Delete(&models.PromotionCardClaim{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("id = ?", campaign.ID).Delete(&models.PromotionCardCampaign{}).Error; err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		renderPromotionErr(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
 func GetPromotionCampaignBySlug(c *gin.Context) {
@@ -677,6 +746,49 @@ func getPromotionCampaignRemaining(db *gorm.DB, campaignID uint, now time.Time) 
 		rewardRemaining = 0
 	}
 	return promoActive, promoRemaining, rewardRemaining, nil
+}
+
+func canDeletePromotionCampaign(db *gorm.DB, campaignID uint) (bool, error) {
+	var claimCount int64
+	if err := db.Model(&models.PromotionCardClaim{}).
+		Where("campaign_id = ? AND status IN ?", campaignID, []string{
+			promotionCardClaimStatusActive,
+			promotionCardClaimStatusPaid,
+			promotionCardClaimStatusConfirmed,
+		}).
+		Count(&claimCount).Error; err != nil {
+		return false, err
+	}
+	if claimCount > 0 {
+		return false, nil
+	}
+
+	var purchaseCount int64
+	if err := db.Model(&models.DirectPurchase{}).
+		Where("promotion_campaign_id = ? AND status IN ?", campaignID, []string{
+			"paid",
+			"confirmed",
+			directPurchaseStatusStoreWait,
+		}).
+		Count(&purchaseCount).Error; err != nil {
+		return false, err
+	}
+	if purchaseCount > 0 {
+		return false, nil
+	}
+
+	var progressCount int64
+	if err := db.Model(&models.PromotionCardReferrer{}).
+		Where("campaign_id = ?", campaignID).
+		Where("register_count > 0 OR paid_count > 0 OR progress_count > 0").
+		Count(&progressCount).Error; err != nil {
+		return false, err
+	}
+	if progressCount > 0 {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 func resolveCampaignReferrer(tx *gorm.DB, campaignID uint, userID uint, refCode string) (*uint, string, error) {

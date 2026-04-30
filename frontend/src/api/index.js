@@ -533,6 +533,7 @@ export const appointmentApi = {
   getPromotionCampaign: (id) => api.get(`/merchant/promotion-campaigns/${id}`),
   createPromotionCampaign: (data) => api.post('/merchant/promotion-campaigns', data),
   updatePromotionCampaign: (id, data) => api.put(`/merchant/promotion-campaigns/${id}`, data),
+  deletePromotionCampaign: (id) => api.delete(`/merchant/promotion-campaigns/${id}`),
   getPublicPromotionCampaign: (slug, refCode) => api.get(refCode ? `/user/promotion-campaigns/${slug}/${refCode}` : `/user/promotion-campaigns/${slug}`),
   claimPromotionCampaign: (slug, refCode) => api.post(refCode ? `/user/promotion-campaigns/${slug}/${refCode}/claim` : `/user/promotion-campaigns/${slug}/claim`),
   getPromotionRefLink: (slug, refCode) => api.post(refCode ? `/user/promotion-campaigns/${slug}/${refCode}/ref-link` : `/user/promotion-campaigns/${slug}/ref-link`),

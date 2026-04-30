@@ -314,6 +314,7 @@ func SetupMerchantRoutes(r *gin.Engine) {
 	auth.GET("/promotion-campaigns/:id", middleware.RequirePermission("merchant.card.issue"), handlers.GetMerchantPromotionCampaign)
 	auth.POST("/promotion-campaigns", middleware.RequirePermission("merchant.card.issue"), handlers.CreateMerchantPromotionCampaign)
 	auth.PUT("/promotion-campaigns/:id", middleware.RequirePermission("merchant.card.issue"), handlers.UpdateMerchantPromotionCampaign)
+	auth.DELETE("/promotion-campaigns/:id", middleware.RequirePermission("merchant.card.issue"), handlers.DeleteMerchantPromotionCampaign)
 }
 
 func SetupAdminRoutes(r *gin.Engine) {

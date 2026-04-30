@@ -30,6 +30,8 @@ func setupPromotionCardTestDB(t *testing.T) *gorm.DB {
 		&models.PromotionCardCampaign{},
 		&models.PromotionCardClaim{},
 		&models.PromotionCardReferrer{},
+		&models.PromotionCardReferral{},
+		&models.DirectPurchase{},
 	); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
@@ -220,5 +222,104 @@ func TestDirectPurchaseStorePendingStatusFitsColumnAndSupportsLegacyValue(t *tes
 	}
 	if directPurchaseStatusStoreWait != "store_pending_wait" {
 		t.Fatalf("unexpected store pending status constant: %s", directPurchaseStatusStoreWait)
+	}
+}
+
+func TestCanDeletePromotionCampaign(t *testing.T) {
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	db := setupPromotionCardTestDB(t)
+	config.DB = db
+
+	merchant := models.Merchant{Name: "测试商户", Phone: "13800000033", Password: "x", Type: "理发", SupportDirectSale: true}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	template := models.CardTemplate{MerchantID: merchant.ID, Name: "测试卡", CardType: "times", Price: 10000, TotalTimes: 10, IsActive: true}
+	if err := db.Create(&template).Error; err != nil {
+		t.Fatalf("create template failed: %v", err)
+	}
+
+	campaign := models.PromotionCardCampaign{
+		MerchantID:         merchant.ID,
+		CardTemplateID:     template.ID,
+		Title:              "可删除活动",
+		RewardTotalTimes:   1,
+		RewardCardQuantity: 5,
+		RewardThreshold:    2,
+		Slug:               "promo-delete-ok",
+		Status:             "active",
+	}
+	if err := db.Create(&campaign).Error; err != nil {
+		t.Fatalf("create campaign failed: %v", err)
+	}
+
+	canDelete, err := canDeletePromotionCampaign(db, campaign.ID)
+	if err != nil {
+		t.Fatalf("canDeletePromotionCampaign failed: %v", err)
+	}
+	if !canDelete {
+		t.Fatalf("want campaign deletable")
+	}
+
+	progressCampaign := models.PromotionCardCampaign{
+		MerchantID:         merchant.ID,
+		CardTemplateID:     template.ID,
+		Title:              "有进度活动",
+		RewardTotalTimes:   1,
+		RewardCardQuantity: 5,
+		RewardThreshold:    2,
+		Slug:               "promo-delete-progress",
+		Status:             "active",
+	}
+	if err := db.Create(&progressCampaign).Error; err != nil {
+		t.Fatalf("create progress campaign failed: %v", err)
+	}
+	if err := db.Create(&models.PromotionCardReferrer{
+		CampaignID:    progressCampaign.ID,
+		UserID:        101,
+		PromotionCode: "111111",
+		RegisterCount: 1,
+		ProgressCount: 1,
+	}).Error; err != nil {
+		t.Fatalf("create referrer failed: %v", err)
+	}
+
+	canDelete, err = canDeletePromotionCampaign(db, progressCampaign.ID)
+	if err != nil {
+		t.Fatalf("canDeletePromotionCampaign(progress) failed: %v", err)
+	}
+	if canDelete {
+		t.Fatalf("want campaign with referral progress not deletable")
+	}
+
+	claimCampaign := models.PromotionCardCampaign{
+		MerchantID:         merchant.ID,
+		CardTemplateID:     template.ID,
+		Title:              "有领取活动",
+		RewardTotalTimes:   1,
+		RewardCardQuantity: 5,
+		RewardThreshold:    2,
+		Slug:               "promo-delete-claim",
+		Status:             "active",
+	}
+	if err := db.Create(&claimCampaign).Error; err != nil {
+		t.Fatalf("create claim campaign failed: %v", err)
+	}
+	if err := db.Create(&models.PromotionCardClaim{
+		CampaignID: claimCampaign.ID,
+		UserID:     102,
+		Status:     promotionCardClaimStatusActive,
+	}).Error; err != nil {
+		t.Fatalf("create claim failed: %v", err)
+	}
+
+	canDelete, err = canDeletePromotionCampaign(db, claimCampaign.ID)
+	if err != nil {
+		t.Fatalf("canDeletePromotionCampaign(claim) failed: %v", err)
+	}
+	if canDelete {
+		t.Fatalf("want campaign with active claim not deletable")
 	}
 }
