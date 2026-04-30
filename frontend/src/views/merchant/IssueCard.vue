@@ -171,12 +171,14 @@
                     new
                   </span>
                 </div>
-                <div
-                  class="mt-1 truncate"
+                <button
+                  type="button"
+                  class="mt-1 w-full truncate text-left"
                   :class="isEditingCampaign(campaignItem) ? 'text-red-500' : 'text-gray-700'"
+                  @click="openCampaignLink(campaignItem)"
                 >
                   {{ getCampaignLink(campaignItem) }}
-                </div>
+                </button>
                 <div class="mt-3 flex items-center gap-3">
                   <button @click="copyPromotionLink(campaignItem)" class="text-primary text-sm">复制链接</button>
                   <button
@@ -325,6 +327,7 @@ import { cardApi, merchantApi, shopApi } from '../../api'
 import { getMerchantId, getMerchantToken, hasMerchantPermission } from '../../utils/auth'
 
 const router = useRouter()
+const MERCHANT_ISSUE_CARD_RETURN_CONTEXT_KEY = 'merchantIssueCardReturnContext'
 
 const phoneQuery = ref('')
 const searching = ref(false)
@@ -347,6 +350,7 @@ const editingCampaignId = ref(0)
 const deletingCampaignId = ref(0)
 const newlyCreatedCampaignId = ref(0)
 const lastSavedPromotionPayload = ref('')
+const restoringIssueCardContext = ref(false)
 
 const cardForm = ref({
   template_id: 0,
@@ -428,6 +432,7 @@ watch(
 watch(
   () => cardForm.value.template_id,
   async () => {
+    if (restoringIssueCardContext.value) return
     promotionEnabled.value = false
     publishedCampaigns.value = []
     currentCampaign.value = null
@@ -646,6 +651,20 @@ const getCampaignLink = (campaign) => {
   return `${window.location.origin}${campaign.share_path || `/promo/${campaign.slug}`}`
 }
 
+const saveIssueCardReturnContext = (campaign) => {
+  try {
+    sessionStorage.setItem(MERCHANT_ISSUE_CARD_RETURN_CONTEXT_KEY, JSON.stringify({
+      phoneQuery: phoneQuery.value || '',
+      selectedUser: selectedUser.value || null,
+      cardForm: { ...cardForm.value },
+      promotionEnabled: Boolean(promotionEnabled.value),
+      promotionForm: { ...promotionForm.value },
+      editingCampaignId: Number(editingCampaignId.value || 0),
+      currentCampaignId: Number(campaign?.id || currentCampaign.value?.id || 0)
+    }))
+  } catch (_) {}
+}
+
 const getPosterActionLabel = (campaign) => {
   return getSavedPosterData(campaign) ? '打开图片' : '生成图片'
 }
@@ -781,6 +800,58 @@ const copyPromotionLink = async (campaign) => {
     alert('已复制推广链接')
   } catch (_) {
     alert('复制失败，请手动复制')
+  }
+}
+
+const openCampaignLink = (campaign) => {
+  const link = getCampaignLink(campaign)
+  if (!link) return
+  saveIssueCardReturnContext(campaign)
+  window.location.href = link
+}
+
+const restoreIssueCardReturnContext = async () => {
+  const raw = sessionStorage.getItem(MERCHANT_ISSUE_CARD_RETURN_CONTEXT_KEY)
+  if (!raw) return false
+
+  try {
+    const context = JSON.parse(raw)
+    sessionStorage.removeItem(MERCHANT_ISSUE_CARD_RETURN_CONTEXT_KEY)
+    restoringIssueCardContext.value = true
+
+    phoneQuery.value = String(context?.phoneQuery || '')
+    selectedUser.value = context?.selectedUser?.id ? context.selectedUser : null
+
+    cardForm.value = {
+      template_id: Number(context?.cardForm?.template_id || 0),
+      start_date: String(context?.cardForm?.start_date || ''),
+      end_date: String(context?.cardForm?.end_date || '')
+    }
+
+    if (selectedTemplate.value) {
+      await loadCurrentCampaign()
+      promotionEnabled.value = Boolean(context?.promotionEnabled && !phoneQuery.value.trim())
+
+      const restoreEditingId = Number(context?.editingCampaignId || 0)
+      if (promotionEnabled.value && restoreEditingId > 0) {
+        const target = publishedCampaigns.value.find(item => Number(item?.id || 0) === restoreEditingId)
+        if (target) {
+          await startEditingCampaign(target)
+        }
+      } else if (promotionEnabled.value && context?.promotionForm) {
+        promotionForm.value = {
+          ...promotionForm.value,
+          ...context.promotionForm
+        }
+      }
+    }
+
+    return true
+  } catch (_) {
+    sessionStorage.removeItem(MERCHANT_ISSUE_CARD_RETURN_CONTEXT_KEY)
+    return false
+  } finally {
+    restoringIssueCardContext.value = false
   }
 }
 
@@ -1187,7 +1258,10 @@ onMounted(async () => {
     return
   }
   await loadTemplates()
-  cardForm.value.start_date = new Date().toISOString().split('T')[0]
+  const restored = await restoreIssueCardReturnContext()
+  if (!restored) {
+    cardForm.value.start_date = new Date().toISOString().split('T')[0]
+  }
 })
 </script>
 

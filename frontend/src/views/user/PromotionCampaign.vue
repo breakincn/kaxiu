@@ -10,7 +10,7 @@
           @click="goBackToCards"
         >
           <span aria-hidden="true">←</span>
-          {{ backToCardsMerchantName }}
+          返回
         </button>
         <div class="text-xs uppercase tracking-[0.3em] text-orange-400">推广卡活动</div>
         <div v-if="campaign.title" class="rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 text-white p-4 text-xl font-semibold flex items-center justify-center gap-0.5 text-center">
@@ -143,6 +143,7 @@ import { shopApi } from '../../api'
 
 const route = useRoute()
 const router = useRouter()
+const MERCHANT_ISSUE_CARD_RETURN_CONTEXT_KEY = 'merchantIssueCardReturnContext'
 
 const loading = ref(true)
 const campaign = ref(null)
@@ -151,15 +152,12 @@ const paymentUrl = ref('')
 const paymentModalVisible = ref(false)
 const loginModalVisible = ref(false)
 const shareLink = ref('')
+const hasMerchantReturnContext = ref(false)
 
 const isLoggedIn = computed(() => Boolean(localStorage.getItem('userToken')))
 const hasActiveClaim = computed(() => campaign.value?.my_claim?.status === 'active')
 const showPromoPrice = computed(() => Boolean(campaign.value?.promo_active && campaign.value?.promo_price > 0))
-const showBackToCardsButton = computed(() => isLoggedIn.value)
-const backToCardsMerchantName = computed(() => {
-  const merchantName = String(campaign.value?.merchant?.name || '').trim()
-  return merchantName || '我的卡片'
-})
+const showBackToCardsButton = computed(() => hasMerchantReturnContext.value || isLoggedIn.value)
 
 const loadCampaign = async () => {
   loading.value = true
@@ -322,8 +320,15 @@ const goRegister = () => {
 }
 
 const goBackToCards = () => {
+  if (hasMerchantReturnContext.value) {
+    window.location.href = '/merchant/issue-card'
+    return
+  }
   router.push('/user/cards')
 }
 
-onMounted(loadCampaign)
+onMounted(() => {
+  hasMerchantReturnContext.value = Boolean(sessionStorage.getItem(MERCHANT_ISSUE_CARD_RETURN_CONTEXT_KEY))
+  loadCampaign()
+})
 </script>
