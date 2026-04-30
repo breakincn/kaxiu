@@ -114,7 +114,7 @@
             </div>
           </div>
 
-          <div v-if="canShowPromotionToggle" class="rounded-2xl border border-orange-200 bg-orange-50 p-4 space-y-3">
+          <div v-if="canShowPromotionToggle" class="rounded-2xl border border-orange-200 bg-orange-50 px-2.5 py-4 space-y-3">
             <div class="rounded-2xl bg-white px-4 py-3 shadow-sm">
               <div class="flex items-center justify-between gap-3">
                 <div class="text-[17px] font-medium leading-6 text-gray-900">推广卡</div>
