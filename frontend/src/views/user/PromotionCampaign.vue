@@ -4,6 +4,14 @@
     <div v-else-if="!campaign" class="min-h-screen flex items-center justify-center">活动不存在</div>
     <div v-else class="max-w-2xl mx-auto px-4 py-6 space-y-4">
       <div class="rounded-3xl bg-white shadow-sm p-5 space-y-3">
+        <button
+          v-if="showBackToCardsButton"
+          class="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1.5 text-sm text-gray-700"
+          @click="goBackToCards"
+        >
+          <span aria-hidden="true">←</span>
+          {{ backToCardsMerchantName }}
+        </button>
         <div class="text-xs uppercase tracking-[0.3em] text-orange-400">推广卡活动</div>
         <div v-if="campaign.title" class="rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 text-white p-4 text-xl font-semibold flex items-center justify-center gap-0.5 text-center">
           <span>{{ campaign.title }}</span>
@@ -145,6 +153,11 @@ const shareLink = ref('')
 const isLoggedIn = computed(() => Boolean(localStorage.getItem('userToken')))
 const hasActiveClaim = computed(() => campaign.value?.my_claim?.status === 'active')
 const showPromoPrice = computed(() => Boolean(campaign.value?.promo_active && campaign.value?.promo_price > 0))
+const showBackToCardsButton = computed(() => isLoggedIn.value)
+const backToCardsMerchantName = computed(() => {
+  const merchantName = String(campaign.value?.merchant?.name || '').trim()
+  return merchantName || '我的卡片'
+})
 
 const loadCampaign = async () => {
   loading.value = true
@@ -304,6 +317,10 @@ const goLogin = () => {
 
 const goRegister = () => {
   router.push('/user/register')
+}
+
+const goBackToCards = () => {
+  router.push('/user/cards')
 }
 
 onMounted(loadCampaign)

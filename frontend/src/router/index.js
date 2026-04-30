@@ -290,7 +290,7 @@ router.beforeEach((to) => {
   const isPlatformAdmin = to.path.startsWith('/platform-admin')
   if (isPlatformAdmin) return true
 
-  const isUserPublic = to.path === '/login' || to.path === '/user/register' || to.path.startsWith('/s/')
+  const isUserPublic = to.path === '/login' || to.path === '/user/register' || to.path.startsWith('/s/') || to.path.startsWith('/promo/')
   const isMerchantPublic = to.path === '/merchant/login' || to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
 
   if (!isMerchantApp) {
