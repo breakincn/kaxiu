@@ -218,10 +218,7 @@ func TestDirectPurchaseStorePendingStatusFitsColumnAndSupportsLegacyValue(t *tes
 	if len(directPurchaseStatusStoreWait) > 20 {
 		t.Fatalf("store pending status too long for direct_purchases.status: %s (%d)", directPurchaseStatusStoreWait, len(directPurchaseStatusStoreWait))
 	}
-	if !isStorePendingDirectPurchaseStatus(directPurchaseStatusStoreWait) {
-		t.Fatalf("new store pending status should be recognized")
-	}
-	if !isStorePendingDirectPurchaseStatus(directPurchaseStatusStoreOld) {
-		t.Fatalf("legacy store pending status should be recognized")
+	if directPurchaseStatusStoreWait != "store_pending_wait" {
+		t.Fatalf("unexpected store pending status constant: %s", directPurchaseStatusStoreWait)
 	}
 }

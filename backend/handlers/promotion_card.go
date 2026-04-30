@@ -28,7 +28,6 @@ const (
 
 	directPurchaseSourcePromotion = "promotion_campaign"
 	directPurchaseStatusStoreWait = "store_pending_wait"
-	directPurchaseStatusStoreOld  = "store_pending_confirm"
 )
 
 type promotionCampaignDetail struct {
