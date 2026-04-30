@@ -137,25 +137,26 @@
 
             <div v-if="promotionEnabled" class="space-y-3">
               <div
-                v-if="currentCampaign && promotionLink"
+                v-for="campaignItem in publishedCampaigns"
+                :key="campaignItem.id"
                 class="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-gray-700"
               >
                 <button
                   type="button"
                   class="block w-full truncate text-left font-medium text-green-700"
-                  @click="startEditingCurrentCampaign"
+                  @click="startEditingCampaign(campaignItem)"
                 >
-                  {{ currentCampaign.title || '推广卡活动' }}
+                  {{ campaignItem.title || '推广卡活动' }}
                 </button>
-                <div class="mt-1 truncate text-gray-700">{{ promotionLink }}</div>
+                <div class="mt-1 truncate text-gray-700">{{ getCampaignLink(campaignItem) }}</div>
                 <div class="mt-3 flex flex-wrap gap-3">
-                  <button @click="copyPromotionLink" class="text-primary text-sm">复制链接</button>
+                  <button @click="copyPromotionLink(campaignItem)" class="text-primary text-sm">复制链接</button>
                   <button
-                    @click="handlePosterAction"
-                    :disabled="generatingPoster"
+                    @click="handlePosterAction(campaignItem)"
+                    :disabled="generatingPoster && editingCampaignId === Number(campaignItem.id)"
                     class="text-primary text-sm disabled:opacity-50"
                   >
-                    {{ generatingPoster ? '生成中...' : posterActionLabel }}
+                    {{ generatingPoster && editingCampaignId === Number(campaignItem.id) ? '生成中...' : getPosterActionLabel(campaignItem) }}
                   </button>
                 </div>
               </div>
@@ -283,11 +284,10 @@ const submitSuccess = ref('')
 const promotionEnabled = ref(false)
 const promotionSaving = ref(false)
 const promotionError = ref('')
-const promotionLink = ref('')
+const publishedCampaigns = ref([])
 const currentCampaign = ref(null)
 const generatingPoster = ref(false)
 const editingCampaignId = ref(0)
-const savedPosterDataUrl = ref('')
 let promotionSaveTimer = null
 const lastSavedPromotionPayload = ref('')
 
@@ -320,7 +320,6 @@ const rewardValueLabel = computed(() => {
 const rewardValuePlaceholder = computed(() => {
   return selectedTemplate.value?.card_type === 'balance' ? '填写奖励额度' : '填写奖励次数'
 })
-const posterActionLabel = computed(() => savedPosterDataUrl.value ? '打开图片' : '生成图片')
 
 const loadTemplates = async () => {
   try {
@@ -373,10 +372,9 @@ watch(
   () => cardForm.value.template_id,
   async () => {
     promotionEnabled.value = false
-    promotionLink.value = ''
+    publishedCampaigns.value = []
     currentCampaign.value = null
     editingCampaignId.value = 0
-    savedPosterDataUrl.value = ''
     lastSavedPromotionPayload.value = ''
     resetPromotionForm()
     if (selectedTemplate.value) {
@@ -571,23 +569,27 @@ const getPosterStorageKey = (campaign) => {
   return `merchant_promotion_poster_${id}`
 }
 
-const loadSavedPosterData = (campaign) => {
+const getSavedPosterData = (campaign) => {
   const key = getPosterStorageKey(campaign)
-  if (!key) {
-    savedPosterDataUrl.value = ''
-    return
-  }
-  savedPosterDataUrl.value = localStorage.getItem(key) || ''
+  if (!key) return ''
+  return localStorage.getItem(key) || ''
 }
 
-const startEditingCurrentCampaign = async () => {
-  if (!currentCampaign.value?.id || !selectedTemplate.value) return
+const getCampaignLink = (campaign) => {
+  if (!campaign) return ''
+  return `${window.location.origin}${campaign.share_path || `/promo/${campaign.slug}`}`
+}
+
+const getPosterActionLabel = (campaign) => {
+  return getSavedPosterData(campaign) ? '打开图片' : '生成图片'
+}
+
+const startEditingCampaign = async (campaignItem) => {
+  if (!campaignItem?.id || !selectedTemplate.value) return
   try {
-    const detail = await loadPromotionCampaignDetail(currentCampaign.value.id)
-    const campaign = detail || currentCampaign.value
+    const detail = await loadPromotionCampaignDetail(campaignItem.id)
+    const campaign = detail || campaignItem
     currentCampaign.value = campaign
-    promotionLink.value = `${window.location.origin}${campaign.share_path || `/promo/${campaign.slug}`}`
-    loadSavedPosterData(campaign)
     editingCampaignId.value = Number(campaign.id || 0)
     fillPromotionForm(campaign)
   } catch (_) {
@@ -607,19 +609,15 @@ const loadCurrentCampaign = async () => {
   try {
     const res = await shopApi.listPromotionCampaigns({ template_id: selectedTemplate.value.id })
     const list = res.data.data || []
-    const latest = list.find(item => isCampaignCurrentlyValid(item)) || null
-    const detail = latest?.id ? await loadPromotionCampaignDetail(latest.id) : null
-    currentCampaign.value = detail
-    promotionLink.value = detail ? `${window.location.origin}${detail.share_path || `/promo/${detail.slug}`}` : ''
-    loadSavedPosterData(detail)
+    publishedCampaigns.value = list.filter(item => isCampaignCurrentlyValid(item))
+    currentCampaign.value = null
     editingCampaignId.value = 0
     lastSavedPromotionPayload.value = ''
     resetPromotionForm()
   } catch (_) {
+    publishedCampaigns.value = []
     currentCampaign.value = null
-    promotionLink.value = ''
     editingCampaignId.value = 0
-    savedPosterDataUrl.value = ''
     lastSavedPromotionPayload.value = ''
     resetPromotionForm()
   }
@@ -638,9 +636,12 @@ const savePromotionCampaign = async () => {
     currentCampaign.value = res.data.data
     editingCampaignId.value = Number(res.data.data?.id || 0)
     lastSavedPromotionPayload.value = payloadSignature
-    promotionLink.value = `${window.location.origin}${currentCampaign.value?.share_path || `/promo/${currentCampaign.value?.slug}`}`
-    loadSavedPosterData(currentCampaign.value)
     promotionEnabled.value = true
+    await loadCurrentCampaign()
+    if (currentCampaign.value?.id !== editingCampaignId.value) {
+      currentCampaign.value = await loadPromotionCampaignDetail(editingCampaignId.value) || res.data.data
+      fillPromotionForm(currentCampaign.value)
+    }
   } catch (err) {
     promotionError.value = err.response?.data?.error || '生成推广链接失败'
   } finally {
@@ -681,22 +682,24 @@ watch(
   { deep: true }
 )
 
-const copyPromotionLink = async () => {
-  if (!promotionLink.value) return
+const copyPromotionLink = async (campaign) => {
+  const link = getCampaignLink(campaign)
+  if (!link) return
   try {
-    await navigator.clipboard.writeText(promotionLink.value)
+    await navigator.clipboard.writeText(link)
     alert('已复制推广链接')
   } catch (_) {
     alert('复制失败，请手动复制')
   }
 }
 
-const openSavedPoster = () => {
-  if (!savedPosterDataUrl.value) return
-  const popup = window.open(savedPosterDataUrl.value, '_blank')
+const openSavedPoster = (campaign) => {
+  const posterDataUrl = getSavedPosterData(campaign)
+  if (!posterDataUrl) return
+  const popup = window.open(posterDataUrl, '_blank')
   if (!popup) {
     const link = document.createElement('a')
-    link.href = savedPosterDataUrl.value
+    link.href = posterDataUrl
     link.target = '_blank'
     link.rel = 'noopener noreferrer'
     document.body.appendChild(link)
@@ -705,11 +708,12 @@ const openSavedPoster = () => {
   }
 }
 
-const handlePosterAction = async () => {
-  if (savedPosterDataUrl.value) {
-    openSavedPoster()
+const handlePosterAction = async (campaignItem) => {
+  if (getSavedPosterData(campaignItem)) {
+    openSavedPoster(campaignItem)
     return
   }
+  await startEditingCampaign(campaignItem)
   await generatePromotionPoster()
 }
 
@@ -802,7 +806,8 @@ const savePosterBlob = async (blob, filename) => {
 }
 
 const generatePromotionPoster = async () => {
-  if (!currentCampaign.value || !promotionLink.value || generatingPoster.value) return
+  const campaignLink = getCampaignLink(currentCampaign.value)
+  if (!currentCampaign.value || !campaignLink || generatingPoster.value) return
 
   generatingPoster.value = true
   try {
@@ -1045,7 +1050,7 @@ const generatePromotionPoster = async () => {
     ctx.fillText('微信识别二维码打开当前推广卡活动页', pagePadding + sectionPadding, qrSectionY + 58)
 
     const qrCodeSize = 148
-    const qrDataUrl = await QRCode.toDataURL(promotionLink.value, {
+    const qrDataUrl = await QRCode.toDataURL(campaignLink, {
       width: qrCodeSize,
       margin: 1,
       color: {
@@ -1074,10 +1079,7 @@ const generatePromotionPoster = async () => {
     const blob = await canvasToBlob(canvas)
     const filename = `promotion_poster_${campaign.slug || Date.now()}.png`
     const storageKey = getPosterStorageKey(campaign)
-    if (storageKey) {
-      localStorage.setItem(storageKey, dataUrl)
-      savedPosterDataUrl.value = dataUrl
-    }
+    if (storageKey) localStorage.setItem(storageKey, dataUrl)
     await savePosterBlob(blob, filename)
   } catch (err) {
     alert('生成图片失败')
