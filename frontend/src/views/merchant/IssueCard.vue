@@ -141,13 +141,24 @@
                 :key="campaignItem.id"
                 class="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-gray-700"
               >
-                <button
-                  type="button"
-                  class="block w-full truncate text-left font-medium text-green-700"
-                  @click="startEditingCampaign(campaignItem)"
-                >
-                  {{ campaignItem.title || '推广卡活动' }}
-                </button>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="min-w-0 flex-1 truncate text-left font-medium"
+                    :class="isEditingCampaign(campaignItem) ? 'text-primary' : 'text-green-700'"
+                    @click="toggleCampaignEditing(campaignItem)"
+                  >
+                    {{ campaignItem.title || '推广卡活动' }}
+                  </button>
+                  <button
+                    v-if="isEditingCampaign(campaignItem)"
+                    type="button"
+                    class="shrink-0 rounded border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs text-primary"
+                    @click="stopEditingCampaign"
+                  >
+                    编辑中
+                  </button>
+                </div>
                 <div class="mt-1 truncate text-gray-700">{{ getCampaignLink(campaignItem) }}</div>
                 <div class="mt-3 flex items-center gap-3">
                   <button @click="copyPromotionLink(campaignItem)" class="text-primary text-sm">复制链接</button>
@@ -592,6 +603,23 @@ const getCampaignLink = (campaign) => {
 
 const getPosterActionLabel = (campaign) => {
   return getSavedPosterData(campaign) ? '打开图片' : '生成图片'
+}
+
+const isEditingCampaign = (campaignItem) => Number(campaignItem?.id || 0) > 0 && editingCampaignId.value === Number(campaignItem.id)
+
+const stopEditingCampaign = () => {
+  currentCampaign.value = null
+  editingCampaignId.value = 0
+  lastSavedPromotionPayload.value = ''
+  resetPromotionForm()
+}
+
+const toggleCampaignEditing = async (campaignItem) => {
+  if (isEditingCampaign(campaignItem)) {
+    stopEditingCampaign()
+    return
+  }
+  await startEditingCampaign(campaignItem)
 }
 
 const startEditingCampaign = async (campaignItem) => {
