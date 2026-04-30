@@ -27,7 +27,8 @@ const (
 	promotionCardRewardStatusExpired   = "expired"
 
 	directPurchaseSourcePromotion = "promotion_campaign"
-	directPurchaseStatusStoreWait = "store_pending_confirm"
+	directPurchaseStatusStoreWait = "store_pending_wait"
+	directPurchaseStatusStoreOld  = "store_pending_confirm"
 )
 
 type promotionCampaignDetail struct {

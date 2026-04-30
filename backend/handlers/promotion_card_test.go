@@ -213,3 +213,15 @@ func TestListMyPromotionRewardCardsReturnsActiveProgressItem(t *testing.T) {
 		t.Fatalf("want list_item_type=promotion_reward, got %s", item.ListItemType)
 	}
 }
+
+func TestDirectPurchaseStorePendingStatusFitsColumnAndSupportsLegacyValue(t *testing.T) {
+	if len(directPurchaseStatusStoreWait) > 20 {
+		t.Fatalf("store pending status too long for direct_purchases.status: %s (%d)", directPurchaseStatusStoreWait, len(directPurchaseStatusStoreWait))
+	}
+	if !isStorePendingDirectPurchaseStatus(directPurchaseStatusStoreWait) {
+		t.Fatalf("new store pending status should be recognized")
+	}
+	if !isStorePendingDirectPurchaseStatus(directPurchaseStatusStoreOld) {
+		t.Fatalf("legacy store pending status should be recognized")
+	}
+}

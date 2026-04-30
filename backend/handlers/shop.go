@@ -824,6 +824,10 @@ func CreateDirectPurchase(c *gin.Context) {
 	})
 }
 
+func isStorePendingDirectPurchaseStatus(status string) bool {
+	return status == directPurchaseStatusStoreWait || status == directPurchaseStatusStoreOld
+}
+
 // ConfirmDirectPurchase 确认直购订单（仅允许确认已存在且归属当前用户的 pending 订单）
 func ConfirmDirectPurchase(c *gin.Context) {
 	userID, ok := getUserID(c)
@@ -847,7 +851,7 @@ func ConfirmDirectPurchase(c *gin.Context) {
 		return
 	}
 
-	if purchase.Status == "paid" || purchase.Status == directPurchaseStatusStoreWait {
+	if purchase.Status == "paid" || isStorePendingDirectPurchaseStatus(purchase.Status) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "已提交付款，等待商户确认",
 			"data":    purchase,
@@ -924,7 +928,7 @@ func MerchantConfirmDirectPurchase(c *gin.Context) {
 		return
 	}
 
-	if purchase.Status != "paid" && purchase.Status != directPurchaseStatusStoreWait {
+	if purchase.Status != "paid" && !isStorePendingDirectPurchaseStatus(purchase.Status) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "订单状态无效"})
 		return
 	}
@@ -994,7 +998,7 @@ func MerchantConfirmDirectPurchase(c *gin.Context) {
 			}
 		}
 
-		if purchase.Status == directPurchaseStatusStoreWait {
+		if isStorePendingDirectPurchaseStatus(purchase.Status) {
 			if purchase.PromotionClaimID != nil {
 				var claim models.PromotionCardClaim
 				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", *purchase.PromotionClaimID).First(&claim).Error; err != nil {
