@@ -141,11 +141,11 @@
                 :key="campaignItem.id"
                 class="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-gray-700"
               >
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-1.5">
                   <button
                     type="button"
-                    class="min-w-0 flex-1 truncate text-left font-medium"
-                    :class="isEditingCampaign(campaignItem) ? 'text-primary' : 'text-green-700'"
+                    class="min-w-0 truncate text-left font-medium"
+                    :class="getCampaignTitleClass(campaignItem)"
                     @click="toggleCampaignEditing(campaignItem)"
                   >
                     {{ campaignItem.title || '推广卡活动' }}
@@ -160,7 +160,7 @@
                   </button>
                   <span
                     v-else-if="isNewCampaign(campaignItem)"
-                    class="shrink-0 rounded bg-orange-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-white"
+                    class="shrink-0 rounded bg-[#34c759] px-1.5 py-[1px] text-[9px] font-semibold uppercase leading-4 text-white"
                   >
                     new
                   </span>
@@ -549,6 +549,7 @@ const canAutoSavePromotion = computed(() => {
 
 const togglePromotionEnabled = () => {
   promotionEnabled.value = !promotionEnabled.value
+  newlyCreatedCampaignId.value = 0
   if (promotionEnabled.value) {
     editingCampaignId.value = 0
     lastSavedPromotionPayload.value = ''
@@ -620,6 +621,11 @@ const getPosterActionLabel = (campaign) => {
 
 const isEditingCampaign = (campaignItem) => Number(campaignItem?.id || 0) > 0 && editingCampaignId.value === Number(campaignItem.id)
 const isNewCampaign = (campaignItem) => Number(campaignItem?.id || 0) > 0 && newlyCreatedCampaignId.value === Number(campaignItem.id)
+const getCampaignTitleClass = (campaignItem) => {
+  if (isEditingCampaign(campaignItem)) return 'max-w-[calc(100%-52px)] text-primary'
+  if (isNewCampaign(campaignItem)) return 'max-w-[calc(100%-36px)] text-green-700'
+  return 'w-full text-green-700'
+}
 
 const stopEditingCampaign = () => {
   currentCampaign.value = null
