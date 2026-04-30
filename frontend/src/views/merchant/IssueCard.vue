@@ -92,14 +92,26 @@
             <div class="text-sm text-gray-700">售价：¥{{ (selectedTemplate.price / 100).toFixed(2) }}</div>
           </div>
 
-          <div v-if="canShowPromotionToggle" class="rounded-lg border border-orange-200 bg-orange-50 p-4 space-y-3">
-            <label class="flex items-center justify-between gap-3">
-              <div>
-                <div class="font-medium text-gray-800">推广卡</div>
-                <div class="text-xs text-gray-500">未输入手机号时，可直接生成推广活动链接</div>
+          <div v-if="canShowPromotionToggle" class="rounded-2xl border border-orange-200 bg-orange-50 p-4 space-y-3">
+            <div class="rounded-2xl bg-white px-4 py-3 shadow-sm">
+              <div class="flex items-center justify-between gap-3">
+                <div class="text-[17px] font-medium leading-6 text-gray-900">推广卡</div>
+                <button
+                  type="button"
+                  role="switch"
+                  :aria-checked="promotionEnabled"
+                  @click="togglePromotionEnabled"
+                  class="relative inline-flex h-[30px] w-[56px] shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none"
+                  :class="promotionEnabled ? 'bg-[#34c759]' : 'bg-[#d1d1d6]'"
+                >
+                  <span
+                    class="inline-block h-[26px] w-[26px] rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.22)] transition-transform duration-200"
+                    :class="promotionEnabled ? 'translate-x-[28px]' : 'translate-x-[2px]'"
+                  />
+                </button>
               </div>
-              <input v-model="promotionEnabled" type="checkbox" class="h-5 w-5 accent-primary" />
-            </label>
+              <div class="mt-1 text-xs leading-4 text-gray-500">未输入手机号时，可直接生成推广活动链接</div>
+            </div>
 
             <div v-if="promotionEnabled" class="space-y-3">
               <div>
@@ -180,15 +192,8 @@
                 />
               </div>
 
-              <button
-                @click="savePromotionCampaign"
-                :disabled="promotionSaving || !selectedTemplate"
-                class="w-full py-3 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50"
-              >
-                {{ promotionSaving ? '提交中...' : '生成推广链接' }}
-              </button>
-
               <div v-if="promotionError" class="text-sm text-red-500">{{ promotionError }}</div>
+              <div v-else-if="promotionSaving" class="text-sm text-gray-500">正在更新推广链接...</div>
               <div v-if="promotionLink" class="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-gray-700">
                 <div class="font-medium text-green-700 mb-1">推广链接已生成</div>
                 <div class="break-all">{{ promotionLink }}</div>
@@ -258,6 +263,9 @@ const promotionSaving = ref(false)
 const promotionError = ref('')
 const promotionLink = ref('')
 const currentCampaign = ref(null)
+let promotionSaveTimer = null
+let isFillingPromotionForm = false
+const lastSavedPromotionPayload = ref('')
 
 const cardForm = ref({
   template_id: 0,
@@ -436,12 +444,66 @@ const resetPromotionForm = () => {
   }
 }
 
+const buildPromotionPayload = () => {
+  if (!selectedTemplate.value) return null
+  const isBalance = selectedTemplate.value.card_type === 'balance'
+  return {
+    card_template_id: selectedTemplate.value.id,
+    title: promotionForm.value.title || '',
+    reward_total_times: isBalance ? 0 : Number(promotionForm.value.reward_value || 0),
+    reward_recharge_amount: isBalance ? Math.round(Number(promotionForm.value.reward_value || 0) * 100) : 0,
+    reward_card_quantity: Number(promotionForm.value.reward_card_quantity || 0),
+    reward_threshold: Number(promotionForm.value.reward_threshold || 0),
+    promo_price: promotionForm.value.promo_price_yuan === '' ? 0 : Math.round(Number(promotionForm.value.promo_price_yuan || 0) * 100),
+    promo_quantity: Number(promotionForm.value.promo_quantity || 0),
+    promo_ends_at: promotionForm.value.promo_ends_at || '',
+    status: 'active'
+  }
+}
+
+const getPromotionPayloadSignature = (payload) => {
+  if (!payload) return ''
+  return JSON.stringify(payload)
+}
+
+const canAutoSavePromotion = computed(() => {
+  const payload = buildPromotionPayload()
+  if (!promotionEnabled.value || !payload) return false
+  if (payload.reward_card_quantity <= 0 || payload.reward_threshold <= 0) return false
+  if (selectedTemplate.value?.card_type === 'balance') {
+    if (payload.reward_recharge_amount <= 0) return false
+  } else if (payload.reward_total_times <= 0) {
+    return false
+  }
+  if (payload.promo_price > 0 && (payload.promo_quantity <= 0 || !payload.promo_ends_at)) return false
+  return true
+})
+
+const schedulePromotionSave = () => {
+  if (promotionSaveTimer) {
+    clearTimeout(promotionSaveTimer)
+    promotionSaveTimer = null
+  }
+  if (!canAutoSavePromotion.value) return
+  const payload = buildPromotionPayload()
+  const nextSignature = getPromotionPayloadSignature(payload)
+  if (nextSignature && nextSignature === lastSavedPromotionPayload.value) return
+  promotionSaveTimer = setTimeout(() => {
+    savePromotionCampaign()
+  }, 450)
+}
+
+const togglePromotionEnabled = () => {
+  promotionEnabled.value = !promotionEnabled.value
+}
+
 const fillPromotionForm = (campaign) => {
   if (!campaign || !selectedTemplate.value) {
     resetPromotionForm()
     return
   }
   const isBalance = selectedTemplate.value.card_type === 'balance'
+  isFillingPromotionForm = true
   promotionForm.value = {
     title: campaign.title || '',
     reward_value: isBalance ? ((campaign.reward_recharge_amount || 0) / 100) : (campaign.reward_total_times || ''),
@@ -451,7 +513,12 @@ const fillPromotionForm = (campaign) => {
     promo_quantity: campaign.promo_quantity || '',
     promo_ends_at: campaign.promo_ends_at ? formatDateTimeLocal(campaign.promo_ends_at) : ''
   }
+  const payload = buildPromotionPayload()
+  lastSavedPromotionPayload.value = getPromotionPayloadSignature(payload)
   promotionLink.value = `${window.location.origin}${campaign.share_path || `/promo/${campaign.slug}`}`
+  setTimeout(() => {
+    isFillingPromotionForm = false
+  }, 0)
 }
 
 const formatDateTimeLocal = (value) => {
@@ -478,27 +545,17 @@ const loadCurrentCampaign = async () => {
 }
 
 const savePromotionCampaign = async () => {
-  if (!selectedTemplate.value || promotionSaving.value) return
+  if (!selectedTemplate.value || promotionSaving.value || !canAutoSavePromotion.value) return
   promotionSaving.value = true
   promotionError.value = ''
   try {
-    const isBalance = selectedTemplate.value.card_type === 'balance'
-    const payload = {
-      card_template_id: selectedTemplate.value.id,
-      title: promotionForm.value.title || '',
-      reward_total_times: isBalance ? 0 : Number(promotionForm.value.reward_value || 0),
-      reward_recharge_amount: isBalance ? Math.round(Number(promotionForm.value.reward_value || 0) * 100) : 0,
-      reward_card_quantity: Number(promotionForm.value.reward_card_quantity || 0),
-      reward_threshold: Number(promotionForm.value.reward_threshold || 0),
-      promo_price: promotionForm.value.promo_price_yuan === '' ? 0 : Math.round(Number(promotionForm.value.promo_price_yuan || 0) * 100),
-      promo_quantity: Number(promotionForm.value.promo_quantity || 0),
-      promo_ends_at: promotionForm.value.promo_ends_at || '',
-      status: 'active'
-    }
+    const payload = buildPromotionPayload()
+    const payloadSignature = getPromotionPayloadSignature(payload)
     const res = currentCampaign.value
       ? await shopApi.updatePromotionCampaign(currentCampaign.value.id, payload)
       : await shopApi.createPromotionCampaign(payload)
     currentCampaign.value = res.data.data
+    lastSavedPromotionPayload.value = payloadSignature
     fillPromotionForm(currentCampaign.value)
     promotionEnabled.value = true
   } catch (err) {
@@ -507,6 +564,40 @@ const savePromotionCampaign = async () => {
     promotionSaving.value = false
   }
 }
+
+watch(
+  () => promotionEnabled.value,
+  (enabled) => {
+    if (!enabled && promotionSaveTimer) {
+      clearTimeout(promotionSaveTimer)
+      promotionSaveTimer = null
+      return
+    }
+    if (enabled) {
+      schedulePromotionSave()
+    }
+  }
+)
+
+watch(
+  () => ({
+    title: promotionForm.value.title,
+    reward_value: promotionForm.value.reward_value,
+    reward_card_quantity: promotionForm.value.reward_card_quantity,
+    reward_threshold: promotionForm.value.reward_threshold,
+    promo_price_yuan: promotionForm.value.promo_price_yuan,
+    promo_quantity: promotionForm.value.promo_quantity,
+    promo_ends_at: promotionForm.value.promo_ends_at,
+    template_id: selectedTemplate.value?.id || 0,
+    enabled: promotionEnabled.value
+  }),
+  () => {
+    if (isFillingPromotionForm) return
+    if (!promotionEnabled.value) return
+    schedulePromotionSave()
+  },
+  { deep: true }
+)
 
 const copyPromotionLink = async () => {
   if (!promotionLink.value) return
