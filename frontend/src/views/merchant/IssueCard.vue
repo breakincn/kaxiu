@@ -141,26 +141,15 @@
                 :key="campaignItem.id"
                 class="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-gray-700"
               >
-                <div class="flex items-start justify-between gap-3">
-                  <button
-                    type="button"
-                    class="block min-w-0 flex-1 truncate text-left font-medium text-green-700"
-                    @click="startEditingCampaign(campaignItem)"
-                  >
-                    {{ campaignItem.title || '推广卡活动' }}
-                  </button>
-                  <button
-                    v-if="campaignItem.can_delete"
-                    type="button"
-                    class="shrink-0 rounded border border-red-200 px-2 py-0.5 text-xs text-red-500 disabled:opacity-50"
-                    :disabled="deletingCampaignId === Number(campaignItem.id)"
-                    @click="deleteCampaign(campaignItem)"
-                  >
-                    {{ deletingCampaignId === Number(campaignItem.id) ? '删除中' : '删除' }}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  class="block w-full truncate text-left font-medium text-green-700"
+                  @click="startEditingCampaign(campaignItem)"
+                >
+                  {{ campaignItem.title || '推广卡活动' }}
+                </button>
                 <div class="mt-1 truncate text-gray-700">{{ getCampaignLink(campaignItem) }}</div>
-                <div class="mt-3 flex flex-wrap gap-3">
+                <div class="mt-3 flex items-center gap-3">
                   <button @click="copyPromotionLink(campaignItem)" class="text-primary text-sm">复制链接</button>
                   <button
                     @click="handlePosterAction(campaignItem)"
@@ -168,6 +157,15 @@
                     class="text-primary text-sm disabled:opacity-50"
                   >
                     {{ generatingPoster && editingCampaignId === Number(campaignItem.id) ? '生成中...' : getPosterActionLabel(campaignItem) }}
+                  </button>
+                  <button
+                    v-if="campaignItem.can_delete"
+                    type="button"
+                    class="ml-auto rounded border border-red-200 px-2 py-0.5 text-xs text-red-500 disabled:opacity-50"
+                    :disabled="deletingCampaignId === Number(campaignItem.id)"
+                    @click="deleteCampaign(campaignItem)"
+                  >
+                    {{ deletingCampaignId === Number(campaignItem.id) ? '删除中' : '删除' }}
                   </button>
                 </div>
               </div>
