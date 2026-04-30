@@ -239,6 +239,15 @@
                 />
               </div>
 
+              <button
+                type="button"
+                @click="savePromotionCampaign"
+                :disabled="promotionSaving || !canAutoSavePromotion"
+                class="w-full rounded-lg bg-primary py-3 text-white font-medium disabled:opacity-50"
+              >
+                {{ promotionSaving ? '处理中...' : (editingCampaignId ? '保存推广活动' : '生成推广发布') }}
+              </button>
+
               <div v-if="promotionError" class="text-sm text-red-500">{{ promotionError }}</div>
               <div v-else-if="promotionSaving" class="text-sm text-gray-500">正在更新推广链接...</div>
             </div>
@@ -288,7 +297,6 @@ const publishedCampaigns = ref([])
 const currentCampaign = ref(null)
 const generatingPoster = ref(false)
 const editingCampaignId = ref(0)
-let promotionSaveTimer = null
 const lastSavedPromotionPayload = ref('')
 
 const cardForm = ref({
@@ -505,20 +513,6 @@ const canAutoSavePromotion = computed(() => {
   return true
 })
 
-const schedulePromotionSave = () => {
-  if (promotionSaveTimer) {
-    clearTimeout(promotionSaveTimer)
-    promotionSaveTimer = null
-  }
-  if (!canAutoSavePromotion.value) return
-  const payload = buildPromotionPayload()
-  const nextSignature = getPromotionPayloadSignature(payload)
-  if (nextSignature && nextSignature === lastSavedPromotionPayload.value) return
-  promotionSaveTimer = setTimeout(() => {
-    savePromotionCampaign()
-  }, 450)
-}
-
 const togglePromotionEnabled = () => {
   promotionEnabled.value = !promotionEnabled.value
   if (promotionEnabled.value) {
@@ -561,6 +555,12 @@ const isCampaignCurrentlyValid = (campaign) => {
   const endAt = new Date(campaign.promo_ends_at)
   if (Number.isNaN(endAt.getTime())) return true
   return endAt.getTime() > Date.now()
+}
+
+const getCampaignSortTime = (campaign) => {
+  const raw = campaign?.created_at || campaign?.createdAt || campaign?.published_at || campaign?.publishedAt || campaign?.updated_at || campaign?.updatedAt || ''
+  const time = new Date(raw).getTime()
+  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time
 }
 
 const getPosterStorageKey = (campaign) => {
@@ -609,7 +609,13 @@ const loadCurrentCampaign = async () => {
   try {
     const res = await shopApi.listPromotionCampaigns({ template_id: selectedTemplate.value.id })
     const list = res.data.data || []
-    publishedCampaigns.value = list.filter(item => isCampaignCurrentlyValid(item))
+    publishedCampaigns.value = list
+      .filter(item => isCampaignCurrentlyValid(item))
+      .sort((a, b) => {
+        const diff = getCampaignSortTime(a) - getCampaignSortTime(b)
+        if (diff !== 0) return diff
+        return Number(a?.id || 0) - Number(b?.id || 0)
+      })
     currentCampaign.value = null
     editingCampaignId.value = 0
     lastSavedPromotionPayload.value = ''
@@ -648,39 +654,6 @@ const savePromotionCampaign = async () => {
     promotionSaving.value = false
   }
 }
-
-watch(
-  () => promotionEnabled.value,
-  (enabled) => {
-    if (!enabled && promotionSaveTimer) {
-      clearTimeout(promotionSaveTimer)
-      promotionSaveTimer = null
-      return
-    }
-    if (enabled) {
-      schedulePromotionSave()
-    }
-  }
-)
-
-watch(
-  () => ({
-    title: promotionForm.value.title,
-    reward_value: promotionForm.value.reward_value,
-    reward_card_quantity: promotionForm.value.reward_card_quantity,
-    reward_threshold: promotionForm.value.reward_threshold,
-    promo_price_yuan: promotionForm.value.promo_price_yuan,
-    promo_quantity: promotionForm.value.promo_quantity,
-    promo_ends_at: promotionForm.value.promo_ends_at,
-    template_id: selectedTemplate.value?.id || 0,
-    enabled: promotionEnabled.value
-  }),
-  () => {
-    if (!promotionEnabled.value) return
-    schedulePromotionSave()
-  },
-  { deep: true }
-)
 
 const copyPromotionLink = async (campaign) => {
   const link = getCampaignLink(campaign)
