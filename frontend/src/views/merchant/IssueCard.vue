@@ -771,12 +771,13 @@ const loadCurrentCampaign = async () => {
 
 const savePromotionCampaign = async () => {
   if (!selectedTemplate.value || promotionSaving.value || !canAutoSavePromotion.value) return
+  const creatingNew = !editingCampaignId.value
+  if (!window.confirm(creatingNew ? '确认生成推广活动？' : '确认更新推广活动？')) return
   promotionSaving.value = true
   promotionError.value = ''
   try {
     const payload = buildPromotionPayload()
     const payloadSignature = getPromotionPayloadSignature(payload)
-    const creatingNew = !editingCampaignId.value
     const res = editingCampaignId.value
       ? await shopApi.updatePromotionCampaign(editingCampaignId.value, payload)
       : await shopApi.createPromotionCampaign(payload)
