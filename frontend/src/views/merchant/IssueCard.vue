@@ -302,7 +302,7 @@
                 :disabled="promotionSaving || !canAutoSavePromotion"
                 class="w-full rounded-lg bg-primary py-3 text-white font-medium disabled:opacity-50"
               >
-                {{ promotionSaving ? '处理中...' : (editingCampaignId ? '更新推广活动' : '生成推广发布') }}
+                {{ promotionSaving ? '处理中...' : (editingCampaignId ? '更新推广发布' : '生成推广发布') }}
               </button>
 
               <div v-if="promotionError" class="text-sm text-red-500">{{ promotionError }}</div>
@@ -772,7 +772,7 @@ const loadCurrentCampaign = async () => {
 const savePromotionCampaign = async () => {
   if (!selectedTemplate.value || promotionSaving.value || !canAutoSavePromotion.value) return
   const creatingNew = !editingCampaignId.value
-  if (!window.confirm(creatingNew ? '确认生成推广活动？' : '确认更新推广活动？')) return
+  if (!window.confirm(creatingNew ? '确认生成推广发布？' : '确认更新推广发布？')) return
   promotionSaving.value = true
   promotionError.value = ''
   try {
