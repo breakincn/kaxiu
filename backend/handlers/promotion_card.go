@@ -232,6 +232,10 @@ func UpdateMerchantPromotionCampaign(c *gin.Context) {
 		return
 	}
 
+	input.RewardTotalTimes = existing.RewardTotalTimes
+	input.RewardRechargeAmount = existing.RewardRechargeAmount
+	input.RewardThreshold = existing.RewardThreshold
+
 	campaign, err := savePromotionCampaign(existing.ID, merchantID, input.CardTemplateID, input.Title, input.RewardTotalTimes, input.RewardRechargeAmount, input.RewardCardQuantity, input.RewardThreshold, input.PromoPrice, input.PromoQuantity, input.PromoEndsAt, input.Status)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

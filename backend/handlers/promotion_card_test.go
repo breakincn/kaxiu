@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -398,5 +399,67 @@ func TestCanDeletePromotionCampaign(t *testing.T) {
 	}
 	if canDelete {
 		t.Fatalf("want campaign with active claim not deletable")
+	}
+}
+
+func TestUpdateMerchantPromotionCampaignPreservesRewardValueAndThreshold(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	db := setupPromotionCardTestDB(t)
+	config.DB = db
+
+	merchant := models.Merchant{Name: "测试商户", Phone: "13800000035", Password: "x", Type: "理发", SupportDirectSale: true}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	template := models.CardTemplate{MerchantID: merchant.ID, Name: "测试卡", CardType: "times", Price: 10000, TotalTimes: 10, IsActive: true}
+	if err := db.Create(&template).Error; err != nil {
+		t.Fatalf("create template failed: %v", err)
+	}
+	campaign := models.PromotionCardCampaign{
+		MerchantID:         merchant.ID,
+		CardTemplateID:     template.ID,
+		Title:              "原始活动",
+		RewardTotalTimes:   5,
+		RewardCardQuantity: 8,
+		RewardThreshold:    15,
+		Slug:               "promo-update-locked-fields",
+		Status:             "active",
+	}
+	if err := db.Create(&campaign).Error; err != nil {
+		t.Fatalf("create campaign failed: %v", err)
+	}
+
+	body := `{"card_template_id":` + strconv.Itoa(int(template.ID)) + `,"title":"更新标题","reward_total_times":99,"reward_card_quantity":12,"reward_threshold":88,"promo_price":0,"promo_quantity":0,"promo_ends_at":"","status":"active"}`
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/promotion-campaigns/"+strconv.Itoa(int(campaign.ID)), strings.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(campaign.ID))}}
+	c.Set("merchant_id", merchant.ID)
+
+	UpdateMerchantPromotionCampaign(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var updated models.PromotionCardCampaign
+	if err := db.First(&updated, campaign.ID).Error; err != nil {
+		t.Fatalf("reload campaign failed: %v", err)
+	}
+	if updated.RewardTotalTimes != 5 {
+		t.Fatalf("want reward_total_times kept as 5, got %d", updated.RewardTotalTimes)
+	}
+	if updated.RewardThreshold != 15 {
+		t.Fatalf("want reward_threshold kept as 15, got %d", updated.RewardThreshold)
+	}
+	if updated.RewardCardQuantity != 12 {
+		t.Fatalf("want reward_card_quantity updated to 12, got %d", updated.RewardCardQuantity)
+	}
+	if updated.Title != "更新标题" {
+		t.Fatalf("want title updated, got %s", updated.Title)
 	}
 }

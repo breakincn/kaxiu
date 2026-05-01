@@ -224,8 +224,9 @@
                     v-model.number="promotionForm.reward_value"
                     type="number"
                     min="1"
+                    :disabled="isEditingPublishedCampaign"
                     :placeholder="rewardValuePlaceholder"
-                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400"
                   />
                 </div>
                 <div>
@@ -234,8 +235,9 @@
                     v-model.number="promotionForm.reward_threshold"
                     type="number"
                     min="1"
+                    :disabled="isEditingPublishedCampaign"
                     placeholder="达标门槛"
-                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary"
+                    class="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400"
                   />
                 </div>
               </div>
@@ -677,6 +679,7 @@ const getPosterActionLabel = (campaign) => {
 
 const isEditingCampaign = (campaignItem) => Number(campaignItem?.id || 0) > 0 && editingCampaignId.value === Number(campaignItem.id)
 const isNewCampaign = (campaignItem) => Number(campaignItem?.id || 0) > 0 && newlyCreatedCampaignId.value === Number(campaignItem.id)
+const isEditingPublishedCampaign = computed(() => Number(editingCampaignId.value || 0) > 0)
 const getCampaignTitleClass = (campaignItem) => {
   if (isEditingCampaign(campaignItem)) return 'max-w-[calc(100%-52px)] text-primary'
   if (isNewCampaign(campaignItem)) return 'max-w-[calc(100%-36px)] text-green-700'
