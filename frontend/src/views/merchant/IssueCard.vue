@@ -788,10 +788,7 @@ const savePromotionCampaign = async () => {
       newlyCreatedCampaignId.value = editingCampaignId.value
     }
     await loadCurrentCampaign()
-    if (!creatingNew && currentCampaign.value?.id !== editingCampaignId.value) {
-      currentCampaign.value = await loadPromotionCampaignDetail(editingCampaignId.value) || res.data.data
-      fillPromotionForm(currentCampaign.value)
-    } else if (creatingNew) {
+    if (creatingNew) {
       stopEditingCampaign()
     }
   } catch (err) {
