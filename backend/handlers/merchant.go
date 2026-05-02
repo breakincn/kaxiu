@@ -20,12 +20,12 @@ import (
 // MerchantRegister 商户注册
 func MerchantRegister(c *gin.Context) {
 	var input struct {
-		Phone      string `json:"phone" binding:"required"`
-		Password   string `json:"password" binding:"required,min=6"`
-		Name       string `json:"name" binding:"required"`
-		Type       string `json:"type"`
-		Code       string `json:"code"`
-		InviteCode string `json:"invite_code" binding:"required"`
+		Phone        string `json:"phone" binding:"required"`
+		Password     string `json:"password" binding:"required,min=6"`
+		Name         string `json:"name" binding:"required"`
+		Type         string `json:"type"`
+		Code         string `json:"code"`
+		InviteCode   string `json:"invite_code" binding:"required"`
 		ReferralCode string `json:"referral_code"`
 	}
 
@@ -253,12 +253,12 @@ func migrateSessionsAfterDisableCustomerService(tx *gorm.DB, m *models.Merchant,
 				Updates(map[string]interface{}{"status": "idle"}).Error
 		}
 		updates := map[string]interface{}{
-			"last_technician_id":            nil,
-			"service_technician_ids":        models.MerchantProjectDefaultServiceTechnicianIDs{},
+			"last_technician_id":             nil,
+			"service_technician_ids":         models.MerchantProjectDefaultServiceTechnicianIDs{},
 			"start_confirmed_technician_ids": models.MerchantProjectDefaultServiceTechnicianIDs{},
-			"staff_select_cooldown_until":   nil,
-			"staff_select_entered_at":       nil,
-			"start_pending_timeout_seconds": 0,
+			"staff_select_cooldown_until":    nil,
+			"staff_select_entered_at":        nil,
+			"start_pending_timeout_seconds":  0,
 		}
 
 		// 已锁定房间：直接进入非客服流程 delay_pending
@@ -894,6 +894,7 @@ func UpdateMerchantInfo(c *gin.Context) {
 		ShowProvince   *bool   `json:"show_province"`
 		StartTerm      *string `json:"start_term"`
 		FinishTerm     *string `json:"finish_term"`
+		ThemeColor     *string `json:"merchant_theme_color"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -946,6 +947,14 @@ func UpdateMerchantInfo(c *gin.Context) {
 	if input.FinishTerm != nil {
 		updates["finish_term"] = strings.TrimSpace(*input.FinishTerm)
 	}
+	if input.ThemeColor != nil {
+		themeColor, err := normalizeMerchantThemeColor(*input.ThemeColor)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		updates["merchant_theme_color"] = themeColor
+	}
 
 	if len(updates) == 0 {
 		config.DB.First(&merchant, merchantID)
@@ -959,6 +968,19 @@ func UpdateMerchantInfo(c *gin.Context) {
 	}
 	config.DB.First(&merchant, merchantID)
 	c.JSON(http.StatusOK, gin.H{"data": merchant})
+}
+
+func normalizeMerchantThemeColor(raw string) (string, error) {
+	color := strings.TrimSpace(strings.ToLower(raw))
+	if color == "" {
+		return "green", nil
+	}
+	switch color {
+	case "red", "orange", "yellow", "green", "cyan", "blue", "purple":
+		return color, nil
+	default:
+		return "", fmt.Errorf("主题色仅支持 red、orange、yellow、green、cyan、blue、purple")
+	}
 }
 
 func UpdateTechnicianAlias(c *gin.Context) {

@@ -56,6 +56,7 @@ type Merchant struct {
 	TechnicianAlias                                 string `json:"technician_alias" gorm:"size:20;default:'技师';comment:技师自定义称谓（如：小二、服务员等）"`
 	StartTerm                                       string `json:"start_term" gorm:"size:20;default:'';comment:开始服务显示名词（可为空）"`
 	FinishTerm                                      string `json:"finish_term" gorm:"size:20;default:'';comment:结束服务显示名词（可为空）"`
+	MerchantThemeColor                              string `json:"merchant_theme_color" gorm:"size:20;default:'green';comment:商户用户端主题色（red/orange/yellow/green/cyan/blue/purple）"`
 	// 手牌设置
 	HandCardPrefix  string `json:"hand_card_prefix" gorm:"size:20;default:'H';comment:手牌前缀"`
 	HandCardStartNo int    `json:"hand_card_start_no" gorm:"default:1;comment:手牌起始号码"`

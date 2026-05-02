@@ -1,5 +1,5 @@
 <template>
-  <div class="shop-page">
+  <div class="shop-page" :style="shopThemeStyle">
     <!-- 加载中 -->
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
@@ -410,6 +410,86 @@ const paymentUrl = ref('')
 const currentOrder = ref(null)
 const purchasing = ref(false)
 const confirming = ref(false)
+const defaultThemeKey = 'green'
+const shopThemePalettes = {
+  red: {
+    primary: '#ef4444',
+    primaryDeep: '#dc2626',
+    primarySoft: '#fee2e2',
+    primaryMuted: '#fff1f2',
+    metricStart: '#fff5f5',
+    metricEnd: '#ffe4e6',
+    primaryBorder: 'rgba(239, 68, 68, 0.16)',
+    primaryShadow: 'rgba(239, 68, 68, 0.18)',
+    primaryGlass: 'rgba(255, 255, 255, 0.20)'
+  },
+  orange: {
+    primary: '#f97316',
+    primaryDeep: '#ea580c',
+    primarySoft: '#ffedd5',
+    primaryMuted: '#fff7ed',
+    metricStart: '#fff7ed',
+    metricEnd: '#ffedd5',
+    primaryBorder: 'rgba(249, 115, 22, 0.16)',
+    primaryShadow: 'rgba(249, 115, 22, 0.18)',
+    primaryGlass: 'rgba(255, 255, 255, 0.22)'
+  },
+  yellow: {
+    primary: '#eab308',
+    primaryDeep: '#ca8a04',
+    primarySoft: '#fef3c7',
+    primaryMuted: '#fefce8',
+    metricStart: '#fefce8',
+    metricEnd: '#fef3c7',
+    primaryBorder: 'rgba(234, 179, 8, 0.18)',
+    primaryShadow: 'rgba(202, 138, 4, 0.20)',
+    primaryGlass: 'rgba(255, 255, 255, 0.24)'
+  },
+  green: {
+    primary: '#22c55e',
+    primaryDeep: '#16a34a',
+    primarySoft: '#dcfce7',
+    primaryMuted: '#f0fdf4',
+    metricStart: '#f0fdf4',
+    metricEnd: '#dcfce7',
+    primaryBorder: 'rgba(34, 197, 94, 0.16)',
+    primaryShadow: 'rgba(34, 197, 94, 0.18)',
+    primaryGlass: 'rgba(255, 255, 255, 0.22)'
+  },
+  cyan: {
+    primary: '#06b6d4',
+    primaryDeep: '#0891b2',
+    primarySoft: '#cffafe',
+    primaryMuted: '#ecfeff',
+    metricStart: '#ecfeff',
+    metricEnd: '#cffafe',
+    primaryBorder: 'rgba(6, 182, 212, 0.16)',
+    primaryShadow: 'rgba(6, 182, 212, 0.18)',
+    primaryGlass: 'rgba(255, 255, 255, 0.22)'
+  },
+  blue: {
+    primary: '#3b82f6',
+    primaryDeep: '#2563eb',
+    primarySoft: '#dbeafe',
+    primaryMuted: '#eff6ff',
+    metricStart: '#f8fbff',
+    metricEnd: '#dbeafe',
+    primaryBorder: 'rgba(59, 130, 246, 0.16)',
+    primaryShadow: 'rgba(59, 130, 246, 0.18)',
+    primaryGlass: 'rgba(255, 255, 255, 0.22)'
+  },
+  purple: {
+    primary: '#a855f7',
+    primaryDeep: '#9333ea',
+    primarySoft: '#f3e8ff',
+    primaryMuted: '#faf5ff',
+    metricStart: '#faf5ff',
+    metricEnd: '#f3e8ff',
+    primaryBorder: 'rgba(168, 85, 247, 0.16)',
+    primaryShadow: 'rgba(168, 85, 247, 0.18)',
+    primaryGlass: 'rgba(255, 255, 255, 0.22)'
+  }
+}
 
 const sellerTechnicianId = ref(null)
 
@@ -477,6 +557,26 @@ const merchantAddress = computed(() => {
   if (m.district) parts.push(m.district)
   if (m.address) parts.push(m.address)
   return parts.join('')
+})
+
+const currentThemeKey = computed(() => {
+  const raw = String(shopInfo.value?.merchant?.merchant_theme_color || '').trim().toLowerCase()
+  return shopThemePalettes[raw] ? raw : defaultThemeKey
+})
+
+const shopThemeStyle = computed(() => {
+  const theme = shopThemePalettes[currentThemeKey.value] || shopThemePalettes[defaultThemeKey]
+  return {
+    '--shop-primary': theme.primary,
+    '--shop-primary-deep': theme.primaryDeep,
+    '--shop-primary-soft': theme.primarySoft,
+    '--shop-primary-muted': theme.primaryMuted,
+    '--shop-metric-start': theme.metricStart,
+    '--shop-metric-end': theme.metricEnd,
+    '--shop-primary-border': theme.primaryBorder,
+    '--shop-primary-shadow': theme.primaryShadow,
+    '--shop-primary-glass': theme.primaryGlass
+  }
 })
 
 onMounted(() => {
@@ -951,7 +1051,7 @@ function goToCards() {
 <style scoped>
 .shop-page {
   min-height: 100vh;
-  background: linear-gradient(180deg, #1890ff 0%, #1890ff 180px, #f5f5f5 180px);
+  background: linear-gradient(180deg, var(--shop-primary) 0%, var(--shop-primary) 180px, #f5f5f5 180px);
 }
 
 .loading-state,
@@ -997,7 +1097,7 @@ function goToCards() {
 .merchant-avatar {
   width: 64px;
   height: 64px;
-  background: rgba(255,255,255,0.2);
+  background: var(--shop-primary-glass);
   border-radius: 16px;
   display: flex;
   align-items: center;
@@ -1041,8 +1141,8 @@ function goToCards() {
   background: #fff;
   border-radius: 16px;
   padding: 16px;
-  box-shadow: 0 10px 30px rgba(24, 144, 255, 0.12);
-  border: 1px solid rgba(24, 144, 255, 0.08);
+  box-shadow: 0 10px 30px var(--shop-primary-shadow);
+  border: 1px solid var(--shop-primary-border);
 }
 
 .live-status-card.is-smooth {
@@ -1077,7 +1177,7 @@ function goToCards() {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #1890ff;
+  color: var(--shop-primary);
   margin-bottom: 6px;
 }
 
@@ -1100,8 +1200,8 @@ function goToCards() {
   align-items: center;
   padding: 4px 10px;
   border-radius: 999px;
-  background: #edf5ff;
-  color: #1867c0;
+  background: var(--shop-primary-muted);
+  color: var(--shop-primary-deep);
   font-size: 12px;
   font-weight: 600;
 }
@@ -1115,8 +1215,8 @@ function goToCards() {
 
 .live-status-refresh {
   border: none;
-  background: #f2f6fb;
-  color: #1867c0;
+  background: var(--shop-primary-muted);
+  color: var(--shop-primary-deep);
   padding: 8px 12px;
   border-radius: 10px;
   font-size: 13px;
@@ -1140,7 +1240,7 @@ function goToCards() {
 .live-status-metric {
   padding: 12px;
   border-radius: 12px;
-  background: linear-gradient(180deg, #f8fbff 0%, #f3f7fb 100%);
+  background: linear-gradient(180deg, var(--shop-metric-start) 0%, var(--shop-metric-end) 100%);
 }
 
 .metric-label {
@@ -1177,7 +1277,7 @@ function goToCards() {
   align-items: stretch;
   padding: 14px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #0d62d8 0%, #2b9cff 100%);
+  background: linear-gradient(135deg, var(--shop-primary-deep) 0%, var(--shop-primary) 100%);
   color: #fff;
   margin-bottom: 12px;
 }
@@ -1325,7 +1425,7 @@ function goToCards() {
 }
 
 .card-type {
-  color: #1890ff;
+  color: var(--shop-primary);
 }
 
 .card-desc {
@@ -1444,7 +1544,7 @@ function goToCards() {
 
 .login-btn {
   padding: 12px 40px;
-  background: #1890ff;
+  background: var(--shop-primary);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -1477,8 +1577,8 @@ function goToCards() {
 }
 
 .payment-option.selected {
-  border-color: #1890ff;
-  background: #e6f7ff;
+  border-color: var(--shop-primary);
+  background: var(--shop-primary-muted);
 }
 
 .payment-icon {
@@ -1518,7 +1618,7 @@ function goToCards() {
 .purchase-btn {
   width: 100%;
   padding: 14px;
-  background: #1890ff;
+  background: var(--shop-primary);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -1605,7 +1705,7 @@ function goToCards() {
 .pay-link-btn {
   display: inline-block;
   padding: 12px 32px;
-  background: #1890ff;
+  background: var(--shop-primary);
   color: #fff;
   text-decoration: none;
   border-radius: 8px;
@@ -1789,7 +1889,7 @@ function goToCards() {
 .success-icon {
   width: 64px;
   height: 64px;
-  background: #52c41a;
+  background: var(--shop-primary);
   color: #fff;
   border-radius: 50%;
   display: flex;
@@ -1812,7 +1912,7 @@ function goToCards() {
 .view-btn {
   width: 100%;
   padding: 14px;
-  background: #1890ff;
+  background: var(--shop-primary);
   color: #fff;
   border: none;
   border-radius: 8px;

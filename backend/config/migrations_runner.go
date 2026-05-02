@@ -415,6 +415,14 @@ var defaultMigrations = []dbMigration{
 		},
 	},
 	{
+		Version: "2026050201",
+		Name:    "add_merchant_theme_color",
+		Statements: []string{
+			"ALTER TABLE merchants ADD COLUMN merchant_theme_color VARCHAR(20) NOT NULL DEFAULT 'green' COMMENT '商户用户端主题色（red/orange/yellow/green/cyan/blue/purple）'",
+			"UPDATE merchants SET merchant_theme_color = 'green' WHERE merchant_theme_color = '' OR merchant_theme_color IS NULL",
+		},
+	},
+	{
 		Version: "2026042002",
 		Name:    "drop_service_session_technician_id",
 		Statements: []string{

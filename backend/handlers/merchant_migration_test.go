@@ -87,6 +87,45 @@ func TestUpdateMerchantInfoShowProvinceCanToggle(t *testing.T) {
 	}
 }
 
+func TestUpdateMerchantInfoThemeColorCanPersist(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+	config.DB = setupMerchantHandlerTestDB(t)
+
+	m := models.Merchant{
+		Name:     "壹舞团",
+		Phone:    "18800002002",
+		Password: "pwd",
+	}
+	if err := config.DB.Create(&m).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	if got := strings.TrimSpace(m.MerchantThemeColor); got != "green" {
+		t.Fatalf("merchant_theme_color default want green, got %q", got)
+	}
+
+	body, _ := json.Marshal(map[string]any{"merchant_theme_color": "purple"})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/merchant/info", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("merchant_id", m.ID)
+
+	UpdateMerchantInfo(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got models.Merchant
+	if err := config.DB.First(&got, m.ID).Error; err != nil {
+		t.Fatalf("load merchant failed: %v", err)
+	}
+	if got.MerchantThemeColor != "purple" {
+		t.Fatalf("merchant_theme_color want purple, got %q", got.MerchantThemeColor)
+	}
+}
+
 func TestUpdateCurrentMerchantServices_DoesNotMigrateOnHandCardToggle(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldDB := config.DB

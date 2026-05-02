@@ -241,6 +241,22 @@
               class="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-primary text-sm"
             />
           </div>
+          <div>
+            <label class="text-xs text-gray-500 mb-2 block">商户主页主题色</label>
+            <div class="grid grid-cols-4 gap-2">
+              <button
+                v-for="option in themeColorOptions"
+                :key="option.value"
+                type="button"
+                @click="form.merchant_theme_color = option.value"
+                class="flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors"
+                :class="form.merchant_theme_color === option.value ? 'border-primary bg-primary/10 text-primary' : 'border-gray-200 bg-white text-gray-700'"
+              >
+                <span class="inline-block h-3 w-3 rounded-full" :style="{ background: option.dot }"></span>
+                <span>{{ option.label }}</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -272,6 +288,15 @@ const useAllDay = ref(false)
 const initialSnapshot = ref('')
 const shopSlug = ref('')
 const showShopSlugSetting = ref(false)
+const themeColorOptions = [
+  { value: 'red', label: '红', dot: '#ef4444' },
+  { value: 'orange', label: '橙', dot: '#f97316' },
+  { value: 'yellow', label: '黄', dot: '#eab308' },
+  { value: 'green', label: '绿', dot: '#22c55e' },
+  { value: 'cyan', label: '青', dot: '#06b6d4' },
+  { value: 'blue', label: '蓝', dot: '#3b82f6' },
+  { value: 'purple', label: '紫', dot: '#a855f7' }
+]
 
 const form = ref({
   morning_start: '',
@@ -288,7 +313,8 @@ const form = ref({
   address: '',
   show_province: false,
   start_term: '',
-  finish_term: ''
+  finish_term: '',
+  merchant_theme_color: 'green'
 })
 
 const buildSnapshot = () => JSON.stringify({
@@ -308,7 +334,8 @@ const buildSnapshot = () => JSON.stringify({
   address: form.value.address || '',
   show_province: !!form.value.show_province,
   start_term: form.value.start_term || '',
-  finish_term: form.value.finish_term || ''
+  finish_term: form.value.finish_term || '',
+  merchant_theme_color: form.value.merchant_theme_color || 'green'
 })
 
 const isDirty = computed(() => buildSnapshot() !== initialSnapshot.value)
@@ -367,7 +394,8 @@ const fetchMerchantInfo = async () => {
       address: data.address || '',
       show_province: !!data.show_province,
       start_term: data.start_term || '',
-      finish_term: data.finish_term || ''
+      finish_term: data.finish_term || '',
+      merchant_theme_color: data.merchant_theme_color || 'green'
     }
 
     // 判断是全天营业还是分时段

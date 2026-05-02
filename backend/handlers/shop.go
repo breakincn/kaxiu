@@ -536,14 +536,15 @@ func GetShopInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"merchant": gin.H{
-				"id":            merchant.ID,
-				"name":          merchant.Name,
-				"type":          merchant.Type,
-				"province":      merchant.Province,
-				"city":          merchant.City,
-				"district":      merchant.District,
-				"address":       merchant.Address,
-				"show_province": merchant.ShowProvince,
+				"id":                   merchant.ID,
+				"name":                 merchant.Name,
+				"type":                 merchant.Type,
+				"merchant_theme_color": merchant.MerchantThemeColor,
+				"province":             merchant.Province,
+				"city":                 merchant.City,
+				"district":             merchant.District,
+				"address":              merchant.Address,
+				"show_province":        merchant.ShowProvince,
 			},
 			"payment_config": gin.H{
 				"has_alipay":     paymentConfig.AlipayQRCode != "",
@@ -582,14 +583,15 @@ func GetShopInfoByID(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"data": gin.H{
 			"merchant": gin.H{
-				"id":            merchant.ID,
-				"name":          merchant.Name,
-				"type":          merchant.Type,
-				"province":      merchant.Province,
-				"city":          merchant.City,
-				"district":      merchant.District,
-				"address":       merchant.Address,
-				"show_province": merchant.ShowProvince,
+				"id":                   merchant.ID,
+				"name":                 merchant.Name,
+				"type":                 merchant.Type,
+				"merchant_theme_color": merchant.MerchantThemeColor,
+				"province":             merchant.Province,
+				"city":                 merchant.City,
+				"district":             merchant.District,
+				"address":              merchant.Address,
+				"show_province":        merchant.ShowProvince,
 			},
 			"payment_config": gin.H{
 				"has_alipay":     paymentConfig.AlipayQRCode != "",
