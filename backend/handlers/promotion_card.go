@@ -940,6 +940,7 @@ func listPromotionRewardCards(db *gorm.DB, userID uint, status string, now time.
 	}
 
 	items := make([]promotionRewardListItem, 0)
+	recentExpiredRewardCutoff := now.Add(-24 * time.Hour)
 	query := db.Table("promotion_card_referrers").
 		Select(strings.Join([]string{
 			"'promotion_reward' AS list_item_type",
@@ -968,14 +969,34 @@ func listPromotionRewardCards(db *gorm.DB, userID uint, status string, now time.
 		Joins("JOIN merchants ON merchants.id = promotion_card_campaigns.merchant_id").
 		Joins("JOIN card_templates ON card_templates.id = promotion_card_campaigns.card_template_id").
 		Where("promotion_card_referrers.user_id = ?", userID).
-		Where("COALESCE(promotion_card_referrers.reward_status, '') <> ?", promotionCardRewardStatusClaimed)
+		Where("COALESCE(promotion_card_referrers.reward_status, '') <> ?", promotionCardRewardStatusClaimed).
+		Where(`(
+			COALESCE(promotion_card_referrers.reward_status, '') <> ?
+			OR (
+				promotion_card_campaigns.status = ?
+				AND (
+					promotion_card_campaigns.promo_ends_at IS NULL
+					OR promotion_card_campaigns.promo_ends_at > ?
+				)
+				AND promotion_card_referrers.reward_expired_at IS NOT NULL
+				AND promotion_card_referrers.reward_expired_at > ?
+			)
+		)`, promotionCardRewardStatusExpired, "active", now, recentExpiredRewardCutoff)
 
 	switch status {
 	case "expired":
-		query = query.Where("(promotion_card_referrers.reward_status = ? OR promotion_card_campaigns.status <> ?)", promotionCardRewardStatusExpired, "active")
+		query = query.Where("1 = 0")
 	default:
 		query = query.Where("promotion_card_campaigns.status = ?", "active")
-		query = query.Where("COALESCE(promotion_card_referrers.reward_status, '') IN ?", []string{"", promotionCardRewardStatusClaimable})
+		query = query.Where("(promotion_card_campaigns.promo_ends_at IS NULL OR promotion_card_campaigns.promo_ends_at > ?)", now)
+		query = query.Where(`(
+			COALESCE(promotion_card_referrers.reward_status, '') IN ?
+			OR (
+				promotion_card_referrers.reward_status = ?
+				AND promotion_card_referrers.reward_expired_at IS NOT NULL
+				AND promotion_card_referrers.reward_expired_at > ?
+			)
+		)`, []string{"", promotionCardRewardStatusClaimable}, promotionCardRewardStatusExpired, recentExpiredRewardCutoff)
 	}
 
 	if err := query.

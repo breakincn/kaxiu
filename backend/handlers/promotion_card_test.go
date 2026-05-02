@@ -217,6 +217,188 @@ func TestListMyPromotionRewardCardsReturnsActiveProgressItem(t *testing.T) {
 	}
 }
 
+func TestListMyPromotionRewardCardsHidesInactiveCampaignAndKeepsRecentlyExpiredRewardFor24Hours(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	oldDB := config.DB
+	defer func() { config.DB = oldDB }()
+
+	db := setupPromotionCardTestDB(t)
+	config.DB = db
+
+	user := models.User{Username: "promo-user-2", Password: "pwd", Nickname: "推广用户2"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user failed: %v", err)
+	}
+	merchant := models.Merchant{Name: "测试门店2", Phone: "13800000023", Password: "x", Type: "理发", SupportDirectSale: true}
+	if err := db.Create(&merchant).Error; err != nil {
+		t.Fatalf("create merchant failed: %v", err)
+	}
+	template := models.CardTemplate{
+		MerchantID: merchant.ID,
+		Name:       "成人爵士60课时",
+		CardType:   "lesson",
+		Price:      280000,
+		TotalTimes: 60,
+		IsActive:   true,
+	}
+	if err := db.Create(&template).Error; err != nil {
+		t.Fatalf("create template failed: %v", err)
+	}
+
+	inactiveCampaign := models.PromotionCardCampaign{
+		MerchantID:         merchant.ID,
+		CardTemplateID:     template.ID,
+		Title:              "已结束活动",
+		RewardTotalTimes:   3,
+		RewardCardQuantity: 10,
+		RewardThreshold:    15,
+		Slug:               "promo-inactive-hide",
+		Status:             "disabled",
+	}
+	if err := db.Create(&inactiveCampaign).Error; err != nil {
+		t.Fatalf("create inactive campaign failed: %v", err)
+	}
+	if err := db.Create(&models.PromotionCardReferrer{
+		CampaignID:    inactiveCampaign.ID,
+		UserID:        user.ID,
+		PromotionCode: "111111",
+		ProgressCount: 0,
+	}).Error; err != nil {
+		t.Fatalf("create inactive referrer failed: %v", err)
+	}
+
+	expiredPromoAt := time.Now().Add(-2 * time.Hour)
+	expiredPromoCampaign := models.PromotionCardCampaign{
+		MerchantID:         merchant.ID,
+		CardTemplateID:     template.ID,
+		Title:              "促销已过期活动",
+		RewardTotalTimes:   3,
+		RewardCardQuantity: 10,
+		RewardThreshold:    15,
+		PromoPrice:         100,
+		PromoQuantity:      10,
+		PromoEndsAt:        &expiredPromoAt,
+		Slug:               "promo-ended-hide",
+		Status:             "active",
+	}
+	if err := db.Create(&expiredPromoCampaign).Error; err != nil {
+		t.Fatalf("create expired promo campaign failed: %v", err)
+	}
+	if err := db.Create(&models.PromotionCardReferrer{
+		CampaignID:    expiredPromoCampaign.ID,
+		UserID:        user.ID,
+		PromotionCode: "121212",
+		ProgressCount: 0,
+	}).Error; err != nil {
+		t.Fatalf("create expired promo referrer failed: %v", err)
+	}
+
+	recentExpiredAt := time.Now().Add(-23 * time.Hour)
+	recentExpiredCampaign := models.PromotionCardCampaign{
+		MerchantID:         merchant.ID,
+		CardTemplateID:     template.ID,
+		Title:              "近期失效奖励",
+		RewardTotalTimes:   3,
+		RewardCardQuantity: 10,
+		RewardThreshold:    15,
+		Slug:               "promo-recent-expired",
+		Status:             "active",
+	}
+	if err := db.Create(&recentExpiredCampaign).Error; err != nil {
+		t.Fatalf("create recent expired campaign failed: %v", err)
+	}
+	if err := db.Create(&models.PromotionCardReferrer{
+		CampaignID:      recentExpiredCampaign.ID,
+		UserID:          user.ID,
+		PromotionCode:   "222222",
+		ProgressCount:   15,
+		RewardStatus:    promotionCardRewardStatusExpired,
+		RewardExpiredAt: &recentExpiredAt,
+	}).Error; err != nil {
+		t.Fatalf("create recent expired referrer failed: %v", err)
+	}
+
+	recentExpiredButPromoEndedAt := time.Now().Add(-30 * time.Minute)
+	recentExpiredButPromoEndedCampaign := models.PromotionCardCampaign{
+		MerchantID:         merchant.ID,
+		CardTemplateID:     template.ID,
+		Title:              "奖励近期失效但活动已结束",
+		RewardTotalTimes:   3,
+		RewardCardQuantity: 10,
+		RewardThreshold:    15,
+		PromoPrice:         100,
+		PromoQuantity:      10,
+		PromoEndsAt:        &recentExpiredButPromoEndedAt,
+		Slug:               "promo-ended-recent-expired-hide",
+		Status:             "active",
+	}
+	if err := db.Create(&recentExpiredButPromoEndedCampaign).Error; err != nil {
+		t.Fatalf("create recent expired but promo ended campaign failed: %v", err)
+	}
+	if err := db.Create(&models.PromotionCardReferrer{
+		CampaignID:      recentExpiredButPromoEndedCampaign.ID,
+		UserID:          user.ID,
+		PromotionCode:   "232323",
+		ProgressCount:   15,
+		RewardStatus:    promotionCardRewardStatusExpired,
+		RewardExpiredAt: &recentExpiredAt,
+	}).Error; err != nil {
+		t.Fatalf("create recent expired but promo ended referrer failed: %v", err)
+	}
+
+	staleExpiredAt := time.Now().Add(-25 * time.Hour)
+	staleExpiredCampaign := models.PromotionCardCampaign{
+		MerchantID:         merchant.ID,
+		CardTemplateID:     template.ID,
+		Title:              "过期超24小时奖励",
+		RewardTotalTimes:   3,
+		RewardCardQuantity: 10,
+		RewardThreshold:    15,
+		Slug:               "promo-stale-expired",
+		Status:             "active",
+	}
+	if err := db.Create(&staleExpiredCampaign).Error; err != nil {
+		t.Fatalf("create stale expired campaign failed: %v", err)
+	}
+	if err := db.Create(&models.PromotionCardReferrer{
+		CampaignID:      staleExpiredCampaign.ID,
+		UserID:          user.ID,
+		PromotionCode:   "333333",
+		ProgressCount:   15,
+		RewardStatus:    promotionCardRewardStatusExpired,
+		RewardExpiredAt: &staleExpiredAt,
+	}).Error; err != nil {
+		t.Fatalf("create stale expired referrer failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/user/promotion-reward-cards?status=active", nil)
+	c.Set("user_id", user.ID)
+
+	ListMyPromotionRewardCards(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data []promotionRewardListItem `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("want only recent expired reward item kept, got %d body=%s", len(resp.Data), rec.Body.String())
+	}
+	if resp.Data[0].CampaignID != recentExpiredCampaign.ID {
+		t.Fatalf("want campaign_id=%d kept, got %+v", recentExpiredCampaign.ID, resp.Data[0])
+	}
+	if resp.Data[0].RewardStatus != promotionCardRewardStatusExpired {
+		t.Fatalf("want reward_status expired, got %+v", resp.Data[0])
+	}
+}
+
 func TestListMerchantPromotionCampaignsReturnsProgressCount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
