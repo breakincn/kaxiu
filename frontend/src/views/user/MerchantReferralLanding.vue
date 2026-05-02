@@ -24,7 +24,7 @@
       <div class="rounded-[28px] bg-white p-5 shadow-sm border border-[#f1e2cf] space-y-4">
         <div>
           <div class="text-lg font-bold">开始使用卡包</div>
-          <div class="mt-1 text-sm text-gray-500">注册商户后自动绑定推广关系，后续付费将按约定进入分成台账。</div>
+          <div class="mt-1 text-sm text-gray-500">完成注册后即可开始使用售卡、核销、预约等商户功能。</div>
         </div>
 
         <div class="rounded-2xl bg-[#fff8ef] border border-[#f5e0bf] px-4 py-3">
