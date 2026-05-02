@@ -30,7 +30,7 @@
         <div class="grid gap-3 md:grid-cols-[1fr_auto] items-center">
           <div class="min-w-0">
             <div class="text-xs text-gray-500">商户注册入口</div>
-            <div class="mt-1 break-all text-sm text-gray-700">{{ landing.register_url }}</div>
+            <div class="mt-1 break-all text-sm text-gray-700">{{ registerUrl }}</div>
           </div>
           <button
             type="button"
@@ -46,7 +46,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { authApi } from '../../api'
 
@@ -54,6 +54,28 @@ const route = useRoute()
 const loading = ref(true)
 const landing = ref(null)
 const errorMessage = ref('')
+
+const isPrivateOrLocalHost = (hostname) => {
+  const host = String(hostname || '').trim().toLowerCase()
+  if (!host) return false
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
+  if (/^10\.\d+\.\d+\.\d+$/.test(host)) return true
+  if (/^192\.168\.\d+\.\d+$/.test(host)) return true
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host)) return true
+  return false
+}
+
+const registerUrl = computed(() => {
+  const rawURL = String(landing.value?.register_url || '').trim()
+  const refCode = String(route.params.refCode || '').trim()
+  if (!rawURL) return ''
+  if (typeof window === 'undefined') return rawURL
+  const { protocol, hostname, origin } = window.location
+  if ((protocol !== 'https:' && protocol !== 'http:') || !isPrivateOrLocalHost(hostname) || !refCode) {
+    return rawURL
+  }
+  return `${origin}/merchant/login/${refCode}`
+})
 
 const resolveLandingErrorMessage = (err) => {
   const status = err?.response?.status
@@ -80,8 +102,8 @@ const loadLanding = async () => {
 }
 
 const goRegister = () => {
-  if (!landing.value?.register_url) return
-  window.location.href = landing.value.register_url
+  if (!registerUrl.value) return
+  window.location.href = registerUrl.value
 }
 
 onMounted(loadLanding)
