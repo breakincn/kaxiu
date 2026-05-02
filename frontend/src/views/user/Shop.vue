@@ -19,8 +19,11 @@
       <div class="shop-header">
         <div class="merchant-avatar">{{ shopInfo.merchant.name.charAt(0) }}</div>
         <div class="merchant-info">
-          <h1 class="merchant-name">{{ shopInfo.merchant.name }}</h1>
-          <p class="merchant-type">{{ shopInfo.merchant.type }}</p>
+          <div class="merchant-name-row">
+            <h1 class="merchant-name">{{ shopInfo.merchant.name }}</h1>
+            <span v-if="shopInfo.merchant.type" class="merchant-type-inline">{{ shopInfo.merchant.type }}</span>
+          </div>
+          <p v-if="merchantAddress" class="merchant-address">{{ merchantAddress }}</p>
         </div>
       </div>
 
@@ -462,6 +465,18 @@ const paymentTitle = computed(() => {
 
   const unit = card.card_type === 'lesson' ? '课时' : '次'
   return `${card.name} ${card.total_times}${unit}`
+})
+
+const merchantAddress = computed(() => {
+  const m = shopInfo.value?.merchant
+  if (!m) return ''
+
+  const parts = []
+  if (m.show_province && m.province) parts.push(m.province)
+  if (m.city) parts.push(m.city)
+  if (m.district) parts.push(m.district)
+  if (m.address) parts.push(m.address)
+  return parts.join('')
 })
 
 onMounted(() => {
@@ -995,10 +1010,24 @@ function goToCards() {
 .merchant-name {
   font-size: 22px;
   font-weight: 600;
-  margin: 0 0 4px;
+  margin: 0;
 }
 
-.merchant-type {
+.merchant-name-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.merchant-type-inline {
+  font-size: 14px;
+  opacity: 0.9;
+  white-space: nowrap;
+}
+
+.merchant-address {
   font-size: 14px;
   opacity: 0.9;
   margin: 0;
