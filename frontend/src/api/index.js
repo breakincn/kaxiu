@@ -54,7 +54,7 @@ const isMerchantApp = host === 'kabao.shop' || host.endsWith('.kabao.shop')
 const isTechnicianLoginPath = (pathname) => /^\/s\/[^/]+\/login$/.test(pathname)
 const isLoginPagePath = (pathname) => {
   const p = String(pathname || '')
-  return p === '/login' || p === '/merchant/login' || p.startsWith('/merchant/login/') || isTechnicianLoginPath(p) || p.startsWith('/platform-admin/login')
+  return p === '/login' || p === '/merchant/login' || /^\/merchant\/[^/]+\/login$/.test(p) || isTechnicianLoginPath(p) || p.startsWith('/platform-admin/login')
 }
 
 const normalizeRequestPath = (config) => {

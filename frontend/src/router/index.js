@@ -118,7 +118,7 @@ const merchantRoutes = [
     component: () => import('../views/merchant/Login.vue')
   },
   {
-    path: '/merchant/login/:refCode',
+    path: '/merchant/:refCode/login',
     name: 'MerchantLoginWithReferral',
     component: () => import('../views/merchant/Login.vue')
   },
@@ -310,7 +310,7 @@ router.beforeEach((to) => {
   if (isPlatformAdmin) return true
 
   const isUserPublic = to.path === '/login' || to.path === '/user/register' || to.path.startsWith('/s/') || to.path.startsWith('/promo/') || to.path.startsWith('/merchant-referral/') || to.path.startsWith('/newmerchant/')
-  const isMerchantPublic = (to.path === '/merchant/login' || to.path.startsWith('/merchant/login/')) || to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
+  const isMerchantPublic = (to.path === '/merchant/login' || /^\/merchant\/[^/]+\/login$/.test(to.path)) || to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
 
   if (!isMerchantApp) {
     if (isUserPublic) return true
@@ -334,7 +334,7 @@ router.beforeEach((to) => {
   }
 
   const isTechnician = hasTechnicianToken && getMerchantActiveAuth() === 'staff'
-  const allowWhenNeedReset = to.path === '/merchant/technician-password' || to.path === '/merchant/settings' || to.path === '/merchant/login' || to.path.startsWith('/merchant/login/') || to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
+  const allowWhenNeedReset = to.path === '/merchant/technician-password' || to.path === '/merchant/settings' || to.path === '/merchant/login' || /^\/merchant\/[^/]+\/login$/.test(to.path) || to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
   if (isTechnician && getTechnicianPasswordNeedReset() && !allowWhenNeedReset) {
     return '/merchant/technician-password'
   }

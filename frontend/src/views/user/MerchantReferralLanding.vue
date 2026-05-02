@@ -74,7 +74,7 @@ const registerUrl = computed(() => {
   if ((protocol !== 'https:' && protocol !== 'http:') || !isPrivateOrLocalHost(hostname) || !refCode) {
     return rawURL
   }
-  return `${origin}/merchant/login/${refCode}`
+  return `${origin}/merchant/${refCode}/login`
 })
 
 const resolveLandingErrorMessage = (err) => {
