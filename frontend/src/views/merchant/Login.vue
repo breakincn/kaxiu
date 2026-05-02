@@ -169,6 +169,7 @@ import { setMerchantActiveAuth, setTechnicianPasswordNeedReset, setTechnicianSho
 
 const router = useRouter()
 const route = useRoute()
+const getReferralCode = () => String(route.params.refCode || route.query.referral_code || '').trim()
 
 const isTechnicianLogin = ref(false)
 const shopSlug = ref('')
@@ -193,7 +194,7 @@ const registerForm = ref({
   name: '',
   type: '',
   invite_code: '',
-  referral_code: String(route.query.referral_code || '').trim()
+  referral_code: getReferralCode()
 })
 
 const startCountdown = () => {
@@ -357,7 +358,7 @@ const handleRegister = async () => {
       name: '',
       type: '',
       invite_code: '',
-      referral_code: String(route.query.referral_code || '').trim()
+      referral_code: getReferralCode()
     }
   } catch (err) {
     console.error('注册失败:', err)
