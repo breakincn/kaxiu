@@ -119,7 +119,7 @@ func bindMerchantReferralByCode(tx *gorm.DB, referralCode string, merchantID uin
 
 func buildMerchantReferralSharePath(code string) string {
 	code = strings.ToUpper(strings.TrimSpace(code))
-	return "/referral-merchant/" + code
+	return "/newmerchant/" + code
 }
 
 func RedirectLegacyMerchantReferralLanding(c *gin.Context) {
@@ -186,15 +186,15 @@ func GetMerchantReferralLanding(c *gin.Context) {
 		displayName = strings.TrimSpace(user.Username)
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
-		"promotion_code":      profile.PromotionCode,
-		"referrer_user_id":    profile.UserID,
-		"referrer_name":       displayName,
-		"title":               "卡包商户入驻推广",
-		"subtitle":            "让商户更方便地卖卡、核销、预约和沉淀客户。",
-		"highlights":          merchantReferralHighlights,
-		"register_url":        buildMerchantRegisterLink(profile.PromotionCode),
-		"share_path":          buildMerchantReferralSharePath(profile.PromotionCode),
-		"default_rate_bp":     profile.DefaultCommissionRateBP,
+		"promotion_code":       profile.PromotionCode,
+		"referrer_user_id":     profile.UserID,
+		"referrer_name":        displayName,
+		"title":                "卡包商户入驻推广",
+		"subtitle":             "让商户更方便地卖卡、核销、预约和沉淀客户。",
+		"highlights":           merchantReferralHighlights,
+		"register_url":         buildMerchantRegisterLink(profile.PromotionCode),
+		"share_path":           buildMerchantReferralSharePath(profile.PromotionCode),
+		"default_rate_bp":      profile.DefaultCommissionRateBP,
 		"default_rate_percent": float64(profile.DefaultCommissionRateBP) / 100,
 	}})
 }
@@ -216,12 +216,12 @@ func GetReferralCommissionOverview(c *gin.Context) {
 	}
 
 	type summaryRow struct {
-		MerchantCount          int64 `json:"merchant_count"`
-		TotalPaidAmount        int64 `json:"total_paid_amount"`
-		TotalCommissionAmount  int64 `json:"total_commission_amount"`
-		ClaimableAmount        int64 `json:"claimable_amount"`
-		AppliedAmount          int64 `json:"applied_amount"`
-		PaidAmount             int64 `json:"paid_amount"`
+		MerchantCount         int64 `json:"merchant_count"`
+		TotalPaidAmount       int64 `json:"total_paid_amount"`
+		TotalCommissionAmount int64 `json:"total_commission_amount"`
+		ClaimableAmount       int64 `json:"claimable_amount"`
+		AppliedAmount         int64 `json:"applied_amount"`
+		PaidAmount            int64 `json:"paid_amount"`
 	}
 	var summary summaryRow
 	config.DB.Table("merchant_referrals mr").
@@ -334,19 +334,19 @@ func ListReferralCommissionMerchants(c *gin.Context) {
 	resp := make([]gin.H, 0, len(rows))
 	for _, row := range rows {
 		resp = append(resp, gin.H{
-			"referral_id":              row.ReferralID,
-			"merchant_id":              row.MerchantID,
-			"merchant_name":            row.MerchantName,
-			"promotion_code":           row.PromotionCode,
-			"registered_at":            row.RegisteredAt,
-			"first_paid_at":            row.FirstPaidAt,
-			"commission_expires_at":    row.CommissionExpiresAt,
-			"total_paid_amount":        row.TotalPaidAmount,
-			"total_commission_amount":  row.TotalCommissionAmount,
-			"claimable_amount":         row.ClaimableAmount,
-			"applied_amount":           row.AppliedAmount,
-			"paid_amount":              row.PaidAmount,
-			"payment_ledgers":          ledgerMap[row.ReferralID],
+			"referral_id":             row.ReferralID,
+			"merchant_id":             row.MerchantID,
+			"merchant_name":           row.MerchantName,
+			"promotion_code":          row.PromotionCode,
+			"registered_at":           row.RegisteredAt,
+			"first_paid_at":           row.FirstPaidAt,
+			"commission_expires_at":   row.CommissionExpiresAt,
+			"total_paid_amount":       row.TotalPaidAmount,
+			"total_commission_amount": row.TotalCommissionAmount,
+			"claimable_amount":        row.ClaimableAmount,
+			"applied_amount":          row.AppliedAmount,
+			"paid_amount":             row.PaidAmount,
+			"payment_ledgers":         ledgerMap[row.ReferralID],
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"data": resp})
@@ -506,10 +506,10 @@ func ListReferralCommissionWithdrawals(c *gin.Context) {
 
 func CreateMerchantReferralPaymentLedger(c *gin.Context) {
 	var input struct {
-		MerchantID  uint   `json:"merchant_id"`
-		PaidAmount  int    `json:"paid_amount"`
-		PaidAt      string `json:"paid_at"`
-		Note        string `json:"note"`
+		MerchantID uint   `json:"merchant_id"`
+		PaidAmount int    `json:"paid_amount"`
+		PaidAt     string `json:"paid_at"`
+		Note       string `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

@@ -114,7 +114,7 @@ func isMerchantSPAPath(path string) bool {
 	if strings.HasPrefix(path, "/merchant-referral/") {
 		return false
 	}
-	if strings.HasPrefix(path, "/referral-merchant/") {
+	if strings.HasPrefix(path, "/newmerchant/") {
 		return false
 	}
 	return strings.HasPrefix(path, "/merchant") || strings.HasPrefix(path, "/platform-admin") || strings.HasPrefix(path, "/s/")

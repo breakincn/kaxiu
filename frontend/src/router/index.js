@@ -75,13 +75,13 @@ const userRoutes = [
     component: () => import('../views/user/ReferralCommission.vue')
   },
   {
-    path: '/referral-merchant/:refCode',
+    path: '/newmerchant/:refCode',
     name: 'MerchantReferralLanding',
     component: () => import('../views/user/MerchantReferralLanding.vue')
   },
   {
     path: '/merchant-referral/:refCode',
-    redirect: (to) => `/referral-merchant/${to.params.refCode}`
+    redirect: (to) => `/newmerchant/${to.params.refCode}`
   },
   // 技师登录路由（开发环境需要）
   {
@@ -309,7 +309,7 @@ router.beforeEach((to) => {
   const isPlatformAdmin = to.path.startsWith('/platform-admin')
   if (isPlatformAdmin) return true
 
-  const isUserPublic = to.path === '/login' || to.path === '/user/register' || to.path.startsWith('/s/') || to.path.startsWith('/promo/') || to.path.startsWith('/merchant-referral/') || to.path.startsWith('/referral-merchant/')
+  const isUserPublic = to.path === '/login' || to.path === '/user/register' || to.path.startsWith('/s/') || to.path.startsWith('/promo/') || to.path.startsWith('/merchant-referral/') || to.path.startsWith('/newmerchant/')
   const isMerchantPublic = (to.path === '/merchant/login' || to.path.startsWith('/merchant/login/')) || to.path === '/login' || /^\/s\/[^/]+\/login$/.test(to.path)
 
   if (!isMerchantApp) {
