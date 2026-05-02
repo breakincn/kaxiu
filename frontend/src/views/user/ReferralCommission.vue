@@ -8,7 +8,13 @@
             <h1 class="mt-2 text-2xl font-black">推广分成</h1>
             <p class="mt-2 text-sm leading-6 text-gray-600">邀请商户通过你的专属链接入驻，商户首次付费起两年内的付费可按 50% 计入分成。</p>
           </div>
-          <button class="rounded-full border border-gray-200 bg-white px-4 py-2 text-sm" @click="goBack">返回首页</button>
+          <button
+            class="inline-flex shrink-0 items-center gap-1.5 self-start whitespace-nowrap rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700"
+            @click="goBack"
+          >
+            <span aria-hidden="true">←</span>
+            返回
+          </button>
         </div>
 
         <div v-if="overview.profile" class="mt-5 grid gap-3 md:grid-cols-[1fr_auto_auto] items-center rounded-3xl bg-white/80 p-4">
