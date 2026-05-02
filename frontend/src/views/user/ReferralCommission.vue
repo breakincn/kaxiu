@@ -302,13 +302,23 @@ const generatePoster = async () => {
     const measureCanvas = document.createElement('canvas')
     const measureCtx = measureCanvas.getContext('2d')
     if (!measureCtx) throw new Error('canvas unsupported')
+    const heroSubtitle = String(posterPayload.value?.subtitle || '').trim()
+    measureCtx.font = '14px sans-serif'
+    const heroSubtitleLines = countWrappedLines(measureCtx, heroSubtitle, width - 76)
     measureCtx.font = '13px sans-serif'
     const registerUrlLines = countWrappedLines(measureCtx, registerLink, cardWidth - 52)
     const registerInfoHeight = Math.max(90, 44 + registerUrlLines * 20)
-    const startCardHeight = 66 + registerInfoHeight + 60 + 190 + 22
-    const heroHeight = 250
+    const heroHeight = Math.max(148, 120 + Math.max(heroSubtitleLines - 1, 0) * 24)
     const highlightsHeight = ((posterPayload.value?.highlights || []).length * highlightHeight) + (Math.max((posterPayload.value?.highlights || []).length - 1, 0) * highlightGap)
     const startCardTop = pagePadding + heroHeight + pagePadding + highlightsHeight + pagePadding
+    const startDescriptionY = startCardTop + 62
+    const startDescriptionBottom = estimateWrappedTextBottom('完成注册后即可开始使用售卡、核销、预约等商户功能。', width - 88, 20, '13px sans-serif', startDescriptionY)
+    const registerInfoTop = startDescriptionBottom + 18
+    const registerTextY = registerInfoTop + 52
+    const registerTextBottom = estimateWrappedTextBottom(registerLink, width - 104, 20, '13px sans-serif', registerTextY)
+    const buttonTop = Math.max(registerInfoTop + registerInfoHeight + 18, registerTextBottom + 24)
+    const qrTop = buttonTop + 70
+    const startCardHeight = qrTop + 174 - startCardTop + 28
     const height = startCardTop + startCardHeight + pagePadding
     canvas.width = width * scale
     canvas.height = height * scale
@@ -330,12 +340,12 @@ const generatePoster = async () => {
 
     ctx.fillStyle = 'rgba(255,255,255,0.85)'
     ctx.font = '12px sans-serif'
-    ctx.fillText('KABAO FOR MERCHANT', 38, 52)
+    ctx.fillText('KABAO FOR MERCHANT', 38, 44)
     ctx.fillStyle = '#ffffff'
     ctx.font = 'bold 28px sans-serif'
-    wrapText(ctx, '卡包商户入驻', 38, 100, width - 76, 38)
+    wrapText(ctx, '卡包商户入驻', 38, 84, width - 76, 38)
     ctx.font = '14px sans-serif'
-    wrapText(ctx, posterPayload.value.subtitle || '', 38, 150, width - 76, 24)
+    wrapText(ctx, heroSubtitle, 38, 124, width - 76, 24)
 
     let cardTop = pagePadding + heroHeight + pagePadding
     ;(posterPayload.value.highlights || []).forEach((item, index) => {
@@ -359,9 +369,8 @@ const generatePoster = async () => {
     ctx.fillText('开始使用卡包', 44, startCardTop + 34)
     ctx.fillStyle = '#6b7280'
     ctx.font = '13px sans-serif'
-    wrapText(ctx, '完成注册后即可开始使用售卡、核销、预约等商户功能。', 44, startCardTop + 62, width - 88, 20)
+    wrapText(ctx, '完成注册后即可开始使用售卡、核销、预约等商户功能。', 44, startDescriptionY, width - 88, 20)
 
-    const registerInfoTop = startCardTop + 108
     ctx.fillStyle = '#f8fafc'
     roundRect(ctx, 36, registerInfoTop, width - 72, registerInfoHeight, 18)
     ctx.fill()
@@ -370,9 +379,8 @@ const generatePoster = async () => {
     ctx.fillText('商户注册入口', 52, registerInfoTop + 24)
     ctx.fillStyle = '#374151'
     ctx.font = '13px sans-serif'
-    const registerTextBottom = wrapText(ctx, registerLink, 52, registerInfoTop + 52, width - 104, 20)
+    wrapText(ctx, registerLink, 52, registerTextY, width - 104, 20)
 
-    const buttonTop = Math.max(registerInfoTop + registerInfoHeight + 18, registerTextBottom + 28)
     ctx.fillStyle = '#ff7b23'
     roundRect(ctx, 36, buttonTop, width - 72, 48, 18)
     ctx.fill()
@@ -387,7 +395,6 @@ const generatePoster = async () => {
       color: { dark: '#111111', light: '#FFFFFF' }
     })
     const qrImage = await loadImage(qrDataUrl)
-    const qrTop = buttonTop + 74
     ctx.drawImage(qrImage, (width - 150) / 2, qrTop, 150, 150)
     ctx.fillStyle = '#7a7a7a'
     ctx.font = '13px sans-serif'
@@ -451,6 +458,15 @@ const countWrappedLines = (ctx, text, maxWidth) => {
     }
   }
   return line ? lines + 1 : Math.max(lines, 1)
+}
+
+const estimateWrappedTextBottom = (text, maxWidth, lineHeight, font, startY = 0) => {
+  const measureCanvas = document.createElement('canvas')
+  const measureCtx = measureCanvas.getContext('2d')
+  if (!measureCtx) return startY
+  measureCtx.font = font
+  const lines = countWrappedLines(measureCtx, text, maxWidth)
+  return startY + Math.max(lines - 1, 0) * lineHeight
 }
 
 const downloadPoster = () => {
