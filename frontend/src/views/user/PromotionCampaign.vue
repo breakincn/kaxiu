@@ -321,7 +321,7 @@ const goRegister = () => {
 
 const goBackToCards = () => {
   if (hasMerchantReturnContext.value) {
-    window.location.href = '/merchant/issue-card'
+    window.location.replace('/merchant/issue-card')
     return
   }
   router.push('/user/cards')

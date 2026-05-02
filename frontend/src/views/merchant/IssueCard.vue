@@ -458,7 +458,7 @@ const canSubmit = computed(() => {
   return Boolean(selectedUser.value && selectedUser.value.id && selectedTemplate.value && cardForm.value.end_date)
 })
 
-const goBack = () => router.back()
+const goBack = () => router.push('/merchant')
 
 const ensureMerchantLogin = () => {
   const storedMerchantId = getMerchantId()
