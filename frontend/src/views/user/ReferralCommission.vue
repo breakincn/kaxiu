@@ -123,7 +123,7 @@
     <div v-if="posterVisible" class="fixed inset-0 z-40 bg-black/60 p-4 overflow-y-auto" @click.self="posterVisible = false">
       <div class="mx-auto max-w-md rounded-[30px] bg-white p-5">
         <div class="flex items-center justify-between">
-          <div class="text-lg font-bold">推广图片</div>
+          <div class="text-lg font-bold">海报预览</div>
           <button class="text-gray-400" @click="posterVisible = false">关闭</button>
         </div>
         <img v-if="posterDataUrl" :src="posterDataUrl" alt="推广海报" class="mt-4 w-full rounded-3xl border border-[#f2e5d2]" />
@@ -283,11 +283,9 @@ const generatePoster = async () => {
     ctx.fillText('KABAO FOR MERCHANT', 38, 52)
     ctx.fillStyle = '#ffffff'
     ctx.font = 'bold 28px sans-serif'
-    wrapText(ctx, posterPayload.value.title || '卡包商户入驻推广', 38, 100, width - 76, 38)
+    wrapText(ctx, '卡包商户入驻', 38, 100, width - 76, 38)
     ctx.font = '14px sans-serif'
     wrapText(ctx, posterPayload.value.subtitle || '', 38, 150, width - 76, 24)
-    ctx.font = 'bold 14px sans-serif'
-    ctx.fillText(`推广人：${posterPayload.value.referrer_name || ''}`, 38, 220)
 
     let cardTop = 288
     ;(posterPayload.value.highlights || []).forEach((item, index) => {
@@ -315,7 +313,7 @@ const generatePoster = async () => {
     ctx.fillStyle = '#7a7a7a'
     ctx.font = '14px sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText('微信等扫码识别二维码打开推广页', width / 2, 780)
+    ctx.fillText('微信等扫码识别二维码打开页面', width / 2, 780)
     ctx.textAlign = 'left'
 
     posterDataUrl.value = canvas.toDataURL('image/png')

@@ -6,11 +6,8 @@
     <div v-else class="max-w-3xl mx-auto px-4 py-6 space-y-4">
       <div class="rounded-[28px] overflow-hidden bg-gradient-to-br from-[#ff8a34] via-[#ffb24a] to-[#ffd16d] text-white p-6 shadow-[0_20px_60px_rgba(255,138,52,0.25)]">
         <div class="text-xs uppercase tracking-[0.35em] text-white/80">Kabao For Merchant</div>
-        <h1 class="mt-3 text-3xl font-black leading-tight">{{ landing.title }}</h1>
+        <h1 class="mt-3 text-3xl font-black leading-tight">卡包商户入驻</h1>
         <p class="mt-3 text-sm leading-6 text-white/90">{{ landing.subtitle }}</p>
-        <div class="mt-6 inline-flex items-center rounded-full bg-white/20 px-4 py-2 text-sm font-medium">
-          推广人：{{ landing.referrer_name }}
-        </div>
       </div>
 
       <div class="grid gap-4 md:grid-cols-3">
