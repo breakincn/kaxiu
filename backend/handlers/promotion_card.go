@@ -59,6 +59,17 @@ type promotionCampaignDetail struct {
 	CurrentRefCode       string      `json:"current_ref_code"`
 }
 
+func loadMerchantShopSlug(tx *gorm.DB, merchantID uint) string {
+	if tx == nil || merchantID == 0 {
+		return ""
+	}
+	var shopSlug models.MerchantShopSlug
+	if err := tx.Where("merchant_id = ?", merchantID).First(&shopSlug).Error; err != nil {
+		return ""
+	}
+	return strings.TrimSpace(shopSlug.Slug)
+}
+
 type promotionRewardListItem struct {
 	ListItemType         string     `json:"list_item_type"`
 	ReferrerID           uint       `json:"referrer_id"`
@@ -663,9 +674,10 @@ func buildPromotionCampaignDetail(db *gorm.DB, campaign *models.PromotionCardCam
 		CanClaimPromo:        promoActive && promoRemaining > 0,
 		CanShare:             rewardRemaining > 0,
 		Merchant: gin.H{
-			"id":   merchant.ID,
-			"name": merchant.Name,
-			"type": merchant.Type,
+			"id":        merchant.ID,
+			"name":      merchant.Name,
+			"type":      merchant.Type,
+			"shop_slug": loadMerchantShopSlug(db, merchant.ID),
 		},
 		PaymentConfig: gin.H{
 			"has_alipay":     paymentConfig.AlipayQRCode != "",

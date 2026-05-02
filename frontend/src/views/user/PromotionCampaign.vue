@@ -13,13 +13,19 @@
           返回
         </button>
         <div class="text-xs uppercase tracking-[0.3em] text-orange-400">推广卡活动</div>
-        <div v-if="campaign.title" class="rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 text-white p-4 text-xl font-semibold flex items-center justify-center gap-0.5 text-center">
+        <button
+          v-if="campaign.title"
+          type="button"
+          class="w-full rounded-2xl bg-gradient-to-r from-orange-500 to-amber-400 text-white p-4 text-xl font-semibold flex items-center justify-center gap-0.5 text-center active:scale-[0.99] transition-transform"
+          :class="{ 'cursor-pointer': getMerchantShopUrl(), 'cursor-default': !getMerchantShopUrl() }"
+          @click="goToMerchantShop"
+        >
           <span>{{ campaign.title }}</span>
           <span
             class="inline-flex items-start justify-center w-6 h-6 text-[#ff3b30] text-[28px] leading-none font-black rotate-12 -translate-y-[2px] -ml-[4px]"
             aria-hidden="true"
           >!</span>
-        </div>
+        </button>
         <div class="text-2xl font-semibold">{{ campaign.card_template.name }}</div>
         <div class="text-sm text-gray-500">
           {{ campaign.merchant.name }} · {{ getCardTypeLabel(campaign.card_template.card_type) }}
@@ -158,6 +164,11 @@ const isLoggedIn = computed(() => Boolean(localStorage.getItem('userToken')))
 const hasActiveClaim = computed(() => campaign.value?.my_claim?.status === 'active')
 const showPromoPrice = computed(() => Boolean(campaign.value?.promo_active && campaign.value?.promo_price > 0))
 const showBackToCardsButton = computed(() => hasMerchantReturnContext.value || isLoggedIn.value)
+const merchantShopUrl = computed(() => {
+  const slug = String(campaign.value?.merchant?.shop_slug || '').trim()
+  if (!slug) return ''
+  return `${window.location.origin}/s/${encodeURIComponent(slug)}`
+})
 
 const loadCampaign = async () => {
   loading.value = true
@@ -325,6 +336,17 @@ const goBackToCards = () => {
     return
   }
   router.push('/user/cards')
+}
+
+const getMerchantShopUrl = () => merchantShopUrl.value
+
+const goToMerchantShop = () => {
+  const url = getMerchantShopUrl()
+  if (!url) {
+    alert('当前活动未配置商户售卡页')
+    return
+  }
+  window.location.href = url
 }
 
 onMounted(() => {
