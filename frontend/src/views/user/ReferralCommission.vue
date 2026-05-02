@@ -193,6 +193,26 @@ const buildReferralShareLink = (sharePath, fallbackURL = '') => {
   if (typeof window === 'undefined') return fallback || path
   return `${window.location.origin}${path}`
 }
+const isPrivateOrLocalHost = (hostname) => {
+  const host = String(hostname || '').trim().toLowerCase()
+  if (!host) return false
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
+  if (/^10\.\d+\.\d+\.\d+$/.test(host)) return true
+  if (/^192\.168\.\d+\.\d+$/.test(host)) return true
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host)) return true
+  return false
+}
+const resolvePosterRegisterLink = (payload) => {
+  const rawURL = String(payload?.register_url || '').trim()
+  const refCode = String(payload?.promotion_code || '').trim()
+  if (!rawURL) return ''
+  if (typeof window === 'undefined') return rawURL
+  const { protocol, hostname, origin } = window.location
+  if ((protocol !== 'https:' && protocol !== 'http:') || !isPrivateOrLocalHost(hostname) || !refCode) {
+    return rawURL
+  }
+  return `${origin}/merchant/${refCode}/login`
+}
 const resolvedShareLink = computed(() => buildReferralShareLink(overview.value.profile?.share_path, overview.value.profile?.share_link))
 
 const formatMoney = (amount) => `¥${((Number(amount) || 0) / 100).toFixed(2)}`
@@ -270,12 +290,26 @@ const generatePoster = async () => {
   try {
     const res = await referralCommissionApi.getPoster()
     posterPayload.value = res.data?.data || null
-    const posterShareLink = buildReferralShareLink(posterPayload.value?.share_path, posterPayload.value?.share_link)
-    if (!posterShareLink) throw new Error('poster payload missing')
+    const registerLink = resolvePosterRegisterLink(posterPayload.value)
+    if (!registerLink) throw new Error('poster payload missing')
     const width = 430
-    const height = 820
     const scale = 2
+    const pagePadding = 18
+    const cardWidth = width - pagePadding * 2
+    const highlightGap = 14
+    const highlightHeight = 86
     const canvas = document.createElement('canvas')
+    const measureCanvas = document.createElement('canvas')
+    const measureCtx = measureCanvas.getContext('2d')
+    if (!measureCtx) throw new Error('canvas unsupported')
+    measureCtx.font = '13px sans-serif'
+    const registerUrlLines = countWrappedLines(measureCtx, registerLink, cardWidth - 52)
+    const registerInfoHeight = Math.max(90, 44 + registerUrlLines * 20)
+    const startCardHeight = 66 + registerInfoHeight + 60 + 190 + 22
+    const heroHeight = 250
+    const highlightsHeight = ((posterPayload.value?.highlights || []).length * highlightHeight) + (Math.max((posterPayload.value?.highlights || []).length - 1, 0) * highlightGap)
+    const startCardTop = pagePadding + heroHeight + pagePadding + highlightsHeight + pagePadding
+    const height = startCardTop + startCardHeight + pagePadding
     canvas.width = width * scale
     canvas.height = height * scale
     const ctx = canvas.getContext('2d')
@@ -285,13 +319,13 @@ const generatePoster = async () => {
     ctx.fillRect(0, 0, width, height)
 
     ctx.fillStyle = '#ffffff'
-    roundRect(ctx, 18, 18, width - 36, 250, 28)
+    roundRect(ctx, pagePadding, pagePadding, cardWidth, heroHeight, 28)
     ctx.fill()
-    const gradient = ctx.createLinearGradient(18, 18, width - 18, 268)
+    const gradient = ctx.createLinearGradient(pagePadding, pagePadding, width - pagePadding, pagePadding + heroHeight)
     gradient.addColorStop(0, '#ff8a34')
     gradient.addColorStop(1, '#ffd16d')
     ctx.fillStyle = gradient
-    roundRect(ctx, 18, 18, width - 36, 250, 28)
+    roundRect(ctx, pagePadding, pagePadding, cardWidth, heroHeight, 28)
     ctx.fill()
 
     ctx.fillStyle = 'rgba(255,255,255,0.85)'
@@ -303,33 +337,61 @@ const generatePoster = async () => {
     ctx.font = '14px sans-serif'
     wrapText(ctx, posterPayload.value.subtitle || '', 38, 150, width - 76, 24)
 
-    let cardTop = 288
+    let cardTop = pagePadding + heroHeight + pagePadding
     ;(posterPayload.value.highlights || []).forEach((item, index) => {
       ctx.fillStyle = '#ffffff'
-      roundRect(ctx, 24, cardTop + index * 100, width - 48, 86, 22)
+      const currentTop = cardTop + index * (highlightHeight + highlightGap)
+      roundRect(ctx, 24, currentTop, width - 48, highlightHeight, 22)
       ctx.fill()
       ctx.fillStyle = '#ff7b23'
       ctx.font = 'bold 16px sans-serif'
-      ctx.fillText(item.title || '', 44, cardTop + 34 + index * 100)
+      ctx.fillText(item.title || '', 44, currentTop + 34)
       ctx.fillStyle = '#5f5f5f'
       ctx.font = '13px sans-serif'
-      wrapText(ctx, item.description || '', 44, cardTop + 60 + index * 100, width - 88, 20)
+      wrapText(ctx, item.description || '', 44, currentTop + 60, width - 88, 20)
     })
 
-    const qrDataUrl = await QRCode.toDataURL(posterShareLink, {
+    ctx.fillStyle = '#ffffff'
+    roundRect(ctx, 24, startCardTop, width - 48, startCardHeight, 24)
+    ctx.fill()
+    ctx.fillStyle = '#111827'
+    ctx.font = 'bold 18px sans-serif'
+    ctx.fillText('开始使用卡包', 44, startCardTop + 34)
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '13px sans-serif'
+    wrapText(ctx, '完成注册后即可开始使用售卡、核销、预约等商户功能。', 44, startCardTop + 62, width - 88, 20)
+
+    const registerInfoTop = startCardTop + 108
+    ctx.fillStyle = '#f8fafc'
+    roundRect(ctx, 36, registerInfoTop, width - 72, registerInfoHeight, 18)
+    ctx.fill()
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '12px sans-serif'
+    ctx.fillText('商户注册入口', 52, registerInfoTop + 24)
+    ctx.fillStyle = '#374151'
+    ctx.font = '13px sans-serif'
+    const registerTextBottom = wrapText(ctx, registerLink, 52, registerInfoTop + 52, width - 104, 20)
+
+    const buttonTop = Math.max(registerInfoTop + registerInfoHeight + 18, registerTextBottom + 28)
+    ctx.fillStyle = '#ff7b23'
+    roundRect(ctx, 36, buttonTop, width - 72, 48, 18)
+    ctx.fill()
+    ctx.fillStyle = '#ffffff'
+    ctx.font = 'bold 16px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('去注册商户', width / 2, buttonTop + 30)
+
+    const qrDataUrl = await QRCode.toDataURL(registerLink, {
       width: 220,
       margin: 1,
       color: { dark: '#111111', light: '#FFFFFF' }
     })
     const qrImage = await loadImage(qrDataUrl)
-    ctx.fillStyle = '#ffffff'
-    roundRect(ctx, 24, 610, width - 48, 186, 26)
-    ctx.fill()
-    ctx.drawImage(qrImage, (width - 160) / 2, 630, 160, 160)
+    const qrTop = buttonTop + 74
+    ctx.drawImage(qrImage, (width - 150) / 2, qrTop, 150, 150)
     ctx.fillStyle = '#7a7a7a'
-    ctx.font = '14px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('微信等扫码识别二维码打开页面', width / 2, 780)
+    ctx.font = '13px sans-serif'
+    ctx.fillText('微信等识别二维码可直接打开注册页', width / 2, qrTop + 174)
     ctx.textAlign = 'left'
 
     posterDataUrl.value = canvas.toDataURL('image/png')
@@ -372,6 +434,23 @@ const wrapText = (ctx, text, x, y, maxWidth, lineHeight) => {
     }
   }
   if (line) ctx.fillText(line, x, currentY)
+  return currentY
+}
+
+const countWrappedLines = (ctx, text, maxWidth) => {
+  const chars = String(text || '').split('')
+  let line = ''
+  let lines = 0
+  for (const ch of chars) {
+    const testLine = line + ch
+    if (ctx.measureText(testLine).width > maxWidth && line) {
+      lines += 1
+      line = ch
+    } else {
+      line = testLine
+    }
+  }
+  return line ? lines + 1 : Math.max(lines, 1)
 }
 
 const downloadPoster = () => {

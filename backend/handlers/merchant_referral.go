@@ -28,6 +28,9 @@ const (
 	referralWithdrawalApproved = "approved"
 	referralWithdrawalPaid     = "paid"
 	referralWithdrawalRejected = "rejected"
+
+	merchantReferralLandingTitle    = "卡包商户入驻推广"
+	merchantReferralLandingSubtitle = "让商户更方便地卖卡、核销、预约和沉淀客户。"
 )
 
 var merchantReferralHighlights = []gin.H{
@@ -189,8 +192,8 @@ func GetMerchantReferralLanding(c *gin.Context) {
 		"promotion_code":       profile.PromotionCode,
 		"referrer_user_id":     profile.UserID,
 		"referrer_name":        displayName,
-		"title":                "卡包商户入驻推广",
-		"subtitle":             "让商户更方便地卖卡、核销、预约和沉淀客户。",
+		"title":                merchantReferralLandingTitle,
+		"subtitle":             merchantReferralLandingSubtitle,
 		"highlights":           merchantReferralHighlights,
 		"register_url":         buildMerchantRegisterLink(profile.PromotionCode),
 		"share_path":           buildMerchantReferralSharePath(profile.PromotionCode),
@@ -391,8 +394,8 @@ func GetReferralCommissionPoster(c *gin.Context) {
 		"share_path":     buildMerchantReferralSharePath(profile.PromotionCode),
 		"share_link":     buildReferralShareLink(c, profile.PromotionCode),
 		"register_url":   buildMerchantRegisterLink(profile.PromotionCode),
-		"title":          "卡包商户入驻推广",
-		"subtitle":       fmt.Sprintf("%s 邀请你使用卡包，管理售卡、核销与预约。", displayName),
+		"title":          merchantReferralLandingTitle,
+		"subtitle":       merchantReferralLandingSubtitle,
 		"highlights":     merchantReferralHighlights,
 		"referrer_name":  displayName,
 	}})
