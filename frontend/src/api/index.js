@@ -193,7 +193,8 @@ api.interceptors.response.use(
 export const authApi = {
   login: (username, password) => api.post('/user/login', { username, password }),
   register: (data) => api.post('/user/register', data),
-  getCurrentUser: () => api.get('/user/me')
+  getCurrentUser: () => api.get('/user/me'),
+  updateNickname: (nickname) => api.put('/user/nickname', { nickname })
 }
 
 export const smsApi = {

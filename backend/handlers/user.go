@@ -18,6 +18,26 @@ import (
 	"gorm.io/gorm"
 )
 
+const maxUserNicknameRunes = 7
+
+func normalizeUserNickname(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func validateUserNickname(value string) (string, error) {
+	nickname := normalizeUserNickname(value)
+	if nickname == "" {
+		return "", fmt.Errorf("昵称不能为空")
+	}
+	if strings.ContainsAny(nickname, " \t\r\n") {
+		return "", fmt.Errorf("昵称不能包含空格")
+	}
+	if len([]rune(nickname)) > maxUserNicknameRunes {
+		return "", fmt.Errorf("昵称最多 7 个字")
+	}
+	return nickname, nil
+}
+
 func GetUsers(c *gin.Context) {
 	var users []models.User
 	config.DB.Find(&users)
@@ -405,11 +425,12 @@ func UpdateUserNickname(c *gin.Context) {
 		return
 	}
 
-	input.Nickname = strings.TrimSpace(input.Nickname)
-	if input.Nickname == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "昵称不能为空"})
+	normalizedNickname, err := validateUserNickname(input.Nickname)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	input.Nickname = normalizedNickname
 
 	userID, _ := userIDAny.(uint)
 	var user models.User

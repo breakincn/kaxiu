@@ -24,12 +24,21 @@
 
     <!-- 问候区域 -->
     <div class="px-4 py-6">
-      <div class="flex items-center gap-3">
-        <span class="text-3xl">👋</span>
-        <div>
-          <h1 class="text-xl font-bold text-gray-800">你好，{{ userName }}</h1>
-          <p class="text-gray-500 text-sm">今天想去哪里享受服务？</p>
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <span class="text-3xl flex-shrink-0">👋</span>
+          <div class="min-w-0">
+            <h1 class="text-xl font-bold text-gray-800">你好，{{ userName }}</h1>
+            <p class="text-gray-500 text-sm">今天想去哪里享受服务？</p>
+          </div>
         </div>
+        <button
+          type="button"
+          class="flex-shrink-0 px-3 py-1.5 rounded-full border border-orange-200 bg-orange-50 text-orange-600 text-sm font-medium whitespace-nowrap active:scale-95 transition-transform"
+          @click="scrollToPromotionCards"
+        >
+          推广分成
+        </button>
       </div>
     </div>
 
@@ -173,6 +182,7 @@
 
         <div
           v-else-if="item._type === 'promotion'"
+          data-promotion-card
           class="rounded-2xl p-4 bg-white border border-orange-100 shadow-sm cursor-pointer transition-transform select-none"
           @click="openPromotionCampaign(item)"
         >
@@ -923,6 +933,13 @@ const openPromotionCampaign = (item) => {
   const slug = String(item?.slug || '').trim()
   if (!slug) return
   router.push(`/promo/${slug}`)
+}
+
+const scrollToPromotionCards = async () => {
+  await nextTick()
+  const target = document.querySelector('[data-promotion-card]')
+  if (!target) return
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 const fetchPromotionCards = async () => {
