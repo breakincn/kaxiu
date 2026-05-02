@@ -1017,7 +1017,7 @@ function goToCards() {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 10px;
   margin-bottom: 4px;
 }
 
