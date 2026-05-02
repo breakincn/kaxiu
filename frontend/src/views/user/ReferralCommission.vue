@@ -14,7 +14,7 @@
         <div v-if="overview.profile" class="mt-5 grid gap-3 md:grid-cols-[1fr_auto_auto] items-center rounded-3xl bg-white/80 p-4">
           <div class="min-w-0">
             <div class="text-xs text-gray-500">我的推广链接</div>
-            <div class="mt-1 break-all text-sm text-[#ff7b23]">{{ overview.profile.share_link }}</div>
+            <div class="mt-1 break-all text-sm text-[#ff7b23]">{{ resolvedShareLink }}</div>
             <div class="mt-2 text-xs text-gray-500">推广码：{{ overview.profile.promotion_code }}</div>
           </div>
           <button class="rounded-2xl bg-[#ff7b23] px-4 py-3 text-sm font-medium text-white" @click="generateShareLink">
@@ -180,6 +180,14 @@ const withdrawForm = ref({
 })
 
 const withdrawAmount = computed(() => withdrawLedgers.value.reduce((sum, item) => sum + (item.commission_amount || 0), 0))
+const buildReferralShareLink = (sharePath, fallbackURL = '') => {
+  const path = String(sharePath || '').trim()
+  const fallback = String(fallbackURL || '').trim()
+  if (!path) return fallback
+  if (typeof window === 'undefined') return fallback || path
+  return `${window.location.origin}${path}`
+}
+const resolvedShareLink = computed(() => buildReferralShareLink(overview.value.profile?.share_path, overview.value.profile?.share_link))
 
 const formatMoney = (amount) => `¥${((Number(amount) || 0) / 100).toFixed(2)}`
 const formatRate = (bp) => `${((Number(bp) || 0) / 100).toFixed(0)}%`
@@ -231,12 +239,13 @@ const loadData = async () => {
 const generateShareLink = async () => {
   try {
     const res = await referralCommissionApi.createShareLink()
-    const shareLink = res.data?.data?.share_link || ''
+    const payload = res.data?.data || {}
+    const shareLink = buildReferralShareLink(payload.share_path, payload.share_link)
     if (!shareLink) throw new Error('share link missing')
     await navigator.clipboard.writeText(shareLink)
     overview.value.profile = {
       ...(overview.value.profile || {}),
-      ...res.data.data
+      ...payload
     }
     alert('推广链接已复制')
   } catch (err) {
@@ -255,7 +264,8 @@ const generatePoster = async () => {
   try {
     const res = await referralCommissionApi.getPoster()
     posterPayload.value = res.data?.data || null
-    if (!posterPayload.value?.share_link) throw new Error('poster payload missing')
+    const posterShareLink = buildReferralShareLink(posterPayload.value?.share_path, posterPayload.value?.share_link)
+    if (!posterShareLink) throw new Error('poster payload missing')
     const width = 430
     const height = 820
     const scale = 2
@@ -300,7 +310,7 @@ const generatePoster = async () => {
       wrapText(ctx, item.description || '', 44, cardTop + 60 + index * 100, width - 88, 20)
     })
 
-    const qrDataUrl = await QRCode.toDataURL(posterPayload.value.share_link, {
+    const qrDataUrl = await QRCode.toDataURL(posterShareLink, {
       width: 220,
       margin: 1,
       color: { dark: '#111111', light: '#FFFFFF' }

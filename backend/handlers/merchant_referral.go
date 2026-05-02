@@ -388,6 +388,7 @@ func GetReferralCommissionPoster(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"data": gin.H{
 		"promotion_code": profile.PromotionCode,
+		"share_path":     buildMerchantReferralSharePath(profile.PromotionCode),
 		"share_link":     buildReferralShareLink(c, profile.PromotionCode),
 		"register_url":   buildMerchantRegisterLink(profile.PromotionCode),
 		"title":          "卡包商户入驻推广",
