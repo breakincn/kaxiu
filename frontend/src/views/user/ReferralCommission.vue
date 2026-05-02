@@ -3,10 +3,9 @@
     <div class="max-w-5xl mx-auto px-4 py-6 space-y-4">
       <div class="rounded-[30px] overflow-hidden bg-[radial-gradient(circle_at_top_left,_#ffd6ad,_transparent_32%),linear-gradient(135deg,#fff6ea,#f3ece2)] border border-[#ead9c3] p-5 shadow-sm">
         <div class="flex items-start justify-between gap-4">
-          <div>
+          <div class="min-w-0">
             <div class="text-xs uppercase tracking-[0.35em] text-[#c67a2a]">Referral Commission</div>
             <h1 class="mt-2 text-2xl font-black">推广分成</h1>
-            <p class="mt-2 text-sm leading-6 text-gray-600">邀请商户通过你的专属链接入驻，商户首次付费起两年内的付费可按 50% 计入分成。</p>
           </div>
           <button
             class="inline-flex shrink-0 items-center gap-1.5 self-start whitespace-nowrap rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700"
@@ -16,6 +15,7 @@
             返回
           </button>
         </div>
+        <p class="mt-2 text-sm leading-6 text-gray-600">邀请商户通过你的专属链接入驻，商户首次付费起两年内的付费可按 50% 计入分成。</p>
 
         <div v-if="overview.profile" class="mt-5 grid gap-3 md:grid-cols-[1fr_auto_auto] items-center rounded-3xl bg-white/80 p-4">
           <div class="min-w-0">
