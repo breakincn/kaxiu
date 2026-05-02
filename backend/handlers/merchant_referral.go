@@ -30,13 +30,13 @@ const (
 	referralWithdrawalRejected = "rejected"
 
 	merchantReferralLandingTitle    = "卡包商户入驻推广"
-	merchantReferralLandingSubtitle = "让商户更方便地卖卡、核销、预约和沉淀客户。"
+	merchantReferralLandingSubtitle = "让商户更方便地卖卡、核销、预约和沉淀客户"
 )
 
 var merchantReferralHighlights = []gin.H{
-	{"title": "线上售卡与推广", "description": "支持售卡、推广短链、推广海报，方便老客转介绍新商户。"},
-	{"title": "到店核销与卡片管理", "description": "支持用户购卡、到店核销、卡片记录查询，减少手工登记。"},
-	{"title": "预约与服务流程", "description": "支持预约、到店、服务履约与记录沉淀，日常经营更顺畅。"},
+	{"title": "线上售卡与推广", "description": "支持售卡、推广短链、推广海报，方便老客转介绍新商户"},
+	{"title": "到店核销与卡片管理", "description": "支持用户购卡、到店核销、卡片记录查询，减少手工登记"},
+	{"title": "预约与服务流程", "description": "支持预约、到店、服务履约与记录沉淀，日常经营更顺畅"},
 }
 
 func randomAlphaDigits(length int) (string, error) {

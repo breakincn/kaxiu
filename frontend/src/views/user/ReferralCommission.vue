@@ -312,7 +312,7 @@ const generatePoster = async () => {
     const highlightsHeight = ((posterPayload.value?.highlights || []).length * highlightHeight) + (Math.max((posterPayload.value?.highlights || []).length - 1, 0) * highlightGap)
     const startCardTop = pagePadding + heroHeight + pagePadding + highlightsHeight + pagePadding
     const startDescriptionY = startCardTop + 62
-    const startDescriptionBottom = estimateWrappedTextBottom('完成注册后即可开始使用售卡、核销、预约等商户功能。', width - 88, 20, '13px sans-serif', startDescriptionY)
+    const startDescriptionBottom = estimateWrappedTextBottom('完成注册后即可开始使用售卡、核销、预约等商户功能', width - 88, 20, '13px sans-serif', startDescriptionY)
     const registerInfoTop = startDescriptionBottom + 18
     const registerTextY = registerInfoTop + 52
     const registerTextBottom = estimateWrappedTextBottom(registerLink, width - 104, 20, '13px sans-serif', registerTextY)
@@ -369,7 +369,7 @@ const generatePoster = async () => {
     ctx.fillText('开始使用卡包', 44, startCardTop + 34)
     ctx.fillStyle = '#6b7280'
     ctx.font = '13px sans-serif'
-    wrapText(ctx, '完成注册后即可开始使用售卡、核销、预约等商户功能。', 44, startDescriptionY, width - 88, 20)
+    wrapText(ctx, '完成注册后即可开始使用售卡、核销、预约等商户功能', 44, startDescriptionY, width - 88, 20)
 
     ctx.fillStyle = '#f8fafc'
     roundRect(ctx, 36, registerInfoTop, width - 72, registerInfoHeight, 18)
