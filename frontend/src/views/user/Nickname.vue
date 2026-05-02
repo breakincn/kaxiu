@@ -49,6 +49,7 @@ import { authApi } from '../../api'
 
 const router = useRouter()
 const nickname = ref('')
+const initialNickname = ref('')
 const loading = ref(false)
 const MAX_NICKNAME_LENGTH = 7
 
@@ -58,7 +59,7 @@ const normalizeNickname = (value) => {
 }
 
 const canSave = computed(() => {
-  return !loading.value && !!nickname.value.trim()
+  return !loading.value && !!nickname.value.trim() && nickname.value !== initialNickname.value
 })
 
 const goBack = () => {
@@ -83,7 +84,9 @@ const loadUserInfo = async () => {
       response.data?.data?.username ||
       localStorage.getItem('userName') ||
       ''
-    nickname.value = normalizeNickname(currentNickname)
+    const normalizedNickname = normalizeNickname(currentNickname)
+    nickname.value = normalizedNickname
+    initialNickname.value = normalizedNickname
   } catch (error) {
     console.error('获取用户信息失败:', error)
     if (error.response?.status === 401) {
@@ -123,6 +126,7 @@ const handleSave = async () => {
     if (response.data.data) {
       // 更新localStorage中的用户昵称
       localStorage.setItem('userName', trimmedNickname)
+      initialNickname.value = trimmedNickname
       alert('昵称保存成功')
       router.back()
     }
