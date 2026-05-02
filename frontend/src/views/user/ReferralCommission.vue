@@ -176,6 +176,7 @@ const overview = ref({ profile: null, summary: {} })
 const merchants = ref([])
 const posterVisible = ref(false)
 const posterDataUrl = ref('')
+const posterBlob = ref(null)
 const posterPayload = ref(null)
 const withdrawVisible = ref(false)
 const withdrawLedgers = ref([])
@@ -285,6 +286,35 @@ const canvasToBlob = (canvas) => new Promise((resolve, reject) => {
     else reject(new Error('生成图片失败'))
   }, 'image/png')
 })
+
+const downloadBlobImage = (blob, filename) => {
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+}
+
+const savePosterBlob = async (blob, filename) => {
+  if (navigator.share && window.File) {
+    try {
+      const file = new File([blob], filename, { type: blob.type || 'image/png' })
+      if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: '推广海报' })
+        alert('图片已生成，请在系统面板中保存到相册')
+        return true
+      }
+    } catch (_) {
+      // 用户取消或系统不支持文件分享时，回退为下载
+    }
+  }
+  downloadBlobImage(blob, filename)
+  alert('图片已生成并开始下载')
+  return false
+}
 
 const generatePoster = async () => {
   try {
@@ -402,7 +432,7 @@ const generatePoster = async () => {
     ctx.textAlign = 'left'
 
     posterDataUrl.value = canvas.toDataURL('image/png')
-    await canvasToBlob(canvas)
+    posterBlob.value = await canvasToBlob(canvas)
     posterVisible.value = true
   } catch (err) {
     alert(err.response?.data?.error || err.message || '生成推广图片失败')
@@ -469,12 +499,18 @@ const estimateWrappedTextBottom = (text, maxWidth, lineHeight, font, startY = 0)
   return startY + Math.max(lines - 1, 0) * lineHeight
 }
 
-const downloadPoster = () => {
+const downloadPoster = async () => {
   if (!posterDataUrl.value) return
-  const link = document.createElement('a')
-  link.href = posterDataUrl.value
-  link.download = `merchant_referral_poster_${overview.value.profile?.promotion_code || Date.now()}.png`
-  link.click()
+  const filename = `merchant_referral_poster_${overview.value.profile?.promotion_code || Date.now()}.png`
+  if (posterBlob.value) {
+    await savePosterBlob(posterBlob.value, filename)
+    return
+  }
+
+  const resp = await fetch(posterDataUrl.value)
+  const blob = await resp.blob()
+  posterBlob.value = blob
+  await savePosterBlob(blob, filename)
 }
 
 const openWithdrawModal = (ledgers) => {
