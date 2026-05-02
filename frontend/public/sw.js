@@ -9,9 +9,25 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('fetch', (event) => {
-  // 不拦截API请求，让浏览器直接处理
-  if (event.request.url.includes('/api/')) {
+  if (event.request.method !== 'GET') {
     return
   }
+
+  const requestURL = new URL(event.request.url)
+  if (requestURL.origin !== self.location.origin) {
+    return
+  }
+
+  // 不拦截业务接口请求，让浏览器直接处理
+  if (
+    requestURL.pathname.startsWith('/api/')
+    || requestURL.pathname.startsWith('/user/')
+    || requestURL.pathname.startsWith('/merchant/')
+    || requestURL.pathname.startsWith('/platform-admin/')
+    || requestURL.pathname.startsWith('/admin/')
+  ) {
+    return
+  }
+
   event.respondWith(fetch(event.request))
 })

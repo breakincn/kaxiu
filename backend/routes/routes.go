@@ -3,6 +3,11 @@ package routes
 import (
 	"kabao/handlers"
 	"kabao/middleware"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,6 +22,114 @@ func SetupRoutes(r *gin.Engine) {
 func SetupStaticRoutes(r *gin.Engine) {
 	// 静态资源挂载
 	r.Static("/uploads", "./uploads")
+	r.GET("/merchant-referral/:refCode", handlers.RedirectLegacyMerchantReferralLanding)
+
+	r.NoRoute(func(c *gin.Context) {
+		if c.Request == nil || c.Request.Method != http.MethodGet {
+			c.JSON(http.StatusNotFound, gin.H{"error": "路由不存在"})
+			return
+		}
+		path := strings.TrimSpace(c.Request.URL.Path)
+		if strings.HasPrefix(path, "/user/") || strings.HasPrefix(path, "/merchant/") || strings.HasPrefix(path, "/admin/") || strings.HasPrefix(path, "/platform/") || strings.HasPrefix(path, "/uploads/") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "路由不存在"})
+			return
+		}
+
+		if staticPath := resolveSPAStaticFilePath(c, path); staticPath != "" {
+			c.File(staticPath)
+			return
+		}
+
+		indexPath := resolveSPAIndexPath(path)
+		if indexPath == "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "页面不存在"})
+			return
+		}
+		c.File(indexPath)
+	})
+}
+
+func resolveSPAIndexPath(requestPath string) string {
+	targetDir := resolveSPATargetDir(requestPath, "")
+	candidates := []string{
+		filepath.Join("..", "frontend", targetDir, "index.html"),
+		filepath.Join("frontend", targetDir, "index.html"),
+		filepath.Join("/opt/kabao/frontend", targetDir, "index.html"),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func resolveSPAStaticFilePath(c *gin.Context, requestPath string) string {
+	requestPath = strings.TrimSpace(requestPath)
+	if requestPath == "" || requestPath == "/" {
+		return ""
+	}
+	if strings.Contains(requestPath, "..") {
+		return ""
+	}
+	if !(strings.HasPrefix(requestPath, "/assets/") ||
+		requestPath == "/favicon.ico" ||
+		requestPath == "/favicon.svg" ||
+		requestPath == "/manifest.webmanifest" ||
+		requestPath == "/robots.txt" ||
+		requestPath == "/sw.js" ||
+		requestPath == "/dev-clear-cache.js") {
+		return ""
+	}
+
+	refererPath := ""
+	if c != nil && c.Request != nil {
+		refererPath = extractURLPath(c.Request.Referer())
+	}
+	targetDir := resolveSPATargetDir(requestPath, refererPath)
+	trimmed := strings.TrimPrefix(requestPath, "/")
+	candidates := []string{
+		filepath.Join("..", "frontend", targetDir, trimmed),
+		filepath.Join("frontend", targetDir, trimmed),
+		filepath.Join("/opt/kabao/frontend", targetDir, trimmed),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func resolveSPATargetDir(requestPath string, refererPath string) string {
+	requestPath = strings.TrimSpace(requestPath)
+	refererPath = strings.TrimSpace(refererPath)
+	if isMerchantSPAPath(requestPath) || isMerchantSPAPath(refererPath) {
+		return "dist-merchant"
+	}
+	return "dist-user"
+}
+
+func isMerchantSPAPath(path string) bool {
+	if strings.HasPrefix(path, "/merchant-referral/") {
+		return false
+	}
+	if strings.HasPrefix(path, "/referral-merchant/") {
+		return false
+	}
+	return strings.HasPrefix(path, "/merchant") || strings.HasPrefix(path, "/platform-admin") || strings.HasPrefix(path, "/s/")
+}
+
+func extractURLPath(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(u.Path)
 }
 
 func SetupUserRoutes(r *gin.Engine) {

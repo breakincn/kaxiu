@@ -119,7 +119,17 @@ func bindMerchantReferralByCode(tx *gorm.DB, referralCode string, merchantID uin
 
 func buildMerchantReferralSharePath(code string) string {
 	code = strings.ToUpper(strings.TrimSpace(code))
-	return "/merchant-referral/" + code
+	return "/referral-merchant/" + code
+}
+
+func RedirectLegacyMerchantReferralLanding(c *gin.Context) {
+	code := strings.ToUpper(strings.TrimSpace(c.Param("refCode")))
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "推广码不能为空"})
+		return
+	}
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate")
+	c.Redirect(http.StatusFound, buildMerchantReferralSharePath(code)+"?from=legacy")
 }
 
 func refreshReferralLedgerStatus(tx *gorm.DB, userID uint, now time.Time) error {

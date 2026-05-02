@@ -15,9 +15,31 @@ const resolveDevApiBaseURL = () => {
   return `https://${hostname}:8080`
 }
 
+const isPrivateOrLocalHost = (hostname) => {
+  const host = String(hostname || '').trim().toLowerCase()
+  if (!host) return false
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
+  if (/^10\.\d+\.\d+\.\d+$/.test(host)) return true
+  if (/^192\.168\.\d+\.\d+$/.test(host)) return true
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host)) return true
+  return false
+}
+
+const resolveRuntimeApiBaseURL = () => {
+  if (typeof window === 'undefined') return 'https://api.kabao.app'
+  const { protocol, hostname, origin } = window.location
+  if ((protocol === 'https:' || protocol === 'http:') && isPrivateOrLocalHost(hostname)) {
+    return origin
+  }
+  return 'https://api.kabao.app'
+}
+
 const configuredApiBaseURL = String(import.meta.env.VITE_API_BASE_URL || '').trim()
-const defaultApiBaseURL = import.meta.env.DEV ? resolveDevApiBaseURL() : 'https://api.kabao.app'
-const apiBaseURL = configuredApiBaseURL || defaultApiBaseURL
+const defaultApiBaseURL = import.meta.env.DEV ? resolveDevApiBaseURL() : resolveRuntimeApiBaseURL()
+const shouldPreferRuntimeOrigin = typeof window !== 'undefined'
+  && isPrivateOrLocalHost(window.location.hostname)
+  && (window.location.protocol === 'https:' || window.location.protocol === 'http:')
+const apiBaseURL = shouldPreferRuntimeOrigin ? defaultApiBaseURL : (configuredApiBaseURL || defaultApiBaseURL)
 
 const api = axios.create({
   baseURL: apiBaseURL,

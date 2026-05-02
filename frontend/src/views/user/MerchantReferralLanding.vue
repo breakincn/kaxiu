@@ -1,6 +1,7 @@
 <template>
   <div class="min-h-screen bg-[#f6efe4] text-gray-800">
     <div v-if="loading" class="min-h-screen flex items-center justify-center">加载中...</div>
+    <div v-else-if="errorMessage" class="min-h-screen flex items-center justify-center">{{ errorMessage }}</div>
     <div v-else-if="!landing" class="min-h-screen flex items-center justify-center">推广页不存在</div>
     <div v-else class="max-w-3xl mx-auto px-4 py-6 space-y-4">
       <div class="rounded-[28px] overflow-hidden bg-gradient-to-br from-[#ff8a34] via-[#ffb24a] to-[#ffd16d] text-white p-6 shadow-[0_20px_60px_rgba(255,138,52,0.25)]">
@@ -60,15 +61,27 @@ import { authApi } from '../../api'
 const route = useRoute()
 const loading = ref(true)
 const landing = ref(null)
+const errorMessage = ref('')
+
+const resolveLandingErrorMessage = (err) => {
+  const status = err?.response?.status
+  const message = String(err?.response?.data?.error || '').trim()
+  if (status === 404) {
+    return message || '推广页不存在'
+  }
+  return message || '推广页加载失败'
+}
 
 const loadLanding = async () => {
   loading.value = true
+  errorMessage.value = ''
   try {
     const res = await authApi.getMerchantReferralLanding(route.params.refCode)
     landing.value = res.data?.data || null
   } catch (err) {
     landing.value = null
-    alert(err.response?.data?.error || '推广页加载失败')
+    errorMessage.value = resolveLandingErrorMessage(err)
+    alert(errorMessage.value)
   } finally {
     loading.value = false
   }
