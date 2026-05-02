@@ -162,7 +162,7 @@ func buildMerchantRegisterLink(referralCode string) string {
 	if referralCode == "" {
 		return "https://kabao.shop/merchant/login"
 	}
-	return "https://kabao.shop/merchant/login?referral_code=" + referralCode
+	return "https://kabao.shop/merchant/login/" + referralCode
 }
 
 func GetMerchantReferralLanding(c *gin.Context) {

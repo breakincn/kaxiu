@@ -27,11 +27,6 @@
           <div class="mt-1 text-sm text-gray-500">完成注册后即可开始使用售卡、核销、预约等商户功能。</div>
         </div>
 
-        <div class="rounded-2xl bg-[#fff8ef] border border-[#f5e0bf] px-4 py-3">
-          <div class="text-xs text-gray-500">推广码</div>
-          <div class="mt-1 text-base font-bold tracking-[0.15em] text-[#ff7b23]">{{ landing.promotion_code }}</div>
-        </div>
-
         <div class="grid gap-3 md:grid-cols-[1fr_auto] items-center">
           <div class="min-w-0">
             <div class="text-xs text-gray-500">商户注册入口</div>
