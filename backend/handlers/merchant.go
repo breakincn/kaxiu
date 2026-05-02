@@ -26,6 +26,7 @@ func MerchantRegister(c *gin.Context) {
 		Type       string `json:"type"`
 		Code       string `json:"code"`
 		InviteCode string `json:"invite_code" binding:"required"`
+		ReferralCode string `json:"referral_code"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -89,6 +90,9 @@ func MerchantRegister(c *gin.Context) {
 		}
 		if res.RowsAffected != 1 {
 			return errors.New("邀请码无效或已使用")
+		}
+		if err := bindMerchantReferralByCode(tx, input.ReferralCode, merchant.ID, usedAt); err != nil {
+			return err
 		}
 		return nil
 	}); err != nil {

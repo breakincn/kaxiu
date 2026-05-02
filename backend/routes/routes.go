@@ -33,6 +33,7 @@ func SetupUserRoutes(r *gin.Engine) {
 	user.GET("/merchants/:id/live-service-status", handlers.GetMerchantLiveServiceStatus)
 	user.GET("/promotion-campaigns/:slug", handlers.GetPromotionCampaignBySlug)
 	user.GET("/promotion-campaigns/:slug/:refCode", handlers.GetPromotionCampaignBySlug)
+	user.GET("/merchant-referral/:refCode", handlers.GetMerchantReferralLanding)
 
 	// 需要认证的接口（用户端）
 	auth := user.Group("")
@@ -97,6 +98,12 @@ func SetupUserRoutes(r *gin.Engine) {
 	auth.POST("/promotion-campaigns/:slug/ref-link", handlers.GetPromotionCampaignRefLink)
 	auth.POST("/promotion-campaigns/:slug/:refCode/ref-link", handlers.GetPromotionCampaignRefLink)
 	auth.POST("/promotion-campaigns/:slug/claim-reward", handlers.ClaimPromotionCampaignReward)
+	auth.GET("/referral-commission/overview", handlers.GetReferralCommissionOverview)
+	auth.GET("/referral-commission/merchants", handlers.ListReferralCommissionMerchants)
+	auth.POST("/referral-commission/share-link", handlers.CreateReferralCommissionShareLink)
+	auth.GET("/referral-commission/poster", handlers.GetReferralCommissionPoster)
+	auth.POST("/referral-commission/withdrawals", handlers.CreateReferralCommissionWithdrawal)
+	auth.GET("/referral-commission/withdrawals", handlers.ListReferralCommissionWithdrawals)
 
 	// 兼容：用户端创建用户（历史接口）
 	user.POST("/users", handlers.CreateUser)
@@ -104,6 +111,9 @@ func SetupUserRoutes(r *gin.Engine) {
 	// 平台公开接口（不需要登录）
 	platform := r.Group("/platform")
 	platform.GET("/service-roles", handlers.GetPlatformServiceRoles)
+	platform.POST("/merchant-referral-payments", handlers.CreateMerchantReferralPaymentLedger)
+	platform.GET("/merchant-referral-withdrawals", handlers.ListMerchantReferralWithdrawals)
+	platform.POST("/merchant-referral-withdrawals/:id/review", handlers.ReviewMerchantReferralWithdrawal)
 }
 
 func SetupMerchantRoutes(r *gin.Engine) {
@@ -336,6 +346,8 @@ func SetupAdminRoutes(r *gin.Engine) {
 	admin.POST("/service-roles/:roleId/permissions", handlers.AdminSetRolePermissions)
 	admin.GET("/professional-base-permissions", handlers.AdminGetProfessionalBasePermissions)
 	admin.POST("/professional-base-permissions", handlers.AdminSetProfessionalBasePermissions)
+	admin.GET("/merchant-referral-withdrawals", handlers.ListMerchantReferralWithdrawals)
+	admin.POST("/merchant-referral-withdrawals/:id/review", handlers.ReviewMerchantReferralWithdrawal)
 
 	// 平台管理商户
 	admin.POST("/merchants", handlers.CreateMerchant)

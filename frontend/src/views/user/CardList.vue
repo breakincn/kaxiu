@@ -35,7 +35,7 @@
         <button
           type="button"
           class="flex-shrink-0 px-3 py-1.5 rounded-full border border-orange-200 bg-orange-50 text-orange-600 text-sm font-medium whitespace-nowrap active:scale-95 transition-transform"
-          @click="scrollToPromotionCards"
+          @click="openReferralCommissionPage"
         >
           推广分成
         </button>
@@ -935,11 +935,8 @@ const openPromotionCampaign = (item) => {
   router.push(`/promo/${slug}`)
 }
 
-const scrollToPromotionCards = async () => {
-  await nextTick()
-  const target = document.querySelector('[data-promotion-card]')
-  if (!target) return
-  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+const openReferralCommissionPage = () => {
+  router.push('/user/referral-commission')
 }
 
 const fetchPromotionCards = async () => {

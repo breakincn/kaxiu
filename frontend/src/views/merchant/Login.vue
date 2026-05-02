@@ -143,6 +143,10 @@
             />
           </div>
 
+          <div v-if="registerForm.referral_code" class="mb-6 rounded-lg border border-orange-100 bg-orange-50 px-4 py-3 text-sm text-orange-700">
+            已带入推广码：{{ registerForm.referral_code }}
+          </div>
+
           <button
             type="submit"
             :disabled="registering"
@@ -188,7 +192,8 @@ const registerForm = ref({
   password: '',
   name: '',
   type: '',
-  invite_code: ''
+  invite_code: '',
+  referral_code: String(route.query.referral_code || '').trim()
 })
 
 const startCountdown = () => {
@@ -351,7 +356,8 @@ const handleRegister = async () => {
       password: '',
       name: '',
       type: '',
-      invite_code: ''
+      invite_code: '',
+      referral_code: String(route.query.referral_code || '').trim()
     }
   } catch (err) {
     console.error('注册失败:', err)

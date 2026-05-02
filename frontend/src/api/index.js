@@ -194,7 +194,8 @@ export const authApi = {
   login: (username, password) => api.post('/user/login', { username, password }),
   register: (data) => api.post('/user/register', data),
   getCurrentUser: () => api.get('/user/me'),
-  updateNickname: (nickname) => api.put('/user/nickname', { nickname })
+  updateNickname: (nickname) => api.put('/user/nickname', { nickname }),
+  getMerchantReferralLanding: (refCode) => api.get(`/user/merchant-referral/${refCode}`)
 }
 
 export const smsApi = {
@@ -202,7 +203,10 @@ export const smsApi = {
 }
 
 export const platformApi = {
-  getServiceRoles: () => api.get('/platform/service-roles')
+  getServiceRoles: () => api.get('/platform/service-roles'),
+  createMerchantReferralPayment: (data) => api.post('/platform/merchant-referral-payments', data),
+  getMerchantReferralWithdrawals: (params) => api.get('/platform/merchant-referral-withdrawals', { params }),
+  reviewMerchantReferralWithdrawal: (id, data) => api.post(`/platform/merchant-referral-withdrawals/${id}/review`, data)
 }
 
 export const platformAdminApi = {
@@ -221,7 +225,9 @@ export const platformAdminApi = {
 
   getProfessionalBasePermissions: () => api.get('/admin/professional-base-permissions'),
   setProfessionalBasePermissions: (data) => api.post('/admin/professional-base-permissions', data),
-  getSchedulerHealth: (params) => api.get('/admin/system/scheduler-health', { params })
+  getSchedulerHealth: (params) => api.get('/admin/system/scheduler-health', { params }),
+  getMerchantReferralWithdrawals: (params) => api.get('/admin/merchant-referral-withdrawals', { params }),
+  reviewMerchantReferralWithdrawal: (id, data) => api.post(`/admin/merchant-referral-withdrawals/${id}/review`, data)
 }
 
 export const userApi = {
@@ -308,6 +314,15 @@ export const merchantApi = {
     if (!t) return api.get('/merchant/table/staff')
     return api.get('/merchant/table/staff', { params: { type: t } })
   }
+}
+
+export const referralCommissionApi = {
+  getOverview: () => api.get('/user/referral-commission/overview'),
+  getMerchants: () => api.get('/user/referral-commission/merchants'),
+  createShareLink: () => api.post('/user/referral-commission/share-link'),
+  getPoster: () => api.get('/user/referral-commission/poster'),
+  createWithdrawal: (data) => api.post('/user/referral-commission/withdrawals', data),
+  getWithdrawals: () => api.get('/user/referral-commission/withdrawals')
 }
 
 export const ensureMerchantPermissionsLoaded = async () => {
