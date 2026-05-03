@@ -1,46 +1,59 @@
 <template>
-  <div class="min-h-screen bg-[#f6efe4] text-gray-800">
-    <div v-if="loading" class="min-h-screen flex items-center justify-center">加载中...</div>
-    <div v-else-if="errorMessage" class="min-h-screen flex items-center justify-center">{{ errorMessage }}</div>
-    <div v-else-if="!landing" class="min-h-screen flex items-center justify-center">推广页不存在</div>
-    <div v-else class="max-w-3xl mx-auto px-4 py-6 space-y-4">
-      <div class="rounded-[28px] overflow-hidden bg-gradient-to-br from-[#ff8a34] via-[#ffb24a] to-[#ffd16d] text-white p-6 shadow-[0_20px_60px_rgba(255,138,52,0.25)]">
-        <div class="text-xs uppercase tracking-[0.35em] text-white/80">Kabao For Merchant</div>
-        <h1 class="mt-3 text-3xl font-black leading-tight">卡包商户入驻</h1>
-        <p class="mt-3 text-sm leading-6 text-white/90">{{ landing.subtitle }}</p>
-      </div>
+  <div class="merchant-referral-page">
+    <div v-if="loading" class="merchant-referral-state">加载中...</div>
+    <div v-else-if="errorMessage" class="merchant-referral-state merchant-referral-state-error">{{ errorMessage }}</div>
+    <div v-else-if="!landing" class="merchant-referral-state merchant-referral-state-error">推广页不存在</div>
+    <div v-else class="merchant-referral-shell">
+      <section class="hero-banner">
+        <div class="hero-copy">
+          <div class="hero-kicker">KABAO FOR MERCHANT</div>
+          <h1 class="hero-title">卡包商户入驻</h1>
+          <p class="hero-subtitle">{{ landing.subtitle }}</p>
+        </div>
+        <div class="hero-illustration">
+          <img :src="heroStoreIllustration" alt="" />
+        </div>
+      </section>
 
-      <div class="grid gap-4 md:grid-cols-3">
-        <div
-          v-for="item in landing.highlights || []"
+      <section class="feature-list">
+        <article
+          v-for="item in featureItems"
           :key="item.title"
-          class="rounded-[24px] bg-white p-5 shadow-sm border border-[#f1e2cf]"
+          class="feature-card"
         >
-          <div class="text-sm font-bold text-[#ff7b23]">{{ item.title }}</div>
-          <div class="mt-2 text-sm leading-6 text-gray-600">{{ item.description }}</div>
-        </div>
-      </div>
-
-      <div class="rounded-[28px] bg-white p-5 shadow-sm border border-[#f1e2cf] space-y-4">
-        <div>
-          <div class="text-lg font-bold">开始使用卡包</div>
-          <div class="mt-1 text-sm text-gray-500">完成注册后即可开始使用售卡、核销、预约等商户功能</div>
-        </div>
-
-        <div class="grid gap-3 md:grid-cols-[1fr_auto] items-center">
-          <div class="min-w-0">
-            <div class="text-xs text-gray-500">商户注册入口</div>
-            <div class="mt-1 break-all text-sm text-gray-700">{{ registerUrl }}</div>
+          <img class="feature-left-icon" :src="item.leftIcon" :alt="`${item.title}图标`" />
+          <div class="feature-copy">
+            <h2 class="feature-title">{{ item.title }}</h2>
+            <p class="feature-description">{{ item.description }}</p>
           </div>
-          <button
-            type="button"
-            class="rounded-2xl bg-[#ff7b23] px-5 py-3 text-sm font-medium text-white"
-            @click="goRegister"
-          >
-            去注册商户
+          <img class="feature-right-icon" :src="item.rightIcon" :alt="`${item.title}趋势图标`" />
+        </article>
+      </section>
+
+      <section class="register-panel">
+        <div class="register-heading-row">
+          <span class="register-accent"></span>
+          <div>
+            <h2 class="register-title">开始使用卡包</h2>
+            <p class="register-description">完成注册后即可开始使用售卡、核销、预约等商户功能</p>
+          </div>
+        </div>
+
+        <div class="register-link-label">商户注册入口</div>
+        <div class="register-link-box">
+          <div class="register-link-text">{{ registerUrl }}</div>
+          <button type="button" class="register-copy-button" @click="copyRegisterUrl">
+            <svg viewBox="0 0 24 24" fill="none" class="register-copy-icon">
+              <rect x="8.5" y="7.5" width="11" height="13" rx="2.5" stroke="currentColor" stroke-width="1.7" />
+              <path d="M5 15.5V5.8C5 4.81 5.81 4 6.8 4h8.7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
           </button>
         </div>
-      </div>
+
+        <button type="button" class="register-submit" @click="goRegister">
+          去注册商户
+        </button>
+      </section>
     </div>
   </div>
 </template>
@@ -49,18 +62,31 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { authApi } from '../../api'
+import heroStoreIllustration from '../../assets/merchant-referral/hero-store-illustration.png'
+import saleLeftIcon from '../../assets/merchant-referral/icon-feature-sale-left.png'
+import saleRightIcon from '../../assets/merchant-referral/icon-feature-sale-right.png'
+import verifyLeftIcon from '../../assets/merchant-referral/icon-feature-verify-left.png'
+import verifyRightIcon from '../../assets/merchant-referral/icon-feature-verify-right.png'
+import bookingLeftIcon from '../../assets/merchant-referral/icon-feature-booking-left.png'
+import bookingRightIcon from '../../assets/merchant-referral/icon-feature-booking-right.png'
 
 const route = useRoute()
 const loading = ref(true)
 const landing = ref(null)
 const errorMessage = ref('')
 
+const featureAssets = [
+  { leftIcon: saleLeftIcon, rightIcon: saleRightIcon },
+  { leftIcon: verifyLeftIcon, rightIcon: verifyRightIcon },
+  { leftIcon: bookingLeftIcon, rightIcon: bookingRightIcon }
+]
+
 const isPrivateOrLocalHost = (hostname) => {
   const host = String(hostname || '').trim().toLowerCase()
   if (!host) return false
   if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
   if (/^10\.\d+\.\d+\.\d+$/.test(host)) return true
-  if (/^192\.168\.\d+\.\d+$/.test(host)) return true
+  if (/^192\.168\.\d+\.\d+\.\d+$/.test(host)) return true
   if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host)) return true
   return false
 }
@@ -75,6 +101,14 @@ const registerUrl = computed(() => {
     return rawURL
   }
   return `${origin}/merchant/${refCode}/login`
+})
+
+const featureItems = computed(() => {
+  const source = Array.isArray(landing.value?.highlights) ? landing.value.highlights : []
+  return source.slice(0, 3).map((item, index) => ({
+    ...item,
+    ...(featureAssets[index] || featureAssets[featureAssets.length - 1])
+  }))
 })
 
 const resolveLandingErrorMessage = (err) => {
@@ -101,6 +135,16 @@ const loadLanding = async () => {
   }
 }
 
+const copyRegisterUrl = async () => {
+  if (!registerUrl.value) return
+  try {
+    await navigator.clipboard.writeText(registerUrl.value)
+    alert('注册链接已复制')
+  } catch (_) {
+    alert('复制失败，请手动复制链接')
+  }
+}
+
 const goRegister = () => {
   if (!registerUrl.value) return
   window.location.href = registerUrl.value
@@ -108,3 +152,259 @@ const goRegister = () => {
 
 onMounted(loadLanding)
 </script>
+
+<style scoped>
+.merchant-referral-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top right, rgba(255, 212, 176, 0.28), transparent 36%),
+    linear-gradient(180deg, #fff7ee 0%, #fffdfa 100%);
+}
+
+.merchant-referral-state {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.merchant-referral-state-error {
+  text-align: center;
+}
+
+.merchant-referral-shell {
+  max-width: 440px;
+  margin: 0 auto;
+  padding-bottom: 18px;
+}
+
+.hero-banner {
+  position: relative;
+  min-height: 238px;
+  overflow: hidden;
+  padding: 34px 24px 28px;
+  background: linear-gradient(125deg, #ff7417 0%, #ff8f2c 48%, #ffc47e 100%);
+}
+
+.hero-copy {
+  position: relative;
+  z-index: 2;
+  max-width: 240px;
+}
+
+.hero-kicker {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.34em;
+}
+
+.hero-title {
+  margin: 22px 0 0;
+  color: #fff;
+  font-size: 34px;
+  line-height: 1.12;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+
+.hero-subtitle {
+  margin: 20px 0 0;
+  color: rgba(255, 255, 255, 0.98);
+  font-size: 16px;
+  line-height: 1.8;
+  font-weight: 700;
+}
+
+.hero-illustration {
+  position: absolute;
+  right: 0;
+  top: 4px;
+  width: 172px;
+  height: 125px;
+  overflow: hidden;
+}
+
+.hero-illustration::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  background: linear-gradient(90deg, #ff9b42 0%, rgba(255, 155, 66, 0) 100%);
+  z-index: 1;
+}
+
+.hero-illustration img {
+  position: relative;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.feature-list {
+  margin: 14px 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.feature-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 144px;
+  padding: 20px 18px 20px 16px;
+  border-radius: 28px;
+  background: #fff;
+  border: 1px solid rgba(246, 233, 216, 0.9);
+  box-shadow:
+    0 18px 36px rgba(245, 147, 39, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+.feature-left-icon {
+  width: 86px;
+  height: 86px;
+  flex: 0 0 86px;
+  object-fit: contain;
+}
+
+.feature-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.feature-title {
+  margin: 0;
+  color: #ff6f19;
+  font-size: 19px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+
+.feature-description {
+  margin: 10px 0 0;
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.85;
+}
+
+.feature-right-icon {
+  width: 62px;
+  height: 62px;
+  flex: 0 0 62px;
+  object-fit: contain;
+}
+
+.register-panel {
+  margin: 16px;
+  padding: 20px 18px 22px;
+  border-radius: 28px;
+  background: #fff;
+  border: 1px solid rgba(246, 233, 216, 0.9);
+  box-shadow:
+    0 18px 36px rgba(245, 147, 39, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+.register-heading-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.register-accent {
+  flex: 0 0 4px;
+  width: 4px;
+  height: 18px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ff6c12 0%, #ffb05e 100%);
+}
+
+.register-title {
+  margin: 0;
+  color: #111827;
+  font-size: 20px;
+  line-height: 1.3;
+  font-weight: 900;
+}
+
+.register-description {
+  margin: 7px 0 0;
+  color: #4b5563;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.register-link-label {
+  margin-top: 16px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.register-link-box {
+  margin-top: 8px;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 14px;
+  border-radius: 14px;
+  border: 1px solid #ececec;
+  background: #f8f8f8;
+}
+
+.register-link-text {
+  min-width: 0;
+  flex: 1;
+  color: #4b5563;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.register-copy-button {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.register-copy-button:active,
+.register-submit:active {
+  transform: scale(0.985);
+}
+
+.register-copy-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.register-submit {
+  width: 100%;
+  height: 54px;
+  margin-top: 16px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ff7a18 0%, #ff6500 100%);
+  box-shadow: 0 14px 28px rgba(255, 122, 24, 0.18);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+}
+</style>
