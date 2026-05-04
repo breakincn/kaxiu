@@ -62,7 +62,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { authApi } from '../../api'
-import heroStoreIllustration from '../../assets/merchant-referral/hero-store-illustration.png'
+import heroStoreIllustration from '../../assets/merchant-referral/hero-store-illustration-wide.png'
 import saleLeftIcon from '../../assets/merchant-referral/icon-feature-sale-left.png'
 import saleRightIcon from '../../assets/merchant-referral/icon-feature-sale-right.png'
 import verifyLeftIcon from '../../assets/merchant-referral/icon-feature-verify-left.png'
@@ -157,8 +157,17 @@ onMounted(loadLanding)
 .merchant-referral-page {
   min-height: 100vh;
   background:
-    radial-gradient(circle at top right, rgba(255, 212, 176, 0.28), transparent 36%),
-    linear-gradient(180deg, #fff7ee 0%, #fffdfa 100%);
+    radial-gradient(circle at 84% 6%, rgba(255, 244, 227, 0.55) 0%, rgba(255, 219, 184, 0.18) 18%, transparent 34%),
+    linear-gradient(
+      180deg,
+      #ff7b1b 0,
+      #ff8a28 120px,
+      #ff9f48 220px,
+      #ffc689 310px,
+      #ffe7d1 390px,
+      #fff5eb 460px,
+      #fffdfa 560px
+    );
 }
 
 .merchant-referral-state {
@@ -183,16 +192,16 @@ onMounted(loadLanding)
 
 .hero-banner {
   position: relative;
-  min-height: 238px;
+  min-height: 246px;
   overflow: hidden;
-  padding: 34px 24px 28px;
-  background: linear-gradient(125deg, #ff7417 0%, #ff8f2c 48%, #ffc47e 100%);
+  padding: 34px 24px 30px;
+  background: transparent;
 }
 
 .hero-copy {
   position: relative;
   z-index: 2;
-  max-width: 240px;
+  max-width: 238px;
 }
 
 .hero-kicker {
@@ -205,8 +214,8 @@ onMounted(loadLanding)
 .hero-title {
   margin: 22px 0 0;
   color: #fff;
-  font-size: 34px;
-  line-height: 1.12;
+  font-size: 35px;
+  line-height: 1.1;
   font-weight: 900;
   letter-spacing: -0.03em;
 }
@@ -215,41 +224,27 @@ onMounted(loadLanding)
   margin: 20px 0 0;
   color: rgba(255, 255, 255, 0.98);
   font-size: 16px;
-  line-height: 1.8;
+  line-height: 1.9;
   font-weight: 700;
 }
 
 .hero-illustration {
   position: absolute;
-  right: 0;
-  top: 4px;
-  width: 172px;
-  height: 125px;
-  overflow: hidden;
-}
-
-.hero-illustration::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 14px;
-  background: linear-gradient(90deg, #ff9b42 0%, rgba(255, 155, 66, 0) 100%);
-  z-index: 1;
+  right: -6px;
+  top: 8px;
+  width: 176px;
+  height: 132px;
 }
 
 .hero-illustration img {
-  position: relative;
-  z-index: 0;
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .feature-list {
-  margin: 14px 16px 0;
+  margin: 10px 16px 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
