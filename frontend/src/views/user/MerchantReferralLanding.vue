@@ -86,7 +86,7 @@ const isPrivateOrLocalHost = (hostname) => {
   if (!host) return false
   if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
   if (/^10\.\d+\.\d+\.\d+$/.test(host)) return true
-  if (/^192\.168\.\d+\.\d+\.\d+$/.test(host)) return true
+  if (/^192\.168\.\d+\.\d+$/.test(host)) return true
   if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host)) return true
   return false
 }
