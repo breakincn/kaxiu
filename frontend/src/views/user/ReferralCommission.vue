@@ -169,6 +169,13 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import QRCode from 'qrcode'
 import { referralCommissionApi } from '../../api'
+import heroStoreIllustration from '../../assets/merchant-referral/hero-store-illustration-wide.png'
+import saleLeftIcon from '../../assets/merchant-referral/icon-feature-sale-left.png'
+import saleRightIcon from '../../assets/merchant-referral/icon-feature-sale-right.png'
+import verifyLeftIcon from '../../assets/merchant-referral/icon-feature-verify-left.png'
+import verifyRightIcon from '../../assets/merchant-referral/icon-feature-verify-right.png'
+import bookingLeftIcon from '../../assets/merchant-referral/icon-feature-booking-left.png'
+import bookingRightIcon from '../../assets/merchant-referral/icon-feature-booking-right.png'
 
 const router = useRouter()
 const loading = ref(true)
@@ -185,6 +192,11 @@ const withdrawForm = ref({
   payee_account: '',
   payee_channel: 'wechat'
 })
+const posterFeatureAssets = [
+  { leftIcon: saleLeftIcon, rightIcon: saleRightIcon },
+  { leftIcon: verifyLeftIcon, rightIcon: verifyRightIcon },
+  { leftIcon: bookingLeftIcon, rightIcon: bookingRightIcon }
+]
 
 const withdrawAmount = computed(() => withdrawLedgers.value.reduce((sum, item) => sum + (item.commission_amount || 0), 0))
 const buildReferralShareLink = (sharePath, fallbackURL = '') => {
@@ -324,111 +336,156 @@ const generatePoster = async () => {
     if (!registerLink) throw new Error('poster payload missing')
     const width = 430
     const scale = 2
-    const pagePadding = 18
-    const cardWidth = width - pagePadding * 2
-    const highlightGap = 14
-    const highlightHeight = 86
+    const shellPadding = 16
+    const heroHeight = 246
+    const featureCardHeight = 144
+    const featureGap = 16
+    const featureTop = heroHeight - 40
+    const registerTop = featureTop + featureCardHeight * 3 + featureGap * 2 + 16
+    const registerHeight = 430
+    const height = registerTop + registerHeight + 18
     const canvas = document.createElement('canvas')
-    const measureCanvas = document.createElement('canvas')
-    const measureCtx = measureCanvas.getContext('2d')
-    if (!measureCtx) throw new Error('canvas unsupported')
     const heroSubtitle = String(posterPayload.value?.subtitle || '').trim()
-    measureCtx.font = '14px sans-serif'
-    const heroSubtitleLines = countWrappedLines(measureCtx, heroSubtitle, width - 76)
-    measureCtx.font = '13px sans-serif'
-    const registerUrlLines = countWrappedLines(measureCtx, registerLink, cardWidth - 52)
-    const registerInfoHeight = Math.max(90, 44 + registerUrlLines * 20)
-    const heroHeight = Math.max(148, 120 + Math.max(heroSubtitleLines - 1, 0) * 24)
-    const highlightsHeight = ((posterPayload.value?.highlights || []).length * highlightHeight) + (Math.max((posterPayload.value?.highlights || []).length - 1, 0) * highlightGap)
-    const startCardTop = pagePadding + heroHeight + pagePadding + highlightsHeight + pagePadding
-    const startDescriptionY = startCardTop + 62
-    const startDescriptionBottom = estimateWrappedTextBottom('完成注册后即可开始使用售卡、核销、预约等商户功能', width - 88, 20, '13px sans-serif', startDescriptionY)
-    const registerInfoTop = startDescriptionBottom + 18
-    const registerTextY = registerInfoTop + 52
-    const registerTextBottom = estimateWrappedTextBottom(registerLink, width - 104, 20, '13px sans-serif', registerTextY)
-    const buttonTop = Math.max(registerInfoTop + registerInfoHeight + 18, registerTextBottom + 24)
-    const qrTop = buttonTop + 70
-    const startCardHeight = qrTop + 174 - startCardTop + 28
-    const height = startCardTop + startCardHeight + pagePadding
     canvas.width = width * scale
     canvas.height = height * scale
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('canvas unsupported')
     ctx.scale(scale, scale)
-    ctx.fillStyle = '#f7f2ea'
-    ctx.fillRect(0, 0, width, height)
-
-    ctx.fillStyle = '#ffffff'
-    roundRect(ctx, pagePadding, pagePadding, cardWidth, heroHeight, 28)
-    ctx.fill()
-    const gradient = ctx.createLinearGradient(pagePadding, pagePadding, width - pagePadding, pagePadding + heroHeight)
-    gradient.addColorStop(0, '#ff8a34')
-    gradient.addColorStop(1, '#ffd16d')
-    ctx.fillStyle = gradient
-    roundRect(ctx, pagePadding, pagePadding, cardWidth, heroHeight, 28)
-    ctx.fill()
-
-    ctx.fillStyle = 'rgba(255,255,255,0.85)'
-    ctx.font = '12px sans-serif'
-    ctx.fillText('KABAO FOR MERCHANT', 38, 44)
-    ctx.fillStyle = '#ffffff'
-    ctx.font = 'bold 28px sans-serif'
-    wrapText(ctx, '卡包商户入驻', 38, 84, width - 76, 38)
-    ctx.font = '14px sans-serif'
-    wrapText(ctx, heroSubtitle, 38, 124, width - 76, 24)
-
-    let cardTop = pagePadding + heroHeight + pagePadding
-    ;(posterPayload.value.highlights || []).forEach((item, index) => {
-      ctx.fillStyle = '#ffffff'
-      const currentTop = cardTop + index * (highlightHeight + highlightGap)
-      roundRect(ctx, 24, currentTop, width - 48, highlightHeight, 22)
-      ctx.fill()
-      ctx.fillStyle = '#ff7b23'
-      ctx.font = 'bold 16px sans-serif'
-      ctx.fillText(item.title || '', 44, currentTop + 34)
-      ctx.fillStyle = '#5f5f5f'
-      ctx.font = '13px sans-serif'
-      wrapText(ctx, item.description || '', 44, currentTop + 60, width - 88, 20)
-    })
-
-    ctx.fillStyle = '#ffffff'
-    roundRect(ctx, 24, startCardTop, width - 48, startCardHeight, 24)
-    ctx.fill()
-    ctx.fillStyle = '#111827'
-    ctx.font = 'bold 18px sans-serif'
-    ctx.fillText('开始使用卡包', 44, startCardTop + 34)
-    ctx.fillStyle = '#6b7280'
-    ctx.font = '13px sans-serif'
-    wrapText(ctx, '完成注册后即可开始使用售卡、核销、预约等商户功能', 44, startDescriptionY, width - 88, 20)
-
-    ctx.fillStyle = '#f8fafc'
-    roundRect(ctx, 36, registerInfoTop, width - 72, registerInfoHeight, 18)
-    ctx.fill()
-    ctx.fillStyle = '#6b7280'
-    ctx.font = '12px sans-serif'
-    ctx.fillText('商户注册入口', 52, registerInfoTop + 24)
-    ctx.fillStyle = '#374151'
-    ctx.font = '13px sans-serif'
-    wrapText(ctx, registerLink, 52, registerTextY, width - 104, 20)
-
-    ctx.fillStyle = '#ff7b23'
-    roundRect(ctx, 36, buttonTop, width - 72, 48, 18)
-    ctx.fill()
-    ctx.fillStyle = '#ffffff'
-    ctx.font = 'bold 16px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('去注册商户', width / 2, buttonTop + 30)
 
     const qrDataUrl = await QRCode.toDataURL(registerLink, {
       width: 220,
       margin: 1,
       color: { dark: '#111111', light: '#FFFFFF' }
     })
-    const qrImage = await loadImage(qrDataUrl)
-    ctx.drawImage(qrImage, (width - 150) / 2, qrTop, 150, 150)
-    ctx.fillStyle = '#7a7a7a'
+    const [heroImage, qrImage, ...featureImages] = await Promise.all([
+      loadImage(heroStoreIllustration),
+      loadImage(qrDataUrl),
+      ...posterFeatureAssets.flatMap((item) => [loadImage(item.leftIcon), loadImage(item.rightIcon)])
+    ])
+    const features = (posterPayload.value?.highlights || []).slice(0, 3).map((item, index) => ({
+      ...item,
+      leftImage: featureImages[index * 2],
+      rightImage: featureImages[index * 2 + 1]
+    }))
+
+    const pageGradient = ctx.createLinearGradient(0, 0, 0, 324)
+    pageGradient.addColorStop(0, '#ff8415')
+    pageGradient.addColorStop(0.25, '#ff851a')
+    pageGradient.addColorStop(0.43, '#ff953a')
+    pageGradient.addColorStop(0.61, '#ffc185')
+    pageGradient.addColorStop(0.8, '#fff1e5')
+    pageGradient.addColorStop(1, '#ffffff')
+    ctx.fillStyle = pageGradient
+    ctx.fillRect(0, 0, width, height)
+    const glow = ctx.createRadialGradient(width * 0.86, 34, 20, width * 0.86, 34, 190)
+    glow.addColorStop(0, 'rgba(255, 210, 164, 0.3)')
+    glow.addColorStop(0.5, 'rgba(255, 178, 108, 0.14)')
+    glow.addColorStop(1, 'rgba(255, 178, 108, 0)')
+    ctx.fillStyle = glow
+    ctx.fillRect(0, 0, width, 210)
+
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(0, 0, width, heroHeight)
+    ctx.clip()
+    drawImageContain(ctx, heroImage, 210, 52, 218, 136)
+    ctx.restore()
+
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'
+    ctx.font = '12px sans-serif'
+    ctx.letterSpacing = '4px'
+    ctx.fillText('KABAO FOR MERCHANT', 24, 44)
+    ctx.letterSpacing = '0px'
+    ctx.fillStyle = '#ffffff'
+    ctx.font = '900 35px sans-serif'
+    ctx.fillText('卡包商户入驻', 24, 98)
+    ctx.font = '700 16px sans-serif'
+    wrapText(ctx, heroSubtitle, 24, 154, 250, 30)
+
+    features.forEach((item, index) => {
+      const currentTop = featureTop + index * (featureCardHeight + featureGap)
+      const cardX = shellPadding
+      const cardWidth = width - shellPadding * 2
+      ctx.save()
+      ctx.shadowColor = 'rgba(245, 147, 39, 0.07)'
+      ctx.shadowBlur = 24
+      ctx.shadowOffsetY = 12
+      ctx.fillStyle = '#ffffff'
+      roundRect(ctx, cardX, currentTop, cardWidth, featureCardHeight, 28)
+      ctx.fill()
+      ctx.restore()
+      ctx.strokeStyle = 'rgba(246, 233, 216, 0.9)'
+      ctx.lineWidth = 1
+      roundRect(ctx, cardX, currentTop, cardWidth, featureCardHeight, 28)
+      ctx.stroke()
+
+      drawImageContain(ctx, item.leftImage, cardX + 22, currentTop + 29, 86, 86)
+      drawImageContain(ctx, item.rightImage, cardX + cardWidth - 80, currentTop + 41, 62, 62)
+      ctx.fillStyle = '#ff6f19'
+      ctx.font = '800 19px sans-serif'
+      wrapText(ctx, item.title || '', cardX + 122, currentTop + 40, 188, 24)
+      ctx.fillStyle = '#4b5563'
+      ctx.font = '14px sans-serif'
+      wrapText(ctx, item.description || '', cardX + 122, currentTop + 78, 176, 26)
+    })
+
+    const panelX = shellPadding
+    const panelWidth = width - shellPadding * 2
+    ctx.fillStyle = '#ffffff'
+    roundRect(ctx, panelX, registerTop, panelWidth, registerHeight, 28)
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(246, 233, 216, 0.9)'
+    roundRect(ctx, panelX, registerTop, panelWidth, registerHeight, 28)
+    ctx.stroke()
+
+    const panelInnerX = panelX + 18
+    const titleY = registerTop + 36
+    const accentGradient = ctx.createLinearGradient(panelInnerX, registerTop + 20, panelInnerX, registerTop + 38)
+    accentGradient.addColorStop(0, '#ff6c12')
+    accentGradient.addColorStop(1, '#ffb05e')
+    ctx.fillStyle = accentGradient
+    roundRect(ctx, panelInnerX, registerTop + 23, 4, 18, 2)
+    ctx.fill()
+    ctx.fillStyle = '#111827'
+    ctx.font = '900 20px sans-serif'
+    ctx.fillText('开始使用卡包', panelInnerX + 14, titleY)
+    ctx.fillStyle = '#4b5563'
+    ctx.font = '14px sans-serif'
+    wrapText(ctx, '完成注册后即可开始使用售卡、核销、预约等商户功能', panelInnerX, registerTop + 64, panelWidth - 36, 25)
+
+    const linkTop = registerTop + 126
+    ctx.fillStyle = '#6b7280'
     ctx.font = '13px sans-serif'
-    ctx.fillText('微信等识别二维码可直接打开注册页', width / 2, qrTop + 174)
+    ctx.fillText('商户注册入口', panelInnerX, linkTop - 14)
+    ctx.fillStyle = '#f8fafc'
+    roundRect(ctx, panelInnerX, linkTop, panelWidth - 36, 50, 14)
+    ctx.fill()
+    ctx.strokeStyle = '#ececec'
+    roundRect(ctx, panelInnerX, linkTop, panelWidth - 36, 50, 14)
+    ctx.stroke()
+    ctx.fillStyle = '#374151'
+    ctx.font = '12px sans-serif'
+    wrapText(ctx, registerLink, panelInnerX + 14, linkTop + 22, panelWidth - 86, 17)
+    drawCopyIcon(ctx, panelX + panelWidth - 55, linkTop + 15)
+
+    const buttonTop = registerTop + 196
+    const buttonGradient = ctx.createLinearGradient(panelInnerX, buttonTop, panelX + panelWidth - 18, buttonTop + 54)
+    buttonGradient.addColorStop(0, '#ff7a18')
+    buttonGradient.addColorStop(1, '#ff6500')
+    ctx.fillStyle = buttonGradient
+    roundRect(ctx, panelInnerX, buttonTop, panelWidth - 36, 54, 14)
+    ctx.fill()
+    ctx.fillStyle = '#ffffff'
+    ctx.font = '900 18px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('去注册商户', width / 2, buttonTop + 35)
+
+    const qrSize = 132
+    const qrTop = registerTop + 262
+    ctx.drawImage(qrImage, (width - qrSize) / 2, qrTop, qrSize, qrSize)
+    ctx.fillStyle = '#7a7a7a'
+    ctx.font = '12px sans-serif'
+    ctx.fillText('微信等识别二维码可直接打开注册页', width / 2, qrTop + 158)
     ctx.textAlign = 'left'
 
     posterDataUrl.value = canvas.toDataURL('image/png')
@@ -446,13 +503,37 @@ const loadImage = (src) => new Promise((resolve, reject) => {
   img.src = src
 })
 
-const roundRect = (ctx, x, y, width, height, radius) => {
+const drawImageContain = (ctx, image, x, y, width, height) => {
+  if (!image) return
+  const ratio = Math.min(width / image.naturalWidth, height / image.naturalHeight)
+  const drawWidth = image.naturalWidth * ratio
+  const drawHeight = image.naturalHeight * ratio
+  ctx.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight)
+}
+
+const drawCopyIcon = (ctx, x, y) => {
+  ctx.save()
+  ctx.strokeStyle = '#6b7280'
+  ctx.lineWidth = 1.7
+  roundRect(ctx, x + 5, y + 3, 11, 13, 2.5)
+  ctx.stroke()
   ctx.beginPath()
-  ctx.moveTo(x + radius, y)
-  ctx.arcTo(x + width, y, x + width, y + height, radius)
-  ctx.arcTo(x + width, y + height, x, y + height, radius)
-  ctx.arcTo(x, y + height, x, y, radius)
-  ctx.arcTo(x, y, x + width, y, radius)
+  ctx.moveTo(x, y + 11.5)
+  ctx.lineTo(x, y + 1.8)
+  ctx.quadraticCurveTo(x, y, x + 1.8, y)
+  ctx.lineTo(x + 10.5, y)
+  ctx.stroke()
+  ctx.restore()
+}
+
+const roundRect = (ctx, x, y, width, height, radius) => {
+  const safeRadius = Math.min(Math.max(Number(radius) || 0, 0), Math.abs(width) / 2, Math.abs(height) / 2)
+  ctx.beginPath()
+  ctx.moveTo(x + safeRadius, y)
+  ctx.arcTo(x + width, y, x + width, y + height, safeRadius)
+  ctx.arcTo(x + width, y + height, x, y + height, safeRadius)
+  ctx.arcTo(x, y + height, x, y, safeRadius)
+  ctx.arcTo(x, y, x + width, y, safeRadius)
   ctx.closePath()
 }
 
