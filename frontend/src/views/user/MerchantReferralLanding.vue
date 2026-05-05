@@ -157,16 +157,17 @@ onMounted(loadLanding)
 .merchant-referral-page {
   min-height: 100vh;
   background:
-    radial-gradient(circle at 84% 6%, rgba(255, 244, 227, 0.55) 0%, rgba(255, 219, 184, 0.18) 18%, transparent 34%),
+    radial-gradient(circle at 84% 6%, rgba(255, 247, 236, 0.54) 0%, rgba(255, 225, 192, 0.2) 13%, transparent 28%),
     linear-gradient(
       180deg,
       #ff7b1b 0,
-      #ff8a28 120px,
-      #ff9f48 220px,
-      #ffc689 310px,
-      #ffe7d1 390px,
-      #fff5eb 460px,
-      #fffdfa 560px
+      #ff8a28 92px,
+      #ff9d43 164px,
+      #ffbb72 224px,
+      #ffd9ba 272px,
+      #fff0e4 318px,
+      #fff8f1 356px,
+      #fffdfa 394px
     );
 }
 
