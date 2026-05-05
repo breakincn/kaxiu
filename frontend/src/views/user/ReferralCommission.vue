@@ -342,7 +342,7 @@ const generatePoster = async () => {
     const featureGap = 16
     const featureTop = heroHeight - 40
     const registerTop = featureTop + featureCardHeight * 3 + featureGap * 2 + 16
-    const registerHeight = 298
+    const registerHeight = 280
     const height = registerTop + registerHeight + 18
     const canvas = document.createElement('canvas')
     const heroSubtitle = String(posterPayload.value?.subtitle || '').trim()
@@ -454,7 +454,7 @@ const generatePoster = async () => {
     wrapText(ctx, '完成注册后即可开始使用售卡、核销、预约等商户功能', panelInnerX, registerTop + 64, panelWidth - 36, 25)
 
     const qrSize = 132
-    const qrTop = registerTop + 112
+    const qrTop = registerTop + 94
     ctx.drawImage(qrImage, (width - qrSize) / 2, qrTop, qrSize, qrSize)
     ctx.fillStyle = '#7a7a7a'
     ctx.font = '12px sans-serif'
