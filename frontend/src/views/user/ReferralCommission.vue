@@ -342,7 +342,7 @@ const generatePoster = async () => {
     const featureGap = 16
     const featureTop = heroHeight - 40
     const registerTop = featureTop + featureCardHeight * 3 + featureGap * 2 + 16
-    const registerHeight = 430
+    const registerHeight = 298
     const height = registerTop + registerHeight + 18
     const canvas = document.createElement('canvas')
     const heroSubtitle = String(posterPayload.value?.subtitle || '').trim()
@@ -453,39 +453,13 @@ const generatePoster = async () => {
     ctx.font = '14px sans-serif'
     wrapText(ctx, '完成注册后即可开始使用售卡、核销、预约等商户功能', panelInnerX, registerTop + 64, panelWidth - 36, 25)
 
-    const linkTop = registerTop + 126
-    ctx.fillStyle = '#6b7280'
-    ctx.font = '13px sans-serif'
-    ctx.fillText('商户注册入口', panelInnerX, linkTop - 14)
-    ctx.fillStyle = '#f8fafc'
-    roundRect(ctx, panelInnerX, linkTop, panelWidth - 36, 50, 14)
-    ctx.fill()
-    ctx.strokeStyle = '#ececec'
-    roundRect(ctx, panelInnerX, linkTop, panelWidth - 36, 50, 14)
-    ctx.stroke()
-    ctx.fillStyle = '#374151'
-    ctx.font = '12px sans-serif'
-    wrapText(ctx, registerLink, panelInnerX + 14, linkTop + 22, panelWidth - 86, 17)
-    drawCopyIcon(ctx, panelX + panelWidth - 55, linkTop + 15)
-
-    const buttonTop = registerTop + 196
-    const buttonGradient = ctx.createLinearGradient(panelInnerX, buttonTop, panelX + panelWidth - 18, buttonTop + 54)
-    buttonGradient.addColorStop(0, '#ff7a18')
-    buttonGradient.addColorStop(1, '#ff6500')
-    ctx.fillStyle = buttonGradient
-    roundRect(ctx, panelInnerX, buttonTop, panelWidth - 36, 54, 14)
-    ctx.fill()
-    ctx.fillStyle = '#ffffff'
-    ctx.font = '900 18px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('去注册商户', width / 2, buttonTop + 35)
-
     const qrSize = 132
-    const qrTop = registerTop + 262
+    const qrTop = registerTop + 112
     ctx.drawImage(qrImage, (width - qrSize) / 2, qrTop, qrSize, qrSize)
     ctx.fillStyle = '#7a7a7a'
     ctx.font = '12px sans-serif'
-    ctx.fillText('微信等识别二维码可直接打开注册页', width / 2, qrTop + 158)
+    ctx.textAlign = 'center'
+    ctx.fillText('微信等识别二维码可直接打开注册页', width / 2, qrTop + 160)
     ctx.textAlign = 'left'
 
     posterDataUrl.value = canvas.toDataURL('image/png')
