@@ -238,7 +238,7 @@ onMounted(loadLanding)
 .hero-illustration {
   position: absolute;
   right: -2px;
-  top: 26px;
+  top: 52px;
   width: clamp(190px, 48vw, 218px);
   height: auto;
 }
