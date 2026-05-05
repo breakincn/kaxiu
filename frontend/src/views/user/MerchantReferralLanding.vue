@@ -245,7 +245,7 @@ onMounted(loadLanding)
 }
 
 .feature-list {
-  margin: 10px 16px 0;
+  margin: -40px 16px 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
