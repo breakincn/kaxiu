@@ -237,17 +237,25 @@ onMounted(loadLanding)
 
 .hero-illustration {
   position: absolute;
-  right: -6px;
-  top: 8px;
-  width: 176px;
-  height: 132px;
+  right: -2px;
+  top: 26px;
+  width: clamp(190px, 48vw, 218px);
+  height: auto;
 }
 
 .hero-illustration img {
   display: block;
   width: 100%;
-  height: 100%;
+  height: auto;
   object-fit: contain;
+}
+
+@media (max-width: 360px) {
+  .hero-illustration {
+    right: -84px;
+    top: 18px;
+    width: 194px;
+  }
 }
 
 .feature-list {
