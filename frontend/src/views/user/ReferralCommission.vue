@@ -1,129 +1,194 @@
 <template>
-  <div class="min-h-screen bg-[#f7f2ea] text-gray-800">
-    <div class="max-w-5xl mx-auto px-4 py-6 space-y-4">
-      <div class="rounded-[30px] overflow-hidden bg-[radial-gradient(circle_at_top_left,_#ffd6ad,_transparent_32%),linear-gradient(135deg,#fff6ea,#f3ece2)] border border-[#ead9c3] p-5 shadow-sm">
-        <div class="flex items-start justify-between gap-4">
-          <div class="min-w-0">
-            <div class="text-xs uppercase tracking-[0.35em] text-[#c67a2a]">Referral Commission</div>
-            <h1 class="mt-2 text-2xl font-black">推广分成</h1>
-          </div>
-          <button
-            class="inline-flex shrink-0 items-center gap-1.5 self-start whitespace-nowrap rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700"
-            @click="goBack"
-          >
-            <span aria-hidden="true">←</span>
-            返回
-          </button>
-        </div>
-        <p class="mt-2 text-sm leading-6 text-gray-600">邀请商户通过你的专属链接入驻，商户首次付费起两年内的付费可按 50% 计入分成。</p>
-
-        <div v-if="overview.profile" class="mt-5 grid gap-3 md:grid-cols-[1fr_auto_auto] items-center rounded-3xl bg-white/80 p-4">
-          <div class="min-w-0">
-            <div class="text-xs text-gray-500">我的推广链接</div>
-            <div class="mt-1 break-all text-sm text-[#ff7b23]">{{ resolvedShareLink }}</div>
-            <div class="mt-2 text-xs text-gray-500">推广码：{{ overview.profile.promotion_code }}</div>
-          </div>
-          <button class="rounded-2xl bg-[#ff7b23] px-4 py-3 text-sm font-medium text-white" @click="generateShareLink">
-            生成推广链接
-          </button>
-          <button class="rounded-2xl border border-[#ffb77b] bg-[#fff4e8] px-4 py-3 text-sm font-medium text-[#ff7b23]" @click="generatePoster">
-            生成推广图片
-          </button>
+  <div class="min-h-screen bg-[#f5f6f4] text-[#202124]">
+    <div class="mx-auto max-w-5xl px-4 pb-8 pt-4">
+      <div class="mb-4 flex items-center justify-between">
+        <button
+          class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-lg text-gray-700 shadow-sm ring-1 ring-gray-100 active:scale-95"
+          aria-label="返回"
+          @click="goBack"
+        >
+          ←
+        </button>
+        <div class="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-gray-500 shadow-sm ring-1 ring-gray-100">
+          推广码：{{ overview.profile?.promotion_code || '未生成' }}
         </div>
       </div>
 
-      <div class="grid gap-4 md:grid-cols-4">
-        <div class="rounded-3xl bg-white p-5 shadow-sm border border-[#ead9c3]">
-          <div class="text-xs text-gray-500">已推广商户</div>
-          <div class="mt-2 text-3xl font-black">{{ overview.summary.merchant_count || 0 }}</div>
-        </div>
-        <div class="rounded-3xl bg-white p-5 shadow-sm border border-[#ead9c3]">
-          <div class="text-xs text-gray-500">累计分成</div>
-          <div class="mt-2 text-3xl font-black">{{ formatMoney(overview.summary.total_commission_amount) }}</div>
-        </div>
-        <div class="rounded-3xl bg-white p-5 shadow-sm border border-[#ead9c3]">
-          <div class="text-xs text-gray-500">可申请提现</div>
-          <div class="mt-2 text-3xl font-black text-[#ff7b23]">{{ formatMoney(overview.summary.claimable_amount) }}</div>
-        </div>
-        <div class="rounded-3xl bg-white p-5 shadow-sm border border-[#ead9c3]">
-          <div class="text-xs text-gray-500">已申请/已打款</div>
-          <div class="mt-2 text-3xl font-black">{{ formatMoney((overview.summary.applied_amount || 0) + (overview.summary.paid_amount || 0)) }}</div>
-        </div>
-      </div>
+      <section class="overflow-hidden rounded-[28px] bg-[linear-gradient(180deg,#ff7617_0%,#ff9337_48%,#ffbd78_100%)] text-white shadow-sm">
+        <div class="grid gap-0 md:grid-cols-[1.1fr_0.9fr]">
+          <div class="p-6 md:p-8">
+            <div class="inline-flex rounded-full bg-white/20 px-3 py-1 text-xs font-medium text-white">商户推广收益</div>
+            <h1 class="mt-4 text-3xl font-black leading-tight md:text-4xl">推广分成</h1>
+            <p class="mt-3 max-w-xl text-sm leading-6 text-white/72">邀请商户通过你的专属链接入驻，商户首次付费起两年内的付费可按 50% 计入分成。</p>
 
-      <div class="rounded-3xl bg-white p-5 shadow-sm border border-[#ead9c3] space-y-4">
-        <div class="flex items-center justify-between gap-3">
-          <div>
-            <div class="text-lg font-bold">已推广列表</div>
-            <div class="text-sm text-gray-500">展示已通过你的推广链接注册的商户，以及分成窗口内的付费台账。</div>
-          </div>
-        </div>
-
-        <div v-if="loading" class="py-10 text-center text-gray-500">加载中...</div>
-        <div v-else-if="merchants.length === 0" class="py-10 text-center text-gray-500">还没有已推广商户</div>
-
-        <div v-for="merchant in merchants" :key="merchant.referral_id" class="rounded-[26px] border border-[#f0e0ca] bg-[#fffdfa] p-4 space-y-3">
-          <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div class="text-lg font-bold">{{ merchant.merchant_name }}</div>
-              <div class="mt-1 text-sm text-gray-500">注册时间：{{ formatDateTime(merchant.registered_at) || '未记录' }}</div>
-              <div class="mt-1 text-sm text-gray-500">首次付费：{{ formatDateTime(merchant.first_paid_at) || '未发生' }}</div>
-              <div class="mt-1 text-sm text-gray-500">分成截止：{{ formatDateTime(merchant.commission_expires_at) || '首次付费后生成' }}</div>
+            <div class="mt-6 grid gap-3 sm:grid-cols-3">
+              <div class="rounded-[22px] bg-[#ffd9bd]/50 p-4">
+                <div class="text-xs font-medium text-white/92">可申请提现</div>
+                <div class="mt-2 text-2xl font-black text-white">{{ formatMoney(overview.summary.claimable_amount) }}</div>
+              </div>
+              <div class="rounded-[22px] bg-[#ffd9bd]/50 p-4">
+                <div class="text-xs font-medium text-white/92">累计分成</div>
+                <div class="mt-2 text-2xl font-black text-white">{{ formatMoney(overview.summary.total_commission_amount) }}</div>
+              </div>
+              <div class="rounded-[22px] bg-[#ffd9bd]/50 p-4">
+                <div class="text-xs font-medium text-white/92">已推广商户</div>
+                <div class="mt-2 text-2xl font-black text-white">{{ overview.summary.merchant_count || 0 }}</div>
+              </div>
             </div>
-            <div class="grid grid-cols-2 gap-3 text-sm md:min-w-[280px]">
-              <div class="rounded-2xl bg-white px-3 py-2 border border-[#f2e5d2]">
-                <div class="text-xs text-gray-500">累计付费</div>
-                <div class="mt-1 font-bold">{{ formatMoney(merchant.total_paid_amount) }}</div>
+          </div>
+
+          <div class="bg-[#fff7ed] p-5 text-gray-900 md:p-6">
+            <div class="rounded-[24px] bg-white p-4 shadow-sm">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <div class="text-xs font-medium text-gray-500">我的推广链接</div>
+                  <div class="mt-1 text-lg font-black text-[#ff7b23]">分享给商户入驻</div>
+                </div>
+                <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fff0df] text-xl text-[#ff7b23]">↗</div>
               </div>
-              <div class="rounded-2xl bg-white px-3 py-2 border border-[#f2e5d2]">
-                <div class="text-xs text-gray-500">累计分成</div>
-                <div class="mt-1 font-bold">{{ formatMoney(merchant.total_commission_amount) }}</div>
+              <div class="mt-4 rounded-2xl bg-gray-50 p-3">
+                <div class="break-all text-sm leading-5 text-gray-700">{{ resolvedShareLink || '生成后展示专属推广链接' }}</div>
               </div>
-              <div class="rounded-2xl bg-white px-3 py-2 border border-[#f2e5d2]">
-                <div class="text-xs text-gray-500">可申请</div>
-                <div class="mt-1 font-bold text-[#ff7b23]">{{ formatMoney(merchant.claimable_amount) }}</div>
+              <div class="mt-4 grid grid-cols-2 gap-3">
+                <button class="rounded-2xl bg-[#ff7b23] px-4 py-3 text-sm font-bold text-white shadow-sm active:scale-[0.98]" @click="generateShareLink">
+                  复制链接
+                </button>
+                <button class="rounded-2xl bg-[#34a853] px-4 py-3 text-sm font-bold text-white shadow-sm active:scale-[0.98]" @click="generatePoster">
+                  生成图片
+                </button>
               </div>
-              <div class="rounded-2xl bg-white px-3 py-2 border border-[#f2e5d2]">
+            </div>
+
+            <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <div class="rounded-2xl bg-white p-4 shadow-sm">
                 <div class="text-xs text-gray-500">已申请/已打款</div>
-                <div class="mt-1 font-bold">{{ formatMoney((merchant.applied_amount || 0) + (merchant.paid_amount || 0)) }}</div>
+                <div class="mt-2 font-black">{{ formatMoney((overview.summary.applied_amount || 0) + (overview.summary.paid_amount || 0)) }}</div>
+              </div>
+              <div class="rounded-2xl bg-white p-4 shadow-sm">
+                <div class="text-xs text-gray-500">分成窗口</div>
+                <div class="mt-2 font-black">首次付费后 2 年</div>
               </div>
             </div>
           </div>
-
-          <div class="space-y-2">
-            <div v-for="ledger in merchant.payment_ledgers || []" :key="ledger.id" class="rounded-2xl bg-white px-4 py-3 border border-[#f2e5d2]">
-              <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div class="text-sm text-gray-600">
-                  <div>商户付费：{{ formatMoney(ledger.paid_amount) }}</div>
-                  <div>分成：{{ formatMoney(ledger.commission_amount) }} / {{ formatRate(ledger.commission_rate_bp) }}</div>
-                  <div>付款时间：{{ formatDateTime(ledger.paid_at) }}</div>
-                  <div>申请截止：{{ formatDateTime(ledger.claim_deadline) }}</div>
-                </div>
-                <div class="flex items-center gap-3">
-                  <span :class="statusClass(ledger.withdrawal_status)" class="rounded-full px-3 py-1 text-xs font-medium">
-                    {{ statusText(ledger.withdrawal_status) }}
-                  </span>
-                  <button
-                    v-if="ledger.withdrawal_status === 'claimable'"
-                    class="rounded-xl bg-[#ff7b23] px-3 py-2 text-xs font-medium text-white"
-                    @click="openWithdrawModal([ledger])"
-                  >
-                    申请提现
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <button
-            v-if="claimableLedgers(merchant).length > 1"
-            class="rounded-xl border border-[#ffb77b] bg-[#fff4e8] px-4 py-2 text-sm font-medium text-[#ff7b23]"
-            @click="openWithdrawModal(claimableLedgers(merchant))"
-          >
-            合并申请该商户全部可提现分成
-          </button>
         </div>
-      </div>
+      </section>
+
+      <section class="mt-5 grid gap-4 md:grid-cols-[0.82fr_1.18fr]">
+        <div class="space-y-4">
+          <div class="rounded-[24px] bg-white p-5 shadow-sm ring-1 ring-gray-100">
+            <div class="flex items-center justify-between">
+              <div class="text-base font-black">收益流程</div>
+              <span class="rounded-full bg-[#fff4e8] px-3 py-1 text-xs font-medium text-[#ff7b23]">50%</span>
+            </div>
+            <div class="mt-5 space-y-4">
+              <div class="flex gap-3">
+                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#ff7b23] text-sm font-bold text-white">1</div>
+                <div>
+                  <div class="font-bold">分享链接</div>
+                  <div class="mt-1 text-sm text-gray-500">商户从专属链接注册后归属到你的推广关系。</div>
+                </div>
+              </div>
+              <div class="flex gap-3">
+                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#ff7b23] text-sm font-bold text-white">2</div>
+                <div>
+                  <div class="font-bold">商户付费</div>
+                  <div class="mt-1 text-sm text-gray-500">首次付费开始计算两年分成窗口。</div>
+                </div>
+              </div>
+              <div class="flex gap-3">
+                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#ff7b23] text-sm font-bold text-white">3</div>
+                <div>
+                  <div class="font-bold">申请提现</div>
+                  <div class="mt-1 text-sm text-gray-500">可提现流水可单笔申请，也可按商户合并申请。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-[24px] bg-white p-5 shadow-sm ring-1 ring-gray-100">
+          <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div class="text-lg font-black">已推广商户</div>
+              <div class="text-sm text-gray-500">商户、付费、分成和提现状态集中展示。</div>
+            </div>
+            <div class="text-sm font-medium text-gray-500">{{ merchants.length }} 个商户</div>
+          </div>
+
+          <div v-if="loading" class="py-12 text-center text-gray-500">加载中...</div>
+          <div v-else-if="merchants.length === 0" class="mt-5 rounded-2xl bg-gray-50 py-12 text-center text-gray-500">还没有已推广商户</div>
+
+          <div v-for="merchant in merchants" :key="merchant.referral_id" class="mt-4 rounded-[22px] border border-gray-100 bg-[#fbfaf8] p-4">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <div class="text-lg font-black">{{ merchant.merchant_name }}</div>
+                  <span v-if="claimableLedgers(merchant).length > 0" class="rounded-full bg-[#fff4e8] px-2.5 py-1 text-xs font-medium text-[#ff7b23]">
+                    {{ claimableLedgers(merchant).length }} 笔可提现
+                  </span>
+                </div>
+                <div class="mt-2 grid gap-1 text-sm text-gray-500">
+                  <div>注册时间：{{ formatDateTime(merchant.registered_at) || '未记录' }}</div>
+                  <div>首次付费：{{ formatDateTime(merchant.first_paid_at) || '未发生' }}</div>
+                  <div>分成截止：{{ formatDateTime(merchant.commission_expires_at) || '首次付费后生成' }}</div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4 lg:min-w-[420px]">
+                <div class="rounded-2xl bg-white p-3">
+                  <div class="text-xs text-gray-500">累计付费</div>
+                  <div class="mt-1 font-black">{{ formatMoney(merchant.total_paid_amount) }}</div>
+                </div>
+                <div class="rounded-2xl bg-white p-3">
+                  <div class="text-xs text-gray-500">累计分成</div>
+                  <div class="mt-1 font-black">{{ formatMoney(merchant.total_commission_amount) }}</div>
+                </div>
+                <div class="rounded-2xl bg-white p-3">
+                  <div class="text-xs text-gray-500">可申请</div>
+                  <div class="mt-1 font-black text-[#ff7b23]">{{ formatMoney(merchant.claimable_amount) }}</div>
+                </div>
+                <div class="rounded-2xl bg-white p-3">
+                  <div class="text-xs text-gray-500">已处理</div>
+                  <div class="mt-1 font-black">{{ formatMoney((merchant.applied_amount || 0) + (merchant.paid_amount || 0)) }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 space-y-2">
+              <div v-for="ledger in merchant.payment_ledgers || []" :key="ledger.id" class="rounded-2xl bg-white px-4 py-3">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div class="grid gap-x-6 gap-y-1 text-sm text-gray-600 sm:grid-cols-2">
+                    <div>商户付费：<span class="font-bold text-gray-900">{{ formatMoney(ledger.paid_amount) }}</span></div>
+                    <div>分成：<span class="font-bold text-[#ff7b23]">{{ formatMoney(ledger.commission_amount) }}</span> / {{ formatRate(ledger.commission_rate_bp) }}</div>
+                    <div>付款时间：{{ formatDateTime(ledger.paid_at) }}</div>
+                    <div>申请截止：{{ formatDateTime(ledger.claim_deadline) }}</div>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-3">
+                    <span :class="statusClass(ledger.withdrawal_status)" class="rounded-full px-3 py-1 text-xs font-medium">
+                      {{ statusText(ledger.withdrawal_status) }}
+                    </span>
+                    <button
+                      v-if="ledger.withdrawal_status === 'claimable'"
+                      class="rounded-xl bg-[#ff7b23] px-3 py-2 text-xs font-bold text-white active:scale-95"
+                      @click="openWithdrawModal([ledger])"
+                    >
+                      申请提现
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              v-if="claimableLedgers(merchant).length > 1"
+              class="mt-4 w-full rounded-2xl border border-[#ffb77b] bg-[#fff4e8] px-4 py-3 text-sm font-bold text-[#ff7b23] active:scale-[0.99]"
+              @click="openWithdrawModal(claimableLedgers(merchant))"
+            >
+              合并申请该商户全部可提现分成
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
 
     <div v-if="posterVisible" class="fixed inset-0 z-40 bg-black/60 p-4 overflow-y-auto" @click.self="posterVisible = false">
