@@ -1,6 +1,6 @@
 <template>
   <div class="min-h-screen bg-[#f5f6f4] text-[#202124]">
-    <div class="mx-auto max-w-5xl px-4 pb-8 pt-4">
+    <div class="mx-auto max-w-[430px] px-3 pb-8 pt-4">
       <div class="mb-4 flex items-center justify-between">
         <button
           class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-lg text-gray-700 shadow-sm ring-1 ring-gray-100 active:scale-95"
@@ -14,64 +14,69 @@
         </div>
       </div>
 
-      <section class="overflow-hidden rounded-[28px] bg-[linear-gradient(180deg,#ff8415_0px,#ff8115_40px,#ff851a_80px,#ff8720_100px,#ff8d2c_120px,#ff9030_140px,#ff953a_160px,#ffa04c_180px,#ffae62_198px,#ffc185_216px,#ffe0bf_236px,#fff1e5_258px,#fffcfa_292px,#ffffff_324px)] text-white shadow-sm">
-        <div class="grid gap-0 md:grid-cols-[1.1fr_0.9fr]">
-          <div class="p-6 md:p-8">
-            <div class="inline-flex rounded-full bg-white/20 px-3 py-1 text-xs font-medium text-white">商户推广收益</div>
-            <h1 class="mt-4 text-3xl font-black leading-tight md:text-4xl">推广分成</h1>
-            <p class="mt-3 max-w-xl text-sm leading-6 text-white/72">邀请商户通过你的专属链接入驻，商户首次付费起两年内的付费可按 50% 计入分成。</p>
+      <section class="relative overflow-hidden rounded-t-[34px] bg-[radial-gradient(circle_at_88%_28%,rgba(255,171,66,0.32)_0%,rgba(255,157,42,0.2)_22%,transparent_46%),linear-gradient(180deg,#fa7e1b_0%,#fb7f1c_34%,#fe8e2c_68%,#fff8f1_100%)] px-5 pb-7 pt-5 text-white shadow-sm">
+        <div class="pointer-events-none absolute right-[-62px] top-[118px] h-[184px] w-[184px] rounded-full bg-white/7"></div>
+        <div class="pointer-events-none absolute right-[-14px] top-[174px] h-[168px] w-[168px] rounded-full bg-white/7"></div>
 
-            <div class="mt-6 grid gap-3 sm:grid-cols-3">
-              <div class="rounded-[22px] bg-[#ffd9bd]/50 p-4">
-                <div class="text-xs font-medium text-white/92">可申请提现</div>
-                <div class="mt-2 text-2xl font-black text-white">{{ formatMoney(overview.summary.claimable_amount) }}</div>
-              </div>
-              <div class="rounded-[22px] bg-[#ffd9bd]/50 p-4">
-                <div class="text-xs font-medium text-white/92">累计分成</div>
-                <div class="mt-2 text-2xl font-black text-white">{{ formatMoney(overview.summary.total_commission_amount) }}</div>
-              </div>
-              <div class="rounded-[22px] bg-[#ffd9bd]/50 p-4">
-                <div class="text-xs font-medium text-white/92">已推广商户</div>
-                <div class="mt-2 text-2xl font-black text-white">{{ overview.summary.merchant_count || 0 }}</div>
-              </div>
-            </div>
-          </div>
+        <div class="relative z-10">
+          <div class="inline-flex rounded-full bg-[#fb9b56] px-4 py-1.5 text-sm font-black text-white">商户推广收益</div>
+          <h1 class="mt-6 text-[32px] font-black leading-none text-white">推广分成</h1>
+          <p class="mt-5 text-[14px] font-black leading-[1.7] text-white">邀请商户通过你的专属链接入驻，商户首次付费起两年内的付费可按 50% 计入分成。</p>
 
-          <div class="bg-[#fff7ed] p-5 text-gray-900 md:p-6">
-            <div class="rounded-[24px] bg-white p-4 shadow-sm">
-              <div class="flex items-center justify-between gap-3">
-                <div>
-                  <div class="text-xs font-medium text-gray-500">我的推广链接</div>
-                  <div class="mt-1 text-lg font-black text-[#ff7b23]">分享给商户入驻</div>
+          <div class="mt-8 space-y-4">
+            <article
+              v-for="card in headerMetricCards"
+              :key="card.key"
+              :class="card.cardClass"
+              class="relative overflow-hidden rounded-[24px] border border-white/80 px-4 py-4 shadow-[0_8px_18px_rgba(176,85,20,0.16),inset_0_1px_0_rgba(255,255,255,0.92)]"
+            >
+              <div :class="card.patternClass" class="pointer-events-none absolute opacity-70"></div>
+              <div class="relative z-10 flex items-center gap-4">
+                <img :src="card.icon" alt="" class="h-[50px] w-[50px] shrink-0" />
+                <div class="min-w-0 flex-1">
+                  <div class="text-[16px] font-black text-[#3d2414]">{{ card.label }}</div>
+                  <div class="mt-2 text-[32px] font-black leading-none text-[#fd6805]">{{ card.value }}</div>
                 </div>
-                <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fff0df] text-xl text-[#ff7b23]">↗</div>
+                <div class="text-[28px] font-light leading-none text-[#806b5a]">›</div>
               </div>
-              <div class="mt-4 rounded-2xl bg-gray-50 p-3">
-                <div class="break-all text-sm leading-5 text-gray-700">{{ resolvedShareLink || '生成后展示专属推广链接' }}</div>
-              </div>
-              <div class="mt-4 grid grid-cols-2 gap-3">
-                <button class="rounded-2xl bg-[#ff7b23] px-4 py-3 text-sm font-bold text-white shadow-sm active:scale-[0.98]" @click="generateShareLink">
-                  复制链接
-                </button>
-                <button class="rounded-2xl bg-[#34a853] px-4 py-3 text-sm font-bold text-white shadow-sm active:scale-[0.98]" @click="generatePoster">
-                  生成图片
-                </button>
-              </div>
-            </div>
-
-            <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div class="rounded-2xl bg-white p-4 shadow-sm">
-                <div class="text-xs text-gray-500">已申请/已打款</div>
-                <div class="mt-2 font-black">{{ formatMoney((overview.summary.applied_amount || 0) + (overview.summary.paid_amount || 0)) }}</div>
-              </div>
-              <div class="rounded-2xl bg-white p-4 shadow-sm">
-                <div class="text-xs text-gray-500">分成窗口</div>
-                <div class="mt-2 font-black">首次付费后 2 年</div>
-              </div>
-            </div>
+            </article>
           </div>
         </div>
       </section>
+
+      <div class="rounded-b-[28px] bg-[#fff7ed] p-5 text-gray-900 md:p-6">
+        <div class="rounded-[24px] bg-white p-4 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <div class="text-xs font-medium text-gray-500">我的推广链接</div>
+              <div class="mt-1 text-lg font-black text-[#ff7b23]">分享给商户入驻</div>
+            </div>
+            <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#fff0df] text-xl text-[#ff7b23]">↗</div>
+          </div>
+          <div class="mt-4 rounded-2xl bg-gray-50 p-3">
+            <div class="break-all text-sm leading-5 text-gray-700">{{ resolvedShareLink || '生成后展示专属推广链接' }}</div>
+          </div>
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <button class="rounded-2xl bg-[#ff7b23] px-4 py-3 text-sm font-bold text-white shadow-sm active:scale-[0.98]" @click="generateShareLink">
+              复制链接
+            </button>
+            <button class="rounded-2xl bg-[#34a853] px-4 py-3 text-sm font-bold text-white shadow-sm active:scale-[0.98]" @click="generatePoster">
+              生成图片
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+          <div class="rounded-2xl bg-white p-4 shadow-sm">
+            <div class="text-xs text-gray-500">已申请/已打款</div>
+            <div class="mt-2 font-black">{{ formatMoney((overview.summary.applied_amount || 0) + (overview.summary.paid_amount || 0)) }}</div>
+          </div>
+          <div class="rounded-2xl bg-white p-4 shadow-sm">
+            <div class="text-xs text-gray-500">分成窗口</div>
+            <div class="mt-2 font-black">首次付费后 2 年</div>
+          </div>
+        </div>
+      </div>
 
       <section class="mt-5 grid gap-4 md:grid-cols-[0.82fr_1.18fr]">
         <div class="space-y-4">
@@ -241,6 +246,9 @@ import verifyLeftIcon from '../../assets/merchant-referral/icon-feature-verify-l
 import verifyRightIcon from '../../assets/merchant-referral/icon-feature-verify-right.png'
 import bookingLeftIcon from '../../assets/merchant-referral/icon-feature-booking-left.png'
 import bookingRightIcon from '../../assets/merchant-referral/icon-feature-booking-right.png'
+import commissionIcon from '../../assets/referral-commission/icon-commission.png'
+import merchantIcon from '../../assets/referral-commission/icon-merchant.png'
+import withdrawIcon from '../../assets/referral-commission/icon-withdraw.png'
 
 const router = useRouter()
 const loading = ref(true)
@@ -264,6 +272,32 @@ const posterFeatureAssets = [
 ]
 
 const withdrawAmount = computed(() => withdrawLedgers.value.reduce((sum, item) => sum + (item.commission_amount || 0), 0))
+const headerMetricCards = computed(() => [
+  {
+    key: 'claimable',
+    label: '可申请提现',
+    value: formatMoney(overview.value.summary.claimable_amount),
+    icon: withdrawIcon,
+    cardClass: 'bg-[linear-gradient(90deg,#fdefe4_0%,#feeada_100%)]',
+    patternClass: 'right-[16%] top-1/2 h-[92px] w-[92px] -translate-y-1/2 bg-[radial-gradient(circle,#fbd7c0_2px,transparent_2.5px)] bg-[length:14px_14px]'
+  },
+  {
+    key: 'commission',
+    label: '累计分成',
+    value: formatMoney(overview.value.summary.total_commission_amount),
+    icon: commissionIcon,
+    cardClass: 'bg-[linear-gradient(90deg,#fdf2dd_0%,#fee2bc_100%)]',
+    patternClass: 'bottom-0 right-[9%] h-[120px] w-[190px] bg-[linear-gradient(90deg,transparent_0_17%,rgba(255,190,112,0.28)_17%_31%,transparent_31%_43%,rgba(255,190,112,0.28)_43%_57%,transparent_57%_69%,rgba(255,190,112,0.28)_69%_83%,transparent_83%_100%)] rounded-t-[22px]'
+  },
+  {
+    key: 'merchant',
+    label: '已推广商户',
+    value: String(overview.value.summary.merchant_count || 0),
+    icon: merchantIcon,
+    cardClass: 'bg-[linear-gradient(90deg,#fde8e2_0%,#fdd7c9_100%)]',
+    patternClass: 'bottom-[-6px] right-[5%] h-[130px] w-[230px] bg-[radial-gradient(circle_at_50%_18%,rgba(255,166,140,0.24)_0_16%,transparent_17%),radial-gradient(circle_at_22%_54%,rgba(255,166,140,0.2)_0_12%,transparent_13%),radial-gradient(circle_at_78%_54%,rgba(255,166,140,0.2)_0_12%,transparent_13%),radial-gradient(circle_at_50%_100%,rgba(255,166,140,0.22)_0_38%,transparent_39%),radial-gradient(circle_at_22%_100%,rgba(255,166,140,0.18)_0_24%,transparent_25%),radial-gradient(circle_at_78%_100%,rgba(255,166,140,0.18)_0_24%,transparent_25%)]'
+  }
+])
 const buildReferralShareLink = (sharePath, fallbackURL = '') => {
   const path = String(sharePath || '').trim()
   const fallback = String(fallbackURL || '').trim()
