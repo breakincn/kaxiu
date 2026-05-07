@@ -14,7 +14,7 @@
         </div>
       </div>
 
-      <section class="overflow-hidden rounded-[28px] bg-[linear-gradient(180deg,#ff7617_0%,#ff9337_48%,#ffbd78_100%)] text-white shadow-sm">
+      <section class="overflow-hidden rounded-[28px] bg-[linear-gradient(180deg,#ff8415_0px,#ff8115_40px,#ff851a_80px,#ff8720_100px,#ff8d2c_120px,#ff9030_140px,#ff953a_160px,#ffa04c_180px,#ffae62_198px,#ffc185_216px,#ffe0bf_236px,#fff1e5_258px,#fffcfa_292px,#ffffff_324px)] text-white shadow-sm">
         <div class="grid gap-0 md:grid-cols-[1.1fr_0.9fr]">
           <div class="p-6 md:p-8">
             <div class="inline-flex rounded-full bg-white/20 px-3 py-1 text-xs font-medium text-white">商户推广收益</div>
