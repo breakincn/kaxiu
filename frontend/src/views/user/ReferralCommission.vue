@@ -14,7 +14,7 @@
         </div>
       </div>
 
-      <section class="relative overflow-hidden rounded-t-[34px] bg-[radial-gradient(circle_at_88%_28%,rgba(255,171,66,0.32)_0%,rgba(255,157,42,0.2)_22%,transparent_46%),linear-gradient(180deg,#fa7e1b_0%,#fb7f1c_34%,#fe8e2c_68%,#fff8f1_100%)] px-5 pb-7 pt-5 text-white shadow-sm">
+      <section class="relative overflow-hidden rounded-t-[34px] bg-[radial-gradient(circle_at_88%_28%,rgba(255,171,66,0.32)_0%,rgba(255,157,42,0.2)_22%,transparent_46%),linear-gradient(180deg,#fa7e1b_0%,#fb7f1c_30%,#fe8e2c_44%,#ffb36b_58%,#ffe1c3_72%,#fff5ec_84%,#fff8f1_100%)] px-5 pb-7 pt-5 text-white">
         <div class="pointer-events-none absolute right-[-62px] top-[118px] h-[184px] w-[184px] rounded-full bg-white/7"></div>
         <div class="pointer-events-none absolute right-[-14px] top-[174px] h-[168px] w-[168px] rounded-full bg-white/7"></div>
 
@@ -44,7 +44,7 @@
         </div>
       </section>
 
-      <div class="rounded-b-[28px] bg-[#fff7ed] p-5 text-gray-900 md:p-6">
+      <div class="-mt-px rounded-b-[28px] bg-[#fff8f1] p-5 text-gray-900">
         <div class="rounded-[24px] bg-white p-4 shadow-sm">
           <div class="flex items-center justify-between gap-3">
             <div>
