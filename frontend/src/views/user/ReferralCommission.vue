@@ -28,7 +28,7 @@
               v-for="card in headerMetricCards"
               :key="card.key"
               :class="card.cardClass"
-              class="relative overflow-hidden rounded-[24px] border border-white/80 px-4 py-4 shadow-[0_8px_18px_rgba(176,85,20,0.16),inset_0_1px_0_rgba(255,255,255,0.92)]"
+              class="relative overflow-hidden rounded-[24px] px-4 py-4"
             >
               <img :src="card.patternImage" alt="" :class="card.patternClass" class="pointer-events-none absolute select-none" />
               <div class="relative z-10 flex items-center gap-4">
