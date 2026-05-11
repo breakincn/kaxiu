@@ -30,7 +30,7 @@
               :class="card.cardClass"
               class="relative overflow-hidden rounded-[24px] border border-white/80 px-4 py-4 shadow-[0_8px_18px_rgba(176,85,20,0.16),inset_0_1px_0_rgba(255,255,255,0.92)]"
             >
-              <div :class="card.patternClass" class="pointer-events-none absolute opacity-70"></div>
+              <img :src="card.patternImage" alt="" :class="card.patternClass" class="pointer-events-none absolute select-none" />
               <div class="relative z-10 flex items-center gap-4">
                 <img :src="card.icon" alt="" class="h-[50px] w-[50px] shrink-0" />
                 <div class="min-w-0 flex-1">
@@ -249,6 +249,9 @@ import bookingRightIcon from '../../assets/merchant-referral/icon-feature-bookin
 import commissionIcon from '../../assets/referral-commission/icon-commission.png'
 import merchantIcon from '../../assets/referral-commission/icon-merchant.png'
 import withdrawIcon from '../../assets/referral-commission/icon-withdraw.png'
+import itemBg1 from '../../assets/referral-commission/itembg1.png'
+import itemBg2 from '../../assets/referral-commission/itembg2.png'
+import itemBg3 from '../../assets/referral-commission/itembg3.png'
 
 const router = useRouter()
 const loading = ref(true)
@@ -279,7 +282,8 @@ const headerMetricCards = computed(() => [
     value: formatMoney(overview.value.summary.claimable_amount),
     icon: withdrawIcon,
     cardClass: 'bg-[linear-gradient(90deg,#fdefe4_0%,#feeada_100%)]',
-    patternClass: 'right-[16%] top-1/2 h-[92px] w-[92px] -translate-y-1/2 bg-[radial-gradient(circle,#fbd7c0_2px,transparent_2.5px)] bg-[length:14px_14px]'
+    patternImage: itemBg1,
+    patternClass: 'right-[50px] top-1/2 h-[120px] w-[120px] -translate-y-1/2 object-contain'
   },
   {
     key: 'commission',
@@ -287,7 +291,8 @@ const headerMetricCards = computed(() => [
     value: formatMoney(overview.value.summary.total_commission_amount),
     icon: commissionIcon,
     cardClass: 'bg-[linear-gradient(90deg,#fdf2dd_0%,#fee2bc_100%)]',
-    patternClass: 'bottom-0 right-[9%] h-[120px] w-[190px] bg-[linear-gradient(90deg,transparent_0_17%,rgba(255,190,112,0.28)_17%_31%,transparent_31%_43%,rgba(255,190,112,0.28)_43%_57%,transparent_57%_69%,rgba(255,190,112,0.28)_69%_83%,transparent_83%_100%)] rounded-t-[22px]'
+    patternImage: itemBg2,
+    patternClass: 'right-[50px] top-1/2 h-[120px] w-[120px] -translate-y-1/2 object-contain'
   },
   {
     key: 'merchant',
@@ -295,7 +300,8 @@ const headerMetricCards = computed(() => [
     value: String(overview.value.summary.merchant_count || 0),
     icon: merchantIcon,
     cardClass: 'bg-[linear-gradient(90deg,#fde8e2_0%,#fdd7c9_100%)]',
-    patternClass: 'bottom-[-6px] right-[5%] h-[130px] w-[230px] bg-[radial-gradient(circle_at_50%_18%,rgba(255,166,140,0.24)_0_16%,transparent_17%),radial-gradient(circle_at_22%_54%,rgba(255,166,140,0.2)_0_12%,transparent_13%),radial-gradient(circle_at_78%_54%,rgba(255,166,140,0.2)_0_12%,transparent_13%),radial-gradient(circle_at_50%_100%,rgba(255,166,140,0.22)_0_38%,transparent_39%),radial-gradient(circle_at_22%_100%,rgba(255,166,140,0.18)_0_24%,transparent_25%),radial-gradient(circle_at_78%_100%,rgba(255,166,140,0.18)_0_24%,transparent_25%)]'
+    patternImage: itemBg3,
+    patternClass: 'right-[50px] top-1/2 h-[120px] w-[120px] -translate-y-1/2 object-contain'
   }
 ])
 const buildReferralShareLink = (sharePath, fallbackURL = '') => {
