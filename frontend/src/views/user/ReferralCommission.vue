@@ -292,7 +292,7 @@ const headerMetricCards = computed(() => [
     icon: commissionIcon,
     cardClass: 'bg-[linear-gradient(90deg,#fdf2dd_0%,#fee2bc_100%)]',
     patternImage: itemBg2,
-    patternClass: 'right-[26px] top-1/2 h-[120px] w-[120px] -translate-y-1/2 object-contain'
+    patternClass: 'right-[22px] top-1/2 h-[120px] w-[120px] -translate-y-1/2 object-contain'
   },
   {
     key: 'merchant',
