@@ -19,7 +19,7 @@
         <div class="pointer-events-none absolute right-[-14px] top-[174px] h-[168px] w-[168px] rounded-full bg-white/7"></div>
 
         <div class="relative z-10">
-          <div class="flex items-center gap-3">
+          <div class="flex items-center justify-between gap-3">
             <h1 class="text-[32px] font-black leading-none text-white">推广分成</h1>
             <div class="inline-flex rounded-full bg-[#fb9b56] px-4 py-1.5 text-sm font-black text-white">商户推广收益</div>
           </div>
