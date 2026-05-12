@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-[#f5f6f4] text-[#202124]">
+  <div class="min-h-screen bg-white text-[#202124]">
     <div class="mx-auto max-w-[430px] px-3 pb-8 pt-2">
       <div class="mb-1 flex min-h-[48px] items-center justify-between">
         <button
