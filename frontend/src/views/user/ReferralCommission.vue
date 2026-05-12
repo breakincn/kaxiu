@@ -1,20 +1,20 @@
 <template>
   <div class="min-h-screen bg-[#f5f6f4] text-[#202124]">
-    <div class="mx-auto max-w-[430px] px-3 pb-8 pt-3">
-      <div class="mb-1 flex min-h-[52px] items-center justify-between">
+    <div class="mx-auto max-w-[430px] px-3 pb-8 pt-2">
+      <div class="mb-1 flex min-h-[48px] items-center justify-between">
         <button
-          class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-lg text-gray-700 shadow-sm ring-1 ring-gray-100 active:scale-95"
+          class="relative -top-0.5 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-lg text-gray-700 shadow-sm ring-1 ring-gray-100 active:scale-95"
           aria-label="返回"
           @click="goBack"
         >
           ←
         </button>
-        <div class="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-gray-500 shadow-sm ring-1 ring-gray-100">
+        <div class="relative -top-0.5 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-gray-500 shadow-sm ring-1 ring-gray-100">
           推广码：{{ overview.profile?.promotion_code || '未生成' }}
         </div>
       </div>
 
-      <section class="relative overflow-hidden rounded-t-[34px] bg-[radial-gradient(circle_at_88%_28%,rgba(255,171,66,0.32)_0%,rgba(255,157,42,0.2)_22%,transparent_46%),linear-gradient(180deg,#fa7e1b_0%,#fb7f1c_22%,#fe8e2c_35%,#ffb36b_42%,#ffd9b0_48%,#fff0e0_53%,#ffffff_60%,#ffffff_100%)] px-5 pb-7 pt-5 text-white">
+      <section class="relative overflow-hidden bg-[radial-gradient(circle_at_88%_28%,rgba(255,171,66,0.32)_0%,rgba(255,157,42,0.2)_22%,transparent_46%),linear-gradient(180deg,#fa7e1b_0%,#fb7f1c_22%,#fe8e2c_35%,#ffb36b_42%,#ffd9b0_48%,#fff0e0_53%,#ffffff_60%,#ffffff_100%)] px-5 pb-7 pt-5 text-white">
         <div class="pointer-events-none absolute right-[-62px] top-[118px] h-[184px] w-[184px] rounded-full bg-white/7"></div>
         <div class="pointer-events-none absolute right-[-14px] top-[174px] h-[168px] w-[168px] rounded-full bg-white/7"></div>
 
@@ -44,7 +44,7 @@
         </div>
       </section>
 
-      <div class="-mt-px rounded-b-[28px] bg-white px-5 pb-5 pt-[0px] text-gray-900">
+      <div class="-mt-px bg-white px-5 pb-5 pt-[0px] text-gray-900">
         <div class="rounded-[24px] bg-white p-4 shadow-sm">
           <div class="flex items-center justify-between gap-3">
             <div>
