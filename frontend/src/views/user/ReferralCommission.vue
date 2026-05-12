@@ -14,16 +14,18 @@
         </div>
       </div>
 
-      <section class="-mx-3 relative overflow-hidden bg-[radial-gradient(circle_at_88%_28%,rgba(255,171,66,0.32)_0%,rgba(255,157,42,0.2)_22%,transparent_46%),linear-gradient(180deg,#fa7e1b_0%,#fb7f1c_22%,#fe8e2c_35%,#ffb36b_42%,#ffd9b0_48%,#fff0e0_53%,#ffffff_60%,#ffffff_100%)] px-5 pb-7 pt-5 text-white">
+      <section class="-mx-3 relative overflow-hidden bg-[radial-gradient(circle_at_88%_28%,rgba(255,171,66,0.32)_0%,rgba(255,157,42,0.2)_22%,transparent_46%),linear-gradient(180deg,#fa7e1b_0%,#fb7f1c_22%,#fe8e2c_35%,#ffb36b_42%,#ffd9b0_48%,#fff0e0_53%,#ffffff_60%,#ffffff_100%)] px-5 pb-7 pt-3 text-white">
         <div class="pointer-events-none absolute right-[-62px] top-[118px] h-[184px] w-[184px] rounded-full bg-white/7"></div>
         <div class="pointer-events-none absolute right-[-14px] top-[174px] h-[168px] w-[168px] rounded-full bg-white/7"></div>
 
         <div class="relative z-10">
-          <div class="inline-flex rounded-full bg-[#fb9b56] px-4 py-1.5 text-sm font-black text-white">商户推广收益</div>
-          <h1 class="mt-6 text-[32px] font-black leading-none text-white">推广分成</h1>
-          <p class="mt-5 text-[14px] font-black leading-[1.7] text-white">邀请商户通过你的专属链接入驻，商户首次付费起两年内的付费可按 50% 计入分成。</p>
+          <div class="flex items-center gap-3">
+            <h1 class="text-[32px] font-black leading-none text-white">推广分成</h1>
+            <div class="inline-flex rounded-full bg-[#fb9b56] px-4 py-1.5 text-sm font-black text-white">商户推广收益</div>
+          </div>
+          <p class="mt-4 text-[14px] font-black leading-[1.7] text-white">邀请商户通过你的专属链接入驻，商户首次付费起两年内的付费可按 50% 计入分成。</p>
 
-          <div class="mt-8 space-y-4">
+          <div class="mt-6 space-y-4">
             <article
               v-for="card in headerMetricCards"
               :key="card.key"
