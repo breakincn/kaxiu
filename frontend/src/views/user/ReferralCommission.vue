@@ -281,7 +281,7 @@ const headerMetricCards = computed(() => [
     label: '可申请提现',
     value: formatMoney(overview.value.summary.claimable_amount),
     icon: withdrawIcon,
-    cardClass: 'bg-[linear-gradient(90deg,#fdefe4_0%,#feeada_100%)]',
+    cardClass: 'border border-[#f6d8bd] bg-[linear-gradient(90deg,#fdefe4_0%,#feeada_100%)] shadow-[0_10px_22px_rgba(252,177,98,0.24),inset_0_-1px_0_rgba(255,255,255,0.72)]',
     patternImage: itemBg1,
     patternClass: 'right-[22px] top-1/2 h-[120px] w-[120px] -translate-y-1/2 object-contain'
   },
