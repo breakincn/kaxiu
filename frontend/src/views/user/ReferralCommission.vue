@@ -301,7 +301,7 @@ const headerMetricCards = computed(() => [
     label: '已推广商户',
     value: String(overview.value.summary.merchant_count || 0),
     icon: merchantIcon,
-    cardClass: 'bg-[linear-gradient(90deg,#fde8e2_0%,#fdd7c9_100%)]',
+    cardClass: 'bg-[linear-gradient(90deg,#fcebdd_0%,#fbdcbb_100%)]',
     patternImage: itemBg3,
     patternClass: 'right-[30px] top-1/2 h-[120px] w-[120px] -translate-y-1/2 object-contain'
   }
