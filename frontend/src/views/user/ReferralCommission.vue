@@ -290,7 +290,7 @@ const headerMetricCards = computed(() => [
     label: '累计分成',
     value: formatMoney(overview.value.summary.total_commission_amount),
     icon: commissionIcon,
-    cardClass: 'bg-[linear-gradient(90deg,#fdf2dd_0%,#fee2bc_100%)]',
+    cardClass: 'border border-[#f4d8ab] bg-[linear-gradient(90deg,#fdf2dd_0%,#fee2bc_100%)] shadow-[inset_0_2px_0_rgba(255,251,243,0.96),inset_0_3px_8px_rgba(255,255,255,0.42),0_8px_20px_rgba(252,187,98,0.2)]',
     patternImage: itemBg2,
     patternClass: 'right-[22px] top-1/2 h-[120px] w-[120px] -translate-y-1/2 object-contain'
   },
