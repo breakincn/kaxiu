@@ -44,7 +44,7 @@
         </div>
       </section>
 
-      <div class="-mt-px rounded-b-[28px] bg-white p-5 text-gray-900">
+      <div class="-mt-px rounded-b-[28px] bg-white px-5 pb-5 pt-[0px] text-gray-900">
         <div class="rounded-[24px] bg-white p-4 shadow-sm">
           <div class="flex items-center justify-between gap-3">
             <div>
