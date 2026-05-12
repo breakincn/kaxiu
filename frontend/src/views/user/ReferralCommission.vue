@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen bg-[#f5f6f4] text-[#202124]">
-    <div class="mx-auto max-w-[430px] px-3 pb-8 pt-4">
-      <div class="mb-4 flex items-center justify-between">
+    <div class="mx-auto max-w-[430px] px-3 pb-8 pt-3">
+      <div class="mb-1 flex min-h-[52px] items-center justify-between">
         <button
           class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-lg text-gray-700 shadow-sm ring-1 ring-gray-100 active:scale-95"
           aria-label="返回"
